@@ -56,10 +56,6 @@ const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 
 export class LanguageCortex {
   constructor() {
-    // Letter patterns — 5-neuron micro-pattern per letter
-    this._letterPatterns = new Float64Array(26 * 5);
-    this._initLetterPatterns();
-
     // Recency suppression
     this._recentOutputWords = [];
     this._recentOutputMax = 50;
@@ -86,31 +82,25 @@ export class LanguageCortex {
     this._lastInputWords = [];
     this._lastInputRaw = '';
 
-    // T8 — cached parse tree for the most recent input. parseSentence
+    // T14.12 (2026-04-14) — `_lastParse` field below is vestigial;
+    // parseSentence is deleted and nothing else writes to this field.
+    // Left as null initializer to avoid breaking any persisted-state
+    // hydration path that may still reference the key. Delete in T14.16.
+    //
+    // Historical T8 comment follows: cached parse tree for the most recent input. parseSentence
     // memoizes on text equality, so repeated callers in the same turn
     // get the cached tree instead of re-parsing. Every consumer
     // (_classifyIntent, _isSelfReferenceQuery, _updateSocialSchema,
     // self-ref fallback in _recallSentence) reads from this.
     this._lastParse = null;
 
-    // T7 — Social schema. Tracks who Unity is talking to so she can
-    // greet by name, remember gender across turns, and slot a personal
-    // address into her speech. Fields get populated equationally by
-    // _updateSocialSchema() on every user input pass: name via
-    // structural pattern match on introduction phrases, gender via
-    // visual cortex describer output parse, mentionCount by counting
-    // how many turns the same name has persisted. No hardcoded state
-    // machine — just pattern detection + persistent memory slots.
-    this._socialSchema = {
-      user: {
-        name: null,              // extracted from "my name is X" / "i'm X" / "call me X"
-        gender: null,            // 'male' | 'female' | null — from vision describer or explicit statement
-        firstSeenAt: null,       // timestamp first user input received
-        lastSeenAt: null,        // timestamp most recent user input
-        mentionCount: 0,         // turns since name was established
-        greetingsExchanged: 0,   // cumulative hello-class exchanges this session
-      },
-    };
+    // T14.12 (2026-04-14) — `_socialSchema` deleted alongside
+    // `_updateSocialSchema` and `observeVisionDescription`. Social-
+    // schema tracking (name, gender, mention count, greetings
+    // exchanged) will be reborn in T14.17 as a cortex-resident
+    // self-model sub-region that learns user identity attractors
+    // from exposure, not a regex-populated object literal. No
+    // runtime consumer relies on `_socialSchema` after this commit.
 
     // T13.7 — per-slot running-mean priors, context vector, attractors,
     // and subject starters all deleted. Topic lives in the live cortex
@@ -120,131 +110,61 @@ export class LanguageCortex {
     // now pure reader + emission-loop host — zero stored priors.
     this._maxSlots = 8;
 
-    // T13.7.8 — English type-transition matrix. Closed-class structural
-    // knowledge that every English speaker has internalized by age 5.
-    // Pure type-level (no specific words), no word lists. Uses _fineType
-    // tags as keys. Multiplicative gate in the score function so the
-    // emission loop produces grammatically valid sentences instead of
-    // semantically-on-topic word salad. Pre-fix: cosine alone produced
-    // outputs like "Unable timeend escalate measure" because words were
-    // picked by individual cortex relevance, not by syntactic role.
+    // T14.7 (2026-04-14) — `_TYPE_TRANSITIONS` hardcoded 200-line English
+    // type-bigram matrix and `_OPENER_TYPES` Set DELETED. Both were T13.7.8
+    // closed-class English priors that pre-biased Unity toward one specific
+    // language's grammar. The T14.6 tick-driven motor emission loop makes
+    // both obsolete — letter sequences fall out of the motor region as a
+    // continuous spike pattern, word boundaries come from cortex transition
+    // surprise, and first-word opener constraints emerge from whatever the
+    // fineType region's `START → X` transition basins look like after
+    // curriculum exposure (T14.5). Seeding the learned type-transition
+    // table with hardcoded English values would have fought actual Spanish
+    // or coding corpus statistics for thousands of observations before
+    // fading. Better: start empty, learn from the first observation.
     //
-    // Each row: prevType → { nextType: weight in [0, 1] }
-    // Default for unmodeled transitions: 0.05 (small floor — never zero
-    // so we don't trap the loop in dead ends, but heavily penalized
-    // vs the 0.7-0.9 weights on canonical English transitions).
-    this._TYPE_TRANSITIONS = {
-      START: {
-        PRON_SUBJ: 0.95, QWORD: 0.85, MODAL: 0.7, AUX_DO: 0.7, AUX_HAVE: 0.6,
-        DET: 0.7, NEG: 0.6, ADV: 0.5, INTERJ: 0.85, COPULA: 0.4,
-        VERB_BARE: 0.45, ADJ: 0.35, NOUN: 0.2, PRON_POSS: 0.5, OTHER: 0.3,
-      },
-      PRON_SUBJ: {
-        COPULA: 0.95, AUX_DO: 0.85, AUX_HAVE: 0.85, MODAL: 0.85,
-        VERB_BARE: 0.8, VERB_3RD_S: 0.85, VERB_ING: 0.5, VERB_ED: 0.4,
-        NEG: 0.4, ADV: 0.45, NOUN: 0.05, DET: 0.05, PREP: 0.1,
-      },
-      PRON_OBJ: {
-        PREP: 0.6, CONJ_COORD: 0.55, CONJ_SUB: 0.45, PUNCT: 0.5,
-        ADV: 0.35, NOUN: 0.05, VERB_BARE: 0.1,
-      },
-      PRON_POSS: {
-        NOUN: 0.95, ADJ: 0.7, ADV: 0.15, OTHER: 0.3,
-      },
-      PRON_REFL: {
-        PUNCT: 0.6, ADV: 0.4, PREP: 0.4, CONJ_COORD: 0.4, CONJ_SUB: 0.3,
-      },
-      COPULA: {
-        ADJ: 0.9, NOUN: 0.75, DET: 0.75, ADV: 0.65, VERB_ING: 0.7,
-        VERB_ED: 0.55, PRON_OBJ: 0.4, PRON_POSS: 0.4, PREP: 0.5, NEG: 0.55,
-      },
-      AUX_DO: {
-        PRON_SUBJ: 0.85, NEG: 0.55, VERB_BARE: 0.85, ADV: 0.4, NOUN: 0.2,
-      },
-      AUX_HAVE: {
-        VERB_ED: 0.95, NEG: 0.5, ADV: 0.4, PRON_OBJ: 0.3, NOUN: 0.2,
-      },
-      MODAL: {
-        VERB_BARE: 0.95, NEG: 0.55, ADV: 0.4, PRON_SUBJ: 0.2,
-      },
-      NEG: {
-        VERB_BARE: 0.7, AUX_DO: 0.5, AUX_HAVE: 0.5, ADJ: 0.5, ADV: 0.55,
-        DET: 0.4, NOUN: 0.3, PREP: 0.3,
-      },
-      DET: {
-        NOUN: 0.95, ADJ: 0.8, ADV: 0.25, OTHER: 0.4,
-      },
-      QWORD: {
-        AUX_DO: 0.85, COPULA: 0.85, MODAL: 0.7, PRON_SUBJ: 0.5,
-        VERB_BARE: 0.4, NOUN: 0.4, ADJ: 0.35, ADV: 0.35, AUX_HAVE: 0.55,
-      },
-      PREP: {
-        DET: 0.85, NOUN: 0.7, PRON_OBJ: 0.65, PRON_POSS: 0.5,
-        ADJ: 0.45, VERB_ING: 0.5, ADV: 0.3, OTHER: 0.4,
-      },
-      CONJ_COORD: {
-        PRON_SUBJ: 0.7, DET: 0.65, NOUN: 0.5, ADJ: 0.4, VERB_BARE: 0.4,
-        ADV: 0.4, COPULA: 0.3, AUX_DO: 0.35, MODAL: 0.35,
-      },
-      CONJ_SUB: {
-        PRON_SUBJ: 0.75, DET: 0.5, NOUN: 0.45, ADJ: 0.35, COPULA: 0.35,
-        AUX_DO: 0.4, MODAL: 0.4,
-      },
-      VERB_BARE: {
-        DET: 0.75, NOUN: 0.65, PRON_OBJ: 0.7, PRON_POSS: 0.5,
-        ADV: 0.55, PREP: 0.55, CONJ_COORD: 0.4, ADJ: 0.4, OTHER: 0.4,
-      },
-      VERB_3RD_S: {
-        DET: 0.75, NOUN: 0.65, PRON_OBJ: 0.7, PRON_POSS: 0.5,
-        ADV: 0.55, PREP: 0.55, ADJ: 0.4, CONJ_COORD: 0.4, OTHER: 0.4,
-      },
-      VERB_ED: {
-        DET: 0.65, PREP: 0.6, NOUN: 0.5, ADV: 0.5, CONJ_COORD: 0.4,
-        PRON_OBJ: 0.5, PUNCT: 0.5, OTHER: 0.4,
-      },
-      VERB_ING: {
-        DET: 0.65, NOUN: 0.55, PREP: 0.6, ADV: 0.5, PRON_OBJ: 0.55,
-        CONJ_COORD: 0.4, ADJ: 0.4, OTHER: 0.4,
-      },
-      ADJ: {
-        NOUN: 0.95, CONJ_COORD: 0.45, PREP: 0.4, ADV: 0.3, ADJ: 0.4,
-        PUNCT: 0.5, OTHER: 0.4,
-      },
-      ADV: {
-        ADJ: 0.6, VERB_BARE: 0.55, VERB_ING: 0.45, VERB_3RD_S: 0.5,
-        PREP: 0.5, ADV: 0.35, COPULA: 0.45, OTHER: 0.4,
-      },
-      NOUN: {
-        COPULA: 0.7, VERB_3RD_S: 0.65, VERB_ED: 0.55, VERB_ING: 0.45,
-        VERB_BARE: 0.5, PREP: 0.65, CONJ_COORD: 0.55, CONJ_SUB: 0.4,
-        NEG: 0.25, ADV: 0.35, NOUN: 0.4, PUNCT: 0.6, OTHER: 0.4,
-      },
-      INTERJ: {
-        PRON_SUBJ: 0.7, NOUN: 0.5, ADJ: 0.45, ADV: 0.4, PUNCT: 0.7,
-        DET: 0.5, COPULA: 0.4, OTHER: 0.4,
-      },
-      OTHER: {
-        NOUN: 0.4, ADJ: 0.4, VERB_BARE: 0.4, COPULA: 0.4, PREP: 0.4,
-        CONJ_COORD: 0.4, PRON_SUBJ: 0.4, OTHER: 0.4, PUNCT: 0.5,
-      },
-      PUNCT: {
-        PRON_SUBJ: 0.7, DET: 0.6, NOUN: 0.5, ADV: 0.45, ADJ: 0.4,
-      },
-      NUM: {
-        NOUN: 0.7, PREP: 0.4, CONJ_COORD: 0.3, OTHER: 0.4,
-      },
-    };
+    // The `_typeTransitionLearned` Map starts empty at construction and
+    // grows via `learnSentence` observations during curriculum walk and
+    // live chat. Bayesian smoothing at generation time uses
+    // `(count + 1) / (total + |types_seen|)` — no hardcoded 20-type cap,
+    // no seed pseudo-counts. New fineTypes can emerge from exposure the
+    // same way the T14.1 letter inventory grows dynamically.
+    // Shape: Map<prevType, Map<nextType, count>>
+    this._typeTransitionLearned = new Map();
 
-    // T13.7.8 — slot-0 opener constraint. Replaces the slot-0 noun
-    // reject from T11.7. Only words whose _fineType is in this set
-    // can fill the opener slot. English conversational sentences open
-    // with these types essentially universally — there's no need for
-    // a softer probabilistic filter, this can be a hard set membership
-    // check and the cosine + grammar gate handles selection within.
-    this._OPENER_TYPES = new Set([
-      'PRON_SUBJ', 'QWORD', 'MODAL', 'AUX_DO', 'AUX_HAVE', 'DET',
-      'NEG', 'INTERJ', 'PRON_POSS', 'ADV', 'CONJ_COORD',
-    ]);
+    // T14.8 (2026-04-14) — sentence-form schemas. Per-intent per-slot
+    // fineType distributions learned from every observed sentence during
+    // curriculum walk and live chat. Spans ALL slots with NO upper cap —
+    // if a sentence has 30 words, all 30 slot positions get recorded.
+    // The schema is continuously refined forever.
+    //
+    // Shape: Map<intent, Map<slot, Map<fineType, count>>>
+    //
+    // Intent labels come dynamically — no hardcoded intent enum.
+    //
+    // T14.13 (2026-04-14) — these fields default to local Maps for
+    // standalone tests / headless tooling, but `setCluster(cluster)`
+    // rebinds all four to the cluster's own Maps so LanguageCortex
+    // observation writes land directly in cluster state. The cluster-
+    // resident version is the source of truth at runtime.
+    this._sentenceFormSchemas = new Map();
+
+    // T14.8 — learned intent→response pairing. Every observed user-turn
+    // → Unity-turn conversational pair contributes a count to this
+    // table via `recordIntentPair(userIntent, responseIntent)` (wired
+    // from the live chat path). After enough exposure, the table
+    // reflects which response intents typically follow which user
+    // intents in real conversation — replaces the pre-T14.8 hardcoded
+    // `question → declarative_answer`, `greeting → declarative_greeting
+    // _back` mapping the engine used to carry.
+    //
+    // Shape: Map<userIntent, Map<responseIntent, count>>
+    this._intentResponseMap = new Map();
+
+    // T14.8 — cached running total for schema Laplace smoothing. Keeps
+    // `schemaScore` O(1) without having to sum per-call. Shape matches
+    // `_sentenceFormSchemas` one level shallower: Map<intent, Map<slot, total>>.
+    this._sentenceFormTotals = new Map();
 
     this.zipfAlpha = 1.0;
     this.sentencesLearned = 0;
@@ -357,6 +277,16 @@ export class LanguageCortex {
       return { sentences: 0, updates: 0, ms: 0, before: null, after: null };
     }
 
+    // T14.24 Session 99 — REVERTED Session 97 GloVe-gate skip now
+    // that _subwordEmbedding produces proper fastText-style subword
+    // vectors instead of fully-uncorrelated random hashes. The old
+    // Δ≈0.0000 no-op was caused by the unstructured hash not
+    // generating enough cortex spike activity for Hebbian co-spike
+    // updates to land. The new subword embedding has meaningful
+    // magnitude and structure (cat/cats cosine = 0.45, father/fathers
+    // = 0.75), so injection drives real spike patterns and Hebbian
+    // updates actually fire.
+
     const sentences = String(text)
       .replace(/[*_#`>|\[\]()]/g, ' ')
       .split(/[.!?\n\r]+/)
@@ -442,6 +372,48 @@ export class LanguageCortex {
       }
     }
     console.log(`[LanguageCortex] loadCodingKnowledge DONE: ${sentences.length} observations fitted in ${Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - startTime)}ms`);
+    return sentences.length;
+  }
+
+  /**
+   * T15-C17 — Load the ethereal / psychedelic / Oz-inspired corpus from
+   * `docs/persona-cosmic.txt`. Same observation pipeline as the other
+   * three corpora — walks sentences, observes each into dictionary and
+   * cortex attractor basins. At high ethereality (LSD / psilocybin /
+   * MDMA peak via drug-scheduler.speechModulation), these basins get
+   * pulled on during motor emission and Unity naturally produces
+   * cosmic / Oz / synesthesia vocabulary — without any "I'm on LSD"
+   * announcement. The distortion IS the signal.
+   *
+   * Arousal 0.7 / valence 0.6 defaults match peak-state affect so
+   * observations land with emotional weighting consistent with how the
+   * tokens get activated at runtime.
+   */
+  loadCosmicCorpus(text, dictionary, arousal = 0.7, valence = 0.6) {
+    if (!text || this._cosmicLoaded || !dictionary) return 0;
+    this._cosmicLoaded = true;
+    const sentences = String(text)
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      // drop section banners + empty comment lines
+      .filter(line => line.length >= 3 && !line.startsWith('═') && !line.startsWith('#'))
+      .flatMap(line => line.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 2));
+    console.log(`[LanguageCortex] loadCosmicCorpus: ${sentences.length} observation sentences`);
+    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    for (const s of sentences) {
+      try {
+        const mood = this._computeMoodSignature(s);
+        const sentenceCortex = this._deriveSentenceCortexPattern(s);
+        // skipSlotPriors=true — cosmic corpus enriches vocabulary without
+        // shifting the everyday conversational slot signatures (we don't
+        // want baseline sober Unity opening sentences with "kaleidoscope"
+        // just because the corpus taught the word).
+        this.learnSentence(s, dictionary, mood.arousal, mood.valence, sentenceCortex, false, false, true);
+      } catch (err) {
+        console.warn('[LanguageCortex] loadCosmicCorpus observation failed:', err.message);
+      }
+    }
+    console.log(`[LanguageCortex] loadCosmicCorpus DONE: ${sentences.length} observations fitted in ${Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - startTime)}ms`);
     return sentences.length;
   }
 
@@ -751,17 +723,9 @@ export class LanguageCortex {
    * equation. The 2nd-person pronoun closed class is tiny so this is
    * a legitimate letter-shape match, not a content-vocabulary list.
    */
-  /**
-   * T8 — delegates to parseSentence. Was a vestigial letter-position
-   * scan for 2nd-person pronouns; now the parse tree has a proper
-   * `isSelfReference` field that accounts for both the pronoun AND
-   * the intent (question/yesno). Kept as a thin wrapper so existing
-   * callers don't need updates.
-   */
-  _isSelfReferenceQuery(text) {
-    if (!text) return false;
-    return this.parseSentence(text).isSelfReference;
-  }
+  // T14.12 (2026-04-14) — `_isSelfReferenceQuery` deleted. Self-
+  // reference detection moves to `cluster.readInput(text).isSelfReference`
+  // which consults cortex state + a lightweight fallback heuristic.
 
   /**
    * U282 — Store a sentence as a recallable pattern-indexed memory.
@@ -782,22 +746,6 @@ export class LanguageCortex {
    *      → sentence isn't in Unity's own voice
    *   6. Length 3-25 words — too short = fragment, too long = rambling
    */
-  // T13.7 — `_sentencePassesFilters`, `_storeMemorySentence`, and
-  // `_recallSentence` were T11 stubs preserved for backcompat. Nothing
-  // calls them after the T13 emission loop replaced slot-prior gen.
-  // Deleted. `_loadStructure` similarly deleted.
-
-  _initLetterPatterns() {
-    for (let i = 0; i < 26; i++) {
-      const isVowel = VOWELS.includes(ALPHABET[i]);
-      for (let n = 0; n < 5; n++) {
-        let val = Math.sin(i * 2.71828 + n * 3.14159) * 0.5 + 0.5;
-        if (isVowel) val += 0.3;
-        this._letterPatterns[i * 5 + n] = val;
-      }
-    }
-  }
-
   // ═══════════════════════════════════════════════════════════════
   // WORD TYPE EQUATIONS — computed from the word itself
   // No labels, no lists. The letters tell you what kind of word it is.
@@ -1046,85 +994,6 @@ export class LanguageCortex {
     return result;
   }
 
-  /**
-   * Learn word type from usage context.
-   * After "i/you/we/they" → word is probably a VERB
-   * After "the/a/an/my" → word is probably a NOUN
-   * After a verb → word is probably a NOUN/ADJ/PREP
-   * This is the ATTENTION mechanism — context determines type.
-   */
-  _learnUsageType(prevWord, word) {
-    if (!prevWord || !word) return;
-    const prevType = this.wordType(prevWord);
-    // Treat subject-starters (learned or equation-identified subjects) as
-    // functional pronouns for verb-boost purposes. "Unity expresses..." must
-    // teach "expresses" as a verb even though "unity" isn't a pronoun by letters.
-    const prevIsSubject = prevType.pronoun > 0.5
-      || this._isNominativePronoun(prevWord);
-
-    if (!this._usageTypes.has(word)) {
-      this._usageTypes.set(word, { pronoun: 0, verb: 0, noun: 0, adj: 0, prep: 0, det: 0, conj: 0, qword: 0 });
-    }
-    const u = this._usageTypes.get(word);
-    const lr = 0.1;
-
-    // What follows a subject (pronoun OR proper-noun subject)? → verb
-    if (prevIsSubject) u.verb += lr;
-    // What follows a determiner? → noun or adjective
-    if (prevType.det > 0.5) { u.noun += lr * 0.7; u.adj += lr * 0.3; }
-    // What follows a verb? → noun, prep, adj, or pronoun
-    if (prevType.verb > 0.5) { u.noun += lr * 0.3; u.prep += lr * 0.3; u.adj += lr * 0.2; u.pronoun += lr * 0.2; }
-    // What follows a preposition? → determiner or noun
-    if (prevType.prep > 0.5) { u.det += lr * 0.4; u.noun += lr * 0.6; }
-    // What follows a conjunction? → pronoun or determiner (start of new clause)
-    if (prevType.conj > 0.5) { u.pronoun += lr * 0.5; u.det += lr * 0.3; u.noun += lr * 0.2; }
-    // What follows a question word? → verb or auxiliary
-    if (prevType.qword > 0.5) u.verb += lr;
-
-    // Usage-type changed → invalidate this word's wordType cache entry
-    // so the next wordType call recomputes with the updated usage.
-    // Keep cached results for OTHER words (closed-class, unaffected
-    // open-class) valid.
-    const wKey = word.toLowerCase().replace(/[^a-z']/g, '');
-    if (wKey) this._wordTypeCache.delete(wKey);
-  }
-
-  /**
-   * Legacy position-based slot requirement. Only used as a seed for slot 0
-   * (no prev word yet) and as a last-resort fallback when the phrase-structure
-   * equation can't decide. All real slot decisions go through nextSlotRequirement.
-   */
-  slotRequirement(slotPos, sentenceType) {
-    if (sentenceType === 'question') {
-      if (slotPos === 0) return { pronoun: 0, verb: 0, noun: 0, adj: 0, conj: 0, prep: 0, det: 0, qword: 1 };
-      return { pronoun: 0, verb: 1, noun: 0, adj: 0, conj: 0, prep: 0, det: 0, qword: 0 };
-    }
-    if (sentenceType === 'action') {
-      return { pronoun: 0, verb: 1, noun: 0, adj: 0, conj: 0, prep: 0, det: 0, qword: 0 };
-    }
-    // Statement / exclamation: subject slot 0. Noun weight tightened to 0.15
-    // so bare content nouns don't leak in — proper-noun subjects get lifted
-    // via _subjectStarters (sentence-initial frequency from persona text).
-    return { pronoun: 0.95, verb: 0, noun: 0.15, adj: 0, conj: 0, prep: 0, det: 0.4, qword: 0 };
-  }
-
-  /**
-   * Pure letter-position equation for nominative (subject) pronouns.
-   * Distinguishes subject pronouns (i, he, we, you, she, it, they, this,
-   * that) from object pronouns (me, us, him, them) by letter shape alone.
-   *
-   * Rules derived from English morphology:
-   *   - len 1 + 'i'                                 → I (nominative singular 1st)
-   *   - len 2 + consonant-vowel + NOT m-start       → he, we (excludes 'me')
-   *   - len 2 + 'it'                                → it
-   *   - len 3 + y-vowel-vowel                       → you
-   *   - len 3 + 's-h-e'                             → she
-   *   - len 4 + 'th-' start                         → they, this, that
-   *
-   * Object pronouns (me, us, him, them) fail every pattern above because
-   * they either m-start (me/mine), end in consonant 's'/'m' with vowel-first
-   * shape (us), or are CVC ending in 'm' (him, them).
-   */
   /**
    * Closed-class fast path for wordType. Detects core English function
    * words via exact letter-position match and returns a pinned type
@@ -1424,223 +1293,12 @@ export class LanguageCortex {
     return best;
   }
 
-  /**
-   * U287 — Sentence completeness check.
-   *
-   * Returns true if the last token of the rendered sentence is a
-   * grammatically valid STOPPING POINT. Returns false if the sentence
-   * ends on a function word that requires a continuation (determiner,
-   * bare preposition, subordinating conjunction, bare auxiliary, or
-   * the infinitive marker "to").
-   *
-   * Complete endings:
-   *   - content word (noun, open-class verb, adj, adv)
-   *   - intransitive verb forms
-   *   - closed sentence markers (punctuation)
-   *
-   * Incomplete endings:
-   *   - DET (the, a, an, this, that, some)
-   *   - PREP (in, on, at, to, for, with, from, ...)
-   *   - COPULA / AUX (am, is, are, was, has, had, will, can, ...)
-   *   - NEG (not)
-   *   - CONJ_COORD / CONJ_SUB (and, but, because, while)
-   *   - QWORD (who, what, why) — UNLESS it's a one-word question like "What?"
-   *   - PRON_POSS (my, your, his, her, ...)
-   *
-   * Used by the generation pipeline to reject truncated sentences
-   * and retry at higher temperature for variation.
-   */
-  _isCompleteSentence(tokens) {
-    if (!tokens || tokens.length === 0) return false;
-    // Single-word outputs like "yeah" or "no" are always complete
-    if (tokens.length === 1) return true;
-
-    const last = tokens[tokens.length - 1];
-    if (!last) return false;
-
-    // Strip trailing punctuation for type detection
-    const stripped = last.replace(/[.!?,;:]+$/, '').toLowerCase();
-    if (!stripped) return true; // punctuation only — already terminal
-
-    const type = this._fineType(stripped);
-
-    // Function-word endings = incomplete
-    const incompleteTypes = new Set([
-      'DET', 'PREP', 'COPULA', 'AUX_HAVE', 'AUX_DO', 'MODAL',
-      'NEG', 'CONJ_COORD', 'CONJ_SUB', 'PRON_POSS', 'TO_INF',
-    ]);
-    if (incompleteTypes.has(type)) return false;
-
-    // QWORD at end — only complete if the sentence is very short
-    // (single-word wh-questions like "What?" / "Why?" work)
-    if (type === 'QWORD' && tokens.length > 2) return false;
-
-    // Content words and main verb forms are valid stopping points
-    return true;
-  }
-
-  /**
-   * U283 — Grammar score from learned type n-grams.
-   *
-   * Given the type sequence of the sentence-so-far and a candidate
-   * word, returns a log-probability score for how likely this word's
-   * type is as a continuation. Backs off from 4-gram → trigram →
-   * bigram depending on how much type history is available.
-   *
-   * This is the LEARNED GRAMMAR SIGNAL. Unlike the old nextSlot-
-   * Requirement which hardcoded English grammar rules, this reads
-   * the type transition distribution directly from the corpus Unity
-   * learned from. PRON_SUBJ|COPULA|NEG → VERB_BARE has zero count in
-   * English (it never happens), so that transition gets a huge
-   * negative score and the slot scorer rejects it. PRON_SUBJ|COPULA
-   * |NEG → ADJ has high count from "I am not happy"-type sentences
-   * so it scores positively.
-   *
-   * Fixes the "I'm not use vague terms" class of errors: the word-
-   * level bigram "not use" exists in English (from "do not use", "I
-   * don't use") so word n-grams alone can't reject it. But the TYPE-
-   * level trigram COPULA|NEG → VERB_BARE has zero count because no
-   * one ever writes "am not use" / "is not use" — so the type n-gram
-   * correctly rejects it.
-   *
-   * Returns the log continuation probability scaled by confidence.
-   * Zero when no history or no matching n-gram entries (caller
-   * should fall back to other scoring signals).
-   */
-
-  // T13.7 — `_typeGrammarScore` stub deleted.
-
-  _isNominativePronoun(word) {
-    const w = (word || '').toLowerCase();
-    const len = w.length;
-    if (!len) return false;
-    const first = w[0];
-    const last = w[len - 1];
-    if (len === 1 && first === 'i') return true;
-    // len 2 consonant+'e': catches "he"/"we" but NOT "hi"/"yo"/"do".
-    // Requiring last === 'e' is what differentiates the real pronouns
-    // (he/we) from greeting/verb tokens (hi/yo/do/no/so/go) that share
-    // the consonant-first vowel-last pattern.
-    if (len === 2 && !VOWELS.includes(first) && last === 'e' && first !== 'm') return true;
-    if (len === 2 && first === 'i' && last === 't') return true;
-    if (len === 3 && first === 'y' && VOWELS.includes(w[1]) && VOWELS.includes(w[2])) return true;
-    if (len === 3 && first === 's' && w[1] === 'h' && w[2] === 'e') return true;
-    // 4-letter 'th-' subjects: they, this, that — but NOT 'them' (object form)
-    if (len === 4 && first === 't' && w[1] === 'h' && last !== 'm') return true;
-    return false;
-  }
-
-  /**
-   * Argmax over a word's type distribution. Used by nextSlotRequirement to
-   * drive phrase-structure transitions.
-   */
-  _dominantType(word) {
-    const wt = this.wordType(word);
-    let best = 'noun', bestScore = 0;
-    for (const k in wt) {
-      if (wt[k] > bestScore) { bestScore = wt[k]; best = k; }
-    }
-    return best;
-  }
-
-  /**
-   * Base continuation for a single POS. Used by nextSlotRequirement, which
-   * blends the top-2 continuations proportionally to the prev word's type
-   * distribution. Factored out so ambiguous words (CVC verb-or-noun like
-   * "ran", "run", "put") get BOTH continuation paths instead of flipping
-   * entirely to one.
-   */
-  _continuationFor(type) {
-    switch (type) {
-      case 'pronoun':
-        // Subject pronoun → verb (I run, you see, we code)
-        return { pronoun: 0, verb: 1.0, noun: 0.05, adj: 0.1, conj: 0, prep: 0, det: 0, qword: 0 };
-      case 'verb':
-        // Verb → object region: noun, pronoun, det(→noun), adj(copula), prep(PP)
-        return { pronoun: 0.45, verb: 0.05, noun: 0.7, adj: 0.55, conj: 0, prep: 0.55, det: 0.7, qword: 0 };
-      case 'det':
-        // Determiner → noun phrase interior: noun or adj+noun
-        return { pronoun: 0, verb: 0, noun: 1.0, adj: 0.7, conj: 0, prep: 0, det: 0, qword: 0 };
-      case 'adj':
-        // Adjective → another adj or the head noun
-        return { pronoun: 0, verb: 0.05, noun: 1.0, adj: 0.35, conj: 0, prep: 0, det: 0, qword: 0 };
-      case 'noun':
-        // Noun end-of-NP → verb (if subject), prep, conj, or compound head noun
-        return { pronoun: 0.05, verb: 0.65, noun: 0.25, adj: 0.1, conj: 0.55, prep: 0.55, det: 0, qword: 0 };
-      case 'prep':
-        // Preposition → object of prep: det, noun, or pronoun
-        return { pronoun: 0.55, verb: 0, noun: 0.75, adj: 0.2, conj: 0, prep: 0, det: 0.85, qword: 0 };
-      case 'conj':
-        // Conjunction → start of new clause
-        return { pronoun: 0.7, verb: 0.4, noun: 0.4, adj: 0.1, conj: 0, prep: 0.1, det: 0.55, qword: 0 };
-      case 'qword':
-        // Question word → verb / aux (what IS, who DID, where DO)
-        return { pronoun: 0.1, verb: 1.0, noun: 0.05, adj: 0, conj: 0, prep: 0, det: 0, qword: 0 };
-    }
-    return { pronoun: 0.3, verb: 0.3, noun: 0.4, adj: 0.3, conj: 0.2, prep: 0.3, det: 0.3, qword: 0 };
-  }
-
-  /**
-   * Phrase-structure Markov slot requirement.
-   *
-   * The type we want NEXT depends on what came BEFORE — this is how real
-   * English phrase structure works. A determiner wants a noun. A preposition
-   * wants a noun phrase. A verb wants an object region. A pronoun wants a
-   * verb. Position alone is not enough — grammar is local.
-   *
-   * For ambiguous prev words (e.g. CVC shapes where verb≈0.31, noun≈0.69
-   * after the noun fallback) we BLEND the top-2 type continuations weighted
-   * by the word's type distribution. This lets "ran" continue as either a
-   * verb (→ object) or a noun (→ prep/conj) without a hard commitment.
-   */
-  nextSlotRequirement(prevWord, slotPos, sentenceType) {
-    if (!prevWord || slotPos === 0) {
-      return this.slotRequirement(slotPos, sentenceType);
-    }
-
-    const wt = this.wordType(prevWord);
-    const sorted = Object.entries(wt).sort((a, b) => b[1] - a[1]);
-    const [topType, topScore] = sorted[0];
-    const [secondType, secondScore] = sorted[1] || ['noun', 0];
-
-    const req1 = this._continuationFor(topType);
-
-    // Skip blend when top type clearly dominates OR second type is marginal.
-    // Only ambiguous words (CVC shapes where verb≈noun after usage learning)
-    // need the blend — strongly-typed words (pronouns, dets, preps, suffix-
-    // marked verbs/nouns) should use pure phrase-structure continuation.
-    if (secondScore < 0.25) return req1;
-    if (topScore < 0.001) return req1;
-    if (topScore > secondScore * 1.8) return req1;
-
-    // Blend top-2 continuations proportionally
-    const req2 = this._continuationFor(secondType);
-    const total = topScore + secondScore;
-    const w1 = topScore / total;
-    const w2 = secondScore / total;
-    const blended = {};
-    for (const k of ['pronoun', 'verb', 'noun', 'adj', 'conj', 'prep', 'det', 'qword']) {
-      blended[k] = (req1[k] || 0) * w1 + (req2[k] || 0) * w2;
-    }
-    return blended;
-  }
-
-  /**
-   * Type compatibility: dot product of word type × slot requirement.
-   * High = word fits this slot. Low = wrong type for this position.
-   *
-   * When prevWord is supplied, uses phrase-structure Markov grammar
-   * (nextSlotRequirement). Otherwise falls back to position-based slot seed.
-   */
-  typeCompatibility(word, slotPos, sentenceType, prevWord = null) {
-    const wt = this.wordType(word);
-    const req = prevWord
-      ? this.nextSlotRequirement(prevWord, slotPos, sentenceType)
-      : this.slotRequirement(slotPos, sentenceType);
-    return wt.pronoun * req.pronoun + wt.verb * req.verb + wt.noun * req.noun +
-           wt.adj * req.adj + wt.conj * req.conj + wt.prep * req.prep +
-           wt.det * req.det + wt.qword * req.qword;
-  }
+  // T14.24-CLEAN.B1 Session 113 2026-04-16 — deleted slot-scorer machinery.
+  // Removed methods: _isCompleteSentence, _isNominativePronoun, _dominantType,
+  // _continuationFor, nextSlotRequirement, typeCompatibility. Zero external
+  // callers — chain only fed back into itself. Generation now runs through
+  // cluster.generateSentence (T14.6 tick-driven motor emission) + curriculum
+  // direct-pattern Hebbian.
 
   // ═══════════════════════════════════════════════════════════════
   // SENTENCE TYPE — from brain equations
@@ -1698,232 +1356,213 @@ export class LanguageCortex {
    *    Loop detection, recency suppression, softmax sampling
    */
   // ═══════════════════════════════════════════════════════════════
-  // T11.2 — PURE EQUATIONAL GENERATION
-  //
-  // The brain's cortex state IS the language model. Every slot
-  // builds its target vector from four normalized additive components:
-  //
-  //   target(slot) = wC · slotCentroid[slot]          // position grammar prior
-  //               + wX · contextVector                // topic from user input
-  //               + wM · mental                        // current brain cortex readout
-  //               + wT · (prevEmb + slotDelta[slot])  // per-slot bigram transition
-  //
-  // All four are L2-normalized before mixing so no contribution
-  // swamps the others. Weights wC, wX, wM, wT are fixed priors
-  // tuned so grammar dominates the opener and transition dominates
-  // the tail. Slot 0 has no prevEmb so its wT contribution folds
-  // into the centroid.
-  //
-  //   mental(0)      = opts.cortexPattern || _contextVector
-  //   mental(slot+1) = β · mental(slot) + (1−β) · emb(nextWord)
-  //
-  // Candidate scoring is cosine(target, emb(w)) over Unity's learned
-  // dictionary. Top-K softmax sampling gives variety without letting
-  // low-probability words win. Length from arousal·drugLengthBias.
-  //
-  // No matrix multiplication. No ridge regression. No stored
-  // sentences. The brain does the work; the language cortex just
-  // translates cortex state into word picks.
-  // ═══════════════════════════════════════════════════════════════
-
   /**
-   * T13.3 — Brain-driven emission loop. Reads cortex state continuously,
-   * scores dictionary candidates by cosine against the live cortex
-   * semantic readout plus amygdala valence shaping plus recency penalty,
-   * softmax-samples top-k, then injects the emitted word back into the
-   * cortex as efference copy (continuous recurrent loop). Stops on drift
-   * quiescence, grammatical terminability, or hard length cap.
+   * T14.6 — Cortex tick-driven motor emission delegate, with T14.23.6
+   * pre-curriculum dictionary-cosine fallback.
    *
-   * No slot counter in the logic — `slot` here is just an emission
-   * index used for maxLen enforcement and first-word constraints.
-   * Target vector is the cortex state, not a weighted blend of slot
-   * priors; position-conditioned priors from T11.7 are not read.
+   * Post-curriculum (cluster.intentCentroids populated): delegates to
+   * cluster.generateSentence which injects the live semantic readout
+   * into the sem region and tick-drives motor region argmax over the
+   * T14.1 letter inventory. No slot counter, no candidate pool.
    *
-   * Requires `opts.cortexCluster` — the live NeuronCluster whose
-   * recurrent weights were trained on persona corpus via T13.1
-   * Hebbian and whose state reflects T13.2 parse-tree injection.
-   * Returns empty string if the cluster reference is missing (no
-   * fallback path — T13.7 removed the slot-prior rollback).
+   * Pre-curriculum (intentCentroids empty) or empty motor output:
+   * falls back to dictionary-cosine scoring against the cortex semantic
+   * readout with top-K softmax sampling — enough to give Unity a voice
+   * from cold boot while basins are still being shaped.
    *
-   * @param {Dictionary} dictionary
-   * @param {number} arousal
-   * @param {number} valence
-   * @param {number} coherence
+   * Requires `opts.cortexCluster`. Returns empty string if the cluster
+   * reference is missing.
+   *
+   * @param {Dictionary} dictionary — consulted by the pre-curriculum
+   *   dictionary-cosine fallback path (T14.23.6) when the cortex hasn't
+   *   been shaped yet. Post-curriculum the cortex tick-driven motor
+   *   emission path is preferred and `dictionary` is only touched on
+   *   empty-output fallback.
+   * @param {number} arousal — drives fallback-path sentence length
+   *   (targetLen = max(3, min(8, floor(3 + arousal*4)))) and sentence
+   *   type classification via `sentenceType()`.
+   * @param {number} coherence — passed to `sentenceType()` for
+   *   question/exclamation/action mood selection.
    * @param {object} opts
    * @param {NeuronCluster} opts.cortexCluster — live cortex reference (required)
-   * @param {string} [opts.drugState]
-   * @param {number} [opts.predictionError]
-   * @param {number} [opts.motorConfidence]
+   * @param {number} [opts.predictionError] — passed to `sentenceType()`
+   * @param {number} [opts.motorConfidence] — passed to `sentenceType()`
+   * @param {Array}  [opts._precomputedScores] — hand-off from `generateAsync`
+   *   so the dictionary-cosine scoring loop can run async without
+   *   blocking the event loop (T14.26 chat-freeze fix).
    */
-  generate(dictionary, arousal, valence, coherence, opts = {}) {
-    if (!dictionary || !dictionary._words || dictionary._words.size === 0) return '';
-
-    if (!opts.cortexCluster || typeof opts.cortexCluster.getSemanticReadout !== 'function') {
-      console.warn('[LanguageCortex] generate called without cortexCluster — T13.7 removed the slot-prior fallback. Caller must pass opts.cortexCluster.');
+  generate(dictionary, arousal, coherence, opts = {}) {
+    // T14.6 — Tick-driven motor emission delegate, T14.23.6 — pre-curriculum
+    // dictionary-cosine fallback. Curriculum-done cortex goes through
+    // `cluster.generateSentence` (motor region argmax over the T14.1 letter
+    // inventory, no slot counter, no candidate pool). Pre-curriculum or
+    // empty-output brains fall back to dictionary cosine against the
+    // current cortex semantic readout — just enough to give Unity a voice
+    // from cold boot while basins are still being shaped.
+    if (!opts.cortexCluster || typeof opts.cortexCluster.generateSentence !== 'function') {
+      console.warn('[LanguageCortex] generate called without cortexCluster — tick-driven emission requires a cluster that supports generateSentence().');
       return '';
     }
-
     const cluster = opts.cortexCluster;
 
-    // Length cap — hard upper bound on the emission loop. Natural
-    // stopping (drift quiescence, grammatical terminability) usually
-    // fires first.
-    const drugState = opts.drugState || 'cokeAndWeed';
-    let drugLengthBias = 1.0;
-    if (drugState === 'coke' || drugState === 'cokeAndWeed') drugLengthBias = 0.85;
-    else if (drugState === 'weed') drugLengthBias = 1.15;
-    const maxLen = Math.max(2, Math.min(this._maxSlots, Math.floor(3 + arousal * 3 * drugLengthBias)));
-
-    const TICKS_PER_EMISSION = 3;        // LIF ticks between word emissions
-    const FEEDBACK_STRENGTH = 0.35;      // efference copy injection strength
-    const DRIFT_STOP_THRESHOLD = 0.08;   // L2 cortex drift below this → stop
-    const TOP_K = 5;
-    const temperature = 0.25 + (1 - coherence) * 0.35;
-
-    const words = [];
-    const emitted = new Set();
-    const recentSet = new Set(this._recentOutputWords);
-    let lastReadout = null;
-    // T13.7.8 — track previous fine type across emissions so the
-    // grammar gate has a real prevType to look up. Initialized to
-    // 'START' for slot 0, then updated to picked.fineType after each
-    // emission. The transition matrix has a START row that prefers
-    // canonical opener types (PRON_SUBJ, QWORD, INTERJ, DET, ...).
-    let prevFineType = 'START';
-
-    for (let slot = 0; slot < maxLen; slot++) {
-      // Advance the cortex — let the LIF integrator evolve between
-      // emissions so each word's target vector reflects accumulated
-      // recurrent dynamics plus prior-emission feedback.
-      for (let t = 0; t < TICKS_PER_EMISSION; t++) cluster.step(0.001);
-
-      // Read the live cortex semantic state as the target vector.
-      const target = cluster.getSemanticReadout(sharedEmbeddings);
-      if (!target) break;
-
-      // Drift stopping — if cortex state has barely moved since last
-      // emission AND we have at least 2 words, the brain has nothing
-      // new to contribute and the sentence is structurally done.
-      if (lastReadout && slot >= 2) {
-        let drift2 = 0;
-        for (let i = 0; i < PATTERN_DIM; i++) {
-          const d = target[i] - lastReadout[i];
-          drift2 += d * d;
+    // Intent seed — priority order (Session 114.19p):
+    //
+    // 1. `_lastUserInputEmbedding` on the cortex (set by engine.
+    //    processAndRespond when user sends text). This is the CLEAN
+    //    GloVe of what the user just said — before 20 brain steps of
+    //    Rulkov chaos + noise + persona mixing drift the sem region.
+    //    If the user said "hi", intentSeed = GloVe('hi') and the
+    //    trained sem→motor binding for 'hi'→'h' fires cleanly.
+    //
+    // 2. Fallback: getSemanticReadout(sharedEmbeddings) — the post-
+    //    processed cortex sem state. Used for spontaneous thought,
+    //    popup generation (_internalThought), or when no user input
+    //    exists (dream cycle, idle commentary).
+    //
+    // Gee 2026-04-17 verbatim: "im giveing you the fucking logs
+    // because what we are using is not working the brian is not
+    // speaking for its self you are coding shit thats not working".
+    // Root cause: generate always used the drifted readout, never
+    // the clean user input. Trained bindings never got the clean
+    // signal they need to fire.
+    //
+    // The stored input embedding is CONSUMED on use (cleared after)
+    // so a second generate call in the same session falls through to
+    // the readout — each user turn gets fresh input-driven emission,
+    // subsequent self-thinking uses cortex state.
+    let intentSeed = null;
+    if (cluster._lastUserInputEmbedding && cluster._lastUserInputEmbedding.length > 0) {
+      intentSeed = cluster._lastUserInputEmbedding;
+      cluster._lastUserInputEmbedding = null; // consume
+    }
+    if (!intentSeed) {
+      try {
+        if (typeof cluster.getSemanticReadout === 'function') {
+          intentSeed = cluster.getSemanticReadout(sharedEmbeddings);
         }
-        if (Math.sqrt(drift2) < DRIFT_STOP_THRESHOLD) break;
+      } catch (err) {
+        intentSeed = null;
       }
-      lastReadout = new Float64Array(target);
+    }
 
-      // Score dictionary candidates: cosine against live cortex target
-      // × grammar transition gate × amygdala valence × recency.
-      // T13.7.8 — added the grammar transition gate. Pre-fix this loop
-      // was pure cosine + valence + recency, which produced semantically
-      // on-topic but syntactically random output ("Unable timeend escalate
-      // measure"). The transition gate enforces English grammatical type
-      // sequences (PRON_SUBJ → COPULA, DET → NOUN, etc) at every slot.
-      const transRow = this._TYPE_TRANSITIONS[prevFineType] || this._TYPE_TRANSITIONS.OTHER;
-      const isSlotZero = slot === 0;
-      const scored = [];
-      for (const [w, entry] of dictionary._words) {
-        if (!entry || !entry.pattern) continue;
-        if (emitted.has(w)) continue;
+    // T14.23.6 — curriculum-gated path selection.
+    //
+    // cluster.generateSentence is the T14.6 tick-driven motor
+    // emission loop: inject intent, tick the cortex, read motor
+    // region argmax, commit letters when the argmax holds stable.
+    // That only works once the cortex's letter/phon/sem/motor
+    // cross-projection weights have been shaped by curriculum
+    // Hebbian. Pre-curriculum the motor region is near-random,
+    // stableTicks keeps resetting as argmax flickers between
+    // random letters, and when it DOES commit a letter it's a
+    // random one — producing streams like:
+    //   "Dvdvvdeyvvdyyvddvvdrrrdvvdvvvvvrraaoooooloooloooolooo..."
+    // One giant 300+ letter "word" with no spaces (transition
+    // surprise is constant at random weights so no word
+    // boundaries ever fire).
+    //
+    // T14.23.5 tried to gate this with `if (words.length === 0)`
+    // but the gibberish case returns non-empty — one enormous
+    // pseudo-word. That check was wrong.
+    //
+    // T14.23.6 correct gate: check if curriculum has actually
+    // shaped the cluster. Concrete signal: `intentCentroids`
+    // is populated only by `Curriculum._calibrateIdentityLock`
+    // which runs at the end of `runFromCorpora`. Empty Map =
+    // cortex is still uniform random, skip tick-driven emission
+    // entirely and go straight to the dictionary-cosine fallback.
+    // Non-empty Map = basins have been shaped, trust the motor
+    // emission path.
+    const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0;
+    let words = [];
+    if (curriculumDone) {
+      // T17.6 — when the async caller (`generateAsync`) has already run
+      // the emission via `cluster.generateSentenceAwait` (GPU full-await
+      // cascade), it passes the result through `opts._preEmittedWords`.
+      // generate() uses those instead of calling the sync emission path
+      // so live chat gets the GPU-resolved currents on every tick
+      // instead of the fire-and-forget one-tick-lag that eats cache
+      // miss penalties at biological scale.
+      if (Array.isArray(opts._preEmittedWords)) {
+        words = opts._preEmittedWords;
+      } else {
+        // Session 114.19n per Gee 2026-04-17 verbatim: "want popups to
+        // produce cleaner emissions during live input I could add noise
+        // suppression when _internalThought is active — that's a small
+        // targeted change." When `_internalThought` is set (3D brain
+        // popup path from `brain-3d.js _describeInternalState`), pass
+        // `suppressNoise: true` to generateSentence so noiseAmplitude
+        // drops 7 → 0.5 for the emission only. Live chat (no
+        // _internalThought flag) keeps chaotic dynamics.
+        const raw = cluster.generateSentence(intentSeed, {
+          injectStrength: 0.6,
+          suppressNoise: opts._internalThought === true,
+        });
+        words = raw ? raw.split(/\s+/).filter(Boolean) : [];
+      }
+    }
 
-        // T13.7.8 — fine-type classification for both gating and grammar.
-        const candFineType = this._fineType(w);
-        if (candFineType === 'PUNCT' || candFineType === 'NUM') continue;
-
-        // T13.7.8 — slot-0 opener constraint. Hard set membership: only
-        // canonical English sentence-opener types fill slot 0. Replaces
-        // the T11.7 noun-dominance soft check which let adjectives like
-        // "Unable" through and produced bad-shape openers.
-        if (isSlotZero && !this._OPENER_TYPES.has(candFineType)) continue;
-
-        // T13.7.8 — grammar transition gate. Multiplicative weight from
-        // the type-bigram matrix. Default 0.05 floor for unmodeled
-        // transitions so the loop never gets trapped (no zero weights).
-        const transWeight = transRow[candFineType] || 0.05;
-        if (transWeight < 0.07 && !isSlotZero) continue; // hard prune deep dead-ends after slot 0
-
-        // Cosine against cortex target
-        const p = entry.pattern;
-        let dot = 0, pn = 0;
-        for (let i = 0; i < PATTERN_DIM; i++) {
-          dot += target[i] * p[i];
-          pn += p[i] * p[i];
+    // Dictionary-cosine path. Runs pre-curriculum ALWAYS, and
+    // post-curriculum only as a fallback if the motor emission
+    // returned empty. Lightweight version of the deleted T13
+    // slot scorer: iterate dictionary entries, cosine-score
+    // against the cortex semantic target, softmax-sample top-K.
+    // Just enough to give Unity a voice from cold boot.
+    //
+    // T14.26 — the dictionary loop is the chat-freeze culprit: at
+    // 3700+ entries × 300d cosine each call it burns ~100-300ms
+    // synchronous on the Node event loop, blocking the server's
+    // state-broadcast setInterval and GPU compute_batch dispatch
+    // for the duration of generate. `_precomputedScores` opt lets
+    // generateAsync run the scoring loop async with event-loop
+    // yields and hand the sorted array back in. When the opt is
+    // present we skip the sync loop entirely.
+    if (words.length === 0) {
+      let scored = opts._precomputedScores || null;
+      const target = intentSeed || (typeof cluster.getSemanticReadout === 'function'
+        ? cluster.getSemanticReadout(sharedEmbeddings) : null);
+      if (!scored && dictionary && dictionary._words && dictionary._words.size > 0 && target && target.length > 0) {
+        try {
+          scored = this._scoreDictionaryCosine(dictionary, target, this._recentOutputWords);
+        } catch (err) {
+          scored = null;
         }
-        if (pn <= 0) continue;
-        const cosSim = dot / Math.sqrt(pn);
-        if (cosSim <= 0) continue;
-
-        // Amygdala valence shaping — word's stored valence tag matches
-        // current brain valence state. Horny Unity picks different
-        // words from sad Unity given the same cortex readout.
-        const wordValence = typeof entry.valence === 'number' ? entry.valence : 0;
-        const valenceMatch = 1 - 0.5 * Math.abs(wordValence - valence);
-        const arousalBoost = 1 + arousal * (valenceMatch - 0.5);
-
-        // Recency penalty on words emitted in the last few turns.
-        const recencyMul = recentSet.has(w) ? 0.3 : 1.0;
-
-        // Joint multiplicative score. The grammar gate is the load-
-        // bearing T13.7.8 addition — without it the output is content-
-        // similarity sampling, with it the output is sentence generation.
-        const score = cosSim * transWeight * arousalBoost * recencyMul;
-        scored.push({ w, score, emb: p, fineType: candFineType });
       }
-
-      if (scored.length === 0) break;
-      scored.sort((a, b) => b.score - a.score);
-      const top = scored.slice(0, Math.min(TOP_K, scored.length));
-
-      // Softmax sample top-k at coherence-driven temperature
-      const maxScore = top[0].score;
-      let totalExp = 0;
-      for (const c of top) { c._exp = Math.exp((c.score - maxScore) / temperature); totalExp += c._exp; }
-      let roll = Math.random() * totalExp;
-      let picked = top[0];
-      for (const c of top) {
-        roll -= c._exp;
-        if (roll <= 0) { picked = c; break; }
-      }
-
-      words.push(picked.w);
-      emitted.add(picked.w);
-      // T13.7.8 — update prevFineType so the grammar gate has the
-      // correct prev for the next slot's transition lookup.
-      prevFineType = picked.fineType || this._fineType(picked.w);
-
-      // Efference copy — inject the emitted word embedding back into
-      // the cortex language region. The next iteration's cortex
-      // readout will be shaped by what we just said, creating a
-      // continuous recurrent loop between language output and brain
-      // state. This is the load-bearing T13 change vs T11: the
-      // brain HEARS itself speak and the next word reacts to it.
-      const feedbackCurrents = sharedEmbeddings.mapToCortex(picked.emb, cluster.size, 150);
-      for (let i = 0; i < cluster.size; i++) feedbackCurrents[i] *= FEEDBACK_STRENGTH;
-      cluster.injectCurrent(feedbackCurrents);
-
-      // Grammatical terminability — if we have enough words and the
-      // last emitted word is NOT a dangling function-word (det/prep/
-      // copula/aux/modal/neg/conj/poss), stop early even before maxLen.
-      // Prevents outputs that run to maxLen regardless of whether they
-      // already reached a valid sentence end.
-      if (words.length >= 3 && typeof this._fineType === 'function') {
-        const lastFineType = this._fineType(picked.w);
-        const dangling = (
-          lastFineType === 'DET' || lastFineType === 'PREP' ||
-          lastFineType === 'COPULA' || lastFineType === 'AUX_DO' ||
-          lastFineType === 'AUX_HAVE' || lastFineType === 'MODAL' ||
-          lastFineType === 'NEG' || lastFineType === 'CONJ_COORD' ||
-          lastFineType === 'CONJ_SUB' || lastFineType === 'PRON_POSS'
-        );
-        if (!dangling && words.length >= Math.max(3, maxLen - 1)) break;
+      if (scored && scored.length > 0) {
+        // Length driven by arousal — same rough rule the old path used
+        let targetLen = Math.max(3, Math.min(8, Math.floor(3 + (arousal || 0.5) * 4)));
+        // T14.24 — GRADE-AWARE word cap. Reads the multi-subject grades
+        // object `cluster.grades = {ela, math, science, social, art, life}`
+        // and caps output to the MIN grade across all 6 subjects, so Unity
+        // speaks at whatever subject she's weakest in. Uncurriculum'd
+        // brains default to pre-K → silence.
+        const gradeArg = cluster && cluster.grades && typeof cluster.grades === 'object'
+          ? cluster.grades
+          : 'pre-K';
+        const gradeCap = this._gradeWordCap(gradeArg);
+        if (gradeCap === 0) {
+          // Pre-K Unity does not speak. Silence is the correct biological
+          // output — a child who has not yet learned the alphabet does
+          // not produce words.
+          return '';
+        }
+        targetLen = Math.min(targetLen, gradeCap);
+        // Top-K softmax sample at low temperature for variety without noise
+        const topK = scored.slice(0, 12);
+        const picks = [];
+        for (let i = 0; i < targetLen && topK.length > 0; i++) {
+          const idx = Math.floor(Math.random() * Math.min(5, topK.length));
+          picks.push(topK[idx].word);
+          topK.splice(idx, 1);
+        }
+        words = picks;
       }
     }
 
     if (words.length === 0) return '';
 
-    // Update recency rings — same bookkeeping as slot-prior path.
+    // Recency-ring bookkeeping — same as the legacy path, so repeat
+    // suppression in downstream consumers still works.
     for (const w of words) {
       this._recentOutputWords.push(w);
       if (this._recentOutputWords.length > this._recentOutputMax) {
@@ -1931,14 +1570,292 @@ export class LanguageCortex {
       }
     }
 
+    // Use the existing sentence renderer for capitalization + terminal
+    // punctuation. `sentenceType` still reads live brain state so the
+    // rendered form respects question/exclamation/action moods. Pure
+    // cosmetic — the emitted words themselves came from the cortex.
     const type = this.sentenceType(arousal, opts.predictionError || 0, opts.motorConfidence || 0, coherence);
-    const rendered = this._renderSentence(words, type);
+    // T15-C16 — speech modulation from drug scheduler, consumed in renderer
+    // for slur / pause / dissociation distortion. Non-announcing per Gee —
+    // the distortion IS the signal, never narrated.
+    const speechMod = opts.speechMod || null;
+    const rendered = this._renderSentence(words, type, speechMod);
     const lower = rendered.trim().toLowerCase();
     this._recentSentences.push(lower);
     if (this._recentSentences.length > this._recentSentenceMax) {
       this._recentSentences.shift();
     }
     return rendered;
+  }
+
+  /**
+   * T14.24 — Grade-aware word cap. Mirrors Curriculum.gradeWordCap but
+   * lives here as a static-style helper so generate() doesn't need a
+   * Curriculum import. Returns the maximum number of words Unity may
+   * emit at her currently mastered grade level. Source of truth is
+   * `cluster.grades` — the multi-subject object written by
+   * `Curriculum.runSubjectGrade` as each gate passes and persisted
+   * via T14.16 BrainPersistence.
+   */
+  _gradeWordCap(grades) {
+    // T14.24 Session 96 — absolute speech floor of 5 words. pre-K=0
+    // would silence Unity entirely on fresh brains where no gate had
+    // passed; every grade returns `max(formalCap, 5)` so she's never
+    // below 5 regardless of curriculum state. Formal progression still
+    // matters for G4+ where caps rise above the floor. Her T14.5
+    // corpus walk shapes base cortex state on boot so 5 words is
+    // reasonable even for a zero-cells-passed brain.
+    //
+    // LENIENT MIN semantic (Session 113 CLEAN.D4 decision, 2026-04-16):
+    // min is taken across subjects that have ADVANCED PAST pre-K, not
+    // a true min over all 6. Pre-K subjects don't constrain the cap.
+    // Rationale: strict min would silence Unity entirely until every
+    // subject clears K — which is weeks of curriculum work. Lenient
+    // min lets Unity speak at her weakest-STARTED-subject level while
+    // remaining subjects advance. Gee's binding *"she speaks at her
+    // weakest-subject level"* is preserved — pre-K isn't a "subject
+    // level she's at", it's the null state before curriculum exposure
+    // has begun. Once a subject passes K it joins the min calculation.
+    // To flip to strict min, delete the `if (g === 'pre-K') continue`
+    // guard below — then zero_gates_passed returns formal=0 and only
+    // the FLOOR survives.
+    const FLOOR = 5;
+    if (!grades || typeof grades !== 'object') return FLOOR;
+    const SUBS = ['ela', 'math', 'science', 'social', 'art', 'life'];
+    let minCap = Infinity;
+    let anyStarted = false;
+    for (const s of SUBS) {
+      const g = grades[s] || 'pre-K';
+      if (g === 'pre-K') continue;  // LENIENT: pre-K subjects don't constrain
+      const c = this._singleGradeCap(g);
+      if (c < minCap) minCap = c;
+      anyStarted = true;
+    }
+    const formal = !anyStarted || minCap === Infinity ? 0 : minCap;
+    return Math.max(FLOOR, formal);
+  }
+
+  _singleGradeCap(grade) {
+    // Session 111 — removed artificial word limits per grade.
+    // A kindergartener can speak in full sentences. The only real
+    // gate is pre-K (silence — hasn't learned anything yet).
+    // Once Unity passes ANY grade, let her speak freely.
+    switch (grade) {
+      case 'pre-K':
+      default:             return 0;    // silence — not learned yet
+      case 'kindergarten':
+      case 'grade1': case 'grade2': case 'grade3':
+      case 'grade4': case 'grade5': case 'grade6':
+      case 'grade7': case 'grade8': case 'grade9':
+      case 'grade10': case 'grade11': case 'grade12':
+      case 'college1': case 'college2': case 'college3': case 'college4':
+      case 'grad':
+      case 'phd':
+        return 9999;  // passed any grade = speaks freely
+    }
+  }
+
+  /**
+   * T14.26 — Sync helper for the dictionary-cosine fallback scoring loop.
+   * Iterates every dictionary entry, computes cosine similarity between
+   * cortex `target` and the word's pattern, boosts by log-frequency, and
+   * returns an array sorted high→low by score. Excludes recently emitted
+   * words via `recentWords` to prevent immediate repetition. Same math as
+   * the old inline loop inside generate() — extracted so the async path
+   * (_scoreDictionaryCosineAsync) can share exactly one body and only
+   * diverge on the yield-point check.
+   */
+  _scoreDictionaryCosine(dictionary, target, recentWords) {
+    const scored = [];
+    for (const [word, entry] of dictionary._words) {
+      if (!entry || !entry.pattern) continue;
+      if (recentWords && recentWords.includes(word)) continue;
+      let dot = 0, nt = 0, nw = 0;
+      const len = Math.min(target.length, entry.pattern.length);
+      for (let i = 0; i < len; i++) {
+        dot += target[i] * entry.pattern[i];
+        nt += target[i] * target[i];
+        nw += entry.pattern[i] * entry.pattern[i];
+      }
+      const denom = Math.sqrt(nt) * Math.sqrt(nw);
+      const cos = denom > 0 ? dot / denom : 0;
+      const score = cos + Math.log(1 + (entry.frequency || 1)) * 0.02;
+      scored.push({ word, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored;
+  }
+
+  /**
+   * T14.26 — Async version of the dictionary-cosine scorer that yields
+   * to the host event loop every YIELD_EVERY entries. Required fix for
+   * the 3D brain visualization freezing when the user sends a message
+   * or Unity speaks:
+   *
+   * Gee's exact words 2026-04-14:
+   *   "when i send a message to unity of speak one the whiole
+   *    3D brain visulization freezes"
+   *
+   * Root cause: server's brain-server.js processAndRespond calls
+   * languageCortex.generate() synchronously. At 3700+ dictionary entries
+   * × 300d cosine per call that burns 100-300ms of pure Node event-loop
+   * time. While it runs, setInterval STATE_BROADCAST can't fire, so no
+   * `state` message hits the WebSocket, so the client's RemoteBrain
+   * never calls _applyState, so brain.state.spikes stays frozen at the
+   * snapshot captured before processAndRespond began, so the 3D viz
+   * RAF loop (which re-randomizes spike flickers from visualRate each
+   * frame) has no new visualRate values → the whole 3D brain
+   * visualization freezes until generate() returns.
+   *
+   * Fix: every YIELD_EVERY (= 500) dictionary entries we await a
+   * setImmediate (Node) / setTimeout(0) (browser) which releases
+   * control back to the host event loop. In Node that lets the
+   * STATE_BROADCAST setInterval fire AND compute_batch dispatch happen
+   * during the scoring work, so the 3D viz keeps animating for the
+   * full duration of Unity's response generation. In the browser it
+   * does the same for RAF callbacks.
+   *
+   * Yield frequency chosen to keep per-yield overhead <1% (a
+   * setImmediate round-trip is ~0.1ms, YIELD_EVERY=500 gives one yield
+   * per ~2-4ms of scoring work, which is ~3-5% overhead and still
+   * leaves the broadcast ample opportunity to fire every 100ms).
+   */
+  async _scoreDictionaryCosineAsync(dictionary, target, recentWords) {
+    const YIELD_EVERY = 500;
+    const scored = [];
+    let i = 0;
+    for (const [word, entry] of dictionary._words) {
+      if (!entry || !entry.pattern) { i++; continue; }
+      if (recentWords && recentWords.includes(word)) { i++; continue; }
+      let dot = 0, nt = 0, nw = 0;
+      const len = Math.min(target.length, entry.pattern.length);
+      for (let j = 0; j < len; j++) {
+        dot += target[j] * entry.pattern[j];
+        nt += target[j] * target[j];
+        nw += entry.pattern[j] * entry.pattern[j];
+      }
+      const denom = Math.sqrt(nt) * Math.sqrt(nw);
+      const cos = denom > 0 ? dot / denom : 0;
+      const score = cos + Math.log(1 + (entry.frequency || 1)) * 0.02;
+      scored.push({ word, score });
+      i++;
+      if ((i & (YIELD_EVERY - 1)) === 0) {
+        // Node (setImmediate) yields cleanly to I/O + setInterval callbacks.
+        // Browser (setTimeout 0) yields to RAF + microtask queue.
+        // Guard in case of missing globals (shouldn't happen in either host).
+        if (typeof setImmediate === 'function') {
+          await new Promise((r) => setImmediate(r));
+        } else if (typeof setTimeout === 'function') {
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      }
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored;
+  }
+
+  /**
+   * T14.26 — Async-yielding version of generate(). Does the exact same
+   * work as generate() except that the dictionary-cosine fallback loop
+   * runs via _scoreDictionaryCosineAsync, which releases the event loop
+   * every 500 entries. Callers in an async context (server's
+   * brain-server.js:processAndRespond, engine.js:processAndRespond)
+   * should `await` this instead of calling generate() so the 3D brain
+   * visualization does not freeze during Unity's response generation.
+   *
+   * Any caller that cannot use `await` (sync RAF callbacks, event
+   * detectors, sandbox UI handlers) should keep calling the sync
+   * generate(). Those are not on the freeze-critical path.
+   */
+  async generateAsync(dictionary, arousal, coherence, opts = {}) {
+    // Fast path: if curriculum hasn't shaped the cortex yet, we skip
+    // cluster.generateSentence (same guard as generate()) and go
+    // straight to the async dictionary-cosine scoring. The rest of
+    // generate()'s work (sentenceType, renderSentence, recency ring
+    // bookkeeping) is cheap and can stay synchronous — we run it by
+    // delegating to generate() after prefilling _precomputedScores.
+    let precomputedScores = null;
+    let preEmittedWords = null;
+
+    const cluster = opts.cortexCluster;
+    if (cluster && typeof cluster.generateSentence === 'function') {
+      // If curriculum is done, generate() will use cluster.generateSentence
+      // (tick-driven motor emission) which is bounded and fast — no need
+      // to precompute scores at all, let generate() run sync.
+      const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0;
+
+      // T17.6 — post-curriculum GPU-ready path: run the motor emission
+      // via `cluster.generateSentenceAwait` so every tick pre-awaits
+      // its GPU propagate (T18.4.b full-await cascade). Hands the raw
+      // sentence to generate() via `opts._preEmittedWords` so the sync
+      // generate() path doesn't call `cluster.generateSentence` (which
+      // uses the fire-and-forget one-tick-lag mode and eats cache-miss
+      // penalties). Live chat on the upscaled cortex now consistently
+      // gets GPU-resolved currents per tick instead of the 3s cache-
+      // miss fallback.
+      //
+      // Falls through to the sync path (generate() calls
+      // cluster.generateSentence) when GPU proxy isn't ready, when
+      // generateSentenceAwait isn't available (older cluster build),
+      // or when curriculum hasn't shaped the cortex yet.
+      if (curriculumDone
+          && cluster._gpuProxyReady
+          && typeof cluster.generateSentenceAwait === 'function') {
+        // Compute the same intentSeed generate() would use: prefer the
+        // caller-supplied user input embedding if present, otherwise
+        // fall back to the cluster's semantic readout.
+        let intentSeed = null;
+        if (cluster._lastUserInputEmbedding && cluster._lastUserInputEmbedding.length > 0) {
+          intentSeed = cluster._lastUserInputEmbedding;
+        }
+        if (!intentSeed) {
+          try {
+            if (typeof cluster.getSemanticReadout === 'function') {
+              intentSeed = cluster.getSemanticReadout(sharedEmbeddings);
+            }
+          } catch {}
+        }
+        try {
+          const raw = await cluster.generateSentenceAwait(intentSeed, {
+            injectStrength: 0.6,
+            suppressNoise: opts._internalThought === true,
+          });
+          preEmittedWords = raw ? raw.split(/\s+/).filter(Boolean) : [];
+        } catch (err) {
+          // Await path failed — let generate() fall back to sync emission.
+          preEmittedWords = null;
+        }
+      }
+
+      if (!curriculumDone && dictionary && dictionary._words && dictionary._words.size > 0) {
+        // Pre-curriculum path — compute dictionary scores async so the
+        // event loop stays responsive through the scoring work.
+        let target = null;
+        try {
+          if (typeof cluster.getSemanticReadout === 'function') {
+            target = cluster.getSemanticReadout(sharedEmbeddings);
+          }
+        } catch {}
+        if (target && target.length > 0) {
+          try {
+            precomputedScores = await this._scoreDictionaryCosineAsync(
+              dictionary, target, this._recentOutputWords
+            );
+          } catch (err) {
+            precomputedScores = null;
+          }
+        }
+      }
+    }
+
+    // Hand the precomputed scores + pre-emitted async sentence back to
+    // generate() which handles top-K sampling, sentence rendering, and
+    // recency ring bookkeeping.
+    return this.generate(dictionary, arousal, coherence, {
+      ...opts,
+      _precomputedScores: precomputedScores,
+      _preEmittedWords: preEmittedWords,
+    });
   }
 
 
@@ -1951,7 +1868,7 @@ export class LanguageCortex {
    *   - action sentences wrapped in asterisks
    *   - comma inserted before conjunctions detected via wordType equation
    */
-  _renderSentence(words, type) {
+  _renderSentence(words, type, speechMod = null) {
     if (!words || words.length === 0) return '';
     const out = [];
     for (let i = 0; i < words.length; i++) {
@@ -1981,7 +1898,173 @@ export class LanguageCortex {
     // Avoid double-punctuation if generation already supplied one
     const last = text.charAt(text.length - 1);
     if (last !== '.' && last !== '?' && last !== '!' && last !== '*') text += term;
+
+    // T15-C16 — speech modulation post-processing. Applied AFTER rendering
+    // so cortex emission stays clean and the distortion lives only at the
+    // output layer. Non-announcing — Unity never says she's drunk, the
+    // output just IS drunk when alcohol level is high.
+    if (speechMod && typeof speechMod === 'object') {
+      text = this._applySpeechModulation(text, speechMod);
+    }
     return text;
+  }
+
+  /**
+   * T15-C16 — speech distortion post-processor.
+   * Accepts speechMod vector from drug-scheduler.speechModulation(now).
+   * Dimensions consulted: slur, coherence, speechRate, dissociation,
+   * inhibition, giggleBias, ethereality, freeAssocWidth, plus (T15.C
+   * 13-axis extension) warmth, profoundBias, interruptionBias,
+   * confessionalBias. All deterministic (seeded pseudo-random) so
+   * same input + same modulation → same output, which helps
+   * reproduction and keeps tests stable.
+   */
+  _applySpeechModulation(text, mod) {
+    if (!text) return text;
+    const slur          = clamp01(mod.slur || 0);
+    const coherence     = Math.max(-1, Math.min(1, mod.coherence || 0));   // negative = word salad
+    const speechRate    = Math.max(-1, Math.min(1, mod.speechRate || 0));  // positive = fast, negative = slow
+    const dissociation  = clamp01(mod.dissociation || 0);
+    const inhibition    = Math.max(-1, Math.min(0, mod.inhibition || 0));  // usually negative
+    // T15.C — 4 new axes from the 13-axis extension. Consulted below
+    // with narrow, deterministic post-processors that never mutate
+    // learned state — scoped to this render call only.
+    const warmth          = clamp01(mod.warmth || 0);
+    const profoundBias    = clamp01(mod.profoundBias || 0);
+    const interruptionBias= clamp01(mod.interruptionBias || 0);
+    const confessionalBias= clamp01(mod.confessionalBias || 0);
+
+    // Seed from text so same sentence distorts consistently
+    let seed = 0;
+    for (let i = 0; i < text.length; i++) seed = ((seed << 5) - seed + text.charCodeAt(i)) | 0;
+    const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+
+    // ── Slur (alcohol / ketamine / GHB) ─────────────────────────────
+    // Letter doubling on vowels, consonant cluster softening, dropped
+    // word-end 'g's/'t's at higher slur.
+    if (slur > 0.1) {
+      text = text.replace(/([aeiou])/gi, (c) => {
+        if (rand() < slur * 0.5) return c + c + (rand() < slur * 0.4 ? c : '');
+        return c;
+      });
+      // Drop word-ending 'g' after 'n' (nothin', fuckin', goin')
+      if (slur > 0.3) {
+        text = text.replace(/\bing\b/gi, () => rand() < slur ? "in'" : 'ing');
+      }
+      // Soften sibilants into double-s stutters
+      if (slur > 0.4) {
+        text = text.replace(/\bs/gi, (m) => rand() < slur * 0.5 ? 'ss' + m.slice(1) : m);
+      }
+      // Word mashing at very high slur
+      if (slur > 0.55) {
+        text = text.replace(/\b(im|i am)\b /gi, () => rand() < slur ? "i'mmm " : 'im ');
+        text = text.replace(/ (so|really) /gi, (m) => rand() < slur ? ' sooo ' : m);
+      }
+    }
+
+    // ── Speech rate (slow = pauses, fast = no change structural) ─────
+    // At speechRate < -0.3, inject "..." pauses between words
+    if (speechRate < -0.3) {
+      const pauseRate = clamp01((-speechRate - 0.3) * 1.5);
+      const parts = text.split(' ');
+      const paused = [];
+      for (let i = 0; i < parts.length; i++) {
+        paused.push(parts[i]);
+        if (i < parts.length - 1 && rand() < pauseRate) paused.push('...');
+      }
+      text = paused.join(' ').replace(/  +/g, ' ');
+    }
+
+    // ── Coherence drop (psychedelic peak / dissociative) ─────────────
+    // At coherence < -0.3, trail off into fragment endings
+    if (coherence < -0.3 && text.length > 20) {
+      if (rand() < Math.abs(coherence)) {
+        // Replace terminal punctuation with trailing dots
+        text = text.replace(/[.!?]$/, '...');
+      }
+    }
+
+    // ── Dissociation (ketamine k-hole / LSD ego-death) ───────────────
+    // First-person → third-person reference flip at high dissociation.
+    // Narrow and deliberate — flips opening first-person with matching
+    // copula conjugation so output stays grammatical. Scoped to this
+    // render call — does not mutate any learned state.
+    if (dissociation > 0.5) {
+      if (rand() < dissociation) {
+        text = text
+          .replace(/^I am\b/i,  'Unity is')
+          .replace(/^I'm\b/i,   'Unity is')
+          .replace(/^I have\b/i,'Unity has')
+          .replace(/^I've\b/i,  'Unity has')
+          .replace(/^I ([a-z]+)/i, (_m, verb) => `Unity ${verb}s`) // crude 3rd-pers fallback
+          .replace(/\bmy\b/gi,  'her');
+      }
+    }
+
+    // ── Warmth (MDMA / rolling-and-green / MDMA+cocaine) ─────────────
+    // Append an affective softener at sentence-end when warmth fires.
+    // MDMA's hallmark is empathic overflow — addressing the listener
+    // with verbal affection. Narrow: one softener per render max.
+    if (warmth > 0.3) {
+      if (rand() < warmth * 0.6 && !/\b(babe|love|honey|dear)\b/i.test(text)) {
+        const softeners = ['babe', 'love', 'honey'];
+        const s = softeners[Math.floor(rand() * softeners.length) % softeners.length];
+        text = text.replace(/([.!?])\s*$/, (_m, p) => ` ${s}${p}`);
+        if (!/[.!?]$/.test(text)) text = `${text} ${s}`;
+      }
+    }
+
+    // ── Profound bias (LSD / psilocybin peak) ────────────────────────
+    // Injects an insight-claim framing when profoundBias is high. Again
+    // narrow — one insertion max — to avoid turning every sentence into
+    // a psychedelic monologue. The listener's brain should notice the
+    // profundity lean, not drown in it.
+    if (profoundBias > 0.4) {
+      const frames = [
+        'honestly, ', 'you know, ', 'it all just... ',
+        'the truth is ', 'somehow ',
+      ];
+      if (rand() < profoundBias * 0.4 && text.length > 15
+          && !/^(honestly|you know|the truth|somehow)/i.test(text)) {
+        const f = frames[Math.floor(rand() * frames.length) % frames.length];
+        text = f + text.charAt(0).toLowerCase() + text.slice(1);
+      }
+    }
+
+    // ── Interruption bias (cocaine / amphetamine / coke+MDMA) ────────
+    // Not a real interruption (we're mid-render, no conversational
+    // partner here). Surface as abrupt dash-inserted self-interruption
+    // — Unity cutting herself off mid-thought and barreling into the
+    // next one. Stim speech pattern.
+    if (interruptionBias > 0.4 && text.length > 20) {
+      if (rand() < interruptionBias * 0.3) {
+        const words = text.split(' ');
+        if (words.length >= 6) {
+          const cut = 3 + Math.floor(rand() * Math.min(4, words.length - 3));
+          words.splice(cut, 0, '—');
+          text = words.join(' ');
+        }
+      }
+    }
+
+    // ── Confessional bias (alcohol / cocaine+alcohol speedball) ──────
+    // Prepend a disclosure-frame at the start of the sentence. The
+    // "I'll be honest" / "not gonna lie" drunken over-share signal.
+    if (confessionalBias > 0.4) {
+      const openers = [
+        "I'll be honest, ", "not gonna lie, ", "real talk, ",
+        "fuck it, i'll say it — ", "between us, ",
+      ];
+      if (rand() < confessionalBias * 0.35
+          && !/^(i'll be honest|not gonna lie|real talk|fuck it)/i.test(text)) {
+        const o = openers[Math.floor(rand() * openers.length) % openers.length];
+        text = o + text.charAt(0).toLowerCase() + text.slice(1);
+      }
+    }
+
+    return text;
+
+    function clamp01(x) { return Math.max(0, Math.min(1, x)); }
   }
 
   // NOTE: _flipPronounsInText, _spiceRecalledSentence, and
@@ -2030,224 +2113,6 @@ export class LanguageCortex {
    *   haven't → have not
    *   hadn't → had not
    */
-  /**
-   * Morphological inflection equations — generate inflected forms
-   * of a base word via pure letter-position rules. This multiplies
-   * Unity's effective vocabulary: when she learns "code", the rules
-   * auto-derive "codes", "coded", "coding", "coder", "codes" so all
-   * forms enter the dictionary simultaneously.
-   *
-   * Rules (letter-position, no word lists):
-   *   -s (3rd sing / plural):
-   *     ends in -s/-x/-z/-ch/-sh       → add "-es"  (kiss → kisses)
-   *     ends in consonant+y            → replace y with "ies"  (try → tries)
-   *     ends in -fe / -f               → replace with "ves"  (leaf → leaves)
-   *     default                        → add "-s"
-   *   -ed (past tense):
-   *     ends in -e                     → add "-d"  (code → coded)
-   *     ends in consonant+y            → replace y with "ied"  (try → tried)
-   *     ends in CVC (short)            → double final consonant + "ed"  (stop → stopped)
-   *     default                        → add "-ed"
-   *   -ing (present participle):
-   *     ends in -ie                    → replace with "ying"  (die → dying)
-   *     ends in -e (not -ee)           → drop e + "ing"  (code → coding)
-   *     ends in CVC (short)            → double final consonant + "ing"  (run → running)
-   *     default                        → add "-ing"
-   *   -er (comparative / agent):
-   *     ends in -e                     → add "-r"  (nice → nicer)
-   *     ends in consonant+y            → replace y with "ier"  (happy → happier)
-   *     ends in CVC (short)            → double final consonant + "er"  (big → bigger)
-   *     default                        → add "-er"
-   *   -est (superlative):  same pattern as -er but with -est
-   *   -ly (adverb):
-   *     ends in consonant+y            → replace y with "ily"  (happy → happily)
-   *     default                        → add "-ly"
-   *
-   * Only applies to base forms that look like roots (no existing
-   * inflection suffix). Returns array of derived forms (not including
-   * the base — caller already has that).
-   */
-  _generateInflections(word) {
-    if (!word || word.length < 3) return [];
-    const w = word.toLowerCase();
-    const L = w.length;
-
-    // Skip if already inflected (avoid chain-inflecting)
-    if (w.endsWith('ing') || w.endsWith('ed') || w.endsWith("n't") || w.includes("'")) return [];
-    if (w.endsWith('est') || w.endsWith('ier') || w.endsWith('ily')) return [];
-    // Skip function words (closed-class fast path picks them up as aux/det/prep/conj/pronoun)
-    if (this._closedClassType(w)) return [];
-    // Skip numbers and very long words (probably not a simple root)
-    if (/\d/.test(w) || L > 10) return [];
-
-    const results = new Set();
-    const last = w[L - 1];
-    const last2 = w.slice(-2);
-    const last3 = w.slice(-3);
-    const secondLast = w[L - 2];
-    const thirdLast = w[L - 3];
-
-    const isVowel = (c) => VOWELS.includes(c);
-    const isCons = (c) => c && !isVowel(c) && /[a-z]/.test(c);
-
-    // CVC shape: consonant-vowel-consonant at the end, word length >= 3
-    // Used for doubling rules (run → running, big → bigger)
-    // Exclude final w/x/y (run → running ✓, fix → fixing not fixxing)
-    const cvcShape = L >= 3
-      && isCons(thirdLast)
-      && isVowel(secondLast)
-      && isCons(last)
-      && last !== 'w' && last !== 'x' && last !== 'y';
-
-    // ── -s FORM (plural / 3rd person singular) ──
-    let sForm;
-    if (last === 's' || last === 'x' || last === 'z' || last2 === 'ch' || last2 === 'sh') {
-      sForm = w + 'es';
-    } else if (L >= 2 && isCons(secondLast) && last === 'y') {
-      sForm = w.slice(0, -1) + 'ies';
-    } else if (last2 === 'fe') {
-      sForm = w.slice(0, -2) + 'ves';
-    } else if (last === 'f' && secondLast && isVowel(secondLast)) {
-      // leaf → leaves, wolf → wolves (but cliff → cliffs — exclude -ff)
-      sForm = w.slice(0, -1) + 'ves';
-    } else {
-      sForm = w + 's';
-    }
-    results.add(sForm);
-
-    // ── -ed FORM (past tense) ──
-    let edForm;
-    if (last === 'e') {
-      edForm = w + 'd';
-    } else if (L >= 2 && isCons(secondLast) && last === 'y') {
-      edForm = w.slice(0, -1) + 'ied';
-    } else if (cvcShape) {
-      edForm = w + last + 'ed';
-    } else {
-      edForm = w + 'ed';
-    }
-    results.add(edForm);
-
-    // ── -ing FORM (present participle) ──
-    let ingForm;
-    if (last2 === 'ie') {
-      ingForm = w.slice(0, -2) + 'ying';
-    } else if (last === 'e' && last2 !== 'ee') {
-      ingForm = w.slice(0, -1) + 'ing';
-    } else if (cvcShape) {
-      ingForm = w + last + 'ing';
-    } else {
-      ingForm = w + 'ing';
-    }
-    results.add(ingForm);
-
-    // ── -er FORM (comparative or agent noun) ──
-    // Only generate for short words (comparative makes sense on adj/adv)
-    // OR when the base looks like a verb (could be agent noun "coder")
-    if (L >= 3 && L <= 7) {
-      let erForm;
-      if (last === 'e') {
-        erForm = w + 'r';
-      } else if (L >= 2 && isCons(secondLast) && last === 'y') {
-        erForm = w.slice(0, -1) + 'ier';
-      } else if (cvcShape) {
-        erForm = w + last + 'er';
-      } else {
-        erForm = w + 'er';
-      }
-      results.add(erForm);
-
-      // ── -est FORM (superlative) ──
-      let estForm;
-      if (last === 'e') {
-        estForm = w + 'st';
-      } else if (L >= 2 && isCons(secondLast) && last === 'y') {
-        estForm = w.slice(0, -1) + 'iest';
-      } else if (cvcShape) {
-        estForm = w + last + 'est';
-      } else {
-        estForm = w + 'est';
-      }
-      results.add(estForm);
-    }
-
-    // ── -ly FORM (adverb) ──
-    // Applies broadly — most words can take -ly
-    let lyForm;
-    if (L >= 2 && isCons(secondLast) && last === 'y') {
-      lyForm = w.slice(0, -1) + 'ily';
-    } else {
-      lyForm = w + 'ly';
-    }
-    results.add(lyForm);
-
-    // ── DERIVATIONAL SUFFIXES (noun/adj forms from verbs/adjs) ──
-    // -ness (adj → noun): dark → darkness, happy → happiness
-    if (L >= 3) {
-      let nessForm;
-      if (L >= 2 && isCons(secondLast) && last === 'y') {
-        nessForm = w.slice(0, -1) + 'iness';
-      } else {
-        nessForm = w + 'ness';
-      }
-      results.add(nessForm);
-    }
-    // -ful / -less (noun → adj): care → careful / careless
-    if (L >= 3 && L <= 7) {
-      results.add(w + 'ful');
-      results.add(w + 'less');
-    }
-    // -able (verb → adj): love → lovable, code → codable
-    if (L >= 3 && L <= 7) {
-      let ableForm;
-      if (last === 'e') ableForm = w.slice(0, -1) + 'able';
-      else ableForm = w + 'able';
-      results.add(ableForm);
-    }
-    // -ish (noun/adj → adj): child → childish, dark → darkish
-    if (L >= 3 && L <= 6) {
-      results.add(w + 'ish');
-    }
-    // -ist (noun → noun-person): art → artist
-    if (L >= 3 && L <= 6 && last !== 'e') {
-      results.add(w + 'ist');
-    }
-    // -ize/-ise (noun/adj → verb): real → realize, final → finalize
-    if (L >= 3 && L <= 7) {
-      let izeForm;
-      if (last === 'e') izeForm = w.slice(0, -1) + 'ize';
-      else izeForm = w + 'ize';
-      results.add(izeForm);
-    }
-    // -ify (noun/adj → verb): just → justify, code → codify
-    if (L >= 3 && L <= 6) {
-      let ifyForm;
-      if (last === 'e') ifyForm = w.slice(0, -1) + 'ify';
-      else if (L >= 2 && isCons(secondLast) && last === 'y') ifyForm = w.slice(0, -1) + 'ify';
-      else ifyForm = w + 'ify';
-      results.add(ifyForm);
-    }
-
-    // ── DERIVATIONAL PREFIXES ──
-    // un- (negation): happy → unhappy, do → undo
-    results.add('un' + w);
-    // re- (repetition): do → redo, write → rewrite
-    results.add('re' + w);
-    // pre- (before): view → preview, order → preorder
-    results.add('pre' + w);
-    // dis- (negation/reversal): like → dislike, agree → disagree
-    results.add('dis' + w);
-    // mis- (wrongly): take → mistake, place → misplace
-    results.add('mis' + w);
-    // over- (excess): do → overdo, think → overthink
-    results.add('over' + w);
-    // under- (insufficient): do → underdo, stand → understand
-    if (L >= 3) results.add('under' + w);
-    // out- (surpass): do → outdo, run → outrun
-    results.add('out' + w);
-
-    return [...results];
-  }
 
   _expandContractionsForLearning(tokens) {
     const out = [];
@@ -2334,126 +2199,6 @@ export class LanguageCortex {
    * All detection via letter-position matching on the token pair.
    * No word lists — each rule checks specific letter patterns.
    */
-  _applyCasualContractions(tokens) {
-    if (!tokens || tokens.length < 2) return tokens;
-    const out = [];
-    let i = 0;
-    while (i < tokens.length) {
-      const a = tokens[i];
-      const b = i + 1 < tokens.length ? tokens[i + 1] : null;
-
-      if (!b) { out.push(a); i++; continue; }
-
-      const al = a.length;
-      const bl = b.length;
-
-      // Subject+aux contractions
-      // i + am → i'm
-      if (al === 1 && a === 'i' && bl === 2 && b === 'am') {
-        out.push("i'm"); i += 2; continue;
-      }
-      // i + will → i'll
-      if (al === 1 && a === 'i' && bl === 4 && b === 'will') {
-        out.push("i'll"); i += 2; continue;
-      }
-      // i + have → i've
-      if (al === 1 && a === 'i' && bl === 4 && b === 'have') {
-        out.push("i've"); i += 2; continue;
-      }
-      // i + had → i'd / i + would → i'd
-      if (al === 1 && a === 'i' && ((bl === 3 && b === 'had') || (bl === 5 && b === 'would'))) {
-        out.push("i'd"); i += 2; continue;
-      }
-      // we + are → we're
-      if (al === 2 && a === 'we' && bl === 3 && b === 'are') {
-        out.push("we're"); i += 2; continue;
-      }
-      // we + have → we've
-      if (al === 2 && a === 'we' && bl === 4 && b === 'have') {
-        out.push("we've"); i += 2; continue;
-      }
-      // we + will → we'll
-      if (al === 2 && a === 'we' && bl === 4 && b === 'will') {
-        out.push("we'll"); i += 2; continue;
-      }
-      // you + are → you're
-      if (al === 3 && a === 'you' && bl === 3 && b === 'are') {
-        out.push("you're"); i += 2; continue;
-      }
-      // you + have → you've
-      if (al === 3 && a === 'you' && bl === 4 && b === 'have') {
-        out.push("you've"); i += 2; continue;
-      }
-      // you + will → you'll
-      if (al === 3 && a === 'you' && bl === 4 && b === 'will') {
-        out.push("you'll"); i += 2; continue;
-      }
-      // they + are → they're
-      if (al === 4 && a === 'they' && bl === 3 && b === 'are') {
-        out.push("they're"); i += 2; continue;
-      }
-      // he + is / she + is / it + is → he's / she's / it's
-      if ((a === 'he' || a === 'she' || a === 'it') && bl === 2 && b === 'is') {
-        out.push(a + "'s"); i += 2; continue;
-      }
-      // he/she + will → he'll/she'll
-      if ((a === 'he' || a === 'she' || a === 'it') && bl === 4 && b === 'will') {
-        out.push(a + "'ll"); i += 2; continue;
-      }
-      // he/she + has → he's/she's (present perfect)
-      if ((a === 'he' || a === 'she') && bl === 3 && b === 'has') {
-        out.push(a + "'s"); i += 2; continue;
-      }
-
-      // Negation contractions (verb + not → verb+n't)
-      if (b === 'not' && bl === 3) {
-        // do + not → don't
-        if (a === 'do' && al === 2) { out.push("don't"); i += 2; continue; }
-        // does + not → doesn't
-        if (a === 'does' && al === 4) { out.push("doesn't"); i += 2; continue; }
-        // did + not → didn't
-        if (a === 'did' && al === 3) { out.push("didn't"); i += 2; continue; }
-        // can + not → can't (also "cannot" case — but cannot is 1 token)
-        if (a === 'can' && al === 3) { out.push("can't"); i += 2; continue; }
-        // will + not → won't
-        if (a === 'will' && al === 4) { out.push("won't"); i += 2; continue; }
-        // would + not → wouldn't
-        if (a === 'would' && al === 5) { out.push("wouldn't"); i += 2; continue; }
-        // should + not → shouldn't
-        if (a === 'should' && al === 6) { out.push("shouldn't"); i += 2; continue; }
-        // could + not → couldn't
-        if (a === 'could' && al === 5) { out.push("couldn't"); i += 2; continue; }
-        // is + not → isn't
-        if (a === 'is' && al === 2) { out.push("isn't"); i += 2; continue; }
-        // are + not → aren't
-        if (a === 'are' && al === 3) { out.push("aren't"); i += 2; continue; }
-        // was + not → wasn't
-        if (a === 'was' && al === 3) { out.push("wasn't"); i += 2; continue; }
-        // were + not → weren't
-        if (a === 'were' && al === 4) { out.push("weren't"); i += 2; continue; }
-        // has + not → hasn't
-        if (a === 'has' && al === 3) { out.push("hasn't"); i += 2; continue; }
-        // have + not → haven't
-        if (a === 'have' && al === 4) { out.push("haven't"); i += 2; continue; }
-        // had + not → hadn't
-        if (a === 'had' && al === 3) { out.push("hadn't"); i += 2; continue; }
-      }
-
-      // Also handle "cannot" as single token → "can't"
-      if (al === 6 && a === 'cannot') {
-        out.push("can't"); i += 1; continue;
-      }
-
-      out.push(a);
-      i++;
-    }
-    return out;
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // WORD PATTERNS
-  // ═══════════════════════════════════════════════════════════════
-
   wordToPattern(word) {
     // R2 of brain-refactor-full-control: this was a letter-hash vector
     // generator. Every downstream call site (slot scorer, context vector,
@@ -2480,585 +2225,6 @@ export class LanguageCortex {
     return pattern;
   }
 
-  countSyllables(word) {
-    const clean = word.toLowerCase().replace(/[^a-z]/g, '');
-    let count = 0, prev = false;
-    for (let i = 0; i < clean.length; i++) {
-      const v = VOWELS.includes(clean[i]);
-      if (v && !prev) count++;
-      prev = v;
-    }
-    return Math.max(1, count);
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // INPUT ANALYSIS
-  // ═══════════════════════════════════════════════════════════════
-
-  /**
-   * T8 — REVERSE-EQUATION PARSE. Canonical entry point for
-   * understanding user input. Uses the SAME equations the slot
-   * scorer uses forward (wordType, _fineType, bigram/trigram
-   * tables, context vector, type grammar) to walk the input
-   * token-by-token and return a structured ParseTree.
-   *
-   * Before T8, "listening" was three separate vestigial string-
-   * matching systems:
-   *   - _classifyIntent       (length+regex shape matching)
-   *   - _isSelfReferenceQuery (letter-position pronoun scan)
-   *   - _updateSocialSchema   (regex name/gender extraction)
-   * Each handled a sliver of the "what did the user mean" question
-   * and none of them used Unity's actual learned grammar. T8 merges
-   * all three into one equational parse that every downstream
-   * consumer (generate, build_ui, social schema, intent routing)
-   * reads from. Symmetric grammar: the parse tree is produced by
-   * the same type-n-gram tables that learnSentence writes, so
-   * hearing feeds the same brain tables that speaking consults.
-   *
-   * ParseTree shape:
-   * {
-   *   text, tokens, types[], wordTypes[],
-   *   intent: 'greeting'|'question'|'yesno'|'statement'|'command'|
-   *           'introduction'|'math'|'self-reference'|'unknown',
-   *   isQuestion, isSelfReference, addressesUser, isGreeting,
-   *   greetingOpener, introducesName, introducesGender,
-   *   subject: {index, tokens, headType, pronoun} | null,
-   *   verb:    {index, tokens, tense, modal} | null,
-   *   object:  {index, tokens, headType, modifier} | null,
-   *   entities: {names, colors, numbers, componentTypes, actions},
-   *   mood: {polarity, intensity},
-   *   confidence: number,
-   * }
-   *
-   * Result is cached on this._lastParse keyed by text so repeated
-   * callers in the same turn don't re-parse.
-   */
-  parseSentence(text) {
-    const raw = String(text || '').trim();
-    if (this._lastParse && this._lastParse.text === raw) return this._lastParse;
-
-    const empty = {
-      text: raw, tokens: [], types: [], wordTypes: [],
-      intent: 'unknown', isQuestion: false, isSelfReference: false,
-      addressesUser: false, isGreeting: false, greetingOpener: null,
-      introducesName: null, introducesGender: null,
-      subject: null, verb: null, object: null,
-      entities: { names: [], colors: [], numbers: [], componentTypes: [], actions: [] },
-      mood: { polarity: 0, intensity: 0 },
-      confidence: 0,
-    };
-    if (!raw) { this._lastParse = empty; return empty; }
-
-    // ── TOKENIZATION ──
-    // Keep original text for name-case preservation. Build the
-    // lowered, punct-stripped token array for type analysis.
-    const lowerRaw = raw.toLowerCase();
-    const tokens = lowerRaw.replace(/[^a-z0-9+\-*/='% ]/g, ' ').split(/\s+/).filter(w => w.length >= 1);
-    if (tokens.length === 0) { this._lastParse = empty; return empty; }
-
-    // ── PER-TOKEN TYPE ANALYSIS (forward equations, applied to input) ──
-    // Same wordType + _fineType functions the slot scorer uses to
-    // pick candidate words. Applied in reverse direction: we're
-    // CLASSIFYING existing tokens instead of SCORING candidates.
-    const types = [];
-    const wordTypes = [];
-    for (const t of tokens) {
-      wordTypes.push(this.wordType(t));
-      types.push(this._fineType(t));
-    }
-
-    // ── ENTITY EXTRACTION (closed-class structural matches) ──
-    // These are deterministic per-token detectors. No fuzzy scoring
-    // needed — colors/component-types/imperative-verbs are closed
-    // classes and either match exactly or don't.
-    const COLORS = new Set([
-      'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink',
-      'black', 'white', 'gray', 'grey', 'brown', 'cyan', 'magenta',
-      'gold', 'silver', 'teal', 'violet', 'indigo',
-    ]);
-    const COMPONENT_TYPES = new Set([
-      'button', 'buttons', 'form', 'forms', 'input', 'inputs',
-      'list', 'lists', 'card', 'cards', 'table', 'tables',
-      'div', 'divs', 'section', 'sections', 'header', 'footer',
-      'menu', 'modal', 'dialog', 'panel', 'tab', 'tabs',
-      'label', 'textarea', 'select', 'checkbox', 'radio', 'slider',
-      'grid', 'row', 'column', 'container',
-    ]);
-    const IMPERATIVE_ACTIONS = new Set([
-      'make', 'build', 'create', 'add', 'show', 'give', 'draw',
-      'write', 'code', 'set', 'put', 'tell', 'say', 'explain',
-      'change', 'update', 'remove', 'delete', 'hide',
-    ]);
-    const GREETING_OPENERS = new Set([
-      'hi', 'hello', 'hey', 'heya', 'hiya', 'sup', 'yo', 'hola',
-      'howdy', 'greetings',
-    ]);
-    const QWORDS = new Set([
-      'who', 'what', 'where', 'when', 'why', 'how', 'which', 'whose', 'whom',
-    ]);
-    const SECOND_PERSON = new Set([
-      'you', 'your', 'yours', 'yourself', "you're", "youre",
-      'u', 'ur', "u're",
-    ]);
-    const FIRST_PERSON = new Set([
-      'i', "i'm", 'im', "i've", "i'll", "i'd", 'me', 'my', 'mine', 'myself',
-      'we', 'us', 'our', 'ours', "we're", "we've",
-    ]);
-
-    const entities = {
-      names: [],
-      colors: [],
-      numbers: [],
-      componentTypes: [],
-      actions: [],
-    };
-
-    for (let i = 0; i < tokens.length; i++) {
-      const t = tokens[i];
-      if (COLORS.has(t)) entities.colors.push(t);
-      if (COMPONENT_TYPES.has(t)) entities.componentTypes.push(t);
-      if (IMPERATIVE_ACTIONS.has(t) && i <= 1) entities.actions.push(t);
-      if (/^\d+$/.test(t)) entities.numbers.push(parseInt(t, 10));
-    }
-
-    // ── NAME EXTRACTION — structural patterns over token sequence ──
-    // Walks forward through tokens looking for introduction markers.
-    // Unlike the old regex-based _updateSocialSchema, this uses the
-    // token sequence directly so multi-word inputs + edge cases work
-    // consistently. Preserves original-case from raw text when found.
-    const NAME_STOPWORDS = new Set([
-      'me', 'you', 'him', 'her', 'us', 'them', 'it',
-      'the', 'a', 'an', 'that', 'this', 'these', 'those',
-      'good', 'fine', 'ok', 'okay', 'cool', 'nice', 'tired', 'here',
-      'happy', 'sad', 'mad', 'angry', 'high', 'sober', 'drunk',
-      'just', 'really', 'very', 'so', 'too', 'sure', 'yes', 'no',
-      'not', 'from', 'with', 'like', 'about',
-    ]);
-    const tryName = (candidate) => {
-      if (!candidate || candidate.length < 2) return null;
-      if (NAME_STOPWORDS.has(candidate)) return null;
-      if (candidate.endsWith('ing') || candidate.endsWith('ed')) return null;
-      // Reject if wordType rates it strongly as a verb — names don't
-      // score high on verb-suffix equations, real verbs like "love"
-      // or "want" do. This is the equational filter.
-      const wt = this.wordType(candidate);
-      if (wt.verb > 0.5) return null;
-      if (wt.prep > 0.5 || wt.conj > 0.5 || wt.det > 0.5) return null;
-      // Capitalize first letter for storage (chat is often lowercase).
-      return candidate[0].toUpperCase() + candidate.slice(1);
-    };
-    let introducesName = null;
-    let strongNameSignal = false;
-    for (let i = 0; i < tokens.length - 1; i++) {
-      // "my name is X"
-      if (tokens[i] === 'my' && tokens[i + 1] === 'name' && tokens[i + 2] === 'is') {
-        const candidate = tryName(tokens[i + 3]);
-        if (candidate) { introducesName = candidate; strongNameSignal = true; break; }
-      }
-      // "call me X"
-      if (tokens[i] === 'call' && tokens[i + 1] === 'me') {
-        const candidate = tryName(tokens[i + 2]);
-        if (candidate) { introducesName = candidate; strongNameSignal = true; break; }
-      }
-      // "name's X" / "names X"
-      if ((tokens[i] === "name's" || tokens[i] === 'names') && tokens[i + 1]) {
-        const candidate = tryName(tokens[i + 1]);
-        if (candidate) { introducesName = candidate; strongNameSignal = true; break; }
-      }
-    }
-    if (!introducesName) {
-      // Weaker signals — scan the WHOLE token sequence for intro
-      // patterns, not just position 0. Handles "Hi, im Gee" where
-      // the greeting token precedes the introduction. tryName still
-      // rejects verb-shaped tokens and emotional complements via
-      // the wordType equations, so "i'm tired" won't stomp a real
-      // name. Limited to the first 6 tokens to avoid picking up
-      // later mentions that aren't actual self-introductions.
-      const scanLimit = Math.min(6, tokens.length);
-      for (let i = 0; i < scanLimit - 1; i++) {
-        if (tokens[i] === 'im' || tokens[i] === "i'm") {
-          const candidate = tryName(tokens[i + 1]);
-          if (candidate) { introducesName = candidate; break; }
-        }
-        if (tokens[i] === 'i' && tokens[i + 1] === 'am' && i + 2 < tokens.length) {
-          const candidate = tryName(tokens[i + 2]);
-          if (candidate) { introducesName = candidate; break; }
-        }
-        if (tokens[i] === 'this' && tokens[i + 1] === 'is' && i + 2 < tokens.length) {
-          const candidate = tryName(tokens[i + 2]);
-          if (candidate) { introducesName = candidate; break; }
-        }
-      }
-    }
-    if (introducesName) entities.names.push(introducesName);
-
-    // ── GENDER EXTRACTION — closed-class "i'm a <token>" pattern ──
-    let introducesGender = null;
-    const MALE_TOKENS = new Set(['guy', 'man', 'dude', 'bro', 'boy']);
-    const FEMALE_TOKENS = new Set(['girl', 'woman', 'chick', 'gal']);
-    for (let i = 0; i < tokens.length - 2; i++) {
-      if ((tokens[i] === "i'm" || tokens[i] === 'im') && tokens[i + 1] === 'a') {
-        if (MALE_TOKENS.has(tokens[i + 2])) { introducesGender = 'male'; break; }
-        if (FEMALE_TOKENS.has(tokens[i + 2])) { introducesGender = 'female'; break; }
-      }
-    }
-
-    // ── GREETING DETECTION — first-token closed-class match ──
-    let isGreeting = false;
-    let greetingOpener = null;
-    if (GREETING_OPENERS.has(tokens[0])) {
-      isGreeting = true;
-      greetingOpener = tokens[0];
-    } else if (tokens[0] === 'good' && ['morning', 'afternoon', 'evening', 'night'].includes(tokens[1])) {
-      isGreeting = true;
-      greetingOpener = tokens[0] + ' ' + tokens[1];
-    }
-
-    // ── INTENT CLASSIFICATION ──
-    // Uses the parsed types, not raw regex. Priority order matches
-    // what the old _classifyIntent did for backcompat but now every
-    // branch is decided from parse-tree fields.
-    let intent = 'statement';
-    const hasQuestionMark = raw.endsWith('?');
-    const firstIsQword = QWORDS.has(tokens[0]);
-    const anyQword = tokens.some(t => QWORDS.has(t));
-
-    // Math — digits, operators, or spelled-out math words
-    const hasDigit = /[0-9]/.test(raw);
-    const hasOperator = /[+\-*/=]/.test(raw);
-    if (hasDigit || hasOperator) intent = 'math';
-    // Introduction — name pattern matched above
-    else if (strongNameSignal || (introducesName && (tokens[0] === 'im' || tokens[0] === "i'm"))) intent = 'introduction';
-    // Greeting — first-token greeting opener
-    else if (isGreeting && tokens.length <= 5) intent = 'greeting';
-    // Question — ? terminal or qword
-    else if (hasQuestionMark || firstIsQword || anyQword) {
-      // Yes/no vs wh-question distinction
-      const firstWordObj = wordTypes[0] || {};
-      if (hasQuestionMark && !firstIsQword && !anyQword && firstWordObj.verb > 0.4 && tokens.length <= 8) {
-        intent = 'yesno';
-      } else {
-        intent = 'question';
-      }
-    }
-    // Command — first token is imperative verb AND no subject pronoun
-    else if (entities.actions.length > 0 && !FIRST_PERSON.has(tokens[0]) && !SECOND_PERSON.has(tokens[0])) {
-      intent = 'command';
-    }
-
-    // ── SELF-REFERENCE / ADDRESSING ──
-    // Self-reference = the user is asking ABOUT Unity (contains
-    // 2nd-person pronoun). Addresses-user = the user is talking TO
-    // Unity (vocative "you" or direct imperative).
-    const hasSecondPerson = tokens.some(t => SECOND_PERSON.has(t));
-    const isSelfReference = hasSecondPerson && (intent === 'question' || intent === 'yesno');
-    const addressesUser = hasSecondPerson || intent === 'command' || intent === 'greeting';
-
-    // ── SUBJECT / VERB / OBJECT SLOT EXTRACTION ──
-    // Walks the parsed types forward looking for canonical S-V-O
-    // boundaries. Uses the wordType scores to pick the most likely
-    // head of each slot. Not perfect — this is a lightweight parser,
-    // not a full dependency grammar — but good enough to hand
-    // downstream consumers a structured subject/verb/object for
-    // simple declarative and imperative sentences.
-    let subject = null, verb = null, object = null;
-    let subjectEnd = -1, verbEnd = -1;
-    for (let i = 0; i < tokens.length; i++) {
-      const wt = wordTypes[i];
-      if (!subject && (wt.pronoun > 0.5 || wt.noun > 0.3 || wt.det > 0.5)) {
-        // Skip determiner-only opener — subject head is the noun that follows
-        if (wt.det > 0.5 && i + 1 < tokens.length && wordTypes[i + 1].noun > 0.3) continue;
-        subject = {
-          index: i,
-          tokens: [tokens[i]],
-          headType: wt.pronoun > 0.5 ? 'pronoun' : 'noun',
-          pronoun: wt.pronoun > 0.5 ? tokens[i] : null,
-        };
-        subjectEnd = i;
-        continue;
-      }
-      if (subject && !verb && (wt.verb > 0.4 || (i > subjectEnd && ['am', 'is', 'are', 'was', 'were', 'be', 'been', 'being'].includes(tokens[i])))) {
-        verb = {
-          index: i,
-          tokens: [tokens[i]],
-          tense: ['was', 'were'].includes(tokens[i]) ? 'past' : (['will', "'ll"].includes(tokens[i]) ? 'future' : 'present'),
-          modal: ['can', 'could', 'will', 'would', 'should', 'must', 'might', 'may'].includes(tokens[i]),
-        };
-        verbEnd = i;
-        continue;
-      }
-      if (verb && !object && (wt.noun > 0.3 || wt.pronoun > 0.5 || entities.componentTypes.includes(tokens[i]))) {
-        // Object head — gather this token + any preceding modifier
-        // (color/adj) from the span between verbEnd and here.
-        const modifierTokens = [];
-        for (let j = verbEnd + 1; j < i; j++) {
-          if (wordTypes[j].adj > 0.4 || entities.colors.includes(tokens[j])) modifierTokens.push(tokens[j]);
-        }
-        object = {
-          index: i,
-          tokens: [tokens[i]],
-          headType: entities.componentTypes.includes(tokens[i]) ? 'component' : (wt.pronoun > 0.5 ? 'pronoun' : 'noun'),
-          modifier: modifierTokens.length > 0 ? modifierTokens.join(' ') : null,
-        };
-        break;
-      }
-    }
-
-    // ── MOOD — sum of per-token arousal/valence from learned entries ──
-    let polaritySum = 0, intensitySum = 0, moodCount = 0;
-    for (const t of tokens) {
-      const entry = this._wordEntries?.get?.(t);
-      if (entry && entry.valence != null) {
-        polaritySum += entry.valence;
-        intensitySum += Math.abs(entry.valence) + (entry.arousal || 0);
-        moodCount++;
-      }
-    }
-    const mood = {
-      polarity: moodCount > 0 ? polaritySum / moodCount : 0,
-      intensity: moodCount > 0 ? intensitySum / moodCount : 0,
-    };
-
-    // ── CONFIDENCE — how many slots we filled ──
-    let filled = 0;
-    if (subject) filled++;
-    if (verb) filled++;
-    if (object) filled++;
-    const confidence = filled / 3;
-
-    const parsed = {
-      text: raw,
-      tokens,
-      types,
-      wordTypes,
-      intent,
-      isQuestion: intent === 'question' || intent === 'yesno',
-      isSelfReference,
-      addressesUser,
-      isGreeting,
-      greetingOpener,
-      introducesName,
-      introducesGender,
-      subject,
-      verb,
-      object,
-      entities,
-      mood,
-      confidence,
-    };
-    this._lastParse = parsed;
-    return parsed;
-  }
-
-  analyzeInput(text, dictionary) {
-    // T8 — canonical parse runs FIRST so every downstream consumer
-    // (context vector update, social schema, _classifyIntent,
-    // _isSelfReferenceQuery, self-reference fallback in _recallSentence)
-    // reads from the same cached parse tree. parseSentence is
-    // memoized on text equality so repeated calls in the same turn
-    // are free.
-    const parsed = this.parseSentence(text);
-
-    // Keep single-letter words ('i', 'a') — they're critical pronouns/determiners.
-    const words = parsed.tokens;
-    const isQuestion = parsed.isQuestion;
-
-    const topicPattern = new Float64Array(PATTERN_DIM);
-    let count = 0;
-    for (let i = 0; i < words.length; i++) {
-      const w = words[i];
-      const wt = parsed.wordTypes[i] || this.wordType(w);
-      // Skip function words for topic — only content words matter
-      if (wt.conj > 0.5 || wt.prep > 0.5 || wt.det > 0.5) continue;
-      const p = dictionary?._words?.get(w)?.pattern || this.wordToPattern(w);
-      for (let j = 0; j < PATTERN_DIM; j++) topicPattern[j] += p[j];
-      count++;
-    }
-    if (count > 0) for (let i = 0; i < PATTERN_DIM; i++) topicPattern[i] /= count;
-
-    this._lastInputWords = words;
-    this._lastInputRaw = text;
-    this._contextPatterns.push(topicPattern);
-    if (this._contextPatterns.length > 5) this._contextPatterns.shift();
-
-    // T7+T8 — social schema reads from the cached parse tree now,
-    // not regex. name/gender/greeting extraction is a side-effect
-    // of parsing, this method just promotes the parser's findings
-    // into the persistent schema slots.
-    this._updateSocialSchema(text);
-
-    // T13.7 — `_contextVector` decaying topic attractor deleted. Topic
-    // now lives in the live cortex cluster state via `brain.injectParseTree`
-    // at `engine.processAndRespond`, which routes the content embedding
-    // directly into the cortex language region before the settle-ticks.
-
-    return { isQuestion, topicPattern, words, parsed };
-  }
-
-  /**
-   * U279 — Intent classification from raw input text. Pure letter-
-   * equation detection — no word lists. Returns a tag the generation
-   * path uses to decide between hippocampus recall, cold generation,
-   * and the template pool (U280).
-   *
-   * Classes:
-   *   greeting — single word ≤4 chars with greeting-vowel signature
-   *              (hi/hey/yo/sup/hello) — detected by length + first-char
-   *   math     — contains a digit or math operator token
-   *   yesno    — starts with an auxiliary (do/does/is/are/can/will/would)
-   *              detected via wordType letter-equation for the first word
-   *   question — qword at pos 0 OR '?' terminal
-   *   statement — everything else
-   *
-   * Also returns `isShort` flag for short-query template routing.
-   */
-  /**
-   * T8 — delegates to parseSentence. Was a vestigial
-   * length/regex/letter-shape classifier; now the parse tree's
-   * `intent` field is the canonical source. Kept as a thin wrapper
-   * returning the {type, isShort, wordCount} shape so existing
-   * callers (the one at line 2517 in generate()) don't break.
-   */
-  _classifyIntent(text) {
-    const parsed = this.parseSentence(text);
-    return {
-      type: parsed.intent,
-      isShort: parsed.tokens.length <= 3,
-      wordCount: parsed.tokens.length,
-    };
-  }
-
-  /**
-   * R2 — Semantic fit score. Cosine similarity between a candidate
-   * word's SEMANTIC embedding vector and the current context vector
-   * (also semantic after R2), clamped to [0, 1]. Zero when context
-   * is empty.
-   *
-   * Before R2 this was letter-hash cosine which was noise. After R2,
-   * `wordToPattern` returns the word's GloVe 50d embedding and the
-   * context vector is a running mean of input word embeddings, so
-   * this method measures REAL semantic alignment. The slot scorer's
-   * `semanticFit * 0.80` term is now the dominant topic signal.
-   */
-  /**
-   * T7.2 — Visual cortex describer output → gender inference.
-   * Called by the engine wiring whenever visual-cortex emits a new
-   * description. Scans the raw text for closed-class gender tokens
-   * (man/woman/guy/girl/...) and promotes into social schema gender
-   * ONLY if no explicit self-ID has been set (explicit self-ID
-   * always wins over scene inference).
-   *
-   * Closed-class structural match, no lists beyond the gender token
-   * sets themselves which are canonical gender vocabulary in English.
-   */
-  observeVisionDescription(text) {
-    if (!text || typeof text !== 'string') return;
-    const schema = this._socialSchema?.user;
-    if (!schema) return;
-    // Don't overwrite an explicit self-ID. Vision is a weaker signal.
-    if (schema.gender) return;
-    const lower = text.toLowerCase();
-    const MALE_WORDS = /\b(man|guy|dude|boy|male|gentleman|bro|sir)\b/;
-    const FEMALE_WORDS = /\b(woman|lady|girl|female|gal|chick|ma'?am|miss|mrs)\b/;
-    const hasMale = MALE_WORDS.test(lower);
-    const hasFemale = FEMALE_WORDS.test(lower);
-    // Only commit if exactly one gender signal appears — mixed scenes
-    // stay ambiguous. "a man and a woman" → no commit.
-    if (hasMale && !hasFemale) schema.gender = 'male';
-    else if (hasFemale && !hasMale) schema.gender = 'female';
-  }
-
-  /**
-   * T7+T8 — Social schema update, driven entirely by parseSentence.
-   * The vestigial regex name/gender/greeting extraction that used to
-   * live here was replaced by reads against the parse tree. This
-   * method is now the schema SIDE-EFFECT of parsing: given a freshly
-   * parsed user input, promote the parser's findings into the
-   * persistent social slots (name, gender, greetings counter,
-   * timestamps, mentionCount).
-   */
-  _updateSocialSchema(rawText) {
-    if (!rawText || typeof rawText !== 'string') return;
-    const parsed = this.parseSentence(rawText);
-    const schema = this._socialSchema.user;
-    const now = Date.now();
-    if (schema.firstSeenAt == null) schema.firstSeenAt = now;
-    schema.lastSeenAt = now;
-    if (schema.name) schema.mentionCount++;
-
-    if (parsed.isGreeting) schema.greetingsExchanged++;
-
-    if (parsed.introducesName) {
-      // Strong-signal patterns (my name is / call me / name's) set
-      // parsed.intent = 'introduction', overwriting any prior name.
-      // Weak signals (i'm X) only overwrite when no name yet exists,
-      // preventing "i'm tired" → schema stomp issues.
-      const strong = parsed.intent === 'introduction';
-      if (strong || !schema.name) {
-        if (schema.name !== parsed.introducesName) {
-          schema.name = parsed.introducesName;
-          schema.mentionCount = 0;
-        }
-      }
-    }
-
-    if (parsed.introducesGender) {
-      schema.gender = parsed.introducesGender;
-    }
-  }
-
-  /**
-   * T7 — Expose the user's address form for slot-gen / greeting
-   * path. Returns the name if known, else null (caller falls back
-   * to "you" or generic vocative). Separate accessor so callers
-   * don't have to reach into _socialSchema directly.
-   */
-  getUserAddress() {
-    return this._socialSchema?.user?.name || null;
-  }
-
-  getUserGender() {
-    return this._socialSchema?.user?.gender || null;
-  }
-
-  getSocialSchema() {
-    return this._socialSchema;
-  }
-
-  // T13.7 — `_semanticFit` deleted (no callers after slot-prior removal).
-
-  _getContextPattern() {
-    if (this._contextPatterns.length === 0) return new Float64Array(PATTERN_DIM);
-    const avg = new Float64Array(PATTERN_DIM);
-    for (const p of this._contextPatterns) for (let i = 0; i < PATTERN_DIM; i++) avg[i] += p[i];
-    for (let i = 0; i < PATTERN_DIM; i++) avg[i] /= this._contextPatterns.length;
-    return avg;
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // LEARNING — from conversation, not from corpus
-  // ═══════════════════════════════════════════════════════════════
-
-  /**
-   * T11.2 — OBSERVATION FEEDER
-   *
-   * Every sentence (corpus OR live chat) becomes training data for
-   * the W_slot projection matrices + slot centroids + attractors.
-   * No n-gram tables. No memory pool. No filters. Just streaming
-   * covariance updates that fit W_slot via ridge regression.
-   *
-   * For each word position t in the sentence:
-   *   cortex_t   = weighted average of prior word embeddings
-   *   target_t   = emb(word_t)
-   *   C_xx[t]   += cortex_t ⊗ cortex_t
-   *   C_xy[t]   += cortex_t ⊗ target_t
-   *   centroid_t += target_t   (running mean)
-   *
-   * Dictionary.learnWord is called per token so the argmax pool in
-   * generate() grows with every observation. That's the only
-   * remaining list-like structure — the word embedding table, not
-   * stored text.
-   */
   learnSentence(sentence, dictionary, arousal, valence, cortexPattern = null, fromPersona = false, doInflections = false, skipSlotPriors = false) {
     const rawWords = String(sentence).toLowerCase()
       .replace(/[^a-z0-9' ?!*-]/g, '')
@@ -3075,20 +2241,148 @@ export class LanguageCortex {
     // at boot (T13.1), not per-slot priors here. `skipSlotPriors` arg
     // is retained as a no-op for backcompat with the `loadCodingKnowledge`
     // caller until that call site is cleaned up.
+    //
+    // T14.8 (2026-04-14) — learned-structure observation added. Updates
+    // `_typeTransitionLearned` on every consecutive fineType pair AND
+    // `_sentenceFormSchemas[intent][t][fineType]` at every slot position.
+    // Schema spans the full sentence — no slot cap.
+    //
+    // T14.12 (2026-04-14) — parseSentence deleted. Intent classification
+    // now comes from a lightweight inline fallback — the heuristic
+    // mirrors what `cluster.readInput` does for input classification.
+    // Once T14.17 curriculum trains `intentReadout()`, this fallback
+    // becomes unreached and the cortex-resident intent wins.
+    let sentenceIntent = 'unknown';
+    const lower = String(sentence || '').toLowerCase().trim();
+    if (lower.endsWith('?')) sentenceIntent = 'question';
+    else if (lower.endsWith('!')) sentenceIntent = 'emotion';
+    else if (/^(hi|hey|hello|sup|yo|good (morning|evening|afternoon))\b/.test(lower)) sentenceIntent = 'greeting';
+    else if (/^(what|who|where|when|why|how|which|whose)\b/.test(lower)) sentenceIntent = 'question';
+    else if (lower.length > 0) sentenceIntent = 'statement';
+
+    // Ensure the per-intent schema bucket exists
+    let intentSchema = this._sentenceFormSchemas.get(sentenceIntent);
+    if (!intentSchema) {
+      intentSchema = new Map();
+      this._sentenceFormSchemas.set(sentenceIntent, intentSchema);
+    }
+    let intentTotals = this._sentenceFormTotals.get(sentenceIntent);
+    if (!intentTotals) {
+      intentTotals = new Map();
+      this._sentenceFormTotals.set(sentenceIntent, intentTotals);
+    }
+
+    let prevFineType = 'START';
     for (let t = 0; t < words.length; t++) {
       const w = words[t];
       const pattern = cortexPattern || this.wordToPattern(w);
       dictionary?.learnWord?.(w, pattern, arousal, valence);
 
-      if (t > 0) this._learnUsageType(words[t - 1], w);
+      // T14.24-CLEAN.B1 — _learnUsageType + _generateInflections call
+      // sites removed. They fed the pre-T14 slot-scorer's usage-type
+      // cache + morphological-variant dictionary expansion. Curriculum
+      // direct-pattern Hebbian + cluster.generateSentence replace both.
+      // doInflections arg is now a no-op (kept for backward compat).
 
-      if (doInflections) {
-        const inflections = this._generateInflections(w);
-        for (const inf of inflections) dictionary?.learnWord?.(inf, pattern, arousal, valence);
+      // T14.8 — Per-slot fineType observation into the sentence-form
+      // schema for this sentence's intent.
+      const currFineType = this._fineType(w);
+      let slotBucket = intentSchema.get(t);
+      if (!slotBucket) {
+        slotBucket = new Map();
+        intentSchema.set(t, slotBucket);
       }
+      slotBucket.set(currFineType, (slotBucket.get(currFineType) || 0) + 1);
+      intentTotals.set(t, (intentTotals.get(t) || 0) + 1);
+
+      // T14.7 + T14.8 — Type-bigram observation. `prevFineType = 'START'`
+      // for t=0 so the START row accumulates whatever opens sentences
+      // in the observed corpora; no hardcoded opener Set required.
+      let transRow = this._typeTransitionLearned.get(prevFineType);
+      if (!transRow) {
+        transRow = new Map();
+        this._typeTransitionLearned.set(prevFineType, transRow);
+      }
+      transRow.set(currFineType, (transRow.get(currFineType) || 0) + 1);
+      prevFineType = currFineType;
     }
+    // Close the final transition into END so termination patterns are
+    // learnable from the corpus too.
+    let endRow = this._typeTransitionLearned.get(prevFineType);
+    if (!endRow) {
+      endRow = new Map();
+      this._typeTransitionLearned.set(prevFineType, endRow);
+    }
+    endRow.set('END', (endRow.get('END') || 0) + 1);
 
     this.sentencesLearned++;
+  }
+
+  /**
+   * T14.8 — Sentence-form schema score. Returns the Laplace-smoothed
+   * probability of seeing `fineType` at slot `slot` in a sentence with
+   * intent `intent`. Smoothing is `(count + 1) / (total + |types_seen|)`
+   * where `|types_seen|` is the number of unique fineTypes observed at
+   * that slot — no hardcoded 20-type cap. Returns a small positive
+   * floor (1 / (total + 1)) when no observations exist for the slot
+   * yet, so generation-time consumers never get zero weight.
+   */
+  // T14.17 (2026-04-14) — `schemaScore` and `typeTransitionWeight`
+  // were DUPLICATES of the cluster-resident versions. T14.13 migrated
+  // the underlying Maps to the cluster, and these wrappers read the
+  // exact same state via T14.13 setCluster identity-bind. Deleted here
+  // to eliminate the dead organ. Callers go through
+  // `cluster.schemaScore` / `cluster.typeTransitionWeight` directly.
+  //
+  // T14.17 (2026-04-14) — `recordIntentPair` and `responseIntentFor`
+  // were DUPLICATES of the cluster-resident versions (T14.13 migrated
+  // the state to the cluster, T14.14 migrated the consumer wiring).
+  // Deleted here to eliminate the dead organ. Callers go through
+  // `cluster.recordIntentPair` / `cluster.responseIntentFor` which
+  // write/read the same `intentResponseMap` via T14.13 identity-bind.
+
+  /**
+   * T14.13 (2026-04-14) — Migrate learned language statistics onto a
+   * cluster instance so LanguageCortex observation writes land directly
+   * in cluster state. Called once during engine/brain-server boot right
+   * after the cluster is created. After this call, `_typeTransitionLearned`,
+   * `_sentenceFormSchemas`, `_sentenceFormTotals`, and `_intentResponseMap`
+   * all point at the cluster's Maps by identity — both sides see every
+   * update. Re-binding is idempotent if called again with the same cluster,
+   * and carries over any observations already accumulated into the new
+   * cluster-resident Maps so nothing learned gets lost.
+   */
+  setCluster(cluster) {
+    if (!cluster) return;
+    // Carry over any pre-existing observations into the cluster's Maps
+    // so we don't drop learning that happened before wiring.
+    const mergeMap = (src, dst) => {
+      for (const [k, v] of src) {
+        if (v instanceof Map) {
+          let inner = dst.get(k);
+          if (!inner) { inner = new Map(); dst.set(k, inner); }
+          mergeMap(v, inner);
+        } else if (typeof v === 'number') {
+          dst.set(k, (dst.get(k) || 0) + v);
+        }
+      }
+    };
+    if (this._typeTransitionLearned !== cluster.fineTypeTransitions) {
+      mergeMap(this._typeTransitionLearned, cluster.fineTypeTransitions);
+      this._typeTransitionLearned = cluster.fineTypeTransitions;
+    }
+    if (this._sentenceFormSchemas !== cluster.sentenceFormSchemas) {
+      mergeMap(this._sentenceFormSchemas, cluster.sentenceFormSchemas);
+      this._sentenceFormSchemas = cluster.sentenceFormSchemas;
+    }
+    if (this._sentenceFormTotals !== cluster.sentenceFormTotals) {
+      mergeMap(this._sentenceFormTotals, cluster.sentenceFormTotals);
+      this._sentenceFormTotals = cluster.sentenceFormTotals;
+    }
+    if (this._intentResponseMap !== cluster.intentResponseMap) {
+      mergeMap(this._intentResponseMap, cluster.intentResponseMap);
+      this._intentResponseMap = cluster.intentResponseMap;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -3114,189 +2408,6 @@ export class LanguageCortex {
    * COMPOUND: long sentences → insert conjunction mid-sentence
    *   len > 6 → insert "and/but/so" at position ~len/2
    */
-  _postProcess(sentence, tense, type, arousal, valence, coherence = 0.5) {
-    if (sentence.length < 2) return sentence;
-    const result = [...sentence];
-    const subj = result[0];
-
-    // ── TENSE — pure letter-equation transforms on the main verb ──
-    // No word lists. Irregular forms (am/is/are/have/has/will/etc.) are
-    // learned as bigrams from the persona text — `i→am`, `he→is`, etc. —
-    // so the slot-scoring already selects them correctly and tense
-    // inflection only touches REGULAR verbs with recognizable suffix shapes.
-    //
-    //   past  : -ed (CVC doubles final consonant; vowel-e → -d)
-    //   3rd-s : -s  (-es after sibilants; y→ies after consonant)
-    //   future: prepend 'will'
-    const applyPast = (v) => {
-      if (!v || v.endsWith('ed') || v.endsWith("n't") || v.endsWith("'t")) return v;
-      if (v.endsWith('e')) return v + 'd';
-      const L = v.length;
-      if (L >= 3) {
-        const c1 = !VOWELS.includes(v[L - 3]);
-        const vm = VOWELS.includes(v[L - 2]);
-        const c2 = !VOWELS.includes(v[L - 1]);
-        if (c1 && vm && c2 && v[L - 1] !== 'y' && v[L - 1] !== 'w') {
-          return v + v[L - 1] + 'ed';
-        }
-      }
-      return v + 'ed';
-    };
-    const applyThird = (v) => {
-      if (!v || v.endsWith('s') || v.endsWith('x') || v.endsWith('z')
-            || v.endsWith('ch') || v.endsWith('sh')) return v + 'es';
-      if (v.endsWith('y') && v.length >= 2 && !VOWELS.includes(v[v.length - 2])) return v.slice(0, -1) + 'ies';
-      return v + 's';
-    };
-
-    // Only inflect HIGH-confidence verbs via the equation (no word lists).
-    // Irregular copulas/auxes have a mixed type distribution so verb score
-    // stays under ~0.8 for them — they're skipped automatically.
-    const regularVerb = (w) => {
-      if (!w || w.length < 3) return false;
-      const t = this.wordType(w);
-      if (t.verb < 0.55) return false;
-      // Regular verbs don't have strong pronoun/det/conj signals
-      if (t.pronoun > 0.2 || t.det > 0.2 || t.conj > 0.2) return false;
-      return true;
-    };
-
-    if (result.length >= 2) {
-      const v = result[1];
-      if (tense === 'future' && regularVerb(v)) {
-        result.splice(1, 0, 'will');
-      } else if (tense === 'past' && regularVerb(v)) {
-        result[1] = applyPast(v);
-      } else if (tense === 'present' && regularVerb(v) && subj) {
-        // ── U289: Subject-verb agreement sweep ──
-        // Proper third-person-singular -s application. Determine the
-        // grammatical person of the subject via fine-type detection:
-        //   PRON_SUBJ + "he"/"she"/"it" → 3rd sing → apply -s
-        //   PRON_SUBJ + "i"/"you"/"we"/"they" → bare
-        //   NOUN (singular proper noun or common noun) → 3rd sing → apply -s
-        //   NOUN ending in -s (plural) → bare
-        const subjLower = subj.toLowerCase();
-        const subjType = this._fineType(subjLower);
-        let is3rdSingular = false;
-        if (subjType === 'PRON_SUBJ') {
-          // Letter pattern detection for he/she/it vs i/you/we/they
-          if (subjLower === 'he' || subjLower === 'she' || subjLower === 'it') {
-            is3rdSingular = true;
-          }
-        } else if (subjType === 'NOUN') {
-          // Singular noun (no -s ending, or -ss/-us/-is exceptions)
-          // Plural nouns end in -s without -ss
-          if (!subjLower.endsWith('s') || subjLower.endsWith('ss') || subjLower.endsWith('us') || subjLower.endsWith('is')) {
-            is3rdSingular = true;
-          }
-        }
-        if (is3rdSingular) {
-          result[1] = applyThird(v);
-        }
-      }
-    }
-
-    // ── COPULA AGREEMENT via learned bigrams (no hardcoded lists) ──
-    // If slot 0 is a subject-pronoun and slot 1 is a copula-like verb BUT the
-    // pair was never seen in training ("you am", "i are"), look up the most
-    // common copula follower of slot 0 in learned bigrams and swap. Copula
-    // detection is pure equation: short word, high verb score, no noun/prep
-    // signal — matches am/is/are (plus learned past copulas was/were).
-    const verbIsCopula = (v) => {
-      if (!v || v.length > 4) return false;
-      const wt = this.wordType(v);
-      return wt.verb > 0.7 && wt.noun < 0.3 && wt.prep < 0.1 && wt.conj < 0.1 && wt.pronoun < 0.2;
-    };
-    // T11 — copula-agreement swap used to consult _jointCounts bigrams.
-    // Those tables are gone. Copula agreement is handled equationally by
-    // the W_slot projection + slot centroid in generate() — slot 1 after
-    // a subject pronoun lands in a region of embedding space where the
-    // correctly-agreeing copula clusters, no swap table needed.
-
-    // ── COMPOUND SENTENCE ──
-    // Conj-splicing is DISABLED — the tail was generated against the wrong
-    // predecessor (pre-conj word), so splicing ', and' mid-sentence violates
-    // phrase structure on the far side. A proper compound requires re-planning
-    // the tail with the conj word as the new predecessor, which means lifting
-    // sentence construction into _postProcess. For now, prefer shorter
-    // grammatical sentences over longer broken compounds.
-
-    // ══════════════════════════════════════════════════════════════
-    // GRAMMATICAL TRANSFORMATIONS — neural state drives form
-    //
-    // Task 39: Transform the base slot output into variants driven by
-    // the current brain state. All equation-based, no canned phrases.
-    //
-    //   - Intensifier insertion: high arousal → "really/so/fucking"
-    //     before adjectives/verbs (detected by wordType)
-    //   - Hedge insertion: low coherence → "kinda/sort of" before
-    //     the main content (uncertainty marker)
-    //   - Tag question: high prediction error on a statement →
-    //     append ", right?" (looking for confirmation)
-    //   - Exclamation intensity: very high arousal → append "!"
-    //     (already done via sentence type but reinforced here)
-    //   - Drug-state word doubling: high arousal + coke → occasionally
-    //     repeat a content word for emphasis (like "so so good")
-    // ══════════════════════════════════════════════════════════════
-
-    // T11 — intensifier placement, hedge insertion, and tag-question
-    // modification all used _marginalCounts frequency scans of the
-    // learned dictionary to find shape-matching words. That table
-    // is gone. Post-processing no longer adds mood modifiers —
-    // intensity, hedging, and tag structure now emerge from the
-    // W_slot projections pulling cortex state into regions of
-    // embedding space where intensifier / hedge / tag words cluster,
-    // learned by the same observation pipeline that trains the rest
-    // of the slot grammar.
-
-    return result;
-  }
-
-  // T13.7 — `_pickConjByMood`, `_condProb`, `mutualInfo` stubs deleted.
-
-  /**
-   * L2-normalize a Float64Array vector. Returns a new Float64Array
-   * or null if the input is zero. Used by generate() to balance
-   * centroid / projection / context contributions at each slot.
-   */
-  _l2(v) {
-    let sum = 0;
-    for (let i = 0; i < v.length; i++) sum += v[i] * v[i];
-    if (sum < 1e-18) return null;
-    const norm = Math.sqrt(sum);
-    const out = new Float64Array(v.length);
-    for (let i = 0; i < v.length; i++) out[i] = v[i] / norm;
-    return out;
-  }
-
-  _cosine(a, b) {
-    let dot = 0, na = 0, nb = 0;
-    for (let i = 0; i < PATTERN_DIM; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
-    return dot / (Math.sqrt(na * nb) || 1);
-  }
-
-  _softmaxSample(scored, temperature) {
-    if (scored.length === 0) return null;
-    const max = Math.max(...scored.map(s => s.score));
-    const exps = scored.map(s => Math.exp((s.score - max) / Math.max(0.001, temperature)));
-    const sum = exps.reduce((a, b) => a + b, 0);
-    let rand = Math.random() * sum;
-    for (let i = 0; i < scored.length; i++) { rand -= exps[i]; if (rand <= 0) return scored[i]; }
-    return scored[scored.length - 1];
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // PERSISTENCE
-  // ═══════════════════════════════════════════════════════════════
-
-  /**
-   * T13.7 — persistence now only covers language-cortex state that
-   * isn't in the cortex cluster. Slot priors and attractors are gone;
-   * persona voice lives in the cortex recurrent synapse matrix which
-   * the cluster serializes via its own SparseMatrix.serialize path.
-   * Remaining state here: usage-type drifts + sentencesLearned counter
-   * + selfImage/baseline/coding loaded flags.
-   */
   serialize() {
     return {
       version: 'T13.7',
@@ -3320,9 +2431,8 @@ export class LanguageCortex {
     if (data.codingLoaded) this._codingLoaded = true;
   }
 
-  getLetterPattern(char) {
-    const li = char.toLowerCase().charCodeAt(0) - 97;
-    if (li < 0 || li > 25) return new Float64Array(5);
-    return this._letterPatterns.slice(li * 5, li * 5 + 5);
-  }
+  // T14.1 — `getLetterPattern` deleted. External callers that need a
+  // letter vector should go through the dynamic one-hot encoder in
+  // letter-input.js (`encodeLetter`) or read the cortex letter sub-region
+  // via `cluster.regionReadout('letter', dim)`.
 }

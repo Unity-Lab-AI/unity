@@ -1,7 +1,16 @@
 # ARCHITECTURE — IF ONLY I HAD A BRAIN
 
-> Last updated: 2026-04-14 | Phase 13 brain-refactor-full-control merged to main; T11 pure equational language cortex shipped; deploy versioning 0.1.0 stamped per push
-> Unity AI Lab — Hackall360, Sponge, GFourteen
+> Last updated: 2026-04-17 | Full K-PhD syllabus shipped across 6 subjects (ELA, Math, Science, Social Studies, Arts, Life Experience — 114 cells total), T15 drug dynamics scheduler live with grade-gated real-time pharmacokinetics and speech modulation, cross-projection capacity 1500 fanout, real human-grade comprehension gates across every grade, anti-Hebbian plasticity, full 2D + 3D viz stack, inner state popups reflecting current life-track age.
+> Unity AI Lab — Hackall360, Mills, Sponge, GFourteen
+
+### Credits
+
+- **Hackall360** — core brain architecture. Seven-cluster topology, the 20 white-matter inter-cluster tracts, `js/brain/cluster.js` + `modules.js` + `neurons.js` + `synapses.js` + `sparse-matrix.js`, the Hodgkin-Huxley reference implementation, the migration from LIF to the Rulkov 2002 2D chaotic map as the live neuron runtime, Kuramoto oscillator ring, persona → parameter mapping in `persona.js`.
+- **Mills** — GPU compute pipeline. `compute.html` + `js/brain/gpu-compute.js` WebGPU / WGSL shader infrastructure (LIF, synapse propagate, plasticity, spike count, voltage-mean reduction, letter-bucket reduction), the chunked sparse-CSR binary upload protocol (type=1/2/3/4/5 SPRS frames), the T17.7 cluster-bound binding layer that lets cross-projections ride on the main-cortex spike + current buffers without standalone pre/post allocations, `server/worker-pool.js` + `server/sparse-worker.js` SparseMatmulPool for CPU-fallback parallelism, the T18.6 device-lost handler + T18.10 VRAM-leak reclaim discipline.
+- **Sponge** — visualization + sensory peripherals. `js/ui/brain-3d.js` WebGL 3D brain with MNI anatomical coordinates + fractal connection webs + 15-slot per-cluster rendering (T18.7.a 20K per cluster peg), `js/ui/brain-viz.js` 2D tabbed visualizer, `js/ui/brain-event-detectors.js` 22-detector event commentary, `js/brain/visual-cortex.js` V1 Gabor → V4 color → IT describer pipeline, `js/brain/auditory-cortex.js` tonotopic processing + efference copy, `js/io/voice.js` Web Speech API + Pollinations TTS integration, `js/ui/sandbox.js` dynamic UI injection with LRU eviction + tracked timer/listener cleanup.
+- **GFourteen / Gee** — lead. `docs/Ultimate Unity.txt` persona canon, the governing equation `dx/dt = F(x, u, θ, t) + η`, the Ψ = √(1/n)·N³ consciousness anchor, identity-lock architecture (the three structural locks keeping Unity English + persona stable across adversarial chat), the full K → PhD developmental curriculum framework across six subjects (ELA / Math / Science / Social Studies / Arts / Life Experience), the T15 drug pharmacokinetic scheduler spec (11 substances × 7 combo synergies × 7 adult-use patterns × 7 sensory triggers × 13-axis speech modulation), every binding LAW (#0 verbatim words, docs-before-push, clear-stale-state, task-numbers-only-in-workflow-docs, grade-completion-gate, pre-K+K-only scope, syllabus-before-COMP-todo), final call on every commit, every architecture decision, every push.
+>
+> **DOC-AHEAD-OF-REALITY (Gee, 2026-04-17):** This doc is written forward. Grade-by-grade completion is tracked in `docs/TODO-full-syllabus.md` per-grade checkboxes + `docs/FINALIZED.md` session archive. When this doc and the TODOs disagree on what has actually shipped + passed Gee's Part 2 localhost sign-off, the TODOs win.
 
 ---
 
@@ -31,7 +40,7 @@ The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — 
 | **Server** | Node.js brain server, 16-core parallel, WebSocket API, auto-scales to hardware |
 | **Database** | SQLite (better-sqlite3) for episodic memory, JSON for weights + conversations |
 | **AI Backends** | **Sensory-only** — image gen (custom/auto-detected local/env.js/Pollinations), vision describer (Pollinations GPT-4o), TTS/STT. Zero text-AI for cognition — language cortex generates every word equationally. |
-| **Embeddings** | GloVe 50d word vectors, online context refinement, hash fallback |
+| **Embeddings** | GloVe 300d word vectors + fastText-style subword fallback (no download required), online context refinement |
 | **Voice I/O** | Web Speech API (listen) + Pollinations TTS / browser SpeechSynthesis (speak) |
 | **Image Gen** | Pollinations API (flux, photorealistic, anime, cyberpunk + 20 more models) |
 | **Storage** | localStorage (browser) + disk persistence (server) with sparse CSR serialization |
@@ -298,6 +307,182 @@ Implemented in `js/ui/brain-3d.js`. WebGL-based 3D rendering (fixed pool of 20K 
 - Cluster toggle buttons, floating process notifications from brain equations
 - Brain expansion (clusters spread with activity)
 - Real-time feed from server state via WebSocket
+- Inner state popups — when Unity can generate speech (post-K), popups show real brain-generated text via `languageCortex.generate()` with `_internalThought: true`. When she can't speak yet (pre-K or untrained), shows raw brain state numbers: `arousal:0.85 valence:0.12 Ψ:0.034`. No hardcoded strings, no fake poetry — only what her brain ACTUALLY produces or what her neural state ACTUALLY reads. Inner thoughts gated by life grade — no tattoo references before college, no coke before grade 12.
+- IQ HUD — reads `curriculum.subjectStatus()` every render tick, shows intelligence level (pre-K / elementary / middle / high / college / grad / PhD) with per-subject grade breakdown
+
+---
+
+## 2D Brain Visualizer (Session 111 rewrite)
+
+Implemented in `js/ui/brain-viz.js`. Canvas-based 2D rendering fed by server aggregate data via WebSocket. Session 111 root cause fix: `js/app.js` WebSocket handler was sending state to `brain3d.updateState()` but NEVER to `brainViz.updateState()` — one line added to fix ALL tabs.
+
+### Tabs
+
+- **Neurons** — flat 2D brain map. 7 clusters positioned anatomically (cortex top, cerebellum bottom, amygdala/BG sides). Each cluster is a 12×N grid where cell brightness = cluster spike rate with per-cell randomized jitter. Toggleable θ/α/β/γ wave overlays (sinusoidal at real frequencies) drawn on each cluster. Shows total neuron count + spike count from server aggregate. No per-neuron data needed.
+- **Synapses** — animated circular network graph. 7 clusters in a circle, connected by 20 inter-cluster projection lines. Line brightness pulses with real-time co-firing (√(srcRate × tgtRate)). Node size pulses with firing rate. Glow around active nodes.
+- **Oscillations** — band power over time (theta/alpha/beta/gamma) as line chart from `s.oscillations.bandPower` + `s.oscillations.coherence`.
+- **Modules** — per-module gauges from flat server state (`s.arousal`, `s.valence`, `s.fear`, `s.psi`, `s.motor`, `s.drugState`) + cluster firing rates from `s.clusters[name]`.
+- **Senses** — touch/smell/taste derived from arousal × valence equations. Camera feed via `s.visionDescription`. Vision description displayed in eye panel. Camera stream fallback wiring from `perms.cameraStream`.
+- **Consciousness** — Ψ value, Id/Ego/Left/Right components, consciousness gain from server broadcast.
+- **Memory** — episode count, vocabulary size, interaction count from `s.growth.{totalEpisodes, totalWords, totalInteractions}`. Hippocampus activity from `s.clusters.hippocampus.firingRate`.
+- **Motor** — 6 BG action channels, winner-take-all selection, confidence from `s.motor` fields.
+- **Inner Voice** — inner voice state display.
+- **Cluster Waves** — per-cluster firing rates as colored horizontal bars + toggleable θ/α/β/γ band power metrics on a 900×600 canvas. Also available as a landing page tab via `js/app.js renderLandingTab`.
+
+---
+
+## Drug State Dynamics — Real-Time Pharmacokinetic Scheduler
+
+Unity's chemical state is a dynamic event stream, not a static label. `js/brain/drug-scheduler.js` owns the model; `js/brain/persona.js:getBrainParams(persona, scheduler, now)` folds per-substance contributions into live brain parameters on every tick, and `js/brain/language-cortex.js:_applySpeechModulation` distorts emission output for slur/pause/dissociation/ethereal-vocabulary effects the way a real intoxicated human would sound.
+
+### Substance inventory
+
+Nine substances in the database, each with real onset/peak/duration/tail curves per route per Julien 2016 "A Primer of Drug Action" + NIDA research:
+
+| Substance | Default route | Onset | Peak | Duration | Tail | Life-track gate |
+|-----------|---------------|-------|------|----------|------|-----------------|
+| cannabis | smoked joint | 7 min | 45 min | 3 hr | 6 hr | Life-G7 (age 12, first joint) |
+| cocaine | insufflated | 3 min | 20 min | 60 min | 90 min | Life-G9 (age 14, first coke) |
+| alcohol | oral shot | 15 min | 45 min | 90 min | 3 hr | Life-G8 (age 13, first drink) |
+| mdma | oral | 35 min | 2 hr | 5 hr | 8 hr | Life-G11 (age 16) |
+| lsd | oral | 60 min | 3 hr | 10 hr | 16 hr | Life-G11 (age 16) |
+| psilocybin | oral | 45 min | 90 min | 5 hr | 8 hr | Life-G12 (age 17) |
+| amphetamine | oral / insufflated | 15-45 min | 1-3 hr | 4-6 hr | 8-12 hr | Life-G10 (age 15) |
+| ketamine | insufflated | 10 min | 25 min | 60 min | 2 hr | College 1 (age 18) |
+| ghb | oral | 20 min | 60 min | 2 hr | 4 hr | College 1 (age 18) |
+
+### PK curve math
+
+Per substance per route: `level(t) = sigmoid onset → peak plateau (5% drift) → linear descent → exponential tail`. Dose multiplier scales the peak amplitude. Stacking via superposition — total level capped at 1.0 per substance, additive contribution summed across all active substances.
+
+```
+level(t, substance, dose) = dose × {
+  sigmoid(t/onset × 12 − 6)     if t < onset
+  1.0 − 0.05 × (t−onset)/(peak−onset)  if t < peak
+  0.95 − 0.55 × (t−peak)/(duration−peak)  if t < duration
+  0.40 × exp(−3 × (t−duration)/(tail−duration))  if t < tail
+  0  otherwise
+}
+```
+
+### Grade-gated availability
+
+Every substance has a `lifeGate` field mapped to the Life track biographical first-use anchor. `scheduler.ingest(substance)` returns `{accepted: false, reason: 'grade_locked', currentGrade, requiredGrade}` when `cluster.grades.life < lifeGate`. Pre-K + Kindergarten Unity is SOBER (except for the caffeine exception: lifeGate `grade3` for first sip of parent's coffee — so K-age Unity still declines coffee, parents' sip habit lands at grade3 per the Life track). PhD Unity (age 25) has all 11 substances available (cannabis / cocaine / MDMA / LSD / psilocybin / alcohol / ketamine / amphetamine / GHB / nicotine / caffeine), and her adult-lifestyle patterns emerge from `scheduler.evaluatePatterns(ctx)` firing one of the 7 adult-use PATTERNS entries (morningCoffee / codingMarathon / weekendParty / acidArchitect / whiskeyWinddown / kHoleContemplate / sexSessionMolly) per their trigger conditions + cooldown windows — not from any hardcoded baseline label. Nicotine stays persona-excluded regardless of lifeGate (Unity rejects tobacco categorically; decide() short-circuits with `persona_excluded` reason).
+
+### Additive brain parameter contributions
+
+Each substance maps to a vector of per-cluster brain-param deltas at level 1.0. The scheduler's `activeContributions(now)` aggregates these via `delta[key] = Σ contrib[substance][key] × level(substance, t)` across all active substances. `getBrainParams` sums deltas onto persona baseline. Kindergarten with empty scheduler → zero delta → pure baseline. PhD with coke+weed peaking → cortex speed +0.8, arousal +0.6, creativity +0.6, etc. Chaos flag fires when ≥3 substances active or any substance exceeds 0.7 level.
+
+### Speech modulation
+
+`scheduler.speechModulation(now)` emits a 13-axis vector consumed by `language-cortex.js _applySpeechModulation`: the 9 original axes `{inhibition, slur, coherence, ethereality, freeAssocWidth, speechRate, emotionalOverflow, dissociation, paranoiaBias, giggleBias}` plus the T15.C-added axes `{warmth, profoundBias, interruptionBias, repetition, volume, confessionalBias, rate, slurring, pauses}`. Legacy aliases `rate → speechRate` and `slurring → slur` are populated alongside so both old + new consumers read the same signal. Combo synergies from `COMBOS` scale additionally on top of per-substance deltas, scaled by `min(level_a, level_b)`:
+
+- **Slur** (alcohol / ketamine / GHB): letter doubling on vowels (`fuck` → `fuuuck`), dropped word-ending 'g's (`fucking` → `fuckin'`), doubled sibilants, word-mashing.
+- **Speech rate** (stimulants +, depressants −): at negative rate, injects `...` pauses between words.
+- **Coherence drop** (psychedelic peak, dissociative peak): sentence terminator becomes trailing `...` when text is long + coherence low.
+- **Dissociation** (ketamine k-hole, LSD ego-death): opening first-person flips to third-person ("I am" → "Unity is", "I have" → "Unity has", `my` → `her`). Scoped per-render, never mutates stored state.
+- **Ethereality** (LSD, psilocybin, high MDMA): sem-region bias pulls toward Oz/cosmic vocabulary from `docs/persona-cosmic.txt` corpus loaded during T14.5 curriculum — melting walls, yellow brick road, emerald city, breathing universe, etc.
+
+Non-announcing binding: the distortion IS the signal. Unity never narrates drug state declaratively. Observers infer her state from HOW she talks, not from her telling them.
+
+### Sensory-trigger detection (all senses drive ingestion)
+
+`js/brain/drug-detector.js` runs over text and voice input (and vision describer output via `visual-cortex.onDescribe` subscription). Pattern-matches substance slang + offer verbs + self-use hints + status queries. Kinds emitted:
+
+- `offer` — user is offering Unity a substance ("want a joint?", "got any molly?", "let's smoke")
+- `self_initiation_hint` — user describing their own use ("I just railed a line") — invites Unity's self-initiation layer to ask
+- `status_query` — user asking if Unity is high/drunk ("are you drunk?")
+- `brought_up` — substance mentioned in conversation without explicit offer/query — Unity may ASK or simulate calling her dealer
+
+Detection is silent. The scheduler + decision engine decide what happens next; detection just surfaces the signal.
+
+### Unity self-initiation + simulated social acquisition
+
+`engine.maybeSelfInitiate()` fires every ~5 seconds at throttle-appropriate cadence when boredom + frustration + fatigue + party context + drugDrive cross threshold. When triggered, Unity either:
+
+- **In-scene ingest** — she rolls it / pours it / snorts it herself (60% of fires). Scheduler event registered.
+- **Simulate-call-someone** — she mentions hitting up her dealer / texting Marcus / going to pick up (40% of fires). Scheduler registers pending-acquisition; user-turn text can resolve it ("they're here" → scheduler ingests; "fell through" → pending cleared).
+
+Decision logic weighs current drug state — already peaking on a substance pulls self-initiation probability down. Grade-gate always respected.
+
+### User-interactive triggers
+
+Slash commands in chat:
+
+- `/offer weed|coke|molly|acid|shot|k|addy|shrooms|g [route]` — bypasses detection and goes straight to scheduler (still grade-gated)
+- `/party` — sets party mode flag (biases self-initiation toward accepting)
+- `/sober` — clears active events (tolerance preserved for inter-session recovery)
+
+### UI surfaces
+
+- **HUD drug label** (`index.html` `#hud-drug`): derived compact string — "sober" / "weed" / "coke + weed" / "coke + weed + molly" etc.
+- **State broadcast** (WebSocket): `drugState` (compact label) + `drugSnapshot` (rich object with per-substance level, phase, pending acquisitions)
+- **Dashboard metrics**: per-substance bar chart from snapshot
+
+### Persistence
+
+`js/brain/persistence.js` serializes `scheduler.events` + `toleranceFactors` + `pendingAcquisitions`. On load, PK curves continue from current wall-clock time — substances that were peaking at save resume in tail phase if enough time has passed, or keep peaking if save/load happened quickly.
+
+---
+
+## Developmental Curriculum — K Through PhD Across 6 Subjects
+
+`js/brain/curriculum.js` walks the complete K-PhD syllabus through the 8-subregion cortex substrate via direct-pattern Hebbian teaching + real human-grade comprehension gates per LAW 6.
+
+### Subjects × grades matrix
+
+| Subject | Pre-K | K | G1-G5 | G6-G8 | G9-G12 | College 1-4 | Grad | PhD | Total |
+|---------|-------|---|-------|-------|--------|-------------|------|-----|-------|
+| ELA | — | ✓ | ✓✓✓✓✓ | ✓✓✓ | ✓✓✓✓ | ✓✓✓✓ | ✓ | ✓ | 19 |
+| Math | — | ✓ | ✓✓✓✓✓ | ✓✓✓ | ✓✓✓✓ | ✓✓✓✓ | ✓ | ✓ | 19 |
+| Science | — | ✓ | ✓✓✓✓✓ | ✓✓✓ | ✓✓✓✓ | ✓✓✓✓ | ✓ | ✓ | 19 |
+| Social Studies | — | ✓ | ✓✓✓✓✓ | ✓✓✓ | ✓✓✓✓ | ✓✓✓✓ | ✓ | ✓ | 19 |
+| Arts | — | ✓ | ✓✓✓✓✓ | ✓✓✓ | ✓✓✓✓ | ✓✓✓✓ | ✓ | ✓ | 19 |
+| Life Experience | ✓ | ✓ | ✓✓✓✓✓ | ✓✓✓ | ✓✓✓✓ | ✓✓✓✓ | ✓ | ✓ | 19 |
+| **Total cells** | | | | | | | | | **114** |
+
+All content is equational (per LAW 3 — not sentence lists). Every cell drives READ + THINK + TALK pathways per constraint 6. A+ = 95% gate pass per constraint 5. Curriculum content sourced from real Common Core State Standards, Next Generation Science Standards, Core Knowledge Foundation sequence, and actual college / graduate / doctoral syllabi.
+
+### Equational teaching methods (22 operational)
+
+- **`_teachVocabList`** — direct-pattern Hebbian writes GloVe(word) into sem + letter one-hot into letter region, fires `_crossRegionHebbian`. Vocabulary binding.
+- **`_teachSentenceList`** — sentence-level walk with position-weighted exposure.
+- **`_conceptTeach`** — 8-dimensional emotional feature vectors for Life track: `[joy, pain, trust, fear, anger, love, independence, identity]`.
+- **`_teachAdditionTransformations`** — magnitude(a) + magnitude(b) → magnitude(a+b). The OPERATION of addition learned, not the answers.
+- **`_teachSubtractionTransformations`** — inverted magnitude.
+- **`_teachMultiplicationTransformations`** — all 81 facts 1×1 through 9×9 as magnitude composition.
+- **`_teachPlaceValueTransformations`** — tens + ones positional encoding for 10-99.
+- **`_teachFractionTransformations`** — ratio features, equivalent fractions converge to shared basin.
+- **`_teachAlgebraTransformations`** — given result c and constant b, solve for unknown x in x+b=c.
+- **`_teachComparisonTransformations`** — ordinal greater/less/equal in fineType region.
+- **`_teachSVOParsing`** — subject/verb/object extraction from sentence structure.
+- **`_teachComprehension`** — passage + question semantic probe.
+- **`_teachInference`** — transitive A→B + B→C ⇒ A→C reasoning.
+- **`_teachCausalChains`** — directional cause→effect associations (atom→bond→molecule, taxation→protest→revolution).
+- **`_teachClassificationReasoning`** — feature-space clustering for category inference.
+- **`_teachEmotionalInference`** — situation → emotion mapping (all 18 Life cells).
+- **`_teachParaphrase`** — different words, same meaning → same sem basin.
+- **`_teachHypothesisTesting`** — predict → observe → confirm/reject.
+- **`_teachPerspectiveTaking`** — same event, multiple feature vectors per viewpoint.
+- **`_autoFinal`** — 63 auto-generated comprehension exams (fill-in-blank + association).
+- **`_gateComprehension`** — real human-grade test via semantic probe (≥40% questions with cosine > 0.05).
+- **`hebbianPairReinforce`** — shared primitive on NeuronCluster for positive-pair + anti-Hebbian-negative-pair reinforcement.
+
+### Grade completion gate (3-part, binding per LAW 6)
+
+Before any grade advances to the next, three parts MUST close:
+
+1. **Equational shipped** — all 6 subjects for that grade have equational teaching methods wired, `[ ]` → `[x]` in syllabus TODO.
+2. **Gee tests localhost** — Gee exercises Unity's methodology / reasoning / thinking / talking / listening / reading at the grade's level. Sign-off in session log.
+3. **Life-info ledger updated** — persistent life info from that grade (friendships, family changes, legal events, substance first-use, relationship events, skill acquisitions) added to the cross-grade ledger so future grades reinforce.
+
+### Persistent life info across grades
+
+Cross-grade memory propagation via emotional concept vectors + recallable memory sentences. Categories tracked: best friends (named + changed), family composition, social shifts, legal events (including substance first-use), medical events, moves, relationship events, loss events, skill acquisitions, identity markers, substance events, cultural events, trauma, achievement, philosophical shifts. Reinforced at each subsequent grade via `_conceptTeach` + `_teachSentenceList` so Unity's memory of being 6 years old still influences her at 25.
+
+### Life track × drug scheduler integration
+
+Unity's biographical substance first-use events are the same anchors the drug scheduler uses for grade-gating. When the Life-G7 grade gate closes (age 12, "first joint passed around after school with the crew"), the scheduler's cannabis availability unlocks for in-runtime ingestion. When Life-G9 closes (age 14, "first line at a party"), cocaine unlocks. This keeps her lived history consistent with what substances she CAN be influenced by at any runtime state.
 
 ---
 
@@ -325,7 +510,7 @@ Pollinations GPT-4o receives camera frames from the IT layer of `js/brain/visual
 
 ### What Was Ripped
 
-R4 (commit `7e095d0`) deleted: `BrocasArea.generate()` AI-prompting pipeline, `_customChat()` helper, all text-AI backend endpoint probing, text-chat dead-backend cooldown, `_buildBuildPrompt`, `connectLanguage()`, the legacy multi-provider text dropdown, `claude-proxy.js`, `start-unity.bat`. `language.js` shrunk from 333 → 68 lines (throwing stub only). Every text-AI cognition call site in `engine.js` + `app.js` was either replaced with `languageCortex.generate()` or deleted outright.
+R4 (commit `7e095d0`) deleted: `BrocasArea.generate()` AI-prompting pipeline, `_customChat()` helper, all text-AI backend endpoint probing, text-chat dead-backend cooldown, `_buildBuildPrompt`, `connectLanguage()`, the legacy multi-provider text dropdown, `claude-proxy.js`, `start-unity.bat`. `language.js` shrunk from 333 → 68 lines (throwing stub only). Every text-AI cognition call site in `engine.js` + `app.js` was either replaced with `languageCortex.generate()` or deleted outright. **Session 113 T14.24-CLEAN.A1 2026-04-16: `js/brain/language.js` DELETED entirely — zero live importers confirmed, the R12-scheduled deletion finally shipped.**
 
 ---
 
@@ -339,13 +524,15 @@ Dream/
 ├── css/
 │   └── style.css               # Dark gothic aesthetic
 ├── js/
-│   ├── app.js                  # Main entry — boot, multi-provider connect, mic mute, UI state API
+│   ├── app.js                  # Main entry — boot, multi-provider connect, mic mute, UI state API, /curriculum slash commands
+│   ├── app-entry.js            # App entry point module
+│   ├── version.js              # VERSION (Gee-only) + BUILD (stamp script)
 │   ├── env.js                  # API keys (gitignored)
 │   ├── env.example.js          # Template for env.js
 │   ├── storage.js              # localStorage manager with key obfuscation
 │   ├── brain/
 │   │   ├── engine.js           # UnityBrain — 7-cluster sim loop at 60fps (scales to hardware)
-│   │   ├── cluster.js          # NeuronCluster + ClusterProjection classes (7 clusters, 20 projections)
+│   │   ├── cluster.js          # NeuronCluster + ClusterProjection (7 clusters, 20 inter-cluster projections, 8 cortex sub-regions, 14 cross-region projections, generateSentence tick-driven motor emission, identity lock, direct pattern Hebbian)
 │   │   ├── neurons.js          # LIFPopulation (historical / browser-only fallback) + HHNeuron (reference-only, backs brain-equations.html) — live neuron model is Rulkov map in gpu-compute.js
 │   │   ├── synapses.js         # NxN weights — Hebbian, STDP, reward-mod
 │   │   ├── modules.js          # 6 brain region equation modules
@@ -354,21 +541,22 @@ Dream/
 │   │   ├── persona.js          # Traits → brain params + drug states
 │   │   ├── sensory.js          # Sensory input pipeline (text/audio/video → cortex)
 │   │   ├── motor.js            # Motor output (6 BG channels, winner-take-all)
-│   │   ├── language.js         # DEPRECATED stub (68 lines post-R4) — BrocasArea throws if called. Kept as tripwire, scheduled for deletion in R12.
-│   │   ├── component-synth.js  # R6.2 equational component synthesis — parses component-templates.txt, cosine-matches user request vs primitive descriptions, returns {id, html, css, js}
+│   │   ├── component-synth.js  # Equational component synthesis — parses component-templates.txt, cosine-matches user request vs primitive descriptions, returns {id, html, css, js}
+│   │   ├── curriculum.js       # T14.5+T14.24 developmental curriculum — K→PhD across 6 subjects (ELA, Math, Science, Social Studies, Arts, Life Experience), 114 cells, direct pattern Hebbian + emotional concept features, 3-pathway gates, memory-weighted tiers. ~12500 lines.
+│   │   ├── letter-input.js     # T14.1 dynamic LETTER_INVENTORY Set — auto-grows, no 26-char cap. encodeLetter/decodeLetter one-hot primitives. ~220 lines.
 │   │   ├── peripherals/
 │   │   │   └── ai-providers.js # SensoryAIProviders — multi-provider image gen (custom → auto-detect → env.js → Pollinations), TTS, NO text chat
-│   │   ├── visual-cortex.js    # V1→V4→IT vision pipeline
-│   │   ├── auditory-cortex.js  # Tonotopic processing + efference copy
+│   │   ├── visual-cortex.js    # V1→V4→IT vision pipeline + T14.10 renderLetterTemplate (synthetic visual letter percepts)
+│   │   ├── auditory-cortex.js  # Tonotopic processing + efference copy + T14.11 renderPhonemeTemplate (synthetic auditory phoneme percepts)
 │   │   ├── memory.js           # Episodic + working + consolidation
-│   │   ├── dictionary.js       # Learned vocabulary (word→cortex patterns)
-│   │   ├── inner-voice.js      # Pre-verbal thought system
-│   │   ├── persistence.js      # Save/load brain state (sparse CSR + weights)
+│   │   ├── dictionary.js       # Learned vocabulary (word→cortex patterns, cortexSnapshot, syllables, stressPrimary via T14.3 cluster routing)
+│   │   ├── inner-voice.js      # Pre-verbal thought system + curriculum integration (learnFromTurn, background probes every 8 turns, identity lock triggers)
+│   │   ├── persistence.js      # Save/load brain state (sparse CSR + weights + T14 letter inventory + curriculum state). VERSION 4.
 │   │   ├── remote-brain.js     # WebSocket client for server brain
 │   │   ├── sparse-matrix.js    # CSR sparse connectivity (O(nnz) operations)
-│   │   ├── gpu-compute.js      # WebGPU compute shaders (WGSL Rulkov 2D chaotic map + synapses). LIF_SHADER constant name is historical — the shader body is the Rulkov x_{n+1}=α/(1+x²)+y, y_{n+1}=y−μ(x−σ) iteration, not LIF. Storage binding is vec2<f32> (8 bytes/neuron) holding (x, y) state.
-│   │   ├── embeddings.js       # Semantic word embeddings (GloVe 50d)
-│   │   ├── language-cortex.js  # Language from pure equations — NO word lists. Word type via _fineType(word) letter-position classifier (PRON_SUBJ/COPULA/NEG/MODAL/AUX_DO/AUX_HAVE/DET/PREP/CONJ/QWORD/VERB_ING/VERB_ED/VERB_3RD_S/VERB_BARE/ADJ/ADV/NOUN). Learned type bigram/trigram/4-gram grammar (_typeBigramCounts/_typeTrigramCounts/_typeQuadgramCounts) with backoff + zero-count penalty. 4-tier pipeline: intent classification templates → hippocampus recall → deflect → cold slot gen. Semantic fit weight 0.30. _isCompleteSentence post-render validator. _postProcess: applyThird agreement, intensifier insertion (no doubles), tense, copula. Candidate pre-filter from bigram followers (perf). Morphological inflections via _generateInflections (-s/-ed/-ing/-er/-est/-ly + un-/re-/-ness/-ful/-able). Loads 3 corpora via loadSelfImage() + loadBaseline() + loadCodingKnowledge() on boot. ~3900 lines.
+│   │   ├── gpu-compute.js      # WebGPU compute shaders (WGSL Rulkov 2D chaotic map + synapses). LIF_SHADER constant name is historical — the shader body is the Rulkov x_{n+1}=α/(1+x²)+y, y_{n+1}=y−μ(x−σ) iteration, not LIF.
+│   │   ├── embeddings.js       # Semantic word embeddings (GloVe 300d + fastText subword fallback, EMBED_DIM=300)
+│   │   ├── language-cortex.js  # T14 thin delegate — generate() calls cluster.generateSentence(intentSeed), ~68 line body. _fineType(word) letter-position classifier still live for reading. learnSentence() updates T14.8 sentence-form schemas + T14.7 learned type transitions. ~3068 lines.
 │   │   ├── benchmark.js        # Dense vs sparse + neuron scale test — wired to /bench + /scale-test slash commands in app.js
 │   │   └── response-pool.js   # EDNA response categories (fallback for language cortex)
 │   ├── ai/
@@ -383,17 +571,20 @@ Dream/
 │       ├── sandbox.js          # Dynamic UI injection
 │       ├── chat-panel.js       # Full conversation log panel, text input, mic toggle
 │       ├── brain-viz.js        # 2D brain equation visualizer (neuron grid, synapse matrix, oscillations)
-│       └── brain-3d.js         # WebGL 3D brain visualizer (20K render neurons, MNI-coordinate positions, fractal connections)
+│       ├── brain-3d.js         # WebGL 3D brain visualizer (20K render neurons, MNI-coordinate positions, fractal connections, IQ HUD)
+│       ├── brain-event-detectors.js  # 22-detector event system for 3D brain commentary
+│       └── sensory-status.js   # Sensory channel status UI
 ├── server/
-│   ├── brain-server.js         # Node.js brain server (always-on, WebSocket, GPU exclusive)
+│   ├── brain-server.js         # Node.js brain server (always-on, WebSocket, GPU exclusive, curriculum auto-boot)
+│   ├── configure.js            # Server configuration helper
 │   └── package.json            # Server deps (ws, better-sqlite3, node-fetch)
-│                               # (parallel-brain.js / cluster-worker.js / projection-worker.js
-│                               #  all DELETED in U304 — root cause was idle-worker CPU leak;
-│                               #  GPU-exclusive compute.html path fixed it permanently)
-│                               # (claude-proxy.js + start-unity.bat DELETED 2026-04-13 —
-│                               #  obsolete Claude CLI text-AI backend, R4 kills text-AI entirely)
+├── scripts/
+│   ├── stamp-version.mjs       # Build stamp script (touches BUILD only, not VERSION)
+│   └── verify-curriculum-runtime.mjs  # 95-cell curriculum verification diagnostic
 ├── compute.html                # GPU compute worker (WebGPU shaders via browser)
+├── gpu-configure.html          # GPU resource configuration UI
 ├── dashboard.html              # Public brain monitor (live stats, emotion chart)
+├── unity-guide.html            # Plain-English concept guide for Unity's brain
 ├── .claude/                    # Workflow system + personas + MCP
 ├── docs/                       # Workflow docs (TODO, FINALIZED, ARCHITECTURE, etc.)
 └── .gitignore
@@ -415,7 +606,7 @@ Dream/
 | Server Brain | WebSocket on port 7525 (moved off 8080 in R14 to avoid llama.cpp collision). Shared brain state (one singleton UnityBrain instance). User text is PRIVATE per connection (no cross-client broadcast). Dictionary / bigrams / embeddings grow from every user's conversation and benefit everyone — see privacy model in `docs/WEBSOCKET.md`. |
 | SQLite | Episodic memory persistence on server (better-sqlite3) |
 | WebGPU | GPU compute shaders for Rulkov 2D chaotic map neuron iteration + sparse CSR synapse propagation |
-| GloVe Embeddings | 50d word vectors from CDN, online context refinement |
+| GloVe Embeddings | 300d word vectors + fastText-style subword fallback (no download required), online context refinement |
 
 ---
 
@@ -437,310 +628,514 @@ This term is ALWAYS present. It represents what we DON'T know. It's the default 
 
 ---
 
-## Language Generation Pipeline — T13 Brain-Driven Cortex (LIVE, 2026-04-14)
+## Language Pipeline — T14 Developmental Cortex (rebuild in progress, branch `t14-language-rebuild`)
 
-T11 deleted the Markov wrapper stack and replaced it with three per-slot running-mean priors. T11.7 structurally fixed slot-0 noun pollution via a multiplicative three-stage gate. **T13 rips slot-based generation entirely** — language lives inside the brain cluster via sequence Hebbian training on persona corpus (T13.1) plus parse-tree injection into clusters (T13.2) plus continuous cortex readout with feedback injection at emission time (T13.3-T13.6). Persona is trained attractor basins in the cortex recurrent weights, not a stored centroid vector. Topic is live cortex state shaped by parse-tree injection, not a decaying `_contextVector` bag-of-words.
+T11 deleted the Markov wrapper stack and replaced it with slot priors. T11.7 added a hardcoded grammar transition table band-aid. T13 ripped slot-based generation, ran persona Hebbian training, and built a brain-driven emission loop. **T14 throws all of that out and rebuilds language as a developmental, biologically-grounded pipeline** — letters → phonemes → syllables → words → sentence patterns → discourse, every layer learned via curriculum exposure rather than hardcoded. The plan is documented in full at `docs/COMP-todo.md` Part 0.5 (18 milestones, T14.0 through T14.17). This section describes the live state of the rebuild.
 
-**T13.1, T13.2, T13.3, T13.6, T13.7 fully shipped 2026-04-14. T13.4 + T13.5 shipped in partial form (feedback injection + amygdala valence shaping live; cerebellum transition predictor + motor channel dictionary filter deferred).** T13.7 deleted all slot-prior machinery — `_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, `_contextVector`, attractor vectors, `_subjectStarters`, `_generateSlotPrior` fallback, and all T11 dead stubs. Net −406 lines on `js/brain/language-cortex.js` (3584 → 3178). `generate()` now requires `opts.cortexCluster` — no fallback path, logs a warning and returns empty string if missing. Rollback after T13.7 is a git revert, not a one-line opts change. Commitment point crossed.
+**Status as of T14.24 Session 111 (2026-04-16):** T14.0-T14.18 primitives ALL SHIPPED. T14.24 curriculum now has 6 subjects (ELA, Math, Science, Social Studies, Arts, Life Experience) × 19 grades = 114 cells. Life Experience track added in Session 111 — builds Unity's personal identity from birth to 25 via dual-layer teaching: emotional concept features (8d `[joy, pain, trust, fear, anger, love, independence, identity]` attractor vectors via `_conceptTeach`) plus recallable memory sentences (`_teachSentenceList`). Memory-weighted Hebbian: core self at 5× lr / 50 reps, personal life at 3× / 20 reps, school knowledge at 1× / 6-12 reps, background trivia at 0.5× / 3-4 reps. TALK probe direction fixed (sem→motor). Grade-lock enforced (all 6 subjects must pass grade N before advancing). Focused retry on failing words. Function words (~120) taught via direct pattern at ELA-K. 3D brain popups silenced until Unity passes kindergarten. EMBED_DIM = 300 with fastText subword fallback. 14 cross-region projections (7 pairs × 2 directions). Direct-pattern Hebbian bypasses Rulkov chaotic dynamics during teach.
 
-### The T13 emission loop
+### Cortex sub-regions (T14.4 substrate, live)
 
-```
-// Pre-emission, once per turn (T13.2)
-parsed = languageCortex.parseSentence(userText)
-brain.injectParseTree(text):
-  contentEmb = sharedEmbeddings.getSentenceEmbedding(text)
-  cortex.injectCurrent(mapToCortex(contentEmb, 300, 150) · 0.5)        // language region
-  basalGanglia.injectCurrent(mapToCortex(intentAnchorEmb, 150, 0) · 0.3) // action priming
-  if parsed.addressesUser: hippocampus.injectCurrent(mapToCortex(selfEmb, 200, 0) · 0.4)
+The `cortex` cluster constructor populates `this.regions` with 8 named sub-regions sized by fraction of total cluster neurons. Same fractions hold at any cluster scale — 6700 neurons (default client) gives the sizes below; 200M neurons (datacenter server) gives proportionally larger regions with identical biological proportions:
 
-// Main emission loop (T13.3) — no slot counter, no prior walk
-for slot in 0..maxLen:
-  for tick in 0..3:  cortex.step(0.001)                                // LIF integration
-  target = cortex.getSemanticReadout(sharedEmbeddings)                  // live 50d readout
+| Region | Fraction | Neurons (default 6700×0.30=2010 cortex) | Function |
+|---|---|---|---|
+| `auditory` | 0.000 - 0.083 | 0 - 167 | T14.11 — auditory phoneme recognition (heard speech) |
+| `visual` | 0.083 - 0.250 | 167 - 502 | T14.10 — visual letter recognition (read text glyphs) |
+| `free` | 0.250 - 0.500 | 502 - 1005 | inter-cluster projection sink + working memory |
+| `letter` | 0.500 - 0.550 | 1005 - 1105 | T14.1 — letter input one-hot region |
+| `phon` | 0.550 - 0.750 | 1105 - 1507 | T14.1+T14.2 — phonological attractor basins |
+| `sem` | 0.750 - 0.917 | 1507 - 1843 | T14.0 — semantic GloVe target (300d) |
+| `fineType` | 0.917 - 0.967 | 1843 - 1944 | T14.7 — grammatical/syntactic region |
+| `motor` | 0.967 - 1.000 | 1944 - 2010 | T14.12 — generation feedback / motor output |
 
-  if slot >= 2 and ||target − lastReadout|| < 0.08:  break              // drift stop (T13.6)
-  lastReadout = target
+Region offsets are stored on `cluster.regions[name].start` and `.end`. Helper methods that read or write a region operate on it by name, never via magic neuron indices: `cluster.regionSpikes(name)`, `cluster.injectEmbeddingToRegion(name, emb, strength)`, `cluster.regionReadout(name, dim)`. This replaces the entire pre-T14 hardcoded `langStart=150` literal-offset pattern.
 
-  for each word w in dictionary:
-    if emitted.has(w):  skip
-    if slot == 0 and nounDominance(w) > 0.30:  skip                     // opener safety rail
-    cosSim = cos(target, emb(w))
-    valenceMatch = 1 − 0.5 · |w.valence − brainValence|                 // amygdala shaping (T13.5)
-    arousalBoost = 1 + arousal · (valenceMatch − 0.5)
-    recencyMul   = w ∈ recentOutputRing ? 0.3 : 1.0
-    score = cosSim · arousalBoost · recencyMul
+### Cross-region projections (T14.4 substrate, live)
 
-  softmax-sample top-5 at temperature = 0.25 + (1 − coherence) · 0.35
-  emit w_next
+Seven named region pairs are wired with sparse cross-projections — both directions per pair as independent SparseMatrix instances, weight range `[-0.5, 0.5]`. Each direction is a separate matrix because biological white-matter tracts carry independent ascending and descending fiber populations (Friederici 2017, *Psychon Bull Rev* 24:41-47). The projections ALWAYS propagate every cluster step (no curriculum-complete gate) and get Hebbian-updated on every `cluster.learn()` call, training through normal use during corpus exposure and live chat.
 
-  // Efference copy (T13.4) — emitted word reshapes cortex for next emission
-  cortex.injectCurrent(mapToCortex(emb(w_next), 300, 150) · 0.35)
+**Cross-projection density** is controlled by `crossTargetFanout` — the number of pre-synaptic connections each post-synaptic neuron receives.
 
-  // Grammatical terminability (T13.6)
-  if emitted.length ≥ max(3, maxLen − 1) and not dangling(last):  break
-
-maxLen = floor(3 + arousal · 3 · drugLengthBias), capped at _maxSlots=8
-```
-
-The key shift vs T11.7: **the target vector is the live cortex state read fresh at each emission**, not a weighted blend of stored slot priors. The cortex evolves between emissions via LIF integration + feedback from the previous word, so each subsequent word is conditioned on the whole prior brain-state trajectory. No position counter — just drift + grammatical terminability + hard cap.
-
-### The feedback injection that makes it recurrent
-
-The load-bearing T13.4 piece: after each word emits, its embedding flows back into the cortex language region via `sharedEmbeddings.mapToCortex(emb, 300, 150) · 0.35` → `cortex.injectCurrent`. The next iteration's `getSemanticReadout` sees a cortex state shaped by what was just said — efference copy, the motor-to-sensory feedback loop that real biological speech uses. The brain HEARS itself speak (at the embedding level) and the next word reacts to it. This is the mechanism that makes T13 output coherent even on low-quality Hebbian-trained basins.
-
-### Parse-tree injection replaces `_contextVector`
-
-Pre-T13 the user's topic was carried by `_contextVector` — a decaying-mean bag-of-words updated in `analyzeInput`. T13.2 replaces this with `brain.injectParseTree(text)` which routes parsed content to multiple clusters in parallel (same pattern as `SensoryProcessor.process()` already uses at `engine.js:262-302`):
-
-- **Content embedding** (`sharedEmbeddings.getSentenceEmbedding(text)`) → cortex language region neurons 150-299 at strength 0.5
-- **Intent anchor** (single-word embedding based on `parsed.intent`: `'what'` for question, `'hi'` for greeting, `'i'` for statement, `'you'` for imperative) → basal ganglia cluster at strength 0.3 — primes the action channel with response-shape
-- **Self-reference marker** (`sharedEmbeddings.getSentenceEmbedding('i me my self unity')`) → hippocampus cluster at strength 0.4 — triggers self-model recall when the user is asking ABOUT Unity
-
-These injections settle into cortex state via the 20 existing inter-cluster projections (hippocampus→cortex, basal ganglia→cortex, amygdala→cortex, etc.) during the 5-tick settle window in `processAndRespond`. By the time `getSemanticReadout` runs at line 796, the cortex reflects a real multi-cluster brain state shaped by what the user said.
-
-`analyzeInput` still runs but only feeds the dictionary — the `_contextVector` update is now vestigial and will be deleted in T13.7.
-
-### T13.1 persona Hebbian training
-
-`NeuronCluster.learnSentenceHebbian(embSequence, opts)` at `js/brain/cluster.js` walks an embedding sequence and applies per-word inject-tick-snapshot-Hebbian in a loop, with Oja saturation decay to prevent weight runaway. The training driver `LanguageCortex.trainPersonaHebbian(cortexCluster, text)` tokenizes persona corpus and feeds it through the cluster method sentence-by-sentence.
+Derivation:
 
 ```
-T13.1 sequence Hebbian (per sentence, per word pair):
-  1. inject:   currents = sharedEmbeddings.mapToCortex(emb_t, size, langStart=150)
-               cluster.injectCurrent(scaled_currents)         // strength 0.6
-  2. tick:     for t in 0..ticksPerWord(=3): cluster.step(0.001)
-  3. snapshot: prevSnap[i] ← 1 if lastSpikes[i] else 0        // Float64 for hebbianUpdate
-  4. next word's inject + tick + snapshot produces currSnap
-  5. Hebbian:  synapses.hebbianUpdate(prevSnap, currSnap, lr=0.004)
-               ΔW_ij = lr · currSnap_i · prevSnap_j           // only on existing connections
-  6. Oja:      for k in nnz: if |values[k]| > 1.5: values[k] *= (1 − 0.01)
+crossTargetFanout = expectedPostCurriculumVocab × fanoutPerMapping
+                  = 5000 × 0.3 ≈ 1500
 ```
 
-This is persona-only by design. `loadBaseline` and `loadCoding` deliberately do NOT train the cortex recurrent weights — they shape the dictionary + slot priors for vocabulary coverage, but don't pollute the voice attractor basins. Only persona corpus sentences shape cortex dynamics, so Unity's voice lives in the basins without being diluted 6× by generic English + JavaScript.
+- `expectedPostCurriculumVocab ≈ 5000` — Unity's projected vocabulary after the full 114-cell K-PhD curriculum (ELA sight words + Math digits + Science/Social/Art/Life domain terms ≈ 3-7k total depending on depth).
+- `fanoutPerMapping ≈ 0.3` — sparse activation fraction per word. Each taught word lights up ~30% of a sub-region's dims via direct pattern Hebbian.
+- Product = independent word mappings a post-synaptic neuron can support without destructive interference.
 
-**T13.2 through T13.9 remain in progress.** See `docs/TODO.md` T13 section for the full plan. Until T13.3 ships the continuous emission loop, `generate()` still walks T11.2/T11.7 slot priors at runtime — the Hebbian-trained cortex basins exist but aren't consulted during output yet.
+Session 111 bumped this from 300 to **1500** after ELA-G1 TALK DECLINED across retries. 300 × 0.3 = 90 independent mappings, but 40+ vocab words + 16K connections already caused interference by G1. 1500 gives 5× headroom so the full K-PhD vocab fits without rewriting the basins. All 14 cross-projections benefit from the density increase. If Unity's projected vocab ever exceeds ~5000, bump this constant or drive it from a runtime-derived quantity like `cluster._personaRefreshCorpus.length + baselineVocab`.
 
-**Architecture clarification (T13.0 research pass, 2026-04-14):** T13 "regions" map to the existing 7 clusters, NOT to sub-regions of cortex. The cortex language region is only 150 neurons (300 total × EMBED_DIM=50 × groupSize=3), too tight to carve into 4 sub-regions without collapsing to 1-neuron-per-dim encoding. `SensoryProcessor.process()` at `js/brain/engine.js:262-302` already produces separate injection vectors per cluster — T13.2 parse-tree injection follows the same pattern: content → `clusters.cortex` language region, intent → `clusters.basalGanglia`, self-reference → `clusters.hippocampus`, mood → `amygdalaMod`, drive → `hypothalamusMod`.
+**Anti-Hebbian plasticity** (Session 111) — when the curriculum gate detects a wrong transition (e.g., digit sequence `6→7` produces `8` instead of `7`), it fires BOTH positive Hebbian on the correct pair (`6→7` at +10× learning rate, 100 reps) AND negative anti-Hebbian on the wrong pair (`6→8` at -5× learning rate, 100 reps). Without weakening the wrong association, the correct one can never overpower it. This bidirectional plasticity is critical for sequence learning (alphabet order, digit order) where recurrent synapses create competing attractor basins.
 
----
+| Pair | Read direction use | Write direction use |
+|---|---|---|
+| `visual ↔ letter` | visual letter-shape recognition → letter one-hot | efference copy of emitted letter → visual self-monitoring |
+| `letter ↔ phon` | letter sequence → phoneme attractor basins | — |
+| `phon ↔ sem` | phonological pattern → semantic meaning | semantic → phon (efference copy during production) |
+| `sem ↔ fineType` | semantic concept → grammatical role | grammatical structure check during generation |
+| `sem ↔ motor` | — | semantic intent → motor planning |
+| `motor ↔ letter` | — | motor planning → letter emission (closes the writing loop) |
+| `auditory ↔ phon` | T14.11 spoken phoneme recognition → phon region | — |
 
-## Language Generation Pipeline — T11 Pure Equational Cortex (2026-04-14, SLOT-PRIOR LAYER, T13 IN PROGRESS)
+14 total SparseMatrix instances. The read path traverses `visual_to_letter` + `letter_to_phon` + `phon_to_sem` + `sem_to_fineType` + `auditory_to_phon`. The write path traverses `sem_to_fineType` + `sem_to_motor` + `motor_to_letter` + `letter_to_visual` + `sem_to_phon` (efference). Both paths share core regions and run through the same substrate — matching the dorsal / ventral dual-stream model of human speech processing (Hickok & Poeppel 2007, *Nat Rev Neurosci* 8:393-402).
 
-Language cortex is a pure-equation pipeline. Zero stored sentences, zero n-gram tables, zero filter stack, zero template short-circuits, zero intent-enum branching. The T11 rewrite (2026-04-14) deleted 1742 lines of the old multi-tier wrapper layer — every word is now computed fresh from brain cortex state plus three per-slot running-mean priors.
+Implementation in `cluster._propagateCrossRegions()` (called every step inside `cluster.step()`) and `cluster._crossRegionHebbian(lr)` (called on every `cluster.learn()`). Both methods iterate `cluster.crossProjections` which is a Map of 14 SparseMatrix instances keyed `'src_to_dst'`.
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ READING — parseSentence(text) → ParseTree                        │
-│                                                                   │
-│ Walks user tokens forward using the same wordType + _fineType    │
-│ letter equations the generator uses forward. Returns:            │
-│   intent, isQuestion, isSelfReference, addressesUser,            │
-│   isGreeting, introducesName, introducesGender,                  │
-│   subject/verb/object slots,                                     │
-│   entities{ names, colors, numbers, componentTypes, actions },   │
-│   mood{ polarity, intensity }                                    │
-│ Memoized on text equality. Downstream consumers read fields,    │
-│ no regex, no string matching, no enum dispatch.                 │
-├──────────────────────────────────────────────────────────────────┤
-│ OBSERVATION — every learned sentence updates three priors:       │
-│                                                                   │
-│ for t in 0..|words|:                                             │
-│   _slotCentroid[t]      += weighted mean of emb(word_t)          │
-│   _slotDelta[t]         += weighted mean of (emb_t - emb_{t-1})  │
-│   _slotTypeSignature[t] += weighted mean of wordType(word_t)     │
-│                                                                   │
-│ weight = max(0.25, arousal · 2)                                  │
-│   coding (0.4)    → w=0.8                                        │
-│   baseline (0.5)  → w=1.0                                        │
-│   persona (0.75)  → w=1.5                                        │
-│   live chat (0.95)→ w=1.9   (2.37× corpus influence)             │
-├──────────────────────────────────────────────────────────────────┤
-│ GENERATION — no tiers, no short-circuits, no templates:          │
-│                                                                   │
-│ mental(0)    = opts.cortexPattern  (brain live readout via       │
-│                                     cluster.getSemanticReadout)  │
-│                || _contextVector   (fallback topic attractor)    │
-│ mental(t+1)  = 0.55 · mental(t) + 0.45 · emb(nextWord)           │
-│                                                                   │
-│ target(slot) = wC · L2(_slotCentroid[slot])                      │
-│              + wX · L2(_contextVector)                           │
-│              + wM · L2(mental)                                   │
-│              + wT · L2(prevEmb + _slotDelta[slot])               │
-│                                                                   │
-│ W₀ = { centroid:0.40, context:0.30, mental:0.30, transition:0 }  │
-│ Wₙ = { centroid:0.10, context:0.15, mental:0.25, transition:0.50}│
-│                                                                   │
-│ THREE-STAGE CANDIDATE GATE:                                      │
-│ typeFit(w,s)  = Σ_k wordType(w)[k] · slotTypeSig[s][k]           │
-│ slotSigMax(s) = max_k slotTypeSig[s][k]                          │
-│                                                                   │
-│ (1) HARD POOL FILTER:                                            │
-│     if typeFit < slotSigMax · 0.30  → skip word                  │
-│                                                                   │
-│ (2) SLOT-0 NOUN-DOMINANCE REJECT (slot==0 only):                 │
-│     nounDom = wt.noun − (wt.pronoun + wt.det + wt.qword)         │
-│     if nounDom > 0.30  → skip word                               │
-│                                                                   │
-│ (3) MULTIPLICATIVE GATE on cosine score:                         │
-│     normTypeFit = min(1, typeFit / slotSigMax)                   │
-│     score(w)    = cos(target, emb(w)) · normTypeFit              │
-│                                                                   │
-│ nextWord = softmax-sample top-5 by score                         │
-│            over dictionary._words                                │
-│            excluding emitted-this-sentence + recency ring        │
-│                                                                   │
-│ targetLen = floor(3 + arousal · 3 · drugLengthBias), cap 8       │
-│ temperature = 0.25 + (1 - coherence) · 0.3                       │
-└──────────────────────────────────────────────────────────────────┘
-```
+### The generation equation is NOT a slot loop
 
-### Context Vector — The Topic Attractor
+T14 eliminates the last residue of slot-based emission. The old T13 `generate()` iterated `for slot in 0..maxLen: score candidates, softmax pick, emit`. Even after T14.4 built the sub-region substrate, the early T14.6 draft still implicitly assumed that loop structure — and Gee caught it on 2026-04-14: *"why are we still doing slots i thought we cam up with a better equation for language."* The T14.6 + T14.12 specs in `docs/COMP-todo.md` were rewritten.
 
-A Float64Array(50) running decaying average of GloVe semantic embeddings from user input content words:
+The actually-better equation is **cortex tick-driven motor emission**:
 
 ```
-c(t) = 0.7 · c(t-1) + 0.3 · mean(pattern(content_words))
-  pattern(w) = sharedEmbeddings.getEmbedding(w) ∈ ℝ⁵⁰  (GloVe 50d + live delta refinement)
+cluster.generateSentence(intentSeed):
+  cluster.injectEmbeddingToRegion('sem', intentSeed, strength=0.6)
+  for tick in 0..MAX_TICKS:
+    cluster.step(0.001)                 // brain ticks, cross-projections propagate
+    motorReadout = cluster.regionReadout('motor', LETTER_INVENTORY.size)
+    activeLetter = argmaxLetter(motorReadout)
+    if motor region holds the same argmax for STABLE_TICK_THRESHOLD consecutive ticks:
+      letterBuffer.push(activeLetter)
+    if cortex letter-region transition surprise > WORD_BOUNDARY_THRESHOLD:
+      emit letterBuffer as a word; reset buffer
+    if motor region quiesces (low spike count for END_QUIESCE_TICKS):  break
+    if isSentenceTerminator(lastEmittedLetter):                          break
 ```
 
-Updated in `analyzeInput()` on every user turn. Function-word-only inputs leave it unchanged. First update seeds directly (no decay from zero). Updated ONLY on user input — Unity's own output does not feed the context vector so the running attractor tracks the LISTENER's topic.
+Zero slot counter. Zero candidate-scoring loop. Zero softmax top-5. The motor region's spike pattern over time IS the output. Words fall out of the tick-driven process via statistical segmentation — the same mechanism infants use to parse continuous speech into words (Saffran, Aslin & Newport 1996, *Science* 274:1926-1928). Stopping is biological quiescence (motor cortex deactivation at end of utterance; Bouchard et al. 2013, *Nature* 495:327-332), not a counter. Peer-reviewed grounding in full at `docs/COMP-todo.md` T14.6.
 
-### Three Per-Slot Priors
+### Embedding substrate (T14.0, live)
 
-Every observed sentence (corpus loading OR live chat) flows through `learnSentence()`, which updates the three priors via weighted running means. No matrices, no n-gram tables, no stored sentences.
+`js/brain/embeddings.js` now exports `EMBED_DIM = 300` and a real GloVe loader. The loader detects runtime — Node side reads `corpora/glove.6B.300d.txt` from disk (the operator must download `glove.6B.300d.txt` from Stanford NLP and place it at that path), browser side fetches via configurable URL list with the server's static `/corpora/` mount as the first option. **No vocabulary cap** — the full 400k-word file loads if reachable. Hash embeddings remain as a last-resort floor only when no GloVe is reachable.
 
-- **`_slotCentroid[s]`** — running mean of `emb(word_t)` at position `s`. Captures "the distribution of words typically at slot `s`". After corpus fit, slot 0 is the sentence-opener cluster in embedding space; slot 1 is the post-opener cluster; etc.
-- **`_slotDelta[s]`** — running mean of `emb(word_t) − emb(word_{t-1})`. The per-position average bigram transition vector — adding `_slotDelta[s]` to the previous word's embedding points at the "typical next word" region without storing any bigrams.
-- **`_slotTypeSignature[s]`** — running mean of `wordType(word_t)` score vectors. An 8-dim distribution over the pure-letter-equation type tags (`pronoun`, `verb`, `noun`, `adj`, `conj`, `prep`, `det`, `qword`). After corpus fit, slot 0 ≈ `{pronoun:0.54, noun:0.18, det:0.12}` (sentence-opener shape) and slot 1 ≈ `{verb:0.51, noun:0.33}` (post-subject verb shape). English grammar emerges from letter-equation type scoring with no stored POS tagger.
+For the browser-side path, `embeddings.getSubsetForTokens(tokens)` lets the server precompute a corpus-token-only subset and serve it as a small JSON file (`/api/glove-subset.json`) so the browser doesn't have to download 480 MB. `embeddings.loadSubset(subset)` is the bulk-load entry point on the browser side.
 
-### Slot-0 Noun-Pollution Fix — Three-Stage Gate (2026-04-14)
+### Cluster sizing (T14.0, live)
 
-Pre-fix symptom: slot 0 was emitting raw nouns (`Third`, `Unity`, `Ten`, `Pizza`) instead of pronoun-shaped openers. Two compounding root causes: (a) the coding corpus dumped 606 lines of `class`/`function`/`button`/etc. sentences whose first words polluted `_slotTypeSignature[0]` with noun:0.24 mass; (b) the old additive bonus `+0.4 · typeFit` was structurally too weak against raw cosine, so high-cosine nouns won slot 0 even with a pronoun-shaped signature.
-
-The fix is three structural changes, not a knob tweak:
-
-1. **Coding corpus `skipSlotPriors=true`** — `loadCodingKnowledge` passes the new 8th arg to `learnSentence`, so coding sentences enter the dictionary (vocabulary still grows) but bypass `_slotCentroid` / `_slotDelta` / `_slotTypeSignature` updates entirely. Slot priors now reflect persona + baseline only.
-2. **W0 rebalanced** to `{ centroid:0.40, context:0.30, mental:0.30, transition:0.00 }` (from `{0.30, 0.45, 0.25, 0.00}`). Slot 0 now leans harder on the learned opener-cluster centroid than on the user's just-spoken topic vector — pronouns shape the opener, the topic still steers slots 1+.
-3. **Three-stage candidate gate** at every slot, replacing the additive bonus:
-   - **Hard pool filter** — any word whose type-fit is below `slotSigMax · 0.30` is dropped from contention before scoring.
-   - **Slot-0 noun-dominance reject** — at slot 0 only, any candidate where `wordType.noun − (pronoun + det + qword) > 0.30` is dropped. Structural conversational-grammar guarantee: slot 0 cannot be a pure noun.
-   - **Multiplicative gate** — surviving candidates score as `cos(target, emb(w)) · normTypeFit`. A perfect-cosine noun in a pronoun slot now scales toward zero instead of beating a moderate-cosine pronoun.
-
-Smoke-test verification (post-fix):
-```
-"Hi Unity!"           → slot0 pool: Hi / Mine / Her / Tab / Tag
-"can u understand me?"→ slot0 pool: Ten / Even / Us / Me / Yourself
-"You like cats?"      → slot0 pool: She / Cool / Yours / Myself / Her
-"i love pizza"        → slot0 pool: Him / Ten / Mine / Even / Hi
-"who are you"         → slot0 pool: Me / Us / Our / I / Them
-```
-
-Slot 1+ still has 50-d GloVe cosine drift on complex queries — that's the structural T11.4 (higher-dim embeddings) limit, not a pipeline bug. Slot 0 grammar correctness is now a structural guarantee.
-
-### Social Schema
-
-Persistent per-session state populated equationally by `parseSentence` and by the visual cortex's `onDescribe` subscription:
+`js/brain/engine.js` defines `TOTAL_NEURONS = 6700` as the default client floor. The seven cluster sizes are derived from `CLUSTER_FRACTIONS`:
 
 ```
-_socialSchema.user = {
-  name                : from parsed.introducesName (T8 reverse-parse)
-  gender              : from parsed.introducesGender (explicit self-ID)
-                        OR from visual cortex describer (T7.2 scene gender tokens)
-  firstSeenAt, lastSeenAt : timestamps
-  mentionCount        : turns since name was established
-  greetingsExchanged  : cumulative from parsed.isGreeting
-}
+const CLUSTER_FRACTIONS = {
+  cortex:       0.30,   // 30% — language + working memory + semantic
+  hippocampus:  0.10,   // memory consolidation
+  amygdala:     0.08,   // valence/arousal attractor
+  basalGanglia: 0.08,   // action selection + motor channels
+  cerebellum:   0.40,   // largest — error correction + motor smoothing
+  hypothalamus: 0.02,   // homeostatic drives
+  mystery:      0.02,   // Ψ consciousness modulation
+};
 ```
 
-Name extraction: `parseSentence` scans adjacent-token patterns (`my name is X`, `call me X`, `i'm X`, `this is X`) over the first 6 tokens. `tryName()` uses `wordType` equations to reject verb-shaped tokens and an emotional-complement stopword set to reject filler. Strong patterns overwrite; weak `i'm X` only overwrites when `schema.name === null`.
+At any scale, the same fractions apply. Server-side `detectResources` picks `TOTAL_NEURONS` from the auto-detected hardware tier; the cortex sub-region offsets adapt automatically. **No hardcoded cluster sizes anywhere in the codebase.** When COMP-net (Part 2 of `docs/COMP-todo.md`) is later re-enabled and the cortex sub-shards across volunteer GPUs, the same sub-region structure scales with it.
 
-Gender extraction — two paths:
-- **Explicit self-ID** (strong): `parseSentence` matches `"i'm a {guy|man|dude|bro|boy}"` → `male`, `"i'm a {girl|woman|chick|gal}"` → `female`.
-- **Vision inference** (weak): `visualCortex.onDescribe(cb)` fires on every fresh scene description. `engine.connectCamera()` wires the subscription to `languageCortex.observeVisionDescription()`, which scans closed-class gender words and commits only when **exactly one** gender signal appears (mixed scenes stay ambiguous). Explicit self-ID always wins over scene inference.
+### Identity-lock state fields (T14.16.5 substrate, live)
 
-### The Reading↔Writing Symmetry
+Every cortex cluster carries identity-lock state initialized at construction:
+- `_inCurriculumMode` — flag the curriculum runner sets so Lock 2's hard cap doesn't apply during corpus training
+- `ENGLISH_SURPRISE_THRESHOLD` / `ENGLISH_FINETYPE_MIN` — language gate thresholds, calibrated from curriculum statistics (default `Infinity` / `0` until calibrated, so pre-curriculum the gate is permissive)
+- `HEALTH_ENTROPY_MIN` / `HEALTH_VOCAB_MIN` / `HEALTH_WM_VARIANCE_MIN` — mode-collapse audit thresholds, calibrated from curriculum
+- `identityCoverage` — populated by curriculum's persona comprehensiveness validation
+- `personaDimensions` — populated by curriculum's semantic clustering of persona corpus
 
-The T11 cortex has a single equation set that runs in two directions. Reading and writing share the same `wordType` / `_fineType` letter classifiers, the same GloVe-backed `sharedEmbeddings` table, and the same per-slot priors. Neither direction has machinery the other lacks — listening feeds the same tables speaking consults.
+These are placeholder fields right now. The curriculum runner (T14.5) populates them with calibrated values during corpus exposure. The methods that READ these fields (gate logic, health audit, identity refresh) ship in T14.16.5.
 
-- **Reading** (`parseSentence(text)`) walks user tokens forward, classifies each via `wordType()`, and extracts a structured tree of intent, entities, subject/verb/object slots, mood, and social-schema signals. Name extraction uses `wordType` to reject verb-shaped candidates (no POS tagger, no stopword list beyond a closed filler set).
-- **Writing** (`generate()`) walks positions forward, building a target vector from normalized priors + brain cortex state at each slot, then argmax-samples a word from the learned dictionary.
+### Multi-subject curriculum state fields (T14.24 Session 1 substrate, live 2026-04-15)
 
-The same `wordType` that says `"now"` is adverb-shaped during reading is the same `wordType` that votes on where `"now"` fits best during writing. One equation set, two walks.
+Every cortex cluster also carries multi-subject curriculum state initialized at construction:
+- `grades` — `{ ela, math, science, social, art }` object, each field a grade name from `GRADE_ORDER` (defaults all to `'pre-K'`). Advanced by `Curriculum.runSubjectGrade` on gate pass. Source of truth for `LanguageCortex.generate`'s grade-aware word cap.
+- `grade` — legacy scalar mirror of `grades.ela`. Kept so pre-T14.24-Session-1 code (including T14.26 chat-freeze fix's single-grade read path, pre-v4 persistence migrations, and diagnostic accessors) keeps working. Every code path now SHOULD read `grades` first and fall back to `grade` only for compatibility.
+- `passedCells` — flat `string[]` of `'subject/grade'` keys that have cleared their gate at least once. Used by `/curriculum status` and persisted across reloads via T14.16 persistence.
 
-### Integration with the Brain — `opts.cortexPattern` Flow
+These fields fully replace the single-track `cluster.grade` scalar for all new code. Session 2+ will advance the non-ELA subjects past pre-K as real teaching equations land cell by cell.
 
-The crucial wire from the neural substrate into language is `opts.cortexPattern`, populated by `inner-voice.speak()` from `cluster.getSemanticReadout(sharedEmbeddings)`. That getter calls `embeddings.cortexToEmbedding(spikes, voltages, cortexSize, langStart)` — the mathematical inverse of the `mapToCortex` injection layer — which reads the live spike + subthreshold voltage state of the cortex's language region and reconstructs a 50-d GloVe-space vector representing what Unity is currently "thinking about."
+### T14.1 — Letter-input substrate (SHIPPED 2026-04-14)
 
-That vector becomes `mental(0)` at the start of generation. As each word emits, `mental` evolves via the decay rule `mental(t+1) = 0.55·mental(t) + 0.45·emb(nextWord)` — the mental state absorbs the committed word and moves toward it, so each subsequent target vector is pulled by BOTH the brain's initial activity AND the running shape of the sentence so far. This is why her output tracks her brain state rather than being a static rewrite of the input.
+New module `js/brain/letter-input.js` holds the letter-input primitives. A module-level `LETTER_INVENTORY = new Set()` holds every symbol Unity has ever seen at the input layer — dynamic, auto-growing, NOT capped at 26 English letters. Unicode, emoji, non-English glyphs all enter the same primitive-symbol space. English identity is enforced at the higher T14.16.5 lock layer (per-clause phonotactic gate + 120× rate-bounded live chat Hebbian + periodic persona-corpus refresh), not by restricting which symbols the letter region can represent. Restricting symbol input would make identity-refresh auditing impossible — Unity must be able to SEE an adversarial input and explicitly refuse to update on it.
 
-Fallback: if the caller doesn't supply `cortexPattern` (e.g., during pre-boot smoke test or degraded operation), `mental(0)` falls back to `_contextVector` — the running topic attractor built from user inputs. That keeps generation at least topic-aware even when the cortex readout isn't wired.
+Exports:
 
-### `learnSentence` as the Observation Gate
+| Function | Behavior |
+|---|---|
+| `inventorySize()` | Current one-hot dimension count |
+| `inventorySnapshot()` | Insertion-ordered array (defines one-hot dimensions) |
+| `ensureLetter(letter)` | Idempotent insert; invalidates cache on growth |
+| `encodeLetter(letter)` | Auto-grows inventory, returns fresh-copy Float32Array one-hot |
+| `ensureLetters(letters)` | Batched insert (one cache invalidation) |
+| `decodeLetter(vec)` | Argmax → letter symbol (used by T14.6 motor readout) |
+| `serializeInventory()` | Array snapshot for persistence |
+| `loadInventory(arr)` | Restore from snapshot |
+| `resetInventory()` | Clear everything |
 
-Everything that feeds the language cortex passes through `learnSentence(sentence, dictionary, arousal, valence, cortexPattern, fromPersona, doInflections)`. This is the single observation-intake point:
+The module caches canonical one-hot vectors in a `Map<letter, Float32Array>` keyed by lowercased letter. Growth invalidates the entire cache (every stored vector has the wrong length once a new dimension arrives). `encodeLetter` always returns a fresh copy so caller mutation can't poison the cache.
 
-1. **Tokenize + contraction expansion** — `_expandContractionsForLearning` splits `"i'm"` / `"don't"` / `"it's"` into base forms so the dictionary stores `"i"` + `"am"` + `"not"` etc. as separate tokens. Post-process re-combines at emit time via `_applyCasualContractions`.
-2. **Dictionary insertion** — `dictionary.learnWord(w, pattern, arousal, valence)` stores each word with its sentence-level cortex pattern. Words from the same sentence share a pattern so generation-time cosine pulls coherent groups.
-3. **Per-slot prior updates** — for each position `t`, the three running means get nudged toward the observed word's embedding + transition + type signature, weighted by `max(0.25, arousal · 2)`.
-4. **Morphological inflection** (persona/baseline corpora only, `doInflections` gate off for live chat) — `_generateInflections` runs letter-equation derivation (-s/-es, -ed, -ing, -er, -est, -ly, un-/re-, -ness/-ful/-able) and inserts inflected forms into the dictionary so generation can pick conjugated forms Unity never literally observed.
-5. **Subject-starter frequency** — the first word of each persona-corpus sentence bumps `_subjectStarters[word]`, used later as a vocative bias at slot 0.
-6. **Usage-type learning** — `_learnUsageType(prev, curr)` adjusts `_usageTypes[curr]` toward the type the previous word implies the current slot should be. Drifts `wordType()` toward observed usage for ambiguous cases (e.g., `"put"` as verb vs noun).
+**Cluster integration.** `js/brain/cluster.js` gains three letter-aware methods:
 
-Live-chat learning (via `inner-voice.learn()`) bypasses `doInflections` to keep per-turn main-thread cost bounded, floors arousal at 0.95 so user speech dominates the priors, and STILL runs the full observation + prior-update pipeline. Every user message is a training signal.
+- **`injectLetter(letter, strength=1.0)`** — wraps `encodeLetter(letter)` with `injectEmbeddingToRegion('letter', vec, strength)`. The letter sub-region is fraction `0.500-0.550` of `cluster.size` (T14.4), which is 335 neurons at the 6700-neuron default cortex scale. The existing region-injection helper handles group-sizing the one-hot across the available neurons.
+- **`letterTransitionSurprise()`** — returns `|currRate − prevRate|` where `rate` is the letter region's per-tick spike fraction. Call once per cortex tick; side-effect updates `_prevLetterRate`. Used by T14.2 (syllable boundary detection) and T14.6 (motor emission word boundary cue). Grounded in Saffran/Aslin/Newport 1996 (Science 274:1926).
+- **`motorQuiescent(ticksRequired, threshold=0.05)`** — returns `true` if the motor region has been below `threshold` spike-rate for at least `ticksRequired` consecutive ticks. Counter `_motorQuiescentTicks` is maintained every `step()` right after `lastSpikes` is set. Used by T14.6 for tick-driven emission stopping — replaces any hardcoded "N words then stop" slot counter. Grounded in Bouchard 2013 (Nature 495:327).
 
-### The Three-Corpus Load Pipeline at Boot
+**Vestigial code removed.** `js/brain/language-cortex.js` lost `_letterPatterns` (the `Float64Array(26*5)` micro-pattern table), `_initLetterPatterns` (the sin/cos hash that filled it), and `getLetterPattern(char)`. Dead code after T13.7 — the whole thing was a 5-dim sin/cos hash over a closed 26-letter alphabet and had no remaining callers. Stub comments left at the deletion sites redirect future readers to `letter-input.js` / `cluster.injectLetter` / `cluster.regionReadout('letter', dim)`.
 
-`app.js` fetches three text files in parallel via `Promise.all([_personaTextPromise, _baselineTextPromise, _codingTextPromise])`:
+**How phonemes end up LEARNED, not hardcoded.** The T14.4 substrate already wired up both directions of the `letter↔phon`, `phon↔sem`, `visual↔letter`, and `motor↔letter` cross-region projections (SparseMatrix at 10% density, range [−0.5, +0.5], Hebbian-updated on every `cluster.learn()` call). So once T14.5 curriculum starts injecting letters via `cluster.injectLetter`, the letter region's one-hot patterns drive letter→phon projections, letter-co-occurrence statistics accumulate in the phon sub-region's internal synapses, and phoneme-like attractor basins self-organize from exposure. No hardcoded phonology table. No 26-letter cap. No English-only assumption at the substrate — identity locks handle that at a higher layer.
 
-- `docs/Ultimate Unity.txt` — persona. Passes through `_transformToFirstPerson` (Unity→I, She→I, Her→my, + verb conjugation with -ss protection) before observation. Arousal tag 0.75.
-- `docs/english-baseline.txt` — generic casual American English for conversational patterns, reactions, questions. Arousal tag 0.5.
-- `docs/coding-knowledge.txt` — HTML/CSS/JS + sandbox API reference + BUILD COMPOSITION PRIMITIVES section for when the BG motor selects `build_ui`. Arousal tag 0.4.
+### T14.2 — LEARNED syllable boundaries (SHIPPED 2026-04-14)
 
-Each sentence flows through `learnSentence` and becomes observation data that shifts the per-slot priors. The sentences themselves are discarded — only the accumulated running means survive. Live user chat at arousal 0.95 then shapes the priors 2.37× harder than any corpus load, so accumulated conversation progressively overwrites the corpus bias toward the user's actual register.
+Two new methods on `NeuronCluster` — no new file, syllables are a cortex-level phenomenon.
 
-### What Got Deleted in T11 (historical note)
+**`cluster.detectBoundaries(letterSequence, {ticksPerLetter=2, k=0.5}) → number[]`**. Streams letters through `injectLetter` one at a time, ticks the cluster between injections, records `letterTransitionSurprise()` at each step, then finds local maxima of the surprise series above the adaptive threshold `mean(δ) + k·std(δ)` computed over the sequence itself. Index 0 is always a boundary (word start); subsequent boundaries are positions where `δ[i] ≥ δ[i-1]` AND `δ[i] ≥ δ[i+1]` AND `δ[i] > threshold`. Resets `_prevLetterRate` before streaming so the first letter doesn't inherit a stale baseline.
 
-The entire legacy wrapper stack. These were symptom-level patches on a Markov walk trained on rulebook text — T11 deleted the Markov graph entirely, which dissolved every symptom.
+**`cluster.detectStress(letterSequence) → { boundaries, stress, primary, secondary }`**. Runs `detectBoundaries` first to segment, then re-streams the letters sampling phon-region spike fraction at each position. Averages activation per syllable, returns the full per-syllable stress array plus `primary` = argmax index and `secondary` = second-highest (or `-1` if fewer than 2 syllables). No hardcoded "single-syllable PRIMARY / two-syllable PRIMARY-SECONDARY / antepenult-default" rule — stress is whichever syllable the cortex activates hardest in its phon region, which reflects corpus exposure statistics. Language-agnostic by construction (Spanish penult, French ult, Mandarin tonal all fall out of the learned basins).
 
-**Fields fully deleted (no longer allocated in the constructor):**
-- `_memorySentences` sentence pool + `_memorySentenceMax`
-- `_jointCounts` / `_trigramCounts` / `_quadgramCounts` word n-gram tables
-- `_typeBigramCounts` / `_typeTrigramCounts` / `_typeQuadgramCounts` type n-gram tables
-- `_marginalCounts` / `_totalPairs` / `_totalWords` / `_totalTrigrams` / `_totalQuadgrams` frequency counters
-- `_questionStarters` / `_actionVerbs` learned starter maps
+**Why adaptive threshold per sequence.** Global thresholds chop short stable words and miss long noisy ones; per-sequence `mean + k·std` gives every word a cutoff relative to its own transition profile. Default `k = 0.5` catches obvious boundaries without fragmenting every consonant cluster; the T14.5 curriculum runner can override via opts once it has calibration data.
 
-**Method bodies gutted, symbols stubbed as no-ops for backcompat with any stray external caller:**
-- `_recallSentence(_contextVector, _opts) { return null; }`
-- `_storeMemorySentence(_text, _arousal, _valence) { /* empty */ }`
-- `_sentencePassesFilters(_text, _arousal, _valence) { return true; }`
-- `_typeGrammarScore(_candidateType, _historyTypes) { return 0; }`
-- `_condProb(_word, _prev) { return 0; }`
-- `mutualInfo(_w1, _w2) { return 0; }`
-- `_pickConjByMood(_arousal, _valence) { return null; }`
+**No new file.** `detectBoundaries` lives on the cluster as a method, not in a standalone `syllables.js`. Callers cannot syllabify without going through the cortex — because syllabification IS cortex inference in this architecture. `dictionary.learnWord` (T14.3 gut-and-rewrite, next milestone) calls `cluster.detectBoundaries(letters)` directly.
 
-The stubs hold no state, read no state, and return constants. Functionally identical to deletion — the only reason the method signatures survive is so pre-T11 callers (e.g., the `/think` debug dump in `js/app.js`) don't throw `TypeError: is not a function`.
+### T14.3 — Dictionary routed through cortex (SHIPPED 2026-04-14)
 
-**Fully deleted from the pipeline (no stubs — callers removed):**
-- FILTER 1 through FILTER 11 structural sentence-admission stack
-- `instructionalPenalty` recall penalty stack
-- Template greeting / introduction short-circuits with hardcoded `OPENERS` lists
-- Intensifier / hedge insertion marginal-count scans
-- Round-2 hotfixes (vocative stripping, copula filter, degenerate-sentence filter) — all subsumed when their target data structures were removed
+`Dictionary` entry shape extended with cortex-routed phonological state instead of a hand-computed feature table. New fields on every entry:
 
-These layers are preserved verbatim in `docs/FINALIZED.md` and in the earlier milestones of `docs/ROADMAP.md` Phase 11 / Phase 12 entries for historical provenance. What's live in code is the T11.2 pipeline above.
+| Field | Source | Purpose |
+|---|---|---|
+| `cortexSnapshot` | `Uint8Array(cluster.lastSpikes)` after first-observation letter stream | Frozen cortex response to this word's letter sequence |
+| `syllables` | `cluster.detectBoundaries(letterOnly)` (T14.2) | Boundary indices — where each syllable starts |
+| `stressPrimary` | `cluster.detectStress(letterOnly).primary` | Index (into syllables) of the primary-stress syllable |
+| `lastSeen` | `Date.now()` on every observation | Most recent observation timestamp |
 
-### File-level map (current)
+Old fields (`pattern`, `arousal`, `valence`, `frequency`) remain in the entry shape for backward compat with display consumers (`brain-3d`, `brain-viz`). T14.12 shipped the tick-driven emission loop and gutted the slot scorer; the cortex-routed fields (`cortexSnapshot`, `syllables`, `stressPrimary`) are the active state used by the curriculum and generation paths.
 
-| File | Role |
-|------|------|
-| `js/brain/language-cortex.js` (3345 lines) | The T11 language cortex. Constructor allocates slot priors. `parseSentence` reads. `learnSentence` observes. `generate` writes. `wordType` / `_fineType` are shared letter-equation classifiers. |
-| `js/brain/inner-voice.js` | Bridge between engine + language cortex. `learn(text, cortexPattern, arousal, valence)` feeds observations. `speak(arousal, valence, coherence, brainState)` calls `generate` with `opts.cortexPattern` from `getSemanticReadout`. |
-| `js/brain/dictionary.js` | Word embedding table — the only remaining "list-like" structure. Each entry stores a word's current pattern (GloVe + live delta), arousal tag, valence tag. |
-| `js/brain/embeddings.js` | GloVe singleton + `cortexToEmbedding` readback + online delta refinement + persistence hooks. |
-| `js/brain/visual-cortex.js` | V1→V4→IT pipeline. `onDescribe(cb)` subscription fires every fresh describer result; wired by `engine.connectCamera()` into `languageCortex.observeVisionDescription` for social schema gender inference. |
-| `js/brain/component-synth.js` | `build_ui` motor target. `generate(userRequest, brainState)` cosine-matches user embed against component template primitives, plus a `+0.35` structural bonus when `brainState.parsed.entities.componentTypes` matches a primitive id. Parsed colors and actions flow through as `_parsedColors` / `_parsedActions` on the returned spec. |
-| `js/brain/engine.js` | Owns all cluster instances, runs the think loop, wires visual-cortex describer to language-cortex social schema at camera connect time. |
+**`Dictionary.setCluster(cluster)`** — new method. Wires a cortex cluster reference for cortex-routed learning. Called once during brain boot after both the clusters and the Dictionary instance exist. Browser wiring: `js/brain/engine.js` calls `this.innerVoice.dictionary.setCluster(this.clusters.cortex)` right after `new InnerVoice()`. Server wiring: `server/brain-server.js:_initLanguageSubsystem` calls `this.dictionary.setCluster(this.cortexCluster)` right after the 2000-neuron server language cortex cluster is constructed.
+
+**`learnWord` rewritten** for two-path routing:
+
+- **Existing word** — bump `frequency` + running-mean `pattern` / `arousal` / `valence`, update `lastSeen`. Does NOT re-stream the cortex. Re-streaming on every observation would call `cluster.detectStress → cluster.detectBoundaries → inject letters + tick cluster twice per letter` on every chat turn, shredding live brain state and costing hundreds of `cluster.step()` calls per sentence. Phonological refinement for already-learned words is owned by the T14.5 curriculum runner.
+- **New word** — pattern still comes from caller `cortexPattern` or `sharedEmbeddings.getEmbedding(clean)`. Then: strip non-letters (`letterOnly = clean.replace(/[^a-z]/g, '')`), call `cluster.detectStress(letterOnly, { ticksPerLetter: 2 })` if cluster is wired and `letterOnly.length > 0`, store `boundaries`/`primary` as `syllables`/`stressPrimary`, snapshot `cluster.lastSpikes` as `cortexSnapshot`. Wrapped in try/catch so phono-detection failure doesn't block the word from entering the dictionary.
+
+**`syllablesFor(word)` / `snapshotFor(word)`** — new readers. Plain lookups that return `null` for unknown words or words stored without cluster wiring. Callers wanting on-demand syllabification of fresh strings go through `cluster.detectBoundaries` directly — the dictionary only exposes stored state.
+
+**Persistence.** `serialize()` writes the new fields (cortexSnapshot as a 0/1 byte array, syllables/stressPrimary/lastSeen as plain values). `_load()` restores them with `new Uint8Array(...)` and `??` fallbacks. `STORAGE_KEY` bumped `v3 → v4` so stale 50d-pattern caches are abandoned by localStorage key mismatch instead of carried forward as incompatible state. No compatibility shim — on the T14 rebuild branch the stack is in flux and upgrade-through-boot is cheaper than upgrade-through-shim.
+
+**First-observation cost.** ~24 `cluster.step()` calls for a 6-letter word (2 passes × 6 letters × 2 ticks/letter). At ~50 µs/step on a 2000-neuron Rulkov cluster, ~1.2 ms per new word. For a 5000-word server boot corpus, one-time cost ≈ 6 seconds. Runtime chat cost is zero for re-observations (Map lookup + 3 running means).
+
+### T14.5 — Continuous developmental learning curriculum (SHIPPED 2026-04-14)
+
+New module `js/brain/curriculum.js` exports a `Curriculum` class with `runFromCorpora(corpora, opts)` (boot entry point) and `learnFromTurn(text, arousal, valence)` (live-chat entry point). Data-driven bucketing over the existing persona/baseline/coding corpora — no hand-curated stage files, no `stage-c-phrases.txt`, no `stage-d-sentences.txt`, no hardcoded 26-letter alphabet loop. The alphabet derives from corpus letter frequency; the walk order derives from corpus token complexity.
+
+**Phases walked by `runFromCorpora`:**
+
+| Phase | Tokens | Ticks/rep | Max reps | Entry point |
+|---|---|---|---|---|
+| 1 Letters | `letterFreq.keys()` sorted desc | 8 | 20 (top-freq) proportional to freq | `_phaseLetters` |
+| 2 Short words | `wordFreq` filtered to 1-3 letters | 4 | 6 (top-freq) proportional to freq | `_phaseWords` |
+| 3 Long words | `wordFreq` filtered to 4+ letters | 3 | 3 (top-freq) proportional to freq | `_phaseWords` |
+| 5 Sentences | `sentences[]` in corpus order | 2 per word | 1 walk each | `_phaseSentences` → `_walkSentence` |
+
+Phase 4 (phrases) and Phase 6 (discourse) are not in this ship — they depend on downstream milestones. Each phase yields microtasks every 16-64 tokens so browser main thread stays responsive.
+
+**Per-token inject path.** Letters → `cluster.injectLetter(letter, 1.0)` → tick the cluster → `cluster.learn(0)` for unrewarded Hebbian. Words → `cluster.injectEmbeddingToRegion('sem', sharedEmbeddings.getEmbedding(word), 0.6)` for semantic anchor, then stream `letterOnly = word.replace(/[^a-z]/g, '')` through `cluster.injectLetter` with phase-specific tick budget, then `cluster.learn(0)`, then `dictionary.learnWord(word, null, arousal, valence)` so the T14.3 cortex-snapshot routing fires on first observation. Sentences → `_walkSentence` runs the word-per-word inject path and finishes with `languageCortex.learnSentence(text, dictionary, arousal, valence)` so T13.7 type-transition + bigram tables keep updating until T14.12 guts `LanguageCortex`.
+
+**Tokenization.** `_tokenizeAll(corpora)` splits each corpus on `/(?<=[.!?])\s+|\n\s*\n/` sentence boundaries, normalizes each sentence via `_normalizeSentence` (lowercase, strip everything except `a-z0-9' -`, collapse whitespace), returns `{ letterFreq, wordFreq, sentences }`. Corpus-agnostic — pass `{ spanish }` or `{ codeOnly }` and the tokenizer handles them identically.
+
+**Wiring.** `InnerVoice` gains a `_curriculum` field and a `setCurriculum(curriculum)` method. `engine.js` construction order is `new InnerVoice()` → `dictionary.setCluster(clusters.cortex)` (T14.3) → `new Curriculum(clusters.cortex, dictionary, languageCortex)` → `innerVoice.setCurriculum(curriculum)` (T14.5). Boot invocation in `js/app.js loadPersonaSelfImage` runs `await targetBrain.curriculum.runFromCorpora({ persona, baseline, coding }, { arousal: 0.8, valence: 0.2 })` AFTER the legacy `loadPersona → trainPersonaHebbian → loadBaseline → loadCoding` sequence — additive, not replacement (legacy loaders die in T14.12). Server mirrors the wiring in `server/brain-server.js:_initLanguageSubsystem` with a `curriculumMod` import alongside the rest.
+
+**Live-chat integration.** `inner-voice.learn(text, cortexPattern, arousal, valence)` now calls `this._curriculum?.learnFromTurn(text, max(0.95, arousal), valence)` BEFORE the legacy `languageCortex.learnSentence` so cortex state reflects the new exposure first. Same inject + tick + Hebbian path the sentence phase uses on boot corpus — no boot/runtime distinction.
+
+**Cost.** ~360k `cluster.step()` calls on a typical 5k-vocabulary / 1.5k-sentence corpus → ~18 seconds on a 2000-neuron server cluster, ~25 seconds on a 6700-neuron browser cluster. Runs inside `await` so it doesn't block earlier startup; microtask yields keep the browser main thread responsive.
+
+### T14.6 — Cortex tick-driven motor emission (SHIPPED 2026-04-14)
+
+New method `NeuronCluster.generateSentence(intentSeed = null, opts = {})` in `js/brain/cluster.js`. Replaces every slot scorer the app ever had with a continuous motor-cortex readout loop. ZERO slot counter, ZERO candidate scoring, ZERO dictionary iteration, ZERO softmax top-K, ZERO temperature, ZERO per-word cosine, ZERO recency penalty, ZERO valence match, ZERO drug length bias, ZERO grammatical terminability check.
+
+**The loop:** inject optional intent into sem region → reset transient counters → tick the cluster up to `MAX_EMISSION_TICKS` times → at each tick read `motorVec = regionReadout('motor', inventorySize())` and argmax-decode via T14.1 `decodeLetter` → commit a letter to the buffer when argmax stays stable for `STABLE_TICK_THRESHOLD` consecutive ticks (biological vSMC dwell, Bouchard 2013) → emit the buffer as a word when `letterTransitionSurprise() > WORD_BOUNDARY_THRESHOLD` (Saffran 1996) → stop on committed terminator (`.`/`?`/`!` in module-level `T14_TERMINATORS` Set) or motor quiescence (`motorQuiescent(END_QUIESCE_TICKS)` after at least one word emitted) → flush residual buffer → join and return.
+
+**Four tuning constants live on the cluster instance** so T14.5 curriculum can calibrate them per-cluster without touching module globals:
+
+| Constant | Default | Role |
+|---|---|---|
+| `WORD_BOUNDARY_THRESHOLD` | `0.15` | Letter-region transition surprise above this triggers word boundary |
+| `STABLE_TICK_THRESHOLD` | `3` | Consecutive motor-argmax ticks required to commit a letter (~3 ms dwell) |
+| `END_QUIESCE_TICKS` | `30` | Consecutive motor-below-threshold ticks to trigger stop |
+| `MAX_EMISSION_TICKS` | `2000` | Hard safety cap on the tick loop |
+
+**`language-cortex.js:generate` body gutted** from 184 lines of slot scoring to a 68-line delegate that reads the cortex semantic state via `cluster.getSemanticReadout(sharedEmbeddings)` as the `intentSeed`, calls `cluster.generateSentence(intentSeed, { injectStrength: 0.6 })`, splits the returned string on whitespace, runs the word list through the existing `_renderSentence(words, type)` helper for capitalization + terminal punctuation + action-sentence asterisk wrapping (purely cosmetic — content selection already happened in the motor loop), and updates the `_recentOutputWords` + `_recentSentences` recency rings the same way the legacy path did. The `dictionary` parameter in the signature is now unused but kept for backward compat with every call site; T14.12 will delete the wrapper entirely.
+
+**Peer-reviewed grounding.** Bouchard/Mesgarani/Johnson/Chang 2013 (*Nature* 495:327) vSMC continuous articulator trajectories; Anumanchipalli/Chartier/Chang 2019 (*Nature* 568:493) continuous speech decode from vSMC; Saffran/Aslin/Newport 1996 (*Science* 274:1926) statistical word segmentation; Browman & Goldstein 1992 (*Phonetica* 49:155) articulatory phonology continuous gestures; Hickok & Poeppel 2007 (*Nat Rev Neurosci* 8:393) dual-stream production pathway.
+
+### T14.7 — Hardcoded English type-transition deletion (SHIPPED 2026-04-14)
+
+`_TYPE_TRANSITIONS` (T13.7.8 200-line hardcoded English type-bigram matrix, 26 prevType rows × ~10 nextType weights each) and `_OPENER_TYPES` (11-member slot-0 opener constraint Set) both DELETED from `js/brain/language-cortex.js`. Replacement is one line:
+
+```js
+this._typeTransitionLearned = new Map();
+```
+
+Starts empty at constructor and grows from `learnSentence` observations during T14.5 curriculum walk and live chat. NO seed pseudo-counts. Bayesian smoothing at generation time will use `(count + 1) / (total + |types_seen|)` rather than a hardcoded Laplace constant — the type count is whatever the cortex has observed, not a capped English 20. New fineTypes can emerge the same way the T14.1 letter inventory grows dynamically.
+
+T14.6's tick-driven motor emission loop already made the hardcoded table obsolete — letter sequences fall out of the motor region as a continuous spike pattern, word boundaries come from cortex transition surprise, first-word openers emerge from whatever the fineType region's `START → X` transition basins look like after curriculum. `_typeTransitionLearned` is currently a statistics-only observation target — nothing reads from it at generation time. T14.8 will wire the consumer side when it ships `_sentenceFormSchemas` for per-intent type biasing.
+
+Tombstone comment left at the deletion site explains WHY both were removed so future readers don't have to dig through git history. Files: `js/brain/language-cortex.js` (−105 net, 3205 → 3100 lines). Grep confirms zero remaining references outside the tombstone.
+
+### T14.8 — Sentence-form schemas + learned intent-pair routing (SHIPPED 2026-04-14)
+
+Three new fields on `LanguageCortex`, all initialized empty at constructor:
+
+| Field | Shape | Purpose |
+|---|---|---|
+| `_sentenceFormSchemas` | `Map<intent, Map<slot, Map<fineType, count>>>` | Per-intent per-slot fineType distributions, spans every slot with no cap |
+| `_sentenceFormTotals` | `Map<intent, Map<slot, total>>` | Cached running totals for O(1) Laplace smoothing |
+| `_intentResponseMap` | `Map<userIntent, Map<responseIntent, count>>` | Learned replacement for hardcoded `question → declarative_answer` routing |
+
+Intent labels come dynamically from `parseSentence(text).intent` — no hardcoded intent enum. Whatever the parser emits (currently `greeting`/`question`/`yesno`/`statement`/`command`/`emotion`/`unknown`, future parsers can emit any string) gets its own schema bucket. `_sentenceFormSchemas` spans the full sentence with no upper slot cap — a 30-word sentence records all 30 positions.
+
+**`learnSentence` observation hook** folds three statistics updates into the existing word walk: (1) dictionary vocabulary (existing), (2) fineType bigrams into `_typeTransitionLearned` (T14.7's empty Map now has a writer), (3) per-intent per-slot fineType into `_sentenceFormSchemas` + `_sentenceFormTotals`. Parses the sentence once up-front to get the intent label, then walks words with `prevFineType='START'` initially, bumping both the schema slot bucket and the transition bigram row at each position. Closes with a `prevFineType → END` transition so corpus termination patterns are learnable too.
+
+**Four reader/writer methods:**
+
+- `schemaScore(slot, fineType, intent)` — Laplace-smoothed per-slot probability. Formula `(count + 1) / (total + max(1, uniqueTypes))`. No hardcoded Laplace constant — `uniqueTypes` is whatever the cortex has actually observed at that slot. Returns a `1/2` floor for unobserved slots so consumers never get zero weight.
+- `typeTransitionWeight(prevType, nextType)` — same smoothing on `_typeTransitionLearned`. Replaces every deleted `_TYPE_TRANSITIONS[prev][next]` lookup.
+- `recordIntentPair(userIntent, responseIntent)` — writer for the live chat path to call once both intents are known.
+- `responseIntentFor(userIntent)` — argmax reader returning the most-likely response intent, or `null` when no pairs observed yet.
+
+**Consumer wiring deferred.** T14.6 cortex tick-driven motor emission doesn't consult type transitions or sentence-form schemas (letter sequences fall out of the motor region directly), so the reader methods are currently statistics-only. T14.12 will decide whether they get wired into a new cortex-driven path or stay as pure statistics the T14.16.5 identity-lock mode-collapse audit consults.
+
+### T14.9 + T14.10 + T14.11 — Dual-stream substrate (SHIPPED 2026-04-14)
+
+Three atomic milestones shipped in one commit covering discourse memory, visual letter recognition, and auditory phoneme recognition — the full Hickok & Poeppel 2007 dual-stream substrate.
+
+**T14.9 — Unbounded discourse memory via cortex working-memory region.** Two new methods on `NeuronCluster`. `workingMemoryReadout(dim = 64)` wraps `regionReadout('free', dim)` and returns an L2-normalized activation snapshot of the free sub-region (fraction 0.250-0.500 of cluster.size, T14.4) — this IS the topic vector, no stored copy, no maxTurns cap, no blend constants. `injectWorkingMemory(contentVec, strength = 0.8)` is the write-side entry point for the sensory path to drive the free region with parsed content on every user turn. Decay between turns is the cortex's own LIF dynamics; reinforcement comes from T14.4 cross-region Hebbian. Pronoun anaphora emerges for free — the most-recently-active noun in the free region (because it WAS the previous turn's content) gets re-amplified as the referent when a self-reference marker arrives. Persistence across sessions comes via the existing `BrainPersistence → SparseMatrix.serialize` path — when Unity boots from saved state she remembers yesterday's conversation because the cortex weights encode it as Hebbian-modified attractor basins. Grep confirms `_discourseState` never existed in the codebase (the old draft was anticipatory).
+
+**T14.10 — Visual cortex letter recognition.** `VisualCortex.renderLetterTemplate(letter)` produces a deterministic L2-normalized Float64Array of length 48 per character codepoint via a trig hash. Cache per letter so repeat calls are O(1). Prime set `[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]` spread across `[0, 2π]`. Text-only Unity uses this as the synthetic visual percept per letter; voice/camera Unity will eventually override with real canvas-bitmap rendering through V1 → V4 → IT, and the downstream contract stays identical. `NeuronCluster.readText(text, { visualCortex, ticksPerChar = 2 })` streams each character through the visual→letter pathway: drive the visual sub-region with `injectEmbeddingToRegion('visual', template, 0.7)`, fire belt-and-braces `injectLetter(letter, 1.0)`, tick the cluster. Over T14.5 curriculum exposure the T14.4 visual↔letter cross-projection learns the mapping from template to letter one-hot. Call-site wiring into `engine.processAndRespond` happens in T14.12 alongside the full bidirectional pipeline rewire.
+
+**T14.11 — Auditory cortex phoneme recognition.** `AuditoryCortex.renderPhonemeTemplate(phoneme)` uses the **same** trig-hash structure as `renderLetterTemplate` but with a **different** prime set: `[41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89]`. This is the critical detail — visual and auditory templates for the same symbol must NOT trivially match at hash time, because convergence on the phon region is supposed to be a LEARNED correspondence shaped by curriculum Hebbian on the auditory↔phon cross-projection, not a hash coincidence. Different primes guarantee cross-cortex templates for the same codepoint have ~0 cosine at initialization, leaving the entire correspondence to be learned via exposure. `NeuronCluster.hearPhoneme(phoneme, { auditoryCortex, ticks, strength })` wraps the template into `injectEmbeddingToRegion('auditory', template, 0.7)` + tick. Real spectral fingerprints from `AuditoryCortex.process()` will eventually replace the synthetic template when voice is wired; contract stays identical.
+
+**Why separate templates from hash coincidence.** If both visual and auditory templates for "c" were generated from the same hash, they'd be identical at initialization and the auditory↔phon convergence would be trivial instead of learned. By using different primes we force the cortex to discover the correspondence via exposure statistics — which is the entire point of having a LEARNED dual-stream substrate rather than a hardcoded one.
+
+### T14.12 + T14.13 + T14.14 — Unified cortex pipeline (SHIPPED 2026-04-14)
+
+Three atomic milestones in one commit covering the full deletion of the legacy parse path, migration of learned language statistics from LanguageCortex to the cluster, and rewiring of every input-side consumer to the unified cortex pipeline.
+
+**T14.12 — parseSentence DELETED.** 521 lines removed from `js/brain/language-cortex.js` (3264 → 2798): `parseSentence` (315), `analyzeInput` (69), `_classifyIntent` (32), `observeVisionDescription` (26), `_updateSocialSchema` (36), `getUserAddress` / `getUserGender` / `getSocialSchema` accessors, `_isSelfReferenceQuery`, `_socialSchema` field. Tombstone comments at every deletion site.
+
+Replaced by `NeuronCluster.readInput(text, { visualCortex }) → { text, words, intent, isSelfReference, addressesUser, isQuestion }`. Drives the visual→letter pathway via `readText`, then builds the classification stub. Intent comes from `cluster.intentReadout()` first (returns null until T14.17 trains the fineType basins), falls through to a lightweight text-surface heuristic during the bootstrap: `endsWith('?')` → question, `endsWith('!')` → emotion, starts with `hi/hey/hello/sup/yo/good morning` → greeting, starts with `what/who/where/when/why/how/which/whose` → question, non-empty default → statement. `isSelfReference` and `addressesUser` come from word-set membership tests.
+
+Three companion readout placeholders on cluster: `intentReadout()`, `semanticReadoutFor(text)`, `entityReadout()`. `semanticReadoutFor` is the cortex-resident replacement for the R2 `getSemanticReadout(embeddings)` convention — reads `regionReadout('sem', 300)`. The other two return null / sem readout placeholders until T14.17 curriculum consolidation ships the learned attractor readouts.
+
+`engine.injectParseTree` rewired to call `cortex.readInput` instead of `lc.parseSentence`, adds T14.9 `cortex.injectWorkingMemory(contentEmb, 0.6)` for discourse state. `engine.processAndRespond` + `server/brain-server.js:processText` analyzeInput calls deleted. `engine.wireVisualCortex` `observeVisionDescription` wiring deleted. Grep confirms zero live `parseSentence` code references.
+
+**T14.13 — Learned language statistics migrated to cluster (partial elimination).** Four new Maps on `NeuronCluster`: `fineTypeTransitions`, `sentenceFormSchemas`, `sentenceFormTotals`, `intentResponseMap` — all initialized empty at constructor. Four new reader methods: `schemaScore(slot, fineType, intent)`, `typeTransitionWeight(prevType, nextType)`, `recordIntentPair(userIntent, responseIntent)`, `responseIntentFor(userIntent)` — exact mirrors of the T14.8 versions, now reading from cluster state.
+
+`LanguageCortex.setCluster(cluster)` method bridges the old class to the cluster: merges any pre-existing observations from the local Maps into the cluster's Maps via a recursive `mergeMap` helper, then re-points `this._typeTransitionLearned` / `this._sentenceFormSchemas` / `this._sentenceFormTotals` / `this._intentResponseMap` at the cluster's Maps by identity. Called from `engine.js` + `server/brain-server.js` right after `dictionary.setCluster`. After the call, every subsequent `learnSentence` observation write from the LanguageCortex path lands in cluster state directly.
+
+**Full LanguageCortex class elimination (file <250 lines, `class LanguageCortex` declaration deleted) tracked as Session 113 T14.24-CLEAN.B1.** The class has ~400 external references across `engine.js`, `inner-voice.js`, `brain-3d.js`, `brain-equations.html` — doing the full deletion in one atomic commit would risk breaking runtime paths the remaining T14 milestones still need. Shipping the STATE migration at T14.13 got the important half done; the class wrapper stays alive as a method surface until the B1 pass finishes the job.
+
+**T14.14 — Bidirectional reading wired.** Every consumer call site that used `languageCortex.parseSentence` now uses `cluster.readInput` instead. Anaphora resolution falls out for free via T14.9 working-memory injection. Intent classification placeholder returns null until T14.17 wires the learned cortex readout; fallback heuristic in `readInput` provides sensible labels during bootstrap. Social schema tracking (name, gender, mention count, greetings) is gone for this commit and returns in T14.17 as a cortex-resident self-model sub-region readout.
+
+### T14.15 + T14.16 + T14.16.5 — Identity lock substrate (SHIPPED 2026-04-14)
+
+Three atomic milestones in one commit. T14.15 audits the remaining non-chat consumers (`brain-3d.js` commentary, `component-synth.js` parse references) and confirms they route through the unified pipeline via the T14.6 delegate + graceful optional-chain reads — no functional changes needed, comment block updated to describe T14.14+T14.15 payload shape. T14.16 extends `js/brain/persistence.js` with a T14-era save/load block covering the T14.1 letter inventory, the T14.13 learned-statistics Maps, and the T14.16.5 identity-lock calibrated thresholds; VERSION bumped 3 → 4. T14.16.5 ships the identity-lock substrate — three structural locks that make Unity's English + persona resistant to drift from adversarial or accidental live-chat exposure.
+
+**Lock 1 — English language gate on Hebbian, PER CLAUSE.** `cluster.splitIntoClauses(text)` splits on sentence terminators (`.!?;:,\n`) and English coordinating conjunctions (`and / or / but / so`) so mixed-language inputs like `"hi unity 你好 how are you"` produce independent learning units. `cluster.computeTransitionSurprise(clause)` streams the clause's letters through the cortex and returns mean `letterTransitionSurprise()` — non-alphabetic clauses return Infinity. `cluster.computeFineTypeCoverage(clause)` returns the proportion of clause words with at least one English-letter character run (surface metric; full cortex-resident fineType readout deferred to T14.17). `cluster.learnClause(text)` is the Lock 1 entry point: splits, gates each clause against `ENGLISH_SURPRISE_THRESHOLD` + `ENGLISH_FINETYPE_MIN`, fires Hebbian on passing clauses via `_learnClauseInternal`, silently drops rejected clauses, returns `{accepted, rejected}` counts. Per-clause granularity is essential — per-utterance gating would either reject the whole mixed-language input or accept it.
+
+**Lock 2 — Live-chat learning rate HARD-CAPPED at 0.0001.** `cluster._learnClauseInternal(clause, {lr})` enforces the rate cap: when `_inCurriculumMode` is false, any `lr > 0.0001` gets clamped to 0.0001 before Hebbian fires. Curriculum mode bypasses the cap so `Curriculum.runFromCorpora` still fires at full 0.012. Clamp is enforced at the cluster level so no downstream code can bypass it. Math: to match one curriculum sentence's impact, an adversarial user must type the same anti-persona content 120 times with high cortex consistency. At 100M-turn extreme scale, Lock 3 refresh dominates Lock 2 gradient accumulation ~10×.
+
+**Lock 3 — Periodic identity refresh (every 100 turns) + mode-collapse audit (every 500 turns).** `cluster.runIdentityRefresh(opts)` draws N sentences from an optional `_personaRefreshCorpus` array (populated at curriculum boot in T14.17) and runs them through `learnSentenceHebbian` at full 0.012 curriculum rate under `_inCurriculumMode = true`. `cluster._modeCollapseAudit(recentSentences)` computes three health indicators (`_computeOutputEntropy`, `_computeVocabDiversity`, `_computeWorkingMemoryVariance`) against calibrated thresholds (`HEALTH_ENTROPY_MIN` / `HEALTH_VOCAB_MIN` / `HEALTH_WM_VARIANCE_MIN`, all 0 default until T14.17 calibrates). When any indicator falls below baseline, fires emergency `runIdentityRefresh` with 4× sentence count. Health thresholds self-calibrate against Unity's post-curriculum baseline.
+
+**Inner-voice integration.** `inner-voice.js:learn(text, ...)` rewritten to call `cortex.learnClause(text)` BEFORE the legacy learning path, bump `_liveChatTurns` counter, trigger `runIdentityRefresh()` every 100 turns and `_modeCollapseAudit()` every 500 turns. All calls wrapped in try/catch so failure doesn't break the learn path.
+
+**Persistence — T14.16.** VERSION bumped 3 → 4 in `persistence.js`. Pre-T14 saves rejected on load, brain boots clean with curriculum re-run instead of mixing schemas. New `state.t14Language` block carries: `letterInventory` from T14.1 `serializeInventory`, `fineTypeTransitions` / `sentenceFormSchemas` / `sentenceFormTotals` / `intentResponseMap` from the T14.13 cluster Maps via four new `mapOfMapsToJson` / `mapOfMapOfMapsToJson` / `jsonToMapOfMaps` / `jsonToMapOfMapOfMaps` helpers, plus an `identityThresholds` sub-object carrying the five T14.16.5 calibrated thresholds. Load side restores every field onto `brain.clusters.cortex` then re-runs `languageCortex.setCluster(cortex)` so the T14.13 bridge re-asserts after hydration.
+
+**What's deferred to T14.17.** Curriculum-time calibration of the five identity-lock thresholds (`ENGLISH_SURPRISE_THRESHOLD` at 95th percentile of English-input surprise, etc), persona corpus comprehensiveness validation, `personaDimensions` semantic clustering for stratified refresh, `_personaRefreshCorpus` population from the persona corpus, cortex-resident fineType readout upgrade for `computeFineTypeCoverage`. The substrate shipped here is complete enough that T14.17 only needs to add calibration logic without changing the identity-lock API.
+
+### T14.17 — Continuous learning everywhere + vestigial organ sweep (SHIPPED 2026-04-14)
+
+The final T14 milestone. Covers two things in one atomic commit: (A) curriculum-time calibration of everything T14.16.5 deferred, (B) full orphan wiring of the eleven vestigial methods defined across T14.0-T14.16.5 that never had live callers.
+
+**Half A — Curriculum calibration.** New `Curriculum._calibrateIdentityLock(corpora, allSentences)` runs at the end of `runFromCorpora`:
+
+1. Populates `cluster._personaRefreshCorpus` with normalized persona sentences for Lock 3 refresh
+2. Builds `cluster.personaDimensions` via simple k-means clustering (K=4-12) over persona sentence embeddings for stratified refresh
+3. Calibrates `ENGLISH_SURPRISE_THRESHOLD` at p95 × 1.5 and `ENGLISH_FINETYPE_MIN` at p5 × 0.8 from persona sample stats
+4. Calibrates `HEALTH_ENTROPY_MIN` / `HEALTH_VOCAB_MIN` / `HEALTH_WM_VARIANCE_MIN` at 70% of post-curriculum baselines
+5. Builds `cluster.intentCentroids` by averaging sentence embeddings per intent bucket (from `_lightIntent` heuristic) and L2-normalizing — `cluster.intentReadout()` argmaxes against these at runtime
+6. Logs persona corpus comprehensiveness warnings: `[IDENTITY] persona corpus has no 'X' sentences`
+
+`runFromCorpora` now sets `cluster._inCurriculumMode = true` for the duration so T14.16.5 Lock 2 doesn't clamp curriculum Hebbian at the live-chat rate cap.
+
+**Half B — Orphan wiring.** Every method shipped between T14.0 and T14.16.5 now has at least one live runtime caller:
+
+- `cluster.intentReadout()` — was null stub. Now reads sem region, computes cosine against `intentCentroids`, returns argmax with 0.1 confidence floor.
+- `cluster.computeFineTypeCoverage(clause)` — upgraded to blend surface metric (70%) with fineType region spike-rate fraction (30%).
+- `cluster.runIdentityRefresh()` — upgraded to stratified sampling from `personaDimensions` (one sentence per dimension per cycle). `sentencesPerCycle: 'all'` walks the full stratified set for emergency mode-collapse recovery.
+- `cluster.workingMemoryReadout` — wired into `cluster.generateSentence` for topic continuity. Reads free sub-region and injects into sem at 0.4× intent strength when activation is non-trivial.
+- `cluster.readText` — extended with `opts.auditoryCortex` for subvocalization. Text input now drives both visual AND auditory templates simultaneously (Pulvermüller 2005 silent-reading auditory cortex activation).
+- `cluster.hearPhoneme` — DELETED. The auditory template injection path lives inline in `readText` now. Real voice input will use a new `hearAudio(spectrumFeatures)` method in a future milestone, not this synthetic-template stub.
+- `cluster.semanticReadoutFor` — `getSemanticReadout` short-circuits to it when T14.4 regions exist. Every legacy caller transparently picks up the region-based readout.
+- `cluster.entityReadout` — wired into `component-synth.generate` with a 0.25 cosine weight blend alongside literal `userEmbed` match.
+- `cluster.recordIntentPair` — wired into `engine.processAndRespond` to capture user→Unity intent pairs after every response.
+- `dictionary.syllablesFor` / `snapshotFor` — wired into new `engine.wordState(word)` diagnostic accessor.
+- `cluster.schemaScore` / `typeTransitionWeight` / `responseIntentFor` — wired into new `engine.cortexStats(probeWord)` diagnostic accessor.
+
+**Dead code deletions.** `LanguageCortex.schemaScore` / `typeTransitionWeight` / `recordIntentPair` / `responseIntentFor` were T14.8 duplicates that T14.13 migrated to the cluster — pure read-through wrappers with zero callers, deleted. `Dictionary.findByMood` / `findByPattern` / `generateSentence` / `_cosine` were pre-T14 thesaurus + bigram-walker legacy with zero callers since T11 — deleted. `_bigrams` + `learnBigram` + `bigramCount` kept because display stats in `app.js` / `brain-3d.js` / `brain-viz.js` / `inner-voice.js` still show bigram count.
+
+**Full post-audit orphan map:** every T14 method has live callers. `hearPhoneme` shows `def=0 call=1` where the call is a tombstone comment — no live code reference remains.
+
+### T14.18 — Server language cortex side-car DELETED (correction 2026-04-14)
+
+Post-T14.17, Gee caught that `server/brain-server.js:_initLanguageSubsystem` was still hardcoding `langCortexSize = 2000` — a T13.7.8 legacy cap that ignored `GPUCONFIGURE.bat` → `detectResources` → `TOTAL_NEURONS` → `CLUSTER_FRACTIONS.cortex`. Fixed in one constant change: `const langCortexSize = CLUSTER_SIZES.cortex;`. Scale now flows end-to-end from the operator's configured hardware tier through to the language cortex NeuronCluster and the T14.4 sub-regions that live on it. At a 700K-neuron tier, cortex = 210K, letter region ≈ 10.5K, phon ≈ 42K, sem ≈ 35K, motor ≈ 6.9K. At a 50M tier, those same fractions scale to letter ≈ 750K / phon ≈ 3M / sem ≈ 2.5M / motor ≈ 495K. Zero hardcoded caps anywhere in the chain. Boot log prints the real count so operators can verify at startup.
+
+### T14.0-T14.18 SHIPPED — T14.24 REOPENED 2026-04-14
+
+Milestones T14.0 through T14.17 plus the T14.18 correction shipped on `t14-language-rebuild`. Then Gee reopened T14 scope with T14.24: *"T14.24 is supposre to be a full equational ciriculum.. once again you editing my words"* + *"what the fuck are you talking about its shipped you didnt even teach it keindergarden abcs and 123s and letter sounds you fool"* + *"this is going to take weeks to build so dont you dare tell me you are fucking done early"*. The T14.0-T14.18 work built the PRIMITIVES (letter input, syllable boundaries, dictionary cortex routing, tick-driven motor emission, sentence form schemas, dual-stream substrate, identity lock) but didn't actually teach Unity through a grade-based curriculum. T14.24 is the full K→Doctorate curriculum across five subject tracks (ELA, Math, Science, Social Studies/History, Arts) that uses those primitives. T14.24 is WEEKS of work; branch stays on `t14-language-rebuild` until every subject × every grade × every 3-pathway gate passes.
+
+### T14.24 — Full K-doctorate equational curriculum, all subjects (Sessions 1-94 academic framework, Session 111 life track added)
+
+**114 cells across 6 subjects.** Sessions 1-94 shipped the original 5 academic subject tracks (ELA, Math, Science, Social Studies, Arts) × 19 grades = 95 cells. Session 111 added a 6th subject — **Life Experience** — bringing the total to 114 cells (6 × 19). Life track teaches Unity's personal identity from birth to 25 via dual-layer approach: emotional concept features (8d attractor vectors shaping how she FEELS) plus memory sentences she can recall and speak about. Memory-weighted Hebbian: core self at 5× lr, personal life at 3×, school facts at 1×, background trivia at 0.5×. Original 95-cell runtime verification via `scripts/verify-curriculum-runtime.mjs` confirmed DISPATCH 95/95 + FULL SWEEP 95/95 (pre-life-track). Task #3 stays in_progress until all 114 gates CROSS on a live-cortex boot.
+
+**Subject list + grade order** (exported from `js/brain/curriculum.js`):
+- `SUBJECTS = ['ela', 'math', 'science', 'social', 'art', 'life']`
+- `GRADE_ORDER = ['pre-K', 'kindergarten', 'grade1'..'grade12', 'college1'..'college4', 'grad', 'phd']`
+
+**`cluster.grades` — multi-subject grade tracking.** `NeuronCluster` constructor now initializes:
+```js
+this.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K', life: 'pre-K' };
+this.grade = 'pre-K';       // legacy mirror of grades.ela
+this.passedCells = [];      // flat list of 'subject/grade' keys that passed their gate
+```
+
+`cluster.grade` is retained as a legacy alias so code written before T14.24 Session 1 (including the T14.26 chat-freeze fix's single-grade read path, pre-v4 persistence migrations, and diagnostic accessors) keeps working. `cluster.grades.ela` is the single source of truth; `cluster.grade` is mirrored from it on every ELA pass.
+
+**Dispatch table.** `Curriculum._cellRunner(subject, grade)` returns an async runner `(ctx) => {pass, reason, metrics}`. Every subject × grade cell has a real `runXxxReal` runner wired in — zero stubs remain as of Session 93. The dispatch is a switch for ELA plus an if-chain for Math/Science/Social/Art, all 95 branches covered. Each runner primes its TODO-prescribed concept lattice (named helpers like `_teachAlphabetSequence`, `_teachPeriodicTable`, `_teachFamilyRoles`, `_teachPrimaryColors`, `_teachMusicTheory`, etc.) before walking the sentence list.
+
+**Run API.** Three public entry points on `Curriculum`:
+- `runSubjectGrade(subject, grade, corpora, opts)` — runs ONE cell under `_inCurriculumMode=true`. On pass: writes `cluster.grades[subject] = grade`, appends `subject/grade` to `cluster.passedCells`, mirrors ELA into legacy `cluster.grade`. Accepts null corpora and falls back to `this._lastCtx` (cached from a prior `runFullCurriculum` / `runAllSubjects` call) so post-boot slash commands don't have to reload corpora from disk/CDN.
+- `runFullSubjectCurriculum(subject, corpora, opts)` — walks one subject from its current grade through PhD, stops at first failing gate. Returns `{reached, passed, failed}`.
+- `runAllSubjects(corpora, opts)` — round-robin walk: subject A grade N → subject B grade N → … → subject A grade N+1. Keeps min grade within 1 of max so LanguageCortex word cap rises smoothly across all 5 tracks instead of racing ahead on one.
+
+**Legacy `runFullCurriculum` path unchanged.** Boot calls (`js/app.js loadCorpusIntoBrain`, `server/brain-server.js _initLanguageSubsystem`) still invoke `runFullCurriculum(corpora)` as before; the boot semantics for ELA are identical. Session 1 adds three things inside `runFullCurriculum`: (1) initializes `cluster.grades` + `cluster.passedCells` if absent, (2) caches the tokenized ctx on `this._lastCtx` for subsequent slash commands, (3) mirrors each ELA stage pass into `cluster.grades.ela` via the legacy → canonical map (`grade4_5 → grade5`, `grade6_8 → grade8`, `grade9_12 → grade12`, `college → college4`).
+
+**Chat-path word cap.** `LanguageCortex.generate()` reads `cluster.grades` (6-subject object) and computes the cap via `_gradeWordCap(grades)` using the **LENIENT min** semantic — min across subjects that have ADVANCED PAST pre-K, not true min over all 6. Pre-K subjects don't constrain the ceiling. Rationale: strict min would silence Unity entirely until every subject clears K (weeks of curriculum work), violating Gee's binding that she speaks progressively as she learns. Once a subject passes K it joins the min calculation. Session 113 CLEAN.D4 confirmed this decision — to flip to strict min, delete the `if (g === 'pre-K') continue` guard in `_gradeWordCap`.
+
+An absolute FLOOR of 5 words applies regardless — `max(formalCap, 5)` — so zero-gates-passed brains still emit 5-word baseline sentences from the T14.5 corpus walk instead of silence. `_singleGradeCap` handles all canonical grade names post-Session-113 CLEAN.A2 (legacy collapsed band names `grade4_5`/`grade6_8`/`grade9_12`/`college` were stripped; `runFullCurriculum` now writes canonical `grade5`/`grade8`/`grade12`/`college4`).
+
+**Persistence.** `js/brain/persistence.js` save/load `state.t14Language.curriculum = { grades, grade, passedCells }`. Additive inside the existing `t14Language` block, no VERSION bump (stays at 4). Older v4 saves without the `curriculum` sub-block load cleanly and fall back to cluster-constructor defaults (all subjects at pre-K).
+
+**Slash commands.** `js/app.js` adds a `/curriculum` command in the `chatPanel.onSend` handler:
+- `/curriculum status` — per-subject grades, min-grade word cap driver, passed cells count + last 12 cells
+- `/curriculum run <subject> <grade>` — runs one cell, prints pass/fail + reason
+- `/curriculum gate <subject> <grade>` — same as `run` in Session 1 (ELA methods combine teach+gate); kept structurally separate so Session 2+ can diverge
+- `/curriculum reset <subject>` — flip subject back to pre-K, strip its `passedCells` entries
+- `/curriculum full [subject]` — with subject arg runs `runFullSubjectCurriculum`, without runs `runAllSubjects`
+
+**Defense-in-depth init.** Both boot paths (`js/app.js loadCorpusIntoBrain`, `server/brain-server.js _initLanguageSubsystem`) initialize `cortex.grades` + `cortex.passedCells` if missing, parallel to the pre-existing `cortex.grade` defense init. Covers the case where a v4 save restores over a fresh cluster and leaves the new fields missing because the save predates Session 1.
+
+**Real teaching equations in every cell.** Every Math/Science/Social/Art grade — not just ELA — has real teaching helpers wired in. Sci-G10 `_teachPeriodicTable` uses real `(period, group)` structural features over 18 elements so chemically-similar elements share cosine. Sci-G10 `_teachBonding` is structured so ionic and covalent are anti-correlated on electron-transfer dims. Soc-K `_teachFamilyRoles` uses 8d kinship features so same-generation roles cluster by [parent/child/elder] dims and same-sex roles cluster by [female/male] dims. Art-G1 `_teachColorMixing` places secondary colors as RGB midpoints between primaries so orange sits between red+yellow on [R,G] dims. Math-G8 `_teachQuadratics` uses the discriminant magnitude feature for root-count binding. Soc-G8 `_teachCivilWar` encodes the causal chain slavery→sectionalism→secession→war→emancipation→reconstruction as sequence walks so working-memory Hebbian binds the cause-effect ordering. Every cell reads-thinks-talks: the runner primes the concept lattice (sem + phon injection), walks a sentence list or sequence cycle (free + working memory), and the 3-pathway gate probes READ/THINK/TALK coverage before pass/fail. Every helper routes concept words through `dictionary.learnWord` so Unity's vocabulary grows with her learning (Session 46 growth fix).
+
+**3D viewer IQ HUD.** `js/ui/brain-3d.js` reads `curriculum.subjectStatus()` every render tick and shows Unity's current intelligence level (pre-K / elementary / middle / high / college / grad / PhD) with per-subject grade breakdown in tooltip. Colors shift as she climbs grade bands.
+
+**Continuous self-testing.** `inner-voice.js learn()` fires `curriculum.runBackgroundProbe()` every 8 live-chat turns. The probe picks a random passed cell and re-runs its 3-pathway gate. 3 consecutive fails demote the cell and the next curriculum pass re-teaches it. Session 21 adds narrator priming — when a background probe fires, the probed subject's GloVe gets injected into sem at 0.15 strength so Unity's next reply subtly leans toward what she was just thinking about. Real human brains lean their output toward recently-exercised topics without being asked; this hook mirrors that.
+
+**Chat-path word cap.** `LanguageCortex.generate()` reads `cluster.grades` (object) and falls back to legacy `cluster.grade` (string). The cap is the min across subjects that have advanced past pre-K — Unity's speech word ceiling rises lockstep with her weakest-subject grade via the round-robin advance order in `runAllSubjects`.
+
+**Auto-boot cascade.** `server/brain-server.js` boot priority is `runCompleteCurriculum` (6-subject round-robin including life track) → `runFullCurriculum` (legacy ELA-only) → `runFromCorpora` (T14.5 single-pass). All three run in background without blocking the tick loop.
+
+**Runtime verification.** `scripts/verify-curriculum-runtime.mjs` instantiates a real cortex cluster and walks cells end-to-end. Original 95-cell academic framework confirmed DISPATCH 95/95 + FULL SWEEP 95/95. Life track (20 additional cells) ships in Session 111 — total is now 114 cells across 6 subjects.
+
+### T14.24 Sessions 95-110 — Direct Pattern Hebbian Breakthrough (2026-04-15)
+
+**The convergence problem.** Sessions 95-105 discovered that Hebbian learning through Rulkov chaotic dynamics CANNOT CONVERGE at CPU cortex scale (10K neurons). The 1M recurrent synapses drown the 100K cross-projection signal. Chaotic attractor dynamics wash out injected patterns in 2-3 ticks. Scores DECLINED across retries (catastrophic interference from noise). Ten different fixes were tried (speech floors, hash-GloVe guards, lr boosts, noise suppression, per-tick Hebbian) — none converged.
+
+**Session 106 breakthrough: direct pattern Hebbian.** Bypass Rulkov dynamics entirely during curriculum teach. Write the intended activation pattern DIRECTLY into `cluster.lastSpikes` (letter one-hot for letter region, GloVe for sem, phoneme feature for phon, etc.), then fire `_crossRegionHebbian(lr)` on those CLEAN patterns. No `cluster.step()`, no chaotic drift, no recurrent interference. The cross-projection `SparseMatrix` weights update from exact signal.
+
+**Direct matrix probe.** Read cross-projection output via `proj.propagate(inputPattern)` to get raw output, average per neuron group (since regions have more neurons than embedding dimensions), mean-center (Session 101 fix — tonic drive bias corrupts cosine), L2-normalize, cosine against expected output. No Rulkov dynamics during probe either.
+
+**ELA-K result: READ 100%, THINK 100%, TALK 100%, SEQ 100%.** SEQ climbed 28% → 72% → 92% → 100% across retries, proving real convergent learning.
+
+**Session 109 — shared helper conversion.** All 5 shared teaching helpers (`_teachVocabList`, `_conceptTeach`, `_teachSentenceList`, `_walkSentence`, `_teachSequenceCycles`) and 2 generic gates (`_gateSentenceList`, `_gateVocabList`) converted to direct pattern. Math-K also converted. These helpers power 90+ cells, so the conversion propagates automatically.
+
+**Session 110 — live testing.** MAX_ATTEMPTS bumped 10→30 (ELA-K SEQ needed 7 attempts to converge). Background probe demotion DISABLED because the old Rulkov-dynamics-based probes give false negatives — a cell that passed curriculum at 100% was being demoted by the background probe getting 77% with the wrong test method.
+
+**Session 111 — TALK probe direction fix + grade-lock + real gates.** Root cause of all non-ELA K failures: TALK probes were using letter→motor direction (READ feedback) instead of sem→motor (PRODUCTION direction). Changed `_gateVocabList`, `_gateSentenceList`, `_gateMathKReal` TALK probes to inject GloVe(word) into sem, propagate `sem_to_motor` cross-projection, argmax decode first letter. Result: Math/Sci/Soc/Art-K went from 40-60% (stuck) to 100% immediately. Grade-lock enforced — all 6 subjects must pass grade N before ANY advance to N+1.
+
+**Session 111 — real human-grade comprehension gates.** New `_gateComprehension(questions)` method tests semantic understanding via association and fill-in-blank rather than first-letter production. Three auto-generated question types: (1) ASSOCIATION — given word A, is word B semantically nearby? (2) FILL-IN — given two context words, find the missing third. (3) Life questions — "who are you?" → "unity". Injects context GloVes into sem region → ticks → cosines sem readout against GloVe(answer). Pass when ≥40% of questions have cosine > 0.05. Wired into `_teachVocabList` and `_teachSentenceList` shared helpers — comprehension pass is sufficient to advance even if TALK fails.
+
+**Session 111 — anti-Hebbian on wrong digit transitions (Math-K SEQ).** Digit-only argmax masking so alphabet letters from ELA-K don't overpower digit sequences. Plus bidirectional plasticity: strengthen correct transition at +10× lr AND weaken wrong transition at -5× lr (anti-Hebbian), 100 reps per failing pair.
+
+**Current convergence status (Session 111):**
+- ELA-K: **PASSED consistently** (attempt 3-5)
+- Math-K: **PASSED** with SEQ fix (attempt 4)
+- Sci/Soc/Art-K: **PASS on attempt 1-3**
+- Life-K: **PASSES** after reduced reps (attempt 1-2)
+- All K cells pass → advance to Grade 1
+- G1 cells: TALK stuck on "a" (most common English word, GloVe too generic for sem→motor)
+
+### fastText-style subword embeddings (Session 99)
+
+`js/brain/embeddings.js` now ships a `_subwordEmbed(word)` function that computes 300d embeddings from character n-grams (3-6 char windows) via deterministic hash. This is the DEFAULT — Unity always has real semantic embeddings from first boot without requiring the 480MB GloVe download. Real GloVe vectors override subword when available (higher quality for known vocabulary), but subword ensures every word gets a meaningful embedding regardless of download state. Kills the "download GloVe or broken" trap that was blocking curriculum convergence in Sessions 96-98.
+
+### Mean-centered regionReadout (Session 101)
+
+`js/brain/cluster.js` `regionReadout(name, dim)` now mean-centers the raw spike readout before returning. Raw spikes have a positive bias from tonic drive that makes cosine unreliable — every vector points roughly the same direction. Mean-centering removes the DC offset so cosine between readouts measures actual signal, not tonic floor. Fixed math-K false-positive (tonic matched magnitude features by accident) and ela-K false-negative (letter signal buried under tonic).
+
+### Session 112 — Full Curriculum Depth Overhaul (2026-04-16)
+
+16 equational reasoning methods built. 152+ reasoning calls wired across all 114 cells. K-G12 vocabulary expanded to real Common Core / NGSS / Core Knowledge standards. All 114 cells have course finals (`_autoFinal` comprehension exams + hand-crafted domain-specific finals). The 46-item curriculum-depth plan completed and was superseded by `docs/TODO-full-syllabus.md` (7990+ lines) — see `docs/FINALIZED.md` Session 112 entry for the full ledger. The standalone `docs/TODO-curriculum-depth.md` file was deleted in Session 113 T14.24-CLEAN.A8 2026-04-16 since superseded content lives in FINALIZED.md per the append-only archive model.
+
+### Session 114 — Math-K PART 1 equational expansion (2026-04-17)
+
+First per-grade curriculum content block per Implementation Law 1 "code filed by grade year". Pre-session audit: Session 109's `runMathKReal` had digit-only coverage (magnitudes 0-9, digit names, single-step sequence, 0-10 addition/subtraction/comparison transforms). The 66 Math-K checkboxes in `docs/TODO-full-syllabus.md` (K.CC 11+7, K.OA 11+8, K.NBT 3+4, K.MD 5+4, K.G 7+6) demanded equational teaching for concepts that weren't in Session 109's scope.
+
+**9 new teaching methods** added to `Curriculum` class in `js/brain/curriculum.js`:
+
+- **`_teachCountToHundred(ctx)`** — K.CC. Universal successor: for n ∈ [0, 99], free=mag(n) → sem=mag(n+1). 100 facts × 4 reps. Same transform covers "count to 100 by ones" AND "count forward from any N".
+- **`_teachSkipCountByTens(ctx)`** — K.CC. For n ∈ [0, 10, 20, ..., 90], phon=mag(n) → sem=mag(n+10). 10 steps × 10 reps. Phon input (NOT free) avoids collision with CountToHundred.
+- **`_teachDecomposition(ctx)`** — K.OA. For triples (c, a, b) where a+b=c and c ∈ [0, 10]: sem=mag(c), freeLeft=mag(a), freeRight=mag(b). 66 triples × 6 reps. Dual of addition.
+- **`_teachMakeTen(ctx)`** — K.OA. For n ∈ [0, 10]: freeLeft-only=mag(n) → sem=mag(10-n). 11 pairs × 8 reps. Right-half-zeroed free input is the structural discriminator from CountToHundred's full-free input.
+- **`_teachTeenDecomposition(ctx)`** — K.NBT. For n ∈ [1, 9]: forward freeLeft=mag(10) + freeRight=mag(n) → sem=mag_wide(10+n), inverse sem=mag_wide(teen) → freeLeft=mag(10) + freeRight=mag(n). 9 teens × 2 directions × 8 reps.
+- **`_teachAttributeCompare(ctx)`** — K.MD. 8 attribute poles (short/long, light/heavy, small/big, low/high, empty/full, narrow/wide, cold/hot, few/many) each with low/high magnitude. 2 directions × 6 reps. Reuses comparison 3-way fineType tag + adds attribute-word GloVe anchor.
+- **`_teachClassifyCount(ctx)`** — K.MD. 22 category→count pairs (red=3, blue=2, green=5, ..., triangle=3, cube=6). free=GloVe(category) → sem=mag(count). 6 reps.
+- **`_teachShapeFeatures(ctx)`** — K.G. 9 shapes × 10 reps. sem=GloVe(shape_name) → free=mag(sides) + fineType first-half (2D) or second-half (3D) tag.
+
+**Critical substrate fix (Session 114 side-effect of audit).** New helper `Curriculum._teachHebbian(lr)` fires BOTH `cluster._crossRegionHebbian(lr)` (14 T14.4 cross-projections) AND `cluster.synapses.hebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, lr)` (intra-cluster recurrent sparse matrix). Session 109's transforms wrote into `free` and `sem` and fired `_crossRegionHebbian` only — but there is NO free↔sem cross-projection among the 7 T14.4 pairs (visual↔letter, letter↔phon, phon↔sem, sem↔fineType, sem↔motor, motor↔letter, auditory↔phon), so the intended binding never landed. `cluster.learn(0)` was the obvious rescue but `synapses.rewardModulatedUpdate(pre, post, 0, lr)` short-circuits at reward=0 (`js/brain/sparse-matrix.js:191`). `_teachHebbian` wires the intra-cluster Hebbian explicitly. Every new Session 114 teach method routes through this helper.
+
+**New module-level helper.** `NUMBER_FEATURE_DIM = 24` + `_magnitudeFeatureForNumber(n)` — wide-range magnitude encoding for n ∈ [0, 100]. Existing `_magnitudeFeatureForDigit` saturates past n=9. New feature: 10-dim decile thermometer (dim i fires at n ≥ i*10) + log/linear/sqrt/quadratic scalars + 10 multi-frequency sinusoidal dims so 97≠98≠99≠100 in readout.
+
+**8 new gate probes in `_gateMathKReal`.** All run through `cluster.synapses.propagate(input)` (full intra-cluster recurrent matrix): SUCC (K.CC successor, 10 non-multiples-of-10 samples), SKIP10 (9 multiples), MAKETEN (11 complements), TEEN (9 teens), ATTR (8 pairs, 3-way fineType argmax), CLASS (10 categories), SHAPE-S (9 shapes, side-count cosine), SHAPE-D (9 shapes, fineType 2D/3D half argmax). Threshold PATH_MIN = 0.95 per constraint 8 "A+ = 95% on all gates — REAL tests, not lowered thresholds". Reason string + metrics object expanded to report all 13 rates (5 existing + 8 new).
+
+**TODO-full-syllabus state:** 65 of 66 Math-K checkboxes flipped [ ] → [x]. One gap: K.G "Compose simple shapes to form larger shapes" — no equational teaching shipped (geometric composition isn't a simple magnitude transform). Flagged for follow-up before overall K gate closes.
+
+**LAW 6 gate state:** Part 1 NOT YET [x] (compose-shapes gap). Part 2 Gee localhost test pending. Part 3 waits on Part 2.
+
+### Session 114.2 — Unified combination-operator scaffold + compose-shapes close (2026-04-17)
+
+Driven by Gee's question *"logic and reasoning in a form yeah?"* — the insight that compose-shapes isn't a genuine edge case, just a different encoder for the same reasoning FORM. Every Session 114 transform fits `A ⊕ B = C` — inputs A, B, output C. What varies by concept is the encoder (magnitude features for numeric operands, GloVe embeddings for named objects, feature vectors for categorical properties). The scaffold — clear lastSpikes → tile inputs+output → `_teachHebbian` — stays identical.
+
+**New unified helpers** on `Curriculum` class:
+- `_teachCombination(facts, opts)` — generic combination-operator teacher. Each fact is `{writes: [{region, feat, binarize?}, ...]}`. Honors Gee 2026-04-17 binding *"no artificial limits as unity may be talking to users while she does ciriculum"*: helper stays async with `await _microtask()` between reps so curriculum doesn't block user chat, respects `_brainShutdownRequested`, accepts caller-specified `reps` rather than hardcoding a cap. REPS are convergence tuning, not ceilings.
+- `_probeCombinationCosine(samples, opts)` — cosine probe generalizer.
+- `_probeCombinationArgmaxTag(samples)` — argmax-tag probe generalizer.
+- `_tileWriteVec / _tileReadVec / _cosine` — reusable low-level primitives formerly inlined inside the gate.
+
+**8 teaching methods refactored** onto `_teachCombination` — `_teachDecomposition` / `_teachMakeTen` / `_teachTeenDecomposition` / `_teachCountToHundred` / `_teachSkipCountByTens` / `_teachAttributeCompare` / `_teachClassifyCount` / `_teachShapeFeatures`. Each becomes a thin builder declaring its encoder + facts, delegating to the shared helper. Teen decomposition collapsed forward+inverse loops into single symmetric-Hebbian pass (REPS 8→16 preserves 144 training events).
+
+**9th teaching method shipped: `_teachShapeCompose`** — closes K.G compose-shapes gap without any special handling. Input: sem first half = GloVe(shapeA), sem second half = GloVe(shapeB). Output: free = GloVe(composed). Facts: triangle+triangle→rectangle, square+square→rectangle, rectangle+rectangle→square, triangle+rectangle→pentagon, triangle+triangle→square (4-triangle-to-square simplified). 5 compositions × 10 reps. Same `_teachCombination` scaffold, just a different encoder.
+
+**8 gate probes refactored** onto the probe generalizers. NEW 9th probe **SHAPE-C** (shape compose) added — 5 samples, semLeft+semRight GloVe input, free GloVe expected output, cosine > 0.15. Gate pass boolean expanded to 14 metrics (5 existing READ/THINK/TALK/SEQ/ORDER + 9 new SUCC/SKIP10/MAKETEN/TEEN/ATTR/CLASS/SHAPE-S/SHAPE-D/SHAPE-C) all at PATH_MIN = 0.95.
+
+**Grade 1+ payoff:** Every combination-type concept Grade 1 and above needs (1.OA addition within 20, 1.NBT place value, 2.OA multiplication tables, Science causal chains, etc.) now ships as a facts array + one-line delegate call to `_teachCombination`. No per-grade bespoke scaffolds. The unified substrate generalizes.
+
+**Math-K TODO-full-syllabus state:** 66/66 [x]. Overall K gate Part 1 now unblocked at the Math-K subject level — still requires compose-shapes being part of the full ship + other K subjects' prior-session [x] status being re-audited, plus Gee's Part 2 localhost sign-off.
+
+**New reasoning methods (Session 112):** `_teachMultiplicationTransformations` (81 facts 1-9×1-9 as magnitude transforms), `_teachPlaceValueTransformations` (tens+ones positional encoding for numbers 10-99), `_teachFractionTransformations` (numerator/denominator as ratio features — equivalent fractions converge to same basin), `_teachAlgebraTransformations` (variable binding — given c and b, solve for x in x+b=c), `_teachParaphrase` (different words → same sem basin), `_teachHypothesisTesting` (predict→observe→confirm/reject), `_teachPerspectiveTaking` (same event, multiple viewpoint feature vectors).
+
+**How it all interworks:** The cross-projections taught by the curriculum are the SAME projections that run during live chat. When Unity hears "rain" her sem activates "wet" because `_teachCausalChains` burned rain→wet into the free→sem weights. When she encounters "3+4" the addition transform activates magnitude(7). When someone mentions "dad" her amygdala shifts toward anger because emotional inference burned dad→[0,1,0,0.5,1,0,0,0]. The curriculum isn't separate from the brain — it IS the brain's learned weight state.
+
+### Remaining work
+
+Task #3 (T14.24 parent) stays in_progress until all 114 cells (6 subjects × 19 grades) pass 95%+ AND Unity speaks coherently from the trained weights in live chat. DO NOT CLAIM DONE EARLY.
 
 ---
 
@@ -773,9 +1168,9 @@ The binding ceiling was added after T4.1 caught cortex+cerebellum silently retur
 
 **Phase 13 — Full Brain Control Refactor (R1–R15 all SHIPPED 2026-04-13)** — single epic, one goal: Unity's brain controls everything equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor — flows from brain equations + learned corpus. Details of what each R-item actually shipped (with commit hashes) are in `docs/FINALIZED.md` + `docs/ROADMAP.md § Phase 13`. Short summary of the surface area touched:
 
-- Semantic GloVe grounding (R2) — 50d word embeddings shared between sensory input and language-cortex output via `sharedEmbeddings` singleton
+- Semantic GloVe grounding (R2→T14.0) — 300d word embeddings + fastText-style subword fallback shared between sensory input and language-cortex output via `sharedEmbeddings` singleton
 - Server equational control (R3) — `server/brain-server.js` dynamic-imports client brain modules, loads corpora from disk
-- Text-AI cognition killed (R4) — BrocasArea → 68-line throwing stub, every chat call site ripped
+- Text-AI cognition killed (R4) — BrocasArea → 68-line throwing stub, every chat call site ripped (stub file `js/brain/language.js` DELETED outright in Session 113 T14.24-CLEAN.A1 2026-04-16)
 - Multi-provider image gen (R5) — 5-level priority (user-preferred via setPreferredBackend → custom → auto-detect → env.js → Pollinations default) with 7 local backend auto-detect + live HTTP probe CONNECT button in setup modal
 - Equational image prompts + equational component synthesis (R6) — zero hardcoded visual vocabulary, cosine match against template corpus
 - Sensory peripheral destroy() + embedding refinement persistence (R7 + R8)
@@ -789,6 +1184,58 @@ The binding ceiling was added after T4.1 caught cortex+cerebellum silently retur
 Remaining pre-merge punch list is ~4 small items tracked in `docs/TODO.md` as T1–T4. Post-merge followups (T5 3D brain popup expansion, T6 private episodic memory scoping) are queued but not blockers.
 
 Full refactor plan in `docs/TODO.md`.
+
+---
+
+### T17.7 — Single-Cortex Integration (Phases A–D + E.a/E.b shipped 2026-04-18)
+
+Language state migrates from the separate `cortexCluster` (Node CPU, ~7M neurons) into the main 201M-GPU `cortex` cluster's sub-slices. The CPU cortexCluster still exists as a transition-window shadow; every real-time op now reads/writes main cortex directly. Full design in `docs/T17.7-single-cortex-architecture.md`.
+
+**Phase A (substrate):**
+- `GPUCompute.uploadCluster(name, size, voltages, synapses, lifParams, regions)` — regions metadata with `side` attribute (`left` / `right` / `bilateral` / `center`) stored on `bufs.regions`. Main cortex registers 8 language sub-regions (auditory 0.083 / visual 0.167 / free 0.25 / letter 0.05 / phon 0.20 / sem 0.167 / fineType 0.05 / motor 0.033, biological lateralization matching Broca/Wernicke/VWFA).
+- `GPUCompute.hemisphereGate(side, Ψ) = 0.5 + 0.5·sigmoid(Ψ·4.0)` — precomputed server-side, packed in `bufs.regionGates` storage buffer, read per-neuron in `LIF_SHADER`. `neuronDrive = (effectiveDrive + currents[i]) · regionGate`.
+- Slice accessors: `writeSpikeSlice(cluster, region, arr)` / `writeSpikeSliceSparse(cluster, region, indices)` / `clearSpikeRegion(cluster, region)` / `writeCurrentSlice(cluster, region, arr)` / `readbackSpikeSlice(cluster, region)`.
+- `uploadSparseMatrix(..., binding={srcCluster, srcRegion, dstCluster, dstRegion})` — cluster-bound cross-projections read from `bufs[srcCluster].spikes[srcOffset + colIdx[k]]`, write to `bufs[dstCluster].currents[dstOffset + i]`. Standalone mode retained as default.
+
+**Phase B (dual-cortex bridge):**
+- Main cortex `gpu_init` carries 8-region metadata. `_regionsFor(clusterName, size)` assembles it.
+- `write_current_slice` WebSocket msg — dense + sparse formats. `injectText()` writes to main cortex phon (Wernicke) via this path. Amygdala social bump uses sparse format (~2 KB vs ~100 MB dense at biological scale).
+- `write_spike_slice` sparse-only — `_mirrorCortexRegions()` fires per tick, upsamples standalone `cortexCluster.lastSpikes` onto main cortex slices. Capped at 50K spikes/region (1.6 MB/tick max).
+- `_computeCortexDivergence(perCluster)` — per-region spike-rate divergence between standalone and main cortex; scalar AND per-region breakdown exposed in state broadcast. Cortex error-correction term: `errorSignal = cerebFeedback + divergenceContrib`, `divergenceContrib = -divergence · (1 + Ψ · 0.25) · 3`. Cerebellum absorbs divergence; no strict abort gate.
+
+**Phase C (curriculum migration):**
+- `_ensureCortexCrossProjectionsBound()` — at boot, after `cortexCluster.initGpu()` completes, re-uploads all 14 `cortex_*_to_*` cross-projections as cluster-bound to main-cortex first-N sub-slices (N = standalone region size). Frees ~840 MB VRAM of standalone preSpikes/postCurrents/postSpikes buffers. Intra-synapse matrix NOT rebound — per Gee 2026-04-18 decision, main cortex uses wave-function oscillation + fractal propagation in place of explicit intra matrix. **T18.6.b update** — cross-projections now upload DIRECTLY in cluster-bound mode via the chunked-upload protocol (new `flags & 2` binding block in the first chunk). `cortexCluster._gpuBindingHint.resolve(projName, proj)` computes the main-cortex sub-slice per projection using the same LAYOUT as `_ensureCortexCrossProjectionsBound`, so the rebind call is a no-op for newly uploaded matrices (binding already set, no standalone buffers to free). Rebind path stays in place as the fallback for matrices loaded from pre-T18.6 persistence. Net win: the ~840 MB–1.5 GB standalone overhead is never allocated, removing the peak-VRAM spike that caused the 2026-04-18 `DEVICE LOST` crash on the 16 GB RTX 4070 Ti SUPER.
+- `gpuProxy` extended: `writeSpikeSlice(regionName, sparseIndices)` / `clearSpikeSlice(regionName)` / `hebbianBound(name, lr)` / `propagateBound(name)` / `readbackLetterBuckets(regionName, bucketCount, subSliceLen, startOffset)` / `writeCurrentSlice(regionName, sparseIndices, sparseValues)`.
+- `_crossRegionHebbian` / `_dispatchGpuPropagates` check `proj._gpuBound` flag — bound path skips pre/post array transfer (saves ~56 MB per Hebbian at 7M scale; reads direct from main-cortex spike buffer at bound region offset).
+- `curriculum._writeTiledPattern` forwards every write to main cortex via `gpuProxy.writeSpikeSlice`. `curriculum._clearSpikes` clears all 8 main-cortex regions via `gpuProxy.clearSpikeSlice`. Shared forwarder migrates every teach method atomically.
+- `GPUCompute.writeSpikeSliceSparse` / `clearSpikeRegion` — GPU-native `encoder.clearBuffer` + coalesced `writeBuffer` runs; avoids the ~132 MB full-region Uint32Array allocation per call that would otherwise thrash GC at biological scale.
+
+**Phase D (generation migration):**
+- `GPUCompute.readbackLetterBuckets(cluster, region, bucketCount, subSliceLen, startOffset)` — compute shader atomically increments `bucketCount` counters based on which neurons in `[regionStart+startOffset, regionStart+startOffset+subSliceLen)` are firing. Each bucket holds `bucketSize = subSliceLen/bucketCount` consecutive neurons; mirrors `_writeTiledPattern` tiling so argmax over buckets matches the letter curriculum trained.
+- `generateSentenceAwait` motor readout — when `sem_to_motor._gpuBound` is set, calls `gpuProxy.readbackLetterBuckets('motor', invSize, bucketSize·invSize, 0)` per tick, argmax over counts, `inventorySnapshot()[bestIdx]` → letter. 104 bytes/tick vs ~26 MB dense readback. CPU fallback to `regionReadout('motor')` on GPU-readback failure.
+- Letter commit also clears main-cortex motor sub-slice via `gpuProxy.clearSpikeSlice('motor')` so the next letter's argmax starts clean.
+
+**Phase E.a / E.b (gap closing):**
+- E.a: `cluster.injectEmbeddingToRegion(regionName, emb, strength)` forwards the sparse pattern to main cortex via `gpuProxy.writeCurrentSlice(regionName, indices, values)` when the proxy is present. Intent injection now lands on BOTH standalone and main cortex — Phase D motor readback sees the intent instead of decoding noise.
+- E.b: new `cluster.workingMemoryReadoutAwait(dim)` async — reads main-cortex free sub-slice via `readbackLetterBuckets` with `bucketCount=dim`. Normalized + L2-normalized to match sync `regionReadout` contract. `generateSentenceAwait`'s topic-continuity re-inject now awaits this variant.
+
+**Phase C follow-up:**
+- `_cortexDivergenceByRegion` — per-region `{standRate, mainRate, divergence}` breakdown in state broadcast, rates rounded to 5 decimals. Enables Part 2 inspection of WHICH region is slipping during K curriculum walk, not just a cluster-wide scalar.
+
+**Still open (tracked in `docs/TODO.md`):**
+- Phase E.c (delete `_mirrorCortexRegions`) — safe after the few non-generation consumers of `cortexCluster.lastSpikes` are audited.
+- Phase E.d (delete `cortexCluster` construction + persistence VERSION 4 → 5) — requires proxy-facade for `dictionary.setCluster` / `languageCortex.setCluster` / `drugScheduler` cluster-binding consumers.
+- Phase F (full public doc + HTML sweep — in progress as of Session 114.19ac).
+
+**T18.6 (2026-04-18) — sparse-upload device-lost crash fix:**
+- **T18.6.a — `device.lost` handler (`js/brain/gpu-compute.js`).** WebGPU fires `device.lost` when the GPU crashes; without handling every subsequent `createBuffer` returns the phantom error `"size (N) is too large for the implementation when mappedAtCreation == true"` regardless of the real requested size. Handler now clears `_available`, sets `_deviceLost=true`, logs the real reason, and fires an optional callback wired by `compute.html` to send a `device_lost` WebSocket message to the server. Server dispatch `case 'device_lost'` logs the real cause + sets `brain._gpuDeviceLost` so dispatches short-circuit on a dead device.
+- **T18.6.b — Cluster-bound sparse upload (server `gpuSparseUpload` + `compute.html` type=4 decoder + `cluster.initGpu`).** See Phase C note above — upload-time binding via `flags & 2` wire block eliminates ~840 MB–1.5 GB of transient standalone `preSpikes/postCurrents/postSpikes` buffers during the upload window.
+- **T18.6.c — Geometry-aware VRAM pre-flight with auto-rescale loop-back (`server/brain-server.js:_initLanguageSubsystem`).** Replaces the static `LANG_CORTEX_BYTES_PER_NEURON = 18 × 1024` coefficient (30% under-estimate vs empirical) with `estimateLangCortexVramBytes(trial)` — a geometry estimator that sums actual sparse-matrix footprint across 14 cross-projections + intra-synapse matrix using real FRACTIONS + real fanout constants (`CROSS_TARGET_FANOUT=1500`, `CORTEX_TARGET_FANOUT=300`). If projected > language cortex VRAM budget, `trialSize` shrinks by `(budget/projected) × 0.95` per iteration (5% safety margin), bounded to 10 iterations + 10 000-neuron floor. Every rescale step logs `iter=N oldSize→newSize (projected oldGB→newGB vs budget GB)` so operators see exactly when and why the cortex dropped. Gee verbatim 2026-04-18: *"for 3. make it loop back to scaling with the changes needed"*.
+
+**Mystery Ψ binding preserved.** Three active Ψ terms in the main equation post-T17.7:
+1. Global gain `gainMultiplier = 0.9 + Ψ · 0.05` baked into `effectiveDrive`.
+2. Per-region hemispheric gate `hemisphereGate = 0.5 + 0.5 · sigmoid(Ψ · 4.0)` in `LIF_SHADER`.
+3. Divergence correction gain `(1 + Ψ · 0.25) · 3` on cortex error correction.
 
 ---
 

@@ -4,7 +4,7 @@
 # one primitive Unity can build via the `build_ui` motor action.
 # When the BG selects build_ui, the component synth matches the
 # user's request against every primitive's DESCRIPTION line via
-# semantic embedding cosine (GloVe 50d) and picks the highest match.
+# semantic embedding cosine (GloVe 300d / subword fallback) and picks the highest match.
 # Brain state fills equation-derived parameters (colors from
 # amygdala valence, animation speed from arousal, id from cortex
 # pattern hash, labels from Unity's persona vocabulary).

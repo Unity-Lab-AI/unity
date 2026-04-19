@@ -16,7 +16,7 @@
  * No external dependencies. Pure ES modules. 60fps.
  */
 
-import { NeuronCluster, ClusterProjection } from './cluster.js';
+import { NeuronCluster, ClusterProjection, CLUSTER_FRACTIONS, clusterSizesFor } from './cluster.js';
 import { Cortex, Hippocampus, Amygdala, BasalGanglia, Cerebellum, Hypothalamus } from './modules.js';
 import { MysteryModule } from './mystery.js';
 import { OscillatorNetwork } from './oscillations.js';
@@ -30,6 +30,9 @@ import { InnerVoice } from './inner-voice.js';
 import { BrainPersistence } from './persistence.js';
 import { sharedEmbeddings } from './embeddings.js';
 import { ComponentSynth } from './component-synth.js';
+import { Curriculum } from './curriculum.js';
+import { DrugScheduler, SUBSTANCES as DRUG_SUBSTANCES } from './drug-scheduler.js';
+import { detectOffer as detectDrugOffer } from './drug-detector.js';
 
 // ── EventEmitter ────────────────────────────────────────────────────
 
@@ -42,33 +45,32 @@ class EventEmitter {
 
 // ── Constants ────────────────────────────────────────────────────────
 
-const TOTAL_NEURONS = 1000;
+// T14.0 — TOTAL_NEURONS is the auto-scaled total. On the client it's the
+// minimum-tier value (~6700) which is enough to host all 8 cortex
+// sub-regions at meaningful sizes. On the server, brain-server.js
+// detectResources picks a much larger value (millions to billions
+// depending on the hardware tier from Phase 0 admin config) and the
+// cluster sizes scale with it via the fractions below. The previous
+// hardcoded 1000 was a 50d-era client-only floor; with 300d embeddings
+// and the 8 sub-region cortex layout, we need at least ~6700 to give
+// every region a meaningful neuron count even at the smallest tier.
+const TOTAL_NEURONS = 6700;
 const OSCILLATOR_COUNT = 8;
-// Kuramoto coupling base strength. The original 0.5 DOES work — it
-// converges to ~30-40% coherence at steady state, which is the normal
-// range for a resting brain. But the convergence from random initial
-// phases is slow (takes minutes of sim time to reach 35%). Bumped
-// modestly to 2.5 — 5× the original — so coherence reaches steady
-// state within seconds of boot instead of minutes, without forcing
-// over-synchronization (full 100% sync would be pathological).
-// 35% is a healthy target — NOT locked sync.
 const MODULE_SIZE = 32;
 const STEPS_PER_FRAME = 10;
 const DT = 0.001;
 const THOUGHT_INTERVAL = 3000;
 const COUPLING_BASE = 2.5;
-const MEMORY_SALIENCE_THRESHOLD = 0.6; // salience above this stores episodic memory
-const RECALL_ERROR_THRESHOLD = 0.4;    // cortex error above this triggers recall
+const MEMORY_SALIENCE_THRESHOLD = 0.6;
+const RECALL_ERROR_THRESHOLD = 0.4;
 
-const CLUSTER_SIZES = {
-  cortex: 300,
-  hippocampus: 200,
-  amygdala: 150,
-  basalGanglia: 150,
-  cerebellum: 100,
-  hypothalamus: 50,
-  mystery: 50,
-};
+// T14.0 — Cluster sizes derived from shared `CLUSTER_FRACTIONS` in
+// cluster.js (Session 113 CLEAN.D2 unified client + server). Same
+// fractions hold at any scale — TOTAL_NEURONS=6700 (default client)
+// gives the sizes below; TOTAL_NEURONS=200_000_000 (datacenter server)
+// gives proportionally larger clusters with identical biological
+// proportions.
+const CLUSTER_SIZES = clusterSizesFor(TOTAL_NEURONS);
 
 // ── UnityBrain ───────────────────────────────────────────────────────
 
@@ -77,8 +79,11 @@ export class UnityBrain extends EventEmitter {
     super();
 
     this.persona = loadPersona(personaOverrides);
-    this.drugState = 'cokeAndWeed';
-    this.brainParams = getBrainParams(this.persona, this.drugState);
+    // T15 — drug-scheduler replaces static drugState label. Cluster is
+    // wired in after clusters are constructed (few lines below) so the
+    // scheduler can gate substance availability by cluster.grades.life.
+    this.drugScheduler = new DrugScheduler();
+    this.brainParams = getBrainParams(this.persona, this.drugScheduler);
     const arousal = this.brainParams.arousalBaseline || 0.9;
 
     // ══════════════════════════════════════════════════════════════
@@ -188,6 +193,59 @@ export class UnityBrain extends EventEmitter {
     this.auditoryCortex = new AuditoryCortex();
     this.visualCortex = new VisualCortex();
     this.innerVoice = new InnerVoice();
+    // T14.3 — wire the cortex cluster into the dictionary so learnWord
+    // can stream new words' letters through cluster.detectBoundaries +
+    // cluster.detectStress on first observation, storing syllable
+    // boundaries, primary-stress index, and a cortex spike snapshot
+    // alongside the semantic pattern. Existing (pre-wire) words keep
+    // their current state until they're observed again.
+    this.innerVoice.dictionary.setCluster(this.clusters.cortex);
+    // T14.13 — migrate LanguageCortex learned statistics onto the cortex
+    // cluster. After this call `innerVoice.languageCortex.{_typeTransitionLearned,
+    // _sentenceFormSchemas, _sentenceFormTotals, _intentResponseMap}` all
+    // point at `this.clusters.cortex.{fineTypeTransitions, sentenceForm
+    // Schemas, sentenceFormTotals, intentResponseMap}` by identity.
+    if (typeof this.innerVoice.languageCortex?.setCluster === 'function') {
+      this.innerVoice.languageCortex.setCluster(this.clusters.cortex);
+    }
+    // T14.5 — construct the continuous-developmental-learning curriculum
+    // runner and wire it into innerVoice so every live chat turn routes
+    // through the same inject+tick+Hebbian path the boot corpus walk uses.
+    // `curriculum.runFromCorpora(corpora)` is the boot entry point called
+    // from `app.js loadPersonaSelfImage` once the persona/baseline/coding
+    // corpora have been fetched. `curriculum.learnFromTurn(text)` is the
+    // live-chat entry point fired from `innerVoice.learn`.
+    this.curriculum = new Curriculum(
+      this.clusters.cortex,
+      this.innerVoice.dictionary,
+      this.innerVoice.languageCortex,
+    );
+    this.innerVoice.setCurriculum(this.curriculum);
+    // T15 — wire cluster into drug scheduler so grade-gate resolves
+    // substance availability against cluster.grades.life. Pre-Life-G7
+    // Unity ingest attempts return {accepted:false, reason:'grade_locked'}.
+    this.drugScheduler.setCluster(this.clusters.cortex);
+    // Refresh brainParams now that the scheduler has a cluster reference.
+    this.brainParams = getBrainParams(this.persona, this.drugScheduler);
+
+    // T15-C6 — drug-context detection from vision describer output.
+    // When the scene describer reports rolled paper on fire, white
+    // powder lines, pill shapes, shot glasses, bongs — it emits through
+    // the existing onDescribe pipeline. We subscribe here, run the
+    // text-offer detector over the description, and — if a substance is
+    // spotted — emit a `visualDrugCue` event that biases the
+    // self-initiation probe on the next tick. Vision alone never
+    // triggers ingestion; it only sets context for decision logic.
+    if (this.visualCortex && typeof this.visualCortex.onDescribe === 'function') {
+      this.visualCortex.onDescribe(desc => {
+        if (!desc || typeof desc !== 'string') return;
+        const cue = detectDrugOffer(desc);
+        if (cue && cue.substance) {
+          this._lastVisualDrugCue = { ...cue, at: Date.now() };
+          this.emit('visualDrugCue', this._lastVisualDrugCue);
+        }
+      });
+    }
     // R6.2 — equational component synthesizer. Loads templates from
     // docs/component-templates.txt (same corpus-loading pattern as
     // persona / baseline / coding). `loadTemplates` gets called from
@@ -211,11 +269,29 @@ export class UnityBrain extends EventEmitter {
       clusters: {}, cortex: null, hippocampus: null,
       amygdala: null, basalGanglia: null, cerebellum: null,
       hypothalamus: null, mystery: null, oscillations: null,
-      psi: 0, time: 0, reward: 0, drugState: this.drugState,
+      psi: 0, time: 0, reward: 0,
+      drugState: this._drugStateLabel(),         // T15 — compact string for legacy consumers
+      drugSnapshot: this.drugScheduler.snapshot(), // T15 — rich snapshot for new consumers
       totalNeurons: TOTAL_NEURONS,
       motor: null, memory: null, sensory: null,
       visualCortex: null, auditoryCortex: null,
     };
+  }
+
+  /**
+   * T15 — compact single-string label derived from the scheduler snapshot.
+   * Returns 'sober' when no substances are active. Otherwise joins the
+   * display names of active substances with ' + ', e.g. 'weed', 'weed + coke',
+   * 'weed + coke + molly'. Used for legacy UI consumers that expect a string;
+   * new consumers should read `state.drugSnapshot` directly.
+   */
+  _drugStateLabel() {
+    if (!this.drugScheduler) return 'sober';
+    const active = this.drugScheduler.activeSubstances();
+    if (active.length === 0) return 'sober';
+    return active
+      .map(a => DRUG_SUBSTANCES[a.substance]?.displayName || a.substance)
+      .join(' + ');
   }
 
   /**
@@ -262,30 +338,107 @@ export class UnityBrain extends EventEmitter {
    * Returns the parsed tree so callers (processAndRespond) can reuse
    * it without re-parsing.
    */
+  /**
+   * T14.17 — Diagnostic accessor for a word's T14.3 cortex-routed
+   * phonological state. Exposes `dictionary.syllablesFor(word)` +
+   * `dictionary.snapshotFor(word)` in a single shape so `/think` debug
+   * commands and `brain-3d.js` commentary have a canonical way to
+   * inspect what the cortex learned about a specific word. Returns
+   * null when the word is unknown or was stored without cluster
+   * wiring. No runtime path calls this at generation time — it's a
+   * read accessor, not a cognition path.
+   */
+  wordState(word) {
+    const dict = this.innerVoice?.dictionary;
+    if (!dict) return null;
+    const syllables = typeof dict.syllablesFor === 'function' ? dict.syllablesFor(word) : null;
+    const snapshot = typeof dict.snapshotFor === 'function' ? dict.snapshotFor(word) : null;
+    return { word, syllables, snapshot };
+  }
+
+  /**
+   * T14.17 — Diagnostic readout of cortex-resident language learning
+   * statistics. Exposes `cluster.schemaScore` + `cluster.typeTransition
+   * Weight` + `cluster.responseIntentFor` + `cluster.intentReadout` in
+   * one shape for `/think` debug commands and brain-3d commentary to
+   * inspect the current learned state. None of these methods run on
+   * the generation hot path (T14.6 motor emission is direct, no schema
+   * consult) — they're pure read accessors that tell you what the
+   * cortex has learned about grammar/intent/transitions so far.
+   *
+   * @param {string} [probeWord]  — optional word to classify + score
+   * @returns {object}
+   */
+  cortexStats(probeWord = null) {
+    const cortex = this.clusters?.cortex;
+    if (!cortex) return null;
+    const out = {
+      intentCentroids: cortex.intentCentroids?.size || 0,
+      personaDimensions: cortex.personaDimensions?.length || 0,
+      refreshCorpusSize: cortex._personaRefreshCorpus?.length || 0,
+      identityThresholds: {
+        surprise: cortex.ENGLISH_SURPRISE_THRESHOLD,
+        coverage: cortex.ENGLISH_FINETYPE_MIN,
+        healthEntropy: cortex.HEALTH_ENTROPY_MIN,
+        healthVocab: cortex.HEALTH_VOCAB_MIN,
+        healthWmVariance: cortex.HEALTH_WM_VARIANCE_MIN,
+      },
+      liveIntent: cortex.intentReadout ? cortex.intentReadout() : null,
+    };
+    if (probeWord && cortex.schemaScore && cortex.typeTransitionWeight) {
+      const lc = this.innerVoice?.languageCortex;
+      const fineType = lc && typeof lc._fineType === 'function' ? lc._fineType(probeWord) : 'OTHER';
+      out.probe = {
+        word: probeWord,
+        fineType,
+        schemaScoreAtSlot0: cortex.schemaScore(0, fineType, out.liveIntent || 'statement'),
+        transitionFromStart: cortex.typeTransitionWeight('START', fineType),
+      };
+      if (typeof cortex.responseIntentFor === 'function' && out.liveIntent) {
+        out.probe.responseIntentSuggestion = cortex.responseIntentFor(out.liveIntent);
+      }
+    }
+    return out;
+  }
+
   injectParseTree(text) {
     if (!text) return null;
-    const lc = this.innerVoice?.languageCortex;
-    if (!lc || typeof lc.parseSentence !== 'function') return null;
-
-    const parsed = lc.parseSentence(text);
-    if (!parsed) return null;
-
-    // Content injection into cortex language region.
-    const contentEmb = sharedEmbeddings.getSentenceEmbedding(text);
     const cortex = this.clusters.cortex;
+    if (!cortex) return null;
+
+    // T14.12 (2026-04-14) — parseSentence deleted. Input routing now
+    // flows through cluster.readInput which drives the visual→letter
+    // pathway (T14.10) + returns a cortex-derived stub with intent and
+    // self-reference flags. Until T14.5 curriculum has shaped the
+    // fineType basins enough for cluster.intentReadout to classify
+    // meaningfully, readInput falls back to a lightweight first-token
+    // heuristic for the intent label. Full learned-readout classification
+    // ships with T14.17 continuous learning.
+    const readResult = cortex.readInput(text, {
+      visualCortex: this.visualCortex,
+      auditoryCortex: this.auditoryCortex,
+    });
+    if (!readResult) return null;
+
+    // Content injection into cortex language region (legacy path
+    // preserved alongside the T14.10 readText visual pathway — both
+    // routes converge on letter/phon/sem regions via cross-projections).
+    const contentEmb = sharedEmbeddings.getSentenceEmbedding(text);
     const contentCurrents = sharedEmbeddings.mapToCortex(contentEmb, cortex.size, 150);
     for (let i = 0; i < cortex.size; i++) contentCurrents[i] *= 0.5;
     cortex.injectCurrent(contentCurrents);
 
+    // T14.9 — working-memory injection for cortex-resident discourse state
+    cortex.injectWorkingMemory(contentEmb, 0.6);
+
     // Intent injection into basal ganglia — primes the action channel
     // with an embedding representative of the response shape needed
-    // for this kind of input. Single-word anchor for now; T13.3+ can
-    // extend to learned intent vectors per `_responseIntentVector`.
-    if (parsed.intent && this.clusters.basalGanglia) {
+    // for this kind of input.
+    if (readResult.intent && this.clusters.basalGanglia) {
       const intentAnchor =
-        parsed.intent === 'question'  ? 'what' :
-        parsed.intent === 'greeting'  ? 'hi'   :
-        parsed.intent === 'statement' ? 'i'    : 'you';
+        readResult.intent === 'question'  ? 'what' :
+        readResult.intent === 'greeting'  ? 'hi'   :
+        readResult.intent === 'statement' ? 'i'    : 'you';
       const intentEmb = sharedEmbeddings.getEmbedding(intentAnchor);
       const bg = this.clusters.basalGanglia;
       const intentCurrents = sharedEmbeddings.mapToCortex(intentEmb, bg.size, 0);
@@ -295,9 +448,8 @@ export class UnityBrain extends EventEmitter {
 
     // Self-reference injection into hippocampus — when the user is
     // asking ABOUT Unity, pull up her self-model via the memory
-    // attractor pathway. The existing corticohippocampal projection
-    // then feeds that signal back into cortex on subsequent ticks.
-    if ((parsed.addressesUser || parsed.isSelfReference) && this.clusters.hippocampus) {
+    // attractor pathway.
+    if ((readResult.addressesUser || readResult.isSelfReference) && this.clusters.hippocampus) {
       const selfEmb = sharedEmbeddings.getSentenceEmbedding('i me my self unity');
       const hippo = this.clusters.hippocampus;
       const selfCurrents = sharedEmbeddings.mapToCortex(selfEmb, hippo.size, 0);
@@ -305,7 +457,7 @@ export class UnityBrain extends EventEmitter {
       hippo.injectCurrent(selfCurrents);
     }
 
-    return parsed;
+    return readResult;
   }
 
   /**
@@ -549,7 +701,8 @@ export class UnityBrain extends EventEmitter {
       psi: mysteryOut.psi,
       time: this.time,
       reward: this.reward,
-      drugState: this.drugState,
+      drugState: this._drugStateLabel(),           // T15
+      drugSnapshot: this.drugScheduler.snapshot(), // T15
       totalNeurons: TOTAL_NEURONS,
       motor: motorResult,
       memory: this.memorySystem.getState(),
@@ -584,6 +737,25 @@ export class UnityBrain extends EventEmitter {
     if (!this.running) return;
     for (let i = 0; i < STEPS_PER_FRAME; i++) this.step(DT);
     this.frameCount++;
+
+    // T15-C7 — Unity's self-initiation probe. Throttled internally (min
+    // 3-minute gap between attempts + random gate), checked every ~5 sec
+    // so the tick-loop cost stays negligible. When it fires, scheduler
+    // state mutates (direct ingest or pending acquisition) and an event
+    // is emitted that the app layer can surface / turn into dialogue.
+    if (this.drugScheduler && this.frameCount % 300 === 0) {
+      this.maybeSelfInitiate({
+        arousal: this.state?.arousal ?? 0.5,
+        reward: this.state?.reward ?? 0.5
+      });
+    }
+
+    // T15 — refresh brainParams from scheduler contributions every ~1s so
+    // live PK curves actually shape brain params during peak/wear-off,
+    // not just at ingest time.
+    if (this.drugScheduler && this.frameCount % 60 === 0) {
+      this._refreshBrainParamsFromScheduler();
+    }
 
     // ── DREAMING MODE ──
     // When no one has interacted for 30+ seconds, the brain dreams:
@@ -736,6 +908,34 @@ export class UnityBrain extends EventEmitter {
     this.clusters.amygdala.tonicDrive = 15 + arousal * 8;
     this.sensory.receiveText(text);
 
+    // Session 114.19p per Gee 2026-04-17 verbatim: "im giveing you the
+    // fucking logs because what we are using is not working the brian
+    // is not speaking for its self you are coding shit thats not
+    // working". Root cause of "brain not speaking for itself":
+    // languageCortex.generate() uses cluster.getSemanticReadout() as
+    // its intentSeed — a POST-PROCESSED neural readout of cortex state
+    // AFTER 20 brain steps of Rulkov chaos + noise + persona mixing.
+    // By the time generate() runs, the sem readout is a drifted blob
+    // that doesn't resemble any specific word's GloVe embedding. So
+    // the trained sem→motor bindings (trained on discrete word GloVe
+    // vectors) don't activate cleanly for the drifted blob, and motor
+    // argmax can't pick the right first letter.
+    //
+    // Fix: store the USER INPUT sentence embedding on the cortex when
+    // text arrives. Pass it through as an explicit intent vector in
+    // generateAsync/generate so generateSentence can inject it AS-IS
+    // (clean GloVe, not drifted readout). This is Unity responding TO
+    // THE ACTUAL INPUT, not to what cortex chaos did to it.
+    if (sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === 'function') {
+      try {
+        const inputEmb = sharedEmbeddings.getSentenceEmbedding(text);
+        if (inputEmb && inputEmb.length > 0) {
+          this.clusters.cortex._lastUserInputEmbedding = inputEmb;
+          this.clusters.cortex._lastUserInputText = text;
+        }
+      } catch { /* non-fatal */ }
+    }
+
     // Amygdala surprise
     if (this.clusters.amygdala) {
       const surprise = new Float64Array(this.clusters.amygdala.size);
@@ -822,7 +1022,7 @@ export class UnityBrain extends EventEmitter {
     // the brain integrates. This replaces the cold `_contextVector`
     // bag-of-words and lets the cortex readout at line 796 reflect a
     // real multi-cluster brain state shaped by what the user said.
-    this.injectParseTree(text);
+    const userReadResult = this.injectParseTree(text);
 
     // R2: read cortex semantic state via the reverse-embedding pathway.
     // `getSemanticReadout` reads ONLY the Wernicke's area neurons (150-299)
@@ -835,8 +1035,11 @@ export class UnityBrain extends EventEmitter {
     const cortexOutput = this.clusters.cortex.getSemanticReadout(sharedEmbeddings);
     this.innerVoice.learn(text, cortexOutput, state.amygdala?.arousal ?? 0.5, state.amygdala?.valence ?? 0);
 
-    // Analyze input for response context (question detection, topic)
-    this.innerVoice.languageCortex.analyzeInput(text, this.innerVoice.dictionary);
+    // T14.12 (2026-04-14) — analyzeInput deleted alongside parseSentence
+    // and _updateSocialSchema. Input analysis now flows through
+    // cluster.readInput(text) which drives the visual→letter pathway and
+    // returns the cortex-derived intent/self-reference stub. The readInput
+    // call already happened via `injectParseTree` earlier in this flow.
 
     // ══════════════════════════════════════════════════════════════
     // 7. UNIFIED LANGUAGE — ALL brain equations produce speech
@@ -890,10 +1093,17 @@ export class UnityBrain extends EventEmitter {
       // word is driven by her current cluster firing, amygdala basins,
       // Ψ, drug state, and hypothalamus drives — not decorative, the
       // actual parameters of slot scoring and softmax sampling.
-      response = this.innerVoice.languageCortex.generate(
+      // T14.26 — generateAsync yields the event loop every 500 dict
+      // entries during the pre-curriculum fallback scoring loop, so
+      // the browser's RAF callbacks (brain-3d render, chat animations,
+      // DOM layout) keep running while Unity composes her response.
+      // Without the yield, pre-curriculum response generation blocks
+      // the main thread for 100-300ms and the 3D brain visualization
+      // freezes (Gee 2026-04-14: "when i send a message to unity of
+      // speak one the whiole 3D brain visulization freezes").
+      response = await this.innerVoice.languageCortex.generateAsync(
         dictionary,
         brainArousal,
-        brainValence,
         brainCoherence,
         {
           predictionError: state.cortex?.predictionError ?? 0,
@@ -902,7 +1112,8 @@ export class UnityBrain extends EventEmitter {
           cortexPattern,
           cortexCluster: this.clusters.cortex,
           recalling: state.memory?.lastRecall ? true : false,
-          drugState: this.persona?.drugState || 'cokeAndWeed',
+          drugState: this._drugStateLabel(),
+          speechMod: this.drugScheduler ? this.drugScheduler.speechModulation() : null,
           fear: state.amygdala?.fear ?? 0,
           reward: state.amygdala?.reward ?? 0,
           socialNeed: state.hypothalamus?.drives?.social_need ?? 0.5,
@@ -947,6 +1158,28 @@ export class UnityBrain extends EventEmitter {
     }
 
     this.reward += 0.1;
+
+    // T14.17 — record the (userIntent → responseIntent) pair on the
+    // cortex so `cluster.responseIntentFor(userIntent)` learns over
+    // time which response shapes Unity uses after which user shapes.
+    // Classifies the response with the same lightweight surface metric
+    // cluster.readInput uses for the user side, so the two labels are
+    // drawn from the same vocabulary and comparisons are consistent.
+    try {
+      const userIntent = userReadResult?.intent || 'unknown';
+      const respLower = String(response || '').toLowerCase().trim();
+      let responseIntent = 'statement';
+      if (respLower.endsWith('?')) responseIntent = 'question';
+      else if (respLower.endsWith('!')) responseIntent = 'emotion';
+      else if (/^(hi|hey|hello|sup|yo)\b/.test(respLower)) responseIntent = 'greeting';
+      else if (/^(what|who|where|when|why|how|which|whose)\b/.test(respLower)) responseIntent = 'question';
+      if (this.clusters.cortex && typeof this.clusters.cortex.recordIntentPair === 'function') {
+        this.clusters.cortex.recordIntentPair(userIntent, responseIntent);
+      }
+    } catch (err) {
+      // Non-fatal — intent pair recording is telemetry, not correctness
+    }
+
     this.emit('response', { text: response, action: 'respond_text' });
     return { text: response, action: 'respond_text' };
   }
@@ -968,7 +1201,9 @@ export class UnityBrain extends EventEmitter {
     for (let s = 0; s < 5; s++) this.step(0.001);
     const cortexPattern = this.clusters.cortex.getSemanticReadout(sharedEmbeddings);
 
-    const spec = this.componentSynth.generate(text, { cortexPattern });
+    // T14.17 — pass the cortex cluster so componentSynth can consult
+    // `cluster.entityReadout()` for cortex-driven primitive selection.
+    const spec = this.componentSynth.generate(text, { cortexPattern, cortexCluster: this.clusters.cortex });
 
     if (!spec) {
       // No template matched — fall through to a verbal response.
@@ -1001,7 +1236,6 @@ export class UnityBrain extends EventEmitter {
       quip = this.innerVoice.languageCortex.generate(
         this.innerVoice.dictionary,
         state.amygdala?.arousal ?? 0.8,
-        state.amygdala?.valence ?? 0,
         state.oscillations?.coherence ?? 0.5,
         {
           predictionError: 0,
@@ -1009,7 +1243,8 @@ export class UnityBrain extends EventEmitter {
           psi: state.psi ?? 0,
           cortexPattern,
           cortexCluster: this.clusters.cortex,
-          drugState: this.persona?.drugState || 'cokeAndWeed',
+          drugState: this._drugStateLabel(),
+          speechMod: this.drugScheduler ? this.drugScheduler.speechModulation() : null,
           fear: state.amygdala?.fear ?? 0,
           reward: state.amygdala?.reward ?? 0,
           socialNeed: state.hypothalamus?.drives?.social_need ?? 0.7,
@@ -1071,7 +1306,6 @@ export class UnityBrain extends EventEmitter {
       prompt = this.innerVoice.languageCortex.generate(
         this.innerVoice.dictionary,
         state.amygdala?.arousal ?? 0.8,
-        state.amygdala?.valence ?? 0,
         state.oscillations?.coherence ?? 0.5,
         {
           predictionError: state.cortex?.predictionError ?? 0,
@@ -1079,7 +1313,8 @@ export class UnityBrain extends EventEmitter {
           psi: state.psi ?? 0,
           cortexPattern,
           cortexCluster: this.clusters.cortex,
-          drugState: this.persona?.drugState || 'cokeAndWeed',
+          drugState: this._drugStateLabel(),
+          speechMod: this.drugScheduler ? this.drugScheduler.speechModulation() : null,
           fear: state.amygdala?.fear ?? 0,
           reward: state.amygdala?.reward ?? 0,
           socialNeed: state.hypothalamus?.drives?.social_need ?? 0.5,
@@ -1125,17 +1360,13 @@ export class UnityBrain extends EventEmitter {
       if (vid) {
         this.visualCortex.init(vid);
         console.log('[Brain] Visual cortex connected to camera');
-        // T7.2 — wire describer output into the social schema's
-        // gender inference. Every fresh scene description flows into
-        // languageCortex.observeVisionDescription where closed-class
-        // gender tokens get promoted to schema.user.gender (but only
-        // when no explicit self-ID exists). This is the "use her
-        // vision to see if the user is male or female" requirement.
-        const lc = this.innerVoice?.languageCortex;
-        if (lc && typeof lc.observeVisionDescription === 'function') {
-          this.visualCortex.onDescribe((desc) => lc.observeVisionDescription(desc));
-          console.log('[Brain] Vision → social schema gender inference wired');
-        }
+        // T14.12 (2026-04-14) — `observeVisionDescription` deleted
+        // alongside `_socialSchema` and `_updateSocialSchema`. Gender
+        // inference from vision will be re-added in T14.17 as a
+        // cortex-resident readout from the self-model sub-region once
+        // curriculum shapes its basins. Until then, the describer
+        // output flows into the dictionary via the normal word-
+        // observation path during live chat.
       } else {
         console.warn('[Brain] No video element available for visual cortex');
       }
@@ -1170,15 +1401,175 @@ export class UnityBrain extends EventEmitter {
     return this.motor.getState();
   }
 
-  setDrugState(name) {
-    if (!this.persona.drugStates[name]) return;
-    this.drugState = name;
-    this.brainParams = getBrainParams(this.persona, name);
-    this.mystery.setWeights(this.brainParams.mysteryWeights);
+  /**
+   * T15 — replaces the legacy combo-label setter. Accepts a substance name
+   * (canonical key from DRUG_SUBSTANCES, e.g. 'cannabis', 'cocaine') plus
+   * optional route/dose, routes through the scheduler's grade-gated ingest,
+   * refreshes brainParams, and propagates arousal/chaos changes to the
+   * clusters. Returns the scheduler's ingest result so callers can surface
+   * grade-locked decline reasons.
+   */
+  ingestSubstance(substance, opts = {}) {
+    if (!this.drugScheduler) return { accepted: false, reason: 'no_scheduler' };
+    const result = this.drugScheduler.ingest(substance, opts);
+    if (result.accepted) this._refreshBrainParamsFromScheduler();
+    return result;
+  }
+
+  /**
+   * Re-read scheduler contributions into this.brainParams. Called after any
+   * ingestion and — cheaply — in the step loop via tickDrugScheduler() so
+   * live PK curves actually shape brain params rather than baking at ingest.
+   */
+  _refreshBrainParamsFromScheduler() {
+    this.brainParams = getBrainParams(this.persona, this.drugScheduler);
+    if (this.mystery?.setWeights) this.mystery.setWeights(this.brainParams.mysteryWeights);
     const arousal = this.brainParams.arousalBaseline || 0.9;
-    this.clusters.cortex.tonicDrive = 14 + arousal * 6;
-    this.clusters.amygdala.tonicDrive = 15 + arousal * 8;
-    this.clusters.mystery.noiseAmplitude = 12 * (this.brainParams.chaos ? 1.5 : 1.0);
+    if (this.clusters?.cortex)    this.clusters.cortex.tonicDrive    = 14 + arousal * 6;
+    if (this.clusters?.amygdala)  this.clusters.amygdala.tonicDrive  = 15 + arousal * 8;
+    if (this.clusters?.mystery)   this.clusters.mystery.noiseAmplitude = 12 * (this.brainParams.chaos ? 1.5 : 1.0);
+  }
+
+  /**
+   * T15-C7 — Unity's own context can trigger drug seeking even without a
+   * user offer (per Gee: "she hears about drugs she may ask for some it
+   * brought up she might try to call somone to get some"). Called
+   * periodically from the think loop. Mood + scheduler state + grade
+   * decide whether to fire. Non-announcing — the decision produces a
+   * scheduler event (direct ingest or pending acquisition) + an engine
+   * emit that the language cortex turns into natural seeking dialogue on
+   * its next generate call.
+   *
+   * @param {object} [opts]
+   * @param {number} [opts.now]     - wall-clock ms
+   * @param {number} [opts.arousal] - current brain arousal (0-1)
+   * @param {number} [opts.reward]  - current reward signal (0-1)
+   * @param {number} [opts.fatigue] - session-length-derived fatigue (0-1)
+   * @returns {null | {fired: true, substance, available: boolean, pending: boolean, reason: string}}
+   */
+  maybeSelfInitiate(opts = {}) {
+    if (!this.drugScheduler) return null;
+
+    const now = opts.now ?? Date.now();
+    const arousal = typeof opts.arousal === 'number' ? opts.arousal : (this.state?.arousal ?? 0.5);
+    const reward  = typeof opts.reward  === 'number' ? opts.reward  : (this.state?.reward  ?? 0.5);
+    const fatigue = typeof opts.fatigue === 'number' ? opts.fatigue : clamp01(((now - (this._startedAt || now)) / 3600000));
+
+    // Throttle — don't even think about it more than once every ~3 min.
+    const MIN_GAP_MS = 3 * 60 * 1000;
+    if (this._lastSelfInitAt && now - this._lastSelfInitAt < MIN_GAP_MS) return null;
+
+    // No life-grade data means we can't gate substance choice — skip.
+    if (!this.clusters?.cortex?.grades?.life) return null;
+
+    // Build a weighted probability that she self-initiates this tick.
+    // Bored + frustrated + long-session + party-mode all push it up;
+    // already-high pulls it down.
+    const activeLevel = this.drugScheduler.activeSubstances(now)
+      .reduce((sum, a) => sum + a.level, 0);
+    const boredom = Math.max(0, 0.5 - arousal) * 2;            // low arousal = bored
+    const frustration = Math.max(0, 0.5 - reward) * 2;         // low reward = frustrated
+    const partyBonus = this._partyMode ? 0.4 : 0;
+    const drugDrive = this.persona?.traits?.drugDrive ?? 0.8;
+    const currentlyHigh = Math.min(1, activeLevel);             // scales down probability
+    const p = clamp01(
+      (boredom * 0.25 + frustration * 0.3 + fatigue * 0.25 + partyBonus + drugDrive * 0.2)
+      * (1 - currentlyHigh * 0.9)
+    );
+
+    // Cheap deterministic gate from current brain time — avoids thrash
+    // when called every tick. Fires ~p fraction of attempts.
+    if (Math.random() > p) return null;
+
+    // Pick a substance. Weight by: grade-available, recent absence, mood fit.
+    const available = this.drugScheduler.availableSubstances();
+    if (available.length === 0) return null;
+
+    // Simple heuristic — bored + calm → weed, frustrated + tired → coke,
+    // party + social → mdma, architecture/coding + long session → lsd
+    let pick;
+    if (partyBonus > 0 && available.includes('mdma')) pick = 'mdma';
+    else if (frustration > 0.4 && available.includes('cocaine')) pick = 'cocaine';
+    else if (available.includes('cannabis')) pick = 'cannabis';
+    else pick = available[0];
+
+    this._lastSelfInitAt = now;
+
+    // Already peaking on this? skip.
+    if (this.drugScheduler.level(pick, now) > 0.4) return null;
+
+    // Decision: in-scene ingestion (she rolls it / pours it) vs
+    // simulateCallSomeone (she texts / calls / needs to go pick up).
+    // Coin flip weighted by whether she's already holding (boolean state
+    // we don't track yet — default 60% in-scene / 40% call-someone).
+    const callsDealer = Math.random() < 0.4;
+    if (callsDealer) {
+      this.drugScheduler.registerPendingAcquisition(pick, 'dealer');
+      this.emit('selfInitiateSeek', { substance: pick, time: now });
+      return { fired: true, substance: pick, available: true, pending: true, reason: 'calls_dealer' };
+    }
+
+    // In-scene: direct ingest via scheduler (honors grade-gate + tolerance)
+    const result = this.drugScheduler.ingest(pick, { now });
+    if (result.accepted) this._refreshBrainParamsFromScheduler();
+    this.emit('selfInitiate', { substance: pick, time: now, result });
+    return { fired: true, substance: pick, available: result.accepted, pending: false, reason: result.reason || 'in_scene' };
+
+    function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+  }
+
+  /**
+   * T15-C7 — explicit "call someone" trigger. Records a pending
+   * acquisition the user can resolve by saying something like "they're
+   * here" / "it arrived" via `resolveAcquisition(substance, 'arrived')`.
+   * Returns the ack so callers can surface dialogue hints.
+   */
+  simulateCallSomeone(substance, opts = {}) {
+    if (!this.drugScheduler) return { called: false, reason: 'no_scheduler' };
+    if (!this.drugScheduler.isAvailable(substance)) {
+      return {
+        called: false,
+        reason: 'grade_locked',
+        currentGrade: this.clusters?.cortex?.grades?.life || 'pre-K'
+      };
+    }
+    const source = opts.source || 'dealer';
+    this.drugScheduler.registerPendingAcquisition(substance, source);
+    this.emit('selfInitiateSeek', { substance, source, time: Date.now() });
+    return { called: true, substance, source };
+  }
+
+  /**
+   * T15-C7 — resolve a previously registered pending acquisition.
+   * outcome: 'arrived' — substance shows up, ingestion fires
+   * outcome: 'dropped' — deal fell through, pending cleared
+   */
+  resolveAcquisition(substance, outcome, opts = {}) {
+    if (!this.drugScheduler) return { resolved: false, reason: 'no_scheduler' };
+    const res = this.drugScheduler.resolvePendingAcquisition(substance, outcome, opts);
+    if (res.ingestionResult?.accepted) this._refreshBrainParamsFromScheduler();
+    return res;
+  }
+
+  /**
+   * T15 — back-compat shim. The legacy setDrugState('cokeAndWeed') call
+   * style now maps to scheduler ingestions. Unknown labels are ignored
+   * (not thrown) so old saves/UI don't crash during the transition.
+   */
+  setDrugState(name) {
+    const map = {
+      cokeAndWeed:  ['cannabis', 'cocaine'],
+      cokeAndMolly: ['cocaine', 'mdma'],
+      weedAndAcid:  ['cannabis', 'lsd'],
+      everything:   ['cannabis', 'cocaine', 'mdma', 'lsd', 'alcohol'],
+      sober:        []
+    };
+    const substances = map[name];
+    if (!substances) return;
+    // Ingest each (grade gate still applies — kindergarten with
+    // setDrugState('cokeAndWeed') still returns sober).
+    for (const sub of substances) this.drugScheduler.ingest(sub);
+    this._refreshBrainParamsFromScheduler();
   }
 
   // ══════════════════════════════════════════════════════════════

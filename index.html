@@ -41,16 +41,19 @@
           <button class="landing-tab" data-tab="memory">Memory</button>
           <button class="landing-tab" data-tab="motor">Motor</button>
           <button class="landing-tab" data-tab="perf">Performance</button>
+          <button class="landing-tab" data-tab="clusterwaves">Cluster Waves</button>
         </div>
 
         <!-- Stats bar -->
-        <div id="landing-bar" style="display:flex;gap:16px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;padding:8px 0;user-select:text;">
+        <div id="landing-bar" style="display:flex;gap:16px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;padding:8px 0;user-select:text;flex-wrap:wrap;">
           <span>AROUSAL <span id="ls-arousal" style="color:#ff4d9a;">—</span></span>
           <span>VALENCE <span id="ls-valence" style="color:#a855f7;">—</span></span>
           <span>COHERENCE <span id="ls-coherence" style="color:#00e5ff;">—</span></span>
           <span>SPIKES <span id="ls-spikes" style="color:#22c55e;">—</span></span>
           <span>CPU <span id="ls-cpu" style="color:#f59e0b;">—</span></span>
           <span>GPU <span id="ls-gpu" style="color:#f59e0b;">—</span></span>
+          <span title="Unity's lowest grade across subjects — caps her speech ceiling. 'pre-K' means she physically cannot speak yet.">GRADE <span id="ls-grade" style="color:#ff4d9a;font-weight:600;">—</span></span>
+          <span id="ls-grade-per-subject" title="Per-subject grades (ELA / Math / Science / Social / Arts / Life)" style="color:#555;font-size:9px;">—</span>
         </div>
       </div>
     </div>
@@ -71,15 +74,15 @@
     .landing-tab.active { border-color:#ff4d9a; color:#ff4d9a; background:rgba(255,77,154,0.08); }
   </style>
 
-  <!-- ═══ Setup Modal — R15 minimal version ═══ -->
+  <!-- ═══ Setup Modal — minimal sensory-only version ═══ -->
   <!-- Opens from: TALK TO UNITY button (landing overlay) OR the Unity
        bubble (bottom-right) via a state-aware click handler in app.js.
-       Pre-R15 this modal was a 100-line text-AI connect flow with 8
-       provider buttons and a model dropdown. R15 ripped all of that
-       because Unity's cognition is 100% equational — see R4 refactor.
-       The modal now just requests mic/camera permissions, shows the
-       auto-detected sensory backends, and lets the user paste an
-       optional Pollinations API key for raised rate limits. -->
+       The modal is sensory-only by design because Unity's cognition is
+       100% equational — there is no text-AI backend to configure. All
+       the modal does is request mic/camera permissions, show the
+       auto-detected sensory backends (image-gen providers, vision
+       describer, TTS), and let the user paste an optional Pollinations
+       API key for raised rate limits. -->
   <div id="setup-modal" style="display:none;">
     <div class="setup-card">
       <h1>🧠 Unity</h1>
@@ -223,7 +226,7 @@
 
         <p style="font-size:10px;color:var(--text-dim);margin-top:10px;">
           <a href="https://github.com/Unity-Lab-AI/Unity" target="_blank" style="color:var(--pink);">GitHub</a> ·
-          <span>Unity AI Lab · Hackall360, Sponge, GFourteen</span>
+          <span>Unity AI Lab · Hackall360 (brain topology) · Mills (GPU compute) · Sponge (visualization + peripherals) · GFourteen (lead)</span>
         </p>
       </div>
     </div>
@@ -292,7 +295,7 @@
       <div class="hud-sep"></div>
       <div class="hud-row">
         <span class="hud-label">DRUG</span>
-        <span class="hud-val hud-val-sm" id="hud-drug">cokeAndWeed</span>
+        <span class="hud-val hud-val-sm" id="hud-drug">sober</span>
       </div>
       <div class="hud-row">
         <span class="hud-label">ACTION</span>
@@ -395,10 +398,13 @@
       };
       document.body.appendChild(s);
     } else {
-      // http:// — ES modules work fine
+      // http:// — load bundle with build stamp for cache busting
+      // stamp-version.mjs updates the hash after each commit
       const s = document.createElement('script');
       s.type = 'module';
-      s.src = 'js/app.js?v=29c86ca4-e9da';
+      s.src = 'js/app.js?v=d40f52e7-084d';
+      // Override: always load the BUNDLE, use the stamp for cache bust
+      s.src = 'js/app.bundle.js?v=' + Date.now();
       document.body.appendChild(s);
     }
   </script>

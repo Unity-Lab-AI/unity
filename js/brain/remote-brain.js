@@ -62,7 +62,7 @@ export class RemoteBrain extends EventEmitter {
       clusters: {}, cortex: null, hippocampus: null,
       amygdala: null, basalGanglia: null, cerebellum: null,
       hypothalamus: null, mystery: null, oscillations: null,
-      psi: 0, time: 0, reward: 0, drugState: 'cokeAndWeed',
+      psi: 0, time: 0, reward: 0, drugState: 'sober',
       totalNeurons: 1000, motor: null, memory: null,
       innerVoice: null, connectedUsers: 0,
     };
@@ -193,6 +193,20 @@ export class RemoteBrain extends EventEmitter {
         this.emit('response', { text: msg.text, action: msg.action });
         break;
 
+      case 'silent':
+        // Server dropped the response on purpose — pre-K Unity's motor
+        // region can't commit a stable letter sequence, or the language
+        // subsystem isn't booted, or the motor attractor couldn't settle
+        // on this input. Forward the reason + detail + minGrade to the
+        // chat panel so it renders a ghost bubble instead of ghosting
+        // the user. Shape: { reason, detail, minGrade }.
+        this.emit('silent', {
+          reason: msg.reason || 'unknown',
+          detail: msg.detail || '',
+          minGrade: msg.minGrade || null,
+        });
+        break;
+
       case 'build':
         // Server wants to inject a component
         this.emit('build', msg.component);
@@ -251,6 +265,12 @@ export class RemoteBrain extends EventEmitter {
     if (serverState.sharedMood) this.state.sharedMood = serverState.sharedMood;
     if (serverState.perf) this.state.perf = serverState.perf;
     if (serverState.growth) this.state.growth = serverState.growth;
+    // T18.3.b — forward grade state (per-subject map + minGrade + canSpeak)
+    // so the HUD can render Unity's lowest passing grade as a persistent
+    // visible element instead of forcing the user to type /curriculum status.
+    if (serverState.grades) this.state.grades = serverState.grades;
+    if (serverState.minGrade) this.state.minGrade = serverState.minGrade;
+    if (typeof serverState.canSpeak === 'boolean') this.state.canSpeak = serverState.canSpeak;
 
     // Synthesize spike array for 3D visualization.
     // Server runs millions of neurons — render shows proportional sample.
@@ -324,24 +344,36 @@ export class RemoteBrain extends EventEmitter {
       } catch { /* localStorage unavailable — fall through with null */ }
     }
 
+    // T14.25 — stamp the last-text time so the visual cortex RAF
+    // driver's setAttentionState call sees a small secondsSinceInput
+    // and locks attention toward the user's face for the next ~10s.
+    this._lastTextSendTime = Date.now();
+
     this._ws.send(JSON.stringify({
       type: 'text',
       text,
       userId: this._stableUserId || undefined,
     }));
 
-    // Wait for response from server
+    // T14.22.5 — attach handler BEFORE awaiting the Promise resolve
+    // so a fast server response that races the ws.send can't fire
+    // its 'response' event before the listener is registered.
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        resolve({ text: 'Brain is thinking...', action: 'respond_text' });
-      }, 30000);
-
+      let resolved = false;
       const handler = ({ text, action }) => {
+        if (resolved) return;
+        resolved = true;
         clearTimeout(timeout);
         this.off('response', handler);
         resolve({ text, action });
       };
       this.on('response', handler);
+      const timeout = setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        this.off('response', handler);
+        resolve({ text: 'Brain is thinking...', action: 'respond_text' });
+      }, 30000);
     });
   }
 
@@ -379,6 +411,50 @@ export class RemoteBrain extends EventEmitter {
         if (this.visualCortex && typeof this.visualCortex.init === 'function') {
           this.visualCortex.init(vid);
           console.log('[RemoteBrain] Visual cortex connected to camera');
+
+          // T14.23.5 — self-driving processFrame RAF loop.
+          //
+          // RemoteBrain has no tick loop (the main brain runs server-
+          // side), so nothing was calling visualCortex.processFrame()
+          // on the client side. VisualCortex.init() starts the video
+          // element but the V1 edge + salience + saccade compute only
+          // runs when processFrame() is called externally. Without a
+          // driver, gazeX/gazeY stayed at their default 0.5/0.5 and
+          // the Eye widget's iris rendered frozen in the center.
+          //
+          // Fix: kick off a requestAnimationFrame loop that calls
+          // processFrame() every frame as long as the visual cortex
+          // is active. The loop self-cancels when the cortex goes
+          // inactive (disconnect or destroy). ~60 Hz frame rate is
+          // overkill — visualCortex.processFrame internally gates
+          // real compute work via its own describeInterval and V1
+          // update cadence — but RAF is the simplest way to stay in
+          // sync with the display's vsync.
+          // T14.25 — drive setAttentionState from live RemoteBrain
+          // state so the visual cortex's top-down attention lock
+          // engages when the user is actively talking to Unity.
+          // Without this, _attentionLock stays at 0 and the face-
+          // tracking saccade's center prior stays weak, so the iris
+          // wanders to whatever high-salience background edge wins
+          // the raw competition. setAttentionState only needs two
+          // numbers (current arousal, seconds since last input),
+          // both of which we can read from local state + lastTextTime.
+          const tick = () => {
+            if (!this.visualCortex || !this.visualCortex.isActive()) return;
+            try {
+              const arousal = this.state?.amygdala?.arousal ?? 0.5;
+              const now = Date.now();
+              const lastInput = this._lastTextSendTime || 0;
+              const secondsSinceInput = lastInput > 0 ? (now - lastInput) / 1000 : 9999;
+              if (typeof this.visualCortex.setAttentionState === 'function') {
+                this.visualCortex.setAttentionState({ arousal, secondsSinceInput });
+              }
+              this.visualCortex.processFrame();
+            }
+            catch (err) { console.warn('[RemoteBrain] visualCortex.processFrame threw:', err?.message || err); }
+            this._visionRafId = requestAnimationFrame(tick);
+          };
+          this._visionRafId = requestAnimationFrame(tick);
         }
       }, 500);
     } catch (err) {
@@ -435,11 +511,21 @@ export async function detectRemoteBrain(url = 'ws://localhost:7525') {
   }
   return new Promise((resolve) => {
     try {
+      // T14.22.4 — timeout raised 3s → 10s. Server-side boot can take
+      // longer than 3 seconds at biological scale because the brain
+      // constructor allocates Float64Array spike buffers proportional
+      // to TOTAL_NEURONS (at Gee's 677M scale, 7 spike arrays totalling
+      // ~678 MB of zero-fill). Those allocations plus the module-level
+      // import chain (dynamic imports for dictionary/language-cortex/
+      // embeddings/cluster/curriculum) can push past 3 seconds even
+      // on fast hardware. Bumping to 10s so the landing page actually
+      // connects to the server instead of falling back to the tiny
+      // 6700-neuron local brain.
       const ws = new WebSocket(url);
       const timer = setTimeout(() => {
         ws.close();
         resolve(null);
-      }, 3000);
+      }, 10000);
 
       ws.onopen = () => {
         clearTimeout(timer);

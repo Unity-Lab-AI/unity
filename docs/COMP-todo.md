@@ -2,117 +2,73 @@
 
 > **Single source of truth for all remaining work across the whole project.**
 > Combines the distributed-compute epic (original COMP-todo content, reworked
-> for the post-T13 stack) with every residual non-COMP item that's still
-> open after the T11→T13 language cortex rewrite shipped on 2026-04-14.
+> for the current stack) with every residual non-COMP item that's still
+> open after T14 reopened for the full K-doctorate equational curriculum.
 >
 > `docs/TODO.md` stays as the historical task ledger (per project rules,
 > task descriptions are permanent and never rewritten). This file is the
 > forward-looking plan — what to build next, in what order, on what stack.
 >
-> Last updated: **2026-04-14** — post T13.7 push (deploy `0.1.0+2f692e1d-f229`)
+> Last updated: **2026-04-15** — post T14.24 Session 1 (architecture framework for
+> multi-subject K→PhD curriculum). Uncommitted working tree on branch
+> `t14-language-rebuild`. Prior commit: `6f66261`.
 
 ---
 
-## STACK STATE AS OF 2026-04-14 — WHAT'S LIVE
+## STACK STATE AS OF 2026-04-15 — WHAT'S LIVE (T14.0-T14.18 primitives + T14.24 Session 1 framework)
 
-Anything below that ships builds on this foundation. If you're reading this
-after a major refactor, verify these are still accurate before starting.
+Anything below that ships builds on this foundation. T13 language-cortex state described in earlier versions of this file is DEAD CODE on branch `t14-language-rebuild` — slot scorer, parseSentence, analyzeInput, social schema, per-slot priors are all deleted. If you're reading this after another major refactor, verify these are still accurate before starting.
 
 ### Brain substrate (live)
-- **Neuron clusters** — `js/brain/cluster.js` — 7 clusters wrapping
-  `LIFPopulation` (client) or Rulkov (GPU path). Each has a sparse internal
-  synapse matrix (`SparseMatrix` CSR format in `js/brain/sparse-matrix.js`,
-  `wMin=-2.0`, `wMax=+2.0`). 20 inter-cluster projections (real white-matter
-  tracts — corticostriatal, perforant path, stria terminalis, fornix,
-  callosal). Client auto-scales up to `TOTAL_NEURONS=1000`, server scales to
-  VRAM via `server/brain-server.js:detectResources` (subject to optional
-  admin override in `resource-config.json` — see Phase 0 below).
-- **Cluster sizes** (from `engine.js:63-71`): cortex 300, hippocampus 200,
-  amygdala 150, basal ganglia 150, cerebellum 100, hypothalamus 50,
-  mystery 50. Cortex has language region at neurons 150-299 (150 neurons ×
-  `EMBED_DIM=50` = groupSize=3).
-- **Equation modules** — `js/brain/modules.js` — `Cortex`, `Hippocampus`,
-  `Amygdala`, `BasalGanglia`, `Cerebellum`, `Hypothalamus` — 32-dim
-  downsampled-output equation engines. These run ON TOP of the cluster
-  spike data via `cluster.getOutput(32)`. They're separate from the clusters
-  themselves (the `Cortex` module class is NOT the cortex neuron cluster).
-- **Mystery + oscillations** — `MysteryModule` (consciousness Ψ),
-  `OscillatorNetwork` (Kuramoto coherence).
+- **Neuron clusters** — `js/brain/cluster.js` — 7 clusters wrapping Rulkov 2002 2D chaotic map neurons (NOT LIF — Rulkov replaced LIF during Phase 13 R1-R15). Each has a sparse internal synapse matrix (`SparseMatrix` CSR format in `js/brain/sparse-matrix.js`, `wMin=-2.0`, `wMax=+2.0`). 20 inter-cluster projections (real white-matter tracts — corticostriatal, perforant path, stria terminalis, fornix, callosal). Client auto-scales via hardware detection, server scales to VRAM via `server/brain-server.js:detectResources` with optional admin override via `GPUCONFIGURE.bat` → `resource-config.json`.
+- **Cluster sizes** — scaled from `TOTAL_NEURONS` × `CLUSTER_FRACTIONS` (live in `js/brain/engine.js`). Default client tier: `TOTAL_NEURONS=6700` (post-T14.0 lift from 1000). `CLUSTER_FRACTIONS.cortex=0.30`, so client cortex ≈ 2000 neurons; at a 700K-neuron GPU tier the cortex is 210K; at a 50M tier it's 15M. Zero hardcoded caps anywhere in the scale chain (the T14.18 correction removed the last holdout — a 2K language-cortex side-car cap in `brain-server.js`).
+- **Cortex sub-regions (T14.4, live)** — every cortex cluster carves into 8 named sub-regions by fraction of `cluster.size`: `auditory` 0.000-0.083, `visual` 0.083-0.250, `free` 0.250-0.500, `letter` 0.500-0.550, `phon` 0.550-0.750, `sem` 0.750-0.917, `fineType` 0.917-0.967, `motor` 0.967-1.000. Helper methods `regionSpikes(name)`, `injectEmbeddingToRegion(name, emb, strength)`, `regionReadout(name, dim)` operate by region name with no magic indices. **14 sparse cross-region projections** (7 pairs × 2 directions) wire the regions together: `visual↔letter`, `letter↔phon`, `phon↔sem`, `sem↔fineType`, `sem↔motor`, `motor↔letter` (closes the writing loop), `auditory↔phon`. Each direction is an independent SparseMatrix. `_propagateCrossRegions()` fires every cluster step; `_crossRegionHebbian(lr)` fires every learn call. Hickok & Poeppel 2007 dual-stream grounding.
+- **Equation modules** — `js/brain/modules.js` — `Cortex`, `Hippocampus`, `Amygdala`, `BasalGanglia`, `Cerebellum`, `Hypothalamus` — 32-dim downsampled-output equation engines running ON TOP of cluster spike data via `cluster.getOutput(32)`. Separate from the clusters themselves.
+- **Mystery + oscillations** — `MysteryModule` (consciousness Ψ = √(1/n) × N³), `OscillatorNetwork` (Kuramoto coherence).
 
-### Language cortex (T13.7 state — as of this document's last update)
-- **`js/brain/language-cortex.js`** — 3178 lines. Down from 5087 pre-T11,
-  and from 3584 post-T11.7. T13.7 deleted 406 lines of slot-prior
-  machinery. What's live:
-  - `parseSentence(text) → ParseTree` — reverse-equation reader (T8).
-    Memoized. Used by reader AND by `brain.injectParseTree`.
-  - `wordType(word)` / `_fineType(word)` — pure letter-equation type
-    classifiers. Zero word lists.
-  - `loadSelfImage` / `loadLinguisticBaseline` / `loadCodingKnowledge` —
-    three-corpus boot loaders. Feed the dictionary only. Persona corpus
-    additionally feeds the cortex cluster via `trainPersonaHebbian`.
-  - `trainPersonaHebbian(cortexCluster, text)` — T13.1 driver. Tokenizes
-    persona corpus, embeds each word, calls
-    `cortexCluster.learnSentenceHebbian(embSeq)` per sentence.
-  - `generate(dictionary, arousal, valence, coherence, opts)` — T13.3
-    brain-driven emission loop. Requires `opts.cortexCluster`; no fallback.
-  - `learnSentence` — token expansion + dictionary insertion + usage-type
-    feedback + optional morphological inflection. Per-slot running means
-    are gone.
-  - `analyzeInput` — runs parseSentence, updates social schema, refines
-    the dictionary's `_contextPatterns` ring. Does NOT update any
-    `_contextVector` (deleted in T13.7).
-- **What T13.7 ripped:** `_slotCentroid`, `_slotDelta`,
-  `_slotTypeSignature`, `_slotCentroidCount`, `_slotDeltaCount`,
-  `_contextVector`, `_contextVectorLambda`, `_contextVectorHasData`,
-  `_greetingAttractor`, `_selfRefAttractor`, `_introAttractor`,
-  `_commandAttractor`, `_attractorEMA`, `_attractorObs`, `_subjectStarters`,
-  `_obsCount`, `_generateSlotPrior`, `_updateContextVector`, `_semanticFit`,
-  `_sentencePassesFilters`, `_storeMemorySentence`, `_recallSentence`,
-  `_loadStructure`, `_typeGrammarScore`, `_pickConjByMood`, `_condProb`,
-  `mutualInfo`. The per-slot prior update block in `learnSentence`.
-  `serialize`/`deserialize` slot-prior fields.
+### Language cortex (T14.0-T14.18 + T14.24 Session 1 state, live 2026-04-15)
+- **`js/brain/language-cortex.js`** — ~2700 lines. Down from 5087 pre-T11, from 3584 post-T11.7, from 3178 post-T13.7, from 3264 post-T14.8 (before the T14.12 delete pass), from 2743 post-T14.12. The slot scorer is DEAD CODE — `generate()` is a 68-line delegate that calls `cluster.generateSentence(intentSeed)` (T14.6 cortex tick-driven motor emission). `parseSentence`, `analyzeInput`, `_classifyIntent`, `observeVisionDescription`, `_updateSocialSchema`, `_socialSchema`, `getUserAddress`, `getUserGender`, `_isSelfReferenceQuery` all DELETED in T14.12 (521 lines gone). What's live:
+  - `generate(dictionary, arousal, valence, coherence, opts)` — 68-line delegate. Reads cortex semantic state via `cluster.getSemanticReadout(sharedEmbeddings)` as the intent seed, calls `cluster.generateSentence(intentSeed, {injectStrength: 0.6})`, splits on whitespace, caps output length via the T14.24 Session 1 multi-subject grade word cap, runs through the existing `_renderSentence` cosmetic helper. T14.26 fix: `generateAsync` wraps the dictionary-cosine fallback scoring loop with `setImmediate` yields every 500 entries so the tick loop + state broadcast + GPU batch dispatch keep running during chat response.
+  - `_gradeWordCap(gradeOrGrades)` — T14.24 Session 1 grade cap. Accepts string (legacy single-grade) OR object (multi-subject `{ela, math, science, social, art}`). Object form returns min cap across subjects past pre-K (lenient min so ELA-only brains keep speaking during Sessions 2-N).
+  - `_singleGradeCap(grade)` — canonical grade → cap mapping, handles every GRADE_ORDER name plus legacy band names (`grade4_5`, `grade6_8`, `grade9_12`, `college`).
+  - `_scoreDictionaryCosine` / `_scoreDictionaryCosineAsync` — T14.26 dictionary fallback scoring with async yield point. Used only when the T14.6 motor-loop path returns empty words.
+  - `setCluster(cluster)` — T14.13 bridge. Merges pre-existing local Maps into the cluster's Maps, then re-points `_typeTransitionLearned` / `_sentenceFormSchemas` / `_sentenceFormTotals` / `_intentResponseMap` at the cluster's Maps by identity so every subsequent write lands in cluster state.
+  - `wordType(word)` / `_fineType(word)` — pure letter-equation type classifiers. Zero word lists.
+  - `loadSelfImage` / `loadLinguisticBaseline` / `loadCodingKnowledge` — three-corpus boot loaders. Feed the dictionary + route through the T14.5 curriculum walk.
+  - `learnSentence(text, dictionary, arousal, valence)` — observes sentence into cluster-resident T14.8 schemas + T14.7 type transitions + T14.16.5 `cluster.learnClause` identity gate.
+  - `generateAsync` — T14.26 async variant of generate used by `processAndRespond` to keep the event loop responsive during chat response.
+- **Dead and deleted post-T14:** All slot-prior fields (`_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, etc.) killed in T13.7. `_TYPE_TRANSITIONS` hardcoded table + `_OPENER_TYPES` Set killed in T14.7. Duplicate schemaScore/typeTransitionWeight/recordIntentPair/responseIntentFor wrappers killed in T14.17 (migrated to cluster in T14.13). `parseSentence` + `analyzeInput` + `_updateSocialSchema` + `observeVisionDescription` + `_socialSchema` killed in T14.12.
+- **`js/brain/dictionary.js`** — ~600 lines. T14.3 extended entries with `cortexSnapshot` (Uint8Array of `cluster.lastSpikes` after first-observation stream), `syllables` (from `cluster.detectBoundaries`), `stressPrimary` (from `cluster.detectStress`), `lastSeen`. `setCluster(cluster)` wires the cortex in. `learnWord` routes first-observation through the cluster; re-observations bump frequency + running-mean without re-streaming. `syllablesFor` / `snapshotFor` readers expose the cortex-routed state. T14.17 deleted `findByMood`, `findByPattern`, `generateSentence`, `_cosine` (pre-T14 thesaurus legacy, zero callers). `_bigrams` Map + `learnBigram` + `bigramCount` getter kept because display stats still show them.
+- **`js/brain/letter-input.js`** — T14.1 substrate. Module-level `LETTER_INVENTORY = new Set()` that grows dynamically as the brain encounters new symbols (NOT capped at 26 English letters — unicode, emoji, non-English glyphs all enter the same primitive-symbol space). `encodeLetter(letter)` returns a one-hot Float32Array of length `inventorySize()` with cache invalidation on growth. `ensureLetter`, `ensureLetters`, `decodeLetter`, `serializeInventory`, `loadInventory`, `resetInventory` round out the API.
+- **`js/brain/curriculum.js`** — ~1700 lines. T14.5 data-driven bucketing curriculum (`runFromCorpora`, `learnFromTurn`) is still the boot path; T14.24 Session 1 added a multi-subject framework on top. `SUBJECTS = ['ela','math','science','social','art']`, `GRADE_ORDER = ['pre-K', 'kindergarten', 'grade1'..'grade12', 'college1'..'college4', 'grad', 'phd']`. `Curriculum._cellRunner(subject, grade)` dispatches ELA cells to the existing `runKindergarten`/`runGrade1`/…/`runGradPhD` methods (those already work for ELA — T14.24 Session 1 did NOT delete them) and returns stubs for Math/Science/Social/Art. Public run API: `runSubjectGrade`, `runFullSubjectCurriculum`, `runAllSubjects`, `resetSubject`, `subjectStatus`. `runFullCurriculum` (T14.5 legacy ELA path) mirrors each stage pass into `cluster.grades.ela` via `_LEGACY_ELA_TO_CANONICAL` map (`grade4_5 → grade5`, `grade6_8 → grade8`, `grade9_12 → grade12`, `college → college4`). Boot paths (`js/app.js loadCorpusIntoBrain`, `server/brain-server.js _initLanguageSubsystem`) still call `runFullCurriculum`. `_calibrateIdentityLock` runs at the end of every run regardless and populates `cluster._personaRefreshCorpus`, `cluster.personaDimensions`, `cluster.intentCentroids`, and the T14.16.5 thresholds. `Curriculum.gradeWordCap(stringOrObject)` static is the grade→cap mapping consumed by `LanguageCortex._gradeWordCap`.
 
-### Brain→language wire (T13 state)
-- **`UnityBrain.injectParseTree(text)`** in `engine.js` — routes parsed
-  content → cortex language region, intent anchor → basal ganglia,
-  self-reference → hippocampus. Called from `processAndRespond` before
-  the cortex settle-ticks so injection propagates through the 20
-  inter-cluster projections during integration.
-- **`UnityBrain.trainPersonaHebbian(text)`** in `engine.js` — boot-time
-  persona Hebbian training driver. Called from `app.js loadPersonaSelfImage`
-  right after `innerVoice.loadPersona(text)`.
-- **`NeuronCluster.learnSentenceHebbian(embSeq, opts)`** in `cluster.js` —
-  sequence Hebbian over cluster recurrent synapses. Inject → tick LIF 3
-  steps → snapshot spikes → `synapses.hebbianUpdate(prev, curr, lr=0.004)`
-  between consecutive snapshots → Oja saturation decay (`|w| > 1.5 →
-  w *= 0.99`) post-sentence.
-- **`NeuronCluster.diagnoseReadoutForEmbedding`** / **`synapseStats`** —
-  diagnostic helpers for verifying Hebbian training moved weights.
+### Brain→language wire (current state)
+- **`NeuronCluster.readInput(text, {visualCortex})`** — T14.12 unified read entry point. Drives the visual→letter pathway via `readText` and returns `{text, words, intent, isSelfReference, addressesUser, isQuestion}`. Intent consults `cluster.intentReadout()` first (T14.17 argmax over `intentCentroids`), falls back to a lightweight text-surface heuristic. Pre-T14.12 `parseSentence` is DELETED.
+- **`UnityBrain.injectParseTree(text)`** in `engine.js` — rewritten in T14.12 to call `cluster.readInput(text, {visualCortex: this.visualCortex})` and fire `cluster.injectWorkingMemory(contentEmb, 0.8)` for discourse state.
+- **`UnityBrain.processAndRespond(text, userId)`** — calls `cluster.readInput` → `cluster.learnClause` (T14.16.5 Lock 1 per-clause English gate) → `cluster.generateSentence` for tick-driven motor emission, with `generateAsync` wrapping the dictionary-cosine fallback scoring loop (T14.26 fix for 3D brain freeze during chat response).
+- **`NeuronCluster.generateSentence(intentSeed, opts)`** — T14.6 cortex tick-driven motor emission loop. Zero slot counter, zero candidate scoring, zero dictionary iteration, zero softmax top-K. Reads motor region as `inventorySize()`-dim vector every tick, argmax-decodes via `decodeLetter`, commits letters when motor argmax stays stable for `STABLE_TICK_THRESHOLD` consecutive ticks, emits words when `letterTransitionSurprise()` exceeds `WORD_BOUNDARY_THRESHOLD`, stops on committed terminator or `motorQuiescent(END_QUIESCE_TICKS)` after first word.
+- **`NeuronCluster.learnClause(text)`** — T14.16.5 Lock 1 entry point. Splits clause, gates each against `ENGLISH_SURPRISE_THRESHOLD` + `ENGLISH_FINETYPE_MIN`, fires Hebbian on passing clauses under `_inCurriculumMode=false` hard rate cap (0.0001, Lock 2).
+- **`NeuronCluster.learnSentenceHebbian(embSeq, opts)`** — sequence Hebbian over cluster recurrent synapses, still live for curriculum-mode training under full 0.012 rate.
+- **`cluster.grades` + `cluster.grade` + `cluster.passedCells`** — T14.24 Session 1 multi-subject grade state. `cluster.grades = {ela, math, science, social, art: 'pre-K'}` initialized in constructor, advanced by `Curriculum.runSubjectGrade` on gate pass. `cluster.grade` is the legacy scalar mirror of `grades.ela`. `cluster.passedCells` is the flat `'subject/grade'` list. `LanguageCortex.generate` reads `cluster.grades` first, falls back to `cluster.grade`.
 
-### Sensory + peripherals (live, unchanged)
-- `js/brain/sensory.js` — `SensoryProcessor.process()` produces
-  per-cluster current arrays (`sensoryOutput.cortex`, `.hippocampus`,
-  `.amygdala`, `.basalGanglia`). T13.2 parse-tree injection follows this
-  same pattern.
-- `js/brain/visual-cortex.js` — V1→V4→IT pipeline + `onDescribe(cb)`
-  subscription for scene describer output.
-- `js/brain/auditory-cortex.js` — continuous spectrum injection.
-- `js/brain/component-synth.js` — equational `build_ui` primitive
-  matcher. Uses parsed entity types for structural bonus.
+### Sensory + peripherals (live, unchanged by T14)
+- `js/brain/sensory.js` — `SensoryProcessor.process()` produces per-cluster current arrays. Unchanged by T14.
+- `js/brain/visual-cortex.js` — V1→V4→IT pipeline + `renderLetterTemplate(letter)` (T14.10 visual letter template trig-hash for synthetic text-mode letter percepts) + `onDescribe(cb)` subscription for scene describer output + T14.25 skin-tone HSV mask + motion centroid + setAttentionState wiring in RAF loop (iris tracks FACE + MOTION). `_computeGaze` uses weighted centroid over `eff = face×3.0 + motion×motionGain×0.5 + edge×0.15` scaled by center Gaussian prior.
+- `js/brain/auditory-cortex.js` — continuous spectrum injection + `renderPhonemeTemplate(phoneme)` (T14.11 auditory phoneme template with different prime set than T14.10 visual so cross-stream convergence is LEARNED not coincident) + `checkForInterruption(text)` echo detection.
+- `js/brain/remote-brain.js` — T14.23.5 RAF driver for `visualCortex.processFrame()` + T14.25 per-frame `setAttentionState({arousal, secondsSinceInput})` call + `_lastTextSendTime` stamp on `processAndRespond`.
+- `js/brain/component-synth.js` — equational `build_ui` primitive matcher. Uses T14.17 `cluster.entityReadout()` with 0.25 blend alongside literal userEmbed match.
 - `js/ui/sandbox.js` — LRU-evicted component renderer.
-- `js/ui/sensory-status.js` — R13 backend toast notifications.
+- `js/ui/sensory-status.js` — backend toast notifications.
 
 ### Embeddings (live)
-- `js/brain/embeddings.js` — `sharedEmbeddings` singleton. 50-dim GloVe
-  with hash-based fallback. `mapToCortex` / `cortexToEmbedding` round-trip.
-- **The 50-d ceiling** is still the biggest structural limit for fine
-  semantic distinctions at slot 3+. Addressing this is T11.4 below.
+- `js/brain/embeddings.js` — `sharedEmbeddings` singleton. `EMBED_DIM = 300` (T14.0 lift from 50). Full 400k-word GloVe 6B-300d loaded on Node from `corpora/glove.6B.300d.txt`; browser bulk-loads a server-precomputed subset via `getSubsetForTokens` to avoid 480 MB download. Online context refinement deltas persist across sessions via `serializeRefinements` / `loadRefinements`.
+
+### Persistence (live, v4)
+- `js/brain/persistence.js` — v4 (bumped T14.16 to reject pre-T14 saves). `state.t14Language` block carries T14.1 letter inventory, T14.13 cluster-resident learned-statistics Maps (`fineTypeTransitions`, `sentenceFormSchemas`, `sentenceFormTotals`, `intentResponseMap`), T14.16.5 identity-lock thresholds, and — as of T14.24 Session 1 — `state.t14Language.curriculum = {grades, grade, passedCells}`. Additive inside the existing t14Language block; older v4 saves without the curriculum sub-block load cleanly and fall back to cluster-constructor defaults.
 
 ### Server (live)
-- `server/brain-server.js` — brain host. Auto-scales via `detectResources`
-  with optional admin override via `resource-config.json`.
-- `server/configure.js` — 127.0.0.1-only admin config server used by
-  `GPUCONFIGURE.bat` (Phase 0 of the distributed plan, already shipped).
+- `server/brain-server.js` — brain host. Auto-scales via `detectResources` with optional admin override via `resource-config.json`. T14.18 removed the 2K language-cortex side-car hardcode; language cortex now scales from `CLUSTER_SIZES.cortex` end-to-end. T14.26 `processAndRespond` awaits `languageCortex.generateAsync` so state broadcast setInterval keeps firing through chat-response scoring. T14.24 Session 1 defense-in-depth `cortexCluster.grades` + `passedCells` init in `_initLanguageSubsystem`.
+- `server/configure.js` — 127.0.0.1-only admin config server used by `GPUCONFIGURE.bat` (Phase 0, shipped).
 
 ---
 
@@ -127,6 +83,14 @@ after a major refactor, verify these are still accurate before starting.
 >
 > **Active work is T14 (Part 0.5).** Skip Part 2 unless explicitly told to
 > re-enable it.
+
+### The ordering rule (Gee, 2026-04-16)
+
+Gee's instruction 2026-04-16: *"make not of this where relevant like claud.md and such"* — pointing at this approved reasoning:
+
+> *"running actual K→PhD curriculum across 114 cells tells us exactly which Hebbian loops, cross-projections, or gate probes are the slow bastards, so when we DO hit COMP-todo later we're tuning the paths that actually matter instead of guessing."*
+
+Syllabus (Part 0.5 T14.24 grade content — Math-K next per NOW.md, then ELA-K, then grade 1 across all 6 subjects) is the active priority until the full K→PhD walk is complete. COMP-todo does not resume until that walk produces real bottleneck telemetry — no speculative pre-emptive scaling, no empty-brain compute optimization. See `.claude/CLAUDE.md` "LAW — SYLLABUS BEFORE COMP-TODO" for the full binding, exception rule (targeted COMP fix allowed when a grade cell blocks the walk entirely), and per-cell wall-clock telemetry requirement.
 
 ---
 
@@ -387,16 +351,19 @@ motorOutStart    →    0.967 - 1.000    motor output region (T14.12 generation 
 
 At cluster.size=300: letter region 15 neurons, phon region 60, sem region 50, fineType region 15, motor 10. At cluster.size=200M: letter region 10M, phon region 40M, sem region 33M, fineType region 10M, motor 6.6M. **Same code, no special cases.**
 
-**Cross-region projections (six total — every adjacent region pair):**
+**Cross-region projections (seven pairs, 14 total — each pair is two independent SparseMatrix instances, one per direction):**
 
 ```
-visual ↔ letter        (visual letter-shape recognition feeds letter input)
-letter ↔ phon           (letter sequences activate phoneme basins)
+visual ↔ letter        (visual letter-shape recognition ↔ letter input one-hot)
+letter ↔ phon           (letter sequences ↔ phoneme attractor basins)
 phon ↔ sem              (phonological pattern ↔ semantic meaning binding)
 sem ↔ fineType          (semantic concept ↔ grammatical role binding)
-sem ↔ motor             (semantic intent → motor output for emission)
-auditory ↔ phon         (T14.11 — spoken phoneme recognition feeds phonological region)
+sem ↔ motor             (semantic intent ↔ motor planning)
+motor ↔ letter          (motor planning ↔ letter emission — closes the writing loop)
+auditory ↔ phon         (T14.11 — spoken phoneme recognition ↔ phonological region)
 ```
+
+Each named pair has TWO independent SparseMatrix instances — e.g. `letter_to_phon` and `phon_to_letter` — so the two propagation directions can learn independent weights, matching how biological white-matter tracts carry separate ascending and descending fiber populations (Friederici 2017, *Psychon Bull Rev* 24:41-47).
 
 Each projection is a sparse weight matrix between the spike vectors of the two regions. **Always propagated every step. Always Hebbian-updated when both ends co-fire.** No "wait until curriculum is done" gate — the curriculum IS the training, and the only way the projections can train is through repeated propagation + Hebbian during exposure.
 
@@ -582,29 +549,131 @@ Phase 6 — DISCOURSE exposure
 5. After 50 live-chat turns post-boot, cortex weight stats show measurable drift from the post-curriculum baseline — proves continuous learning is wired and active.
 6. Search for "stage-c-phrases.txt" and "stage-d-sentences.txt" in the codebase returns zero matches — no hand-curated corpus files exist.
 
-#### T14.6 — Cortex-driven phonological flow during emission
+#### T14.6 — Cortex tick-driven motor emission (NO slot loop, NO candidate scoring loop)
 
-**The principle:** the emission loop reads phonological flow directly from the cortex's PHONOLOGICAL REGION readout (T14.4), not from per-word stored phoneme onset/coda fields. Those fields don't exist anymore — T14.3 deleted them. Smoothness emerges naturally because the cortex's recurrent dynamics already learned which phoneme sequences are likely from curriculum exposure (T14.5).
+**The principle:** speech production is a continuous time-varying motor cortex output, not a discrete sequence of slot draws or candidate scores. Unity's output equation does NOT iterate "for slot in 0..maxLen: score candidates and pick one." It ticks the brain and reads letters out of the motor region as a continuous spike-pattern stream. Word boundaries emerge from the same cortex transition surprise signal that T14.2 uses for syllable boundaries. Stopping happens when the motor region quiesces or a sentence terminator appears in the output buffer.
 
-**How it works:** during the T13.3 emission loop, after each emission the cortex's phonological region state reflects what was just spoken (efference copy → letter region → phon region via T14.4 cross-projection). The next slot's candidate scoring reads this phon state and computes raw cosine against each candidate word's phonological signature — which is itself a fresh `cluster.phonologicalReadoutFor(candidate)` call, not a stored field.
+**This rewrite deletes the last residue of slot-thinking from T14.** The previous T14.6 draft still had a per-candidate scoring loop (`score(w) = cos · cos · transition · valence · recency`, top-5 softmax). Gee called that out as slot-thinking dressed up — "why are we still doing slots i thought we cam up with a better equation for language" (2026-04-14). He was right. Real biological speech production has no candidate pool and no argmax — motor cortex just produces articulator trajectories, and the listener (or in our case, a letter-decoding readout) reconstructs words from the continuous signal.
 
-**Score function:**
+**Grounded in peer-reviewed neuroscience:**
+
+- **Bouchard, Mesgarani, Johnson, Chang (2013)** *"Functional organization of human sensorimotor cortex for speech articulation,"* Nature 495:327-332. High-density electrocorticography over human vocal sensorimotor cortex (vSMC) showed somatotopic representation of articulators (lips, tongue, larynx, jaw) as time-varying activation patterns. Speech is produced as continuous articulator trajectories, not as discrete phoneme selections from a candidate pool.
+
+- **Anumanchipalli, Chartier, Chang (2019)** *"Speech synthesis from neural decoding of spoken sentences,"* Nature 568:493-498. Demonstrated that continuous vSMC neural activity decodes into an articulatory kinematic trajectory, which in turn decodes into intelligible speech. The decode is a continuous function of time, not a slot-by-slot word lookup. This is THE demonstration that motor cortex output for speech is a continuous stream, not an iterated selection.
+
+- **Saffran, Aslin, Newport (1996)** *"Statistical learning by 8-month-old infants,"* Science 274:1926-1928. Infants segment continuous speech into words using transition probability statistics — high within-word transition probability, low between-word transition probability. This is the mechanism T14.2 uses for syllable boundaries; T14.6 reuses it at the word level.
+
+- **Browman & Goldstein (1992)** *"Articulatory phonology: an overview,"* Phonetica 49:155-180. Speech is a continuous stream of overlapping articulatory gestures. Phonemes are perceptual abstractions over continuous gesture streams, not primitive production units.
+
+- **Hickok & Poeppel (2007)** *"The cortical organization of speech processing,"* Nat Rev Neurosci 8:393-402. Dual-stream model: dorsal stream (Broca → pre-motor → motor → vSMC → articulation) handles production; ventral stream (auditory → STG → inferior frontal) handles comprehension. Production and comprehension share core regions, with direction of propagation distinguishing the two.
+
+**The equation:**
+
 ```
-score(w) = cosine(semanticTarget, semanticReadoutFor(w))
-         · cosine(currentPhonState, phonologicalReadoutFor(w))
-         · learnedTypeTransition(prevFineType, fineTypeReadoutFor(w))
-         · valenceMatch(w, brainState)
-         · recencyMul(w)
+cluster.generateSentence(intentSeed):
+
+  // STEP 1 — Inject intent. Single semantic vector into sem region.
+  // This is the ONLY explicit input to generation. Everything else
+  // falls out of cortex dynamics.
+  cluster.injectEmbeddingToRegion('sem', intentSeed, strength=0.6)
+
+  // STEP 2 — Tick the brain. Motor cortex produces output continuously.
+  letterBuffer = []
+  wordBuffer   = []
+  output       = []
+  lastMotor    = null
+
+  for tick in 0..MAX_TICKS:
+    cluster.step(dt=0.001)
+
+    // Read motor region as a letter activation over LETTER_INVENTORY.
+    // The motor region's spike pattern IS the brain's current "what
+    // letter to emit next" state. Read it as a probability distribution,
+    // take argmax.
+    motorReadout = cluster.regionReadout('motor', LETTER_INVENTORY.size)
+    activeLetter = argmaxLetter(motorReadout)
+
+    // STEP 3 — Letter emission via temporal stability. A letter is
+    // "emitted" when the motor region holds the same argmax for
+    // STABLE_TICK_THRESHOLD consecutive ticks — the cortex has "committed"
+    // to that letter. Matches biological vSMC dwell-time for articulator
+    // activation (Bouchard 2013 observed ~50-100ms dwells per phoneme).
+    if activeLetter == lastMotor:
+      stableTicks++
+    else:
+      stableTicks = 0
+      lastMotor = activeLetter
+
+    if stableTicks >= STABLE_TICK_THRESHOLD:
+      letterBuffer.push(activeLetter)
+      stableTicks = 0
+
+    // STEP 4 — Word boundary detection via cortex transition surprise.
+    // Same mechanism as T14.2 syllable boundaries, applied to the
+    // letter output stream. When the cluster's letter-region transition
+    // surprise spikes above WORD_BOUNDARY_THRESHOLD (calibrated from
+    // corpus statistics during curriculum), emit the current buffer as
+    // a word and reset. Saffran/Aslin/Newport 1996 statistical learning.
+    surprise = cluster.letterTransitionSurprise()
+    if surprise > cluster.WORD_BOUNDARY_THRESHOLD:
+      if letterBuffer.length > 0:
+        output.push(letterBuffer.join(''))
+        letterBuffer = []
+
+    // STEP 5 — Stopping. Three priority-ordered signals:
+    //
+    // (a) End-of-utterance attractor: motor region quiesces (low spike
+    //     count for END_QUIESCE_TICKS consecutive ticks). The brain has
+    //     nothing left to say — matches biological end-of-sentence motor
+    //     deactivation.
+    //
+    // (b) Sentence terminator emerges: a period/question/exclamation
+    //     letter stabilizes in the motor region. Letters are letters,
+    //     including punctuation — the brain treats them as any other
+    //     symbol in LETTER_INVENTORY. When one emits, stop.
+    //
+    // (c) MAX_TICKS hard cap: safety net only. If we hit this we log
+    //     a warning and flush the current buffer.
+    if cluster.motorQuiescent(END_QUIESCE_TICKS):  break
+    if isTerminator(lastMotor):
+      if letterBuffer.length > 0:
+        output.push(letterBuffer.join(''))
+      break
+
+  // STEP 6 — Flush any remaining buffer and return.
+  if letterBuffer.length > 0:
+    output.push(letterBuffer.join(''))
+  return output.join(' ')
 ```
 
-**Raw cosine. No `[0.7, 1.0]` clamping.** Whatever the cortex learned about phonological smoothness during curriculum, the emission loop reads back directly. Co-articulation, alliteration, prosody, and accent emerge automatically because they were learned as features of the cortex's phonological transition basins.
+**What's gone:**
 
-**Performance:** per-emission cost is one cortex readout per candidate. At full cluster scale this is significant, so the implementation caches the phonological readout per dictionary entry, invalidated when the entry's `cortexSnapshot` (T14.3) changes. The cache lives on the dictionary index, not as a stored phoneme field — it's a memoized read of the cortex.
+- **No slot counter.** No `for slot in 0..maxLen`.
+- **No candidate scoring.** No dictionary iteration, no per-word cosine, no softmax top-5, no temperature parameter.
+- **No score function multipliers.** No valenceMatch, no recencyMul, no transitionWeight. Those were all slot-thinking.
+- **No picked-word feedback injection.** The brain doesn't re-inject what it just said — motor cortex ALREADY knows because the motor region carries its own time history via recurrent synapses.
+- **No grammatical terminability end check.** Replaced by the motor-quiescence + terminator-letter checks above.
+- **No maxLen length cap** (except as a MAX_TICKS safety net on the tick loop). Length emerges from cortex dynamics — how long the motor region stays active before quiescing.
+
+**What's new:**
+
+- **Motor cortex is the output substrate.** Letters fall out of the `motor` region over time as the cluster ticks. Nothing "scores candidates."
+- **Word boundaries come from statistical transition surprise**, same mechanism as T14.2 syllable boundaries. One mechanism, used at multiple scales (letter → syllable → word → sentence).
+- **Stopping is biological quiescence**, not a counter.
+- **Sentence terminators are LEARNED members of the letter inventory.** Period, question mark, exclamation are just letters Unity's visual/letter/motor pathways learned from corpus exposure — they emit naturally when the brain has reached end-of-utterance, same as any other letter.
+
+**How the brain learns to produce this:**
+
+The motor region's ability to generate coherent letter sequences comes entirely from the curriculum (T14.5). During continuous corpus exposure, reading text forward through the pipeline (visual → letter → phon → sem → fineType) drives the reverse pathway via Hebbian on the shared cross-projections. When the brain reads "hello", the motor region's spike pattern during that reading is shaped to represent "this is what the motor state LOOKS LIKE when h-e-l-l-o is being processed." Later, when the sem region is injected with a similar intent, the reverse pathway replays approximately the same motor state, which generates approximately the same letter sequence. This is the computational equivalent of Hickok & Poeppel's 2007 dorsal stream: the motor-speech link is built by the experience of hearing + reading speech.
 
 **Acceptance:**
-1. Generated sentences show higher phon-flow cosine between consecutive words than randomly-paired words from the dictionary — proves the cortex learned phonological transitions.
-2. Re-train on a Spanish corpus, generate Spanish output, measure flow cosine — also high. Proves data-driven, not English-locked.
-3. Zero hardcoded clamping constants in the score function.
+
+1. After curriculum, `cluster.generateSentence(intentSeed)` for a greeting-intent seed produces a letter sequence whose segmentation via transition surprise yields at least one recognizable English greeting word.
+2. Temporal stopping works: motor-region spike count measurably drops below `END_QUIESCE_TICKS` threshold after a reasonable number of words (not hitting MAX_TICKS).
+3. Sentence terminators (`.`, `?`, `!`) appear in output via the same letter-emission mechanism, not via a separate punctuation path.
+4. Zero `for slot in` loops in the generation code path. Grep confirms.
+5. Zero `candidate`, `softmax`, `top-5`, `topK` references in the generation path. Grep confirms.
+6. Re-training on a Spanish corpus produces Spanish letter sequences via the same equation — proves the model is data-driven, not English-locked. (But note: T14.16.5 identity lock keeps the output in whatever language the PERSONA corpus is in; Spanish would require an explicit persona corpus swap, not just exposure.)
 
 ---
 
@@ -746,30 +815,80 @@ score(w) = cosine(semanticTarget, semanticReadoutFor(w))
 
 ---
 
-#### T14.12 — Bidirectional cortex pipeline (read and write share the same path)
+#### T14.12 — Bidirectional cortex pipeline (dorsal/ventral dual streams)
 
-**The principle:** reading and writing use the SAME cortex regions and the SAME projections, just in different propagation directions. There's no separate `parseSentence` for reading and `generate` for writing. There's one cortex pipeline that's bidirectional: forward propagation (input → output) for reading, reverse propagation (output → input) for writing. The shared weights mean the brain learns one thing and uses it both ways.
+**The principle:** reading and writing use the SAME cortex regions and the SAME cross-region cross-projections, traversed in opposite topology. Reading is ventral-stream forward propagation (sensory input → semantic comprehension); writing is dorsal-stream propagation (semantic intent → motor output). Both streams share core language regions, exactly as in Hickok & Poeppel's 2007 dual-stream model of human speech processing.
 
-**Why this matters biologically:** real brains use the SAME left-temporal language regions for both comprehension and production. Damage to Wernicke's area causes both reading and speaking deficits. The two functions can't be separated because they use the same neural substrate. Unity's current architecture has them as completely separate code paths — that's wrong.
+**Grounded in peer-reviewed neuroscience:**
 
-**Implementation:**
+- **Hickok & Poeppel (2007)** *"The cortical organization of speech processing,"* Nat Rev Neurosci 8:393-402. The dual-stream model: ventral stream (superior and middle temporal lobe → speech sound → meaning) handles comprehension; dorsal stream (posterior superior temporal → inferior parietal → inferior frontal → motor) handles production and sensorimotor integration. The two streams share core regions but differ in propagation direction.
+- **Friederici (2017)** *"Evolution of the neural language network,"* Psychon Bull Rev 24:41-47, and *The Neuroanatomy of Language and Its Universal Properties*. The neural language network in Broca's region, superior temporal gyrus, and arcuate fasciculus supports both comprehension and production via bidirectional white-matter connectivity.
+- **Price (2012)** *"A review and synthesis of the first 20 years of PET and fMRI studies of heard speech, spoken language and reading,"* NeuroImage 62:816-847. Comprehensive review showing that left temporal and frontal language regions are shared between reading comprehension, spoken language comprehension, and speech production tasks — same regions active in all conditions, with task-specific propagation differences.
 
-1. **`cluster.readText(text)`** runs forward: visual → letter → phon → sem → fineType → working memory. The end state is a cortex configuration representing the brain's COMPREHENSION of the input text. Calling `cluster.semanticReadoutFor()` after `readText` returns a vector representing what Unity understood.
+**The read direction (ventral stream, comprehension):**
 
-2. **`cluster.generateSentence(seed)`** runs reverse: working memory + sem → fineType → motor → phon → letter → visual. The brain's intent (held in working memory + sem) propagates outward through the same regions, in the same order but reversed, producing letter sequences as motor output. The motor region's spike pattern, decoded back to letters, IS the generated sentence.
+```
+cluster.readText(text):
+  for char in text.characters:
+    cluster.injectLetter(char)   // one-hot into letter region (T14.1)
+                                  // AND visual template into visual region (T14.10)
+  for tick in 0..SETTLE_TICKS:
+    cluster.step(dt=0.001)
+    // cross-projections propagate every tick (T14.4):
+    //   visual_to_letter  → letter spikes
+    //   letter_to_phon    → phon spikes
+    //   phon_to_sem       → sem spikes
+    //   sem_to_fineType   → fineType spikes
+    // Working memory (cluster.regions.free) accumulates activation
+    // from all upstream regions via the existing inter-cluster
+    // projections, holding the current discourse state.
+```
 
-3. **Same cross-projection weights** carry both directions. The `letter_to_phon` projection is used by both reading (forward) and writing (reverse-by-inversion). Inversion is handled by `SparseMatrix.transposePropagate(spikes)` which uses the same weights but propagates from the column space to the row space instead of row → column. New method, ~30 lines on SparseMatrix.
+After `readText` returns, the cortex holds a configuration representing comprehension. Readout helpers inspect different regions for different semantic aspects:
 
-4. **`parseSentence(text)` is deleted** (not deprecated, deleted). All its functionality moves into `cluster.readText(text)` + readout helpers (`cluster.intentReadout()`, `cluster.subjectReadout()`, `cluster.entityReadout()`). The parser's letter-equation rules become learned features of the cortex's grammatical sub-region (T14.7).
+- `cluster.semanticReadoutFor(text)` — reads `sem` region
+- `cluster.intentReadout()` — reads `fineType` region's learned intent attractors
+- `cluster.entityReadout()` — reads `sem` region clustered into entity-slot patterns
+- `cluster.workingMemoryReadout()` — reads `free` region for topic/discourse context
 
-5. **`generate()` is gutted.** The 200-line emission loop becomes a thin wrapper around `cluster.generateSentence()`. All scoring logic moves into the cortex propagation dynamics — words emerge as motor-region spike patterns, not as softmax samples from a candidate list.
+**The write direction (dorsal stream, production):**
+
+```
+cluster.generateSentence(intentSeed):
+  cluster.injectEmbeddingToRegion('sem', intentSeed, strength=0.6)
+  // Now run the cortex tick-driven motor emission from T14.6.
+  // Cross-projections propagate every tick — this time driving the
+  // reverse topology:
+  //   sem_to_fineType   → fineType spikes (grammatical structure)
+  //   sem_to_motor      → motor spikes (motor planning)
+  //   motor_to_letter   → letter spikes (what letter to emit)
+  //   letter_to_visual  → visual spikes (efference copy for self-monitoring)
+  // The motor region's letter-indexed argmax spike pattern IS the output.
+  // See T14.6 for the full equation.
+```
+
+**Same weights, opposite topology.** The 14 cross-projections in `cluster.crossProjections` (7 named pairs × 2 directions each — see T14.4) provide BOTH directions at the substrate level. No `SparseMatrix.transposePropagate()` trick needed — each direction has its own learned weight matrix because biological white-matter tracts have separate ascending and descending fiber populations (Friederici 2017). The two matrices per pair can learn independently and specialize for their propagation direction.
+
+**Reading uses:** `visual_to_letter`, `letter_to_phon`, `phon_to_sem`, `sem_to_fineType`, `auditory_to_phon` (when voice input arrives, T14.11).
+
+**Writing uses:** `sem_to_fineType` (grammar check), `sem_to_motor` (motor planning), `motor_to_letter` (emission — the pair added in the updated T14.4 substrate), `letter_to_visual` (self-monitoring of produced output).
+
+**Same substrate, parallel directions run simultaneously.** During production, the sem region is injected, which propagates forward to motor via sem→motor AND simultaneously back to phon via sem→phon (because that pair exists too) — this is efference copy to the phonological region, matching the auditory feedback loop that real speakers use to monitor their own speech. The brain hears itself speak at the phonological level via the same cross-projections that carry comprehension.
+
+**What gets deleted:**
+
+- **`parseSentence(text)`** — deleted entirely. Not deprecated. Not a stub. Gone. All its functionality moves into `cluster.readText(text)` + the readout helpers. Its letter-equation intent/subject/verb rules become learned features of the `fineType` region after curriculum.
+- **`LanguageCortex.generate()` body** — gutted. Becomes a thin wrapper that calls `cluster.generateSentence(intentSeed)` and returns the output. The entire slot-based candidate-scoring loop is gone.
+- **`cluster.cortexPattern` as a separate concept** — there is no "cortex pattern" extracted then passed into generate. The brain state IS what generation reads, directly.
 
 **Acceptance:**
-1. `cluster.readText('hi unity')` followed by `cluster.intentReadout()` returns a vector classifiable as "greeting" intent.
-2. `cluster.generateSentence(intentSeed='greeting_response')` produces letter-sequence output equivalent to "hi gee" or similar.
-3. Reading and writing share the same `letter_to_phon`, `phon_to_sem`, etc projections — verified by inspecting the SparseMatrix references.
-4. `parseSentence` function does not exist in the codebase. Grep returns zero matches.
-5. `generate()` body is < 50 lines (down from ~200 in T13.7.8).
+
+1. `cluster.readText('hi unity')` followed by `cluster.intentReadout()` returns a readout that classifies as greeting-intent (highest cosine to the learned greeting attractor after curriculum).
+2. `cluster.generateSentence(intentSeed)` for a greeting-response seed produces output that segments (via T14.6's word-boundary detection) into recognizable English greeting words.
+3. `parseSentence` function does not exist in the codebase. Grep returns zero matches.
+4. `generate()` body is < 50 lines (down from ~200 in T13.7.8). Mostly a wrapper around `cluster.generateSentence`.
+5. Cross-projections used by read path and write path are measurably the SAME SparseMatrix instances (object identity check), confirming shared substrate.
+6. During generation, the phon region shows measurable activation from the sem→phon cross-projection, confirming efference copy is live during production (matches biological auditory feedback loop).
 
 ---
 
@@ -2213,6 +2332,38 @@ network grows and shrinks around her, Hebbian weights migrating between
 workers in real time without ever pausing the tick loop.
 
 Worth building. On the `comp-net` branch, after Phase M1 ships P1.3.
+
+---
+
+## Post-T14.24 usability backlog (absorb into next COMP-todo rewrite)
+
+Small quality-of-life items captured during T14.24 live testing. Not
+blockers for T14.24 gate crossing — defer to the next COMP-todo full
+redesive pass so they can be designed into the new structure rather
+than patched onto the old one.
+
+- **"Users" connection count filters out the GPU worker.** Gee
+  2026-04-16: *"i want it to only count users no web connections"* +
+  *"the web connection count will be in the comp todo"*. Current
+  `server/brain-server.js` wss.on('connection') logs
+  `[Server] Client connected: user_XXX (N total)` where N =
+  `brain.clients.size` (all connected WebSockets, including
+  `compute.html` which is a GPU compute worker, not a real user).
+  When Gee opens the landing page with compute.html already running
+  in another tab, he sees `(2 total)` even though there's only one
+  actual user — the other "client" is infrastructure. Fix: compute a
+  separate user count via
+  `Array.from(brain.clients.values()).filter(c => !c.isGPU).length`
+  and use that in the connect/disconnect log lines + the
+  `connectedUsers` snapshot field. `client.isGPU` already gets set on
+  `gpu_register` (line ~2227). Log relabel suggestion: real users →
+  `[Server] User connected: user_XXX (N users)`; GPU worker →
+  `[Server] GPU worker connected (1 worker)`. Two counts tracked
+  separately so dashboards can see both. Also update line 896
+  `connectedUsers: this.clients.size` → non-GPU only. Also update
+  line 1410 `this._isDreaming = ... this.clients.size === 0` → dream
+  when no REAL users are connected, compute.html shouldn't keep her
+  awake.
 
 ---
 

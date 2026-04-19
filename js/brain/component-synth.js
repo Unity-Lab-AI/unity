@@ -129,16 +129,40 @@ export class ComponentSynth {
     if (!userRequest || typeof userRequest !== 'string') return null;
 
     // T5 — structural bias from the language cortex's parse tree.
-    // When brainState.parsed is supplied (the engine populates it
-    // from languageCortex.parseSentence(userRequest) before calling
-    // into build_ui), any component type the parser extracted
-    // ("button", "form", "list") becomes a HARD preference: primitives
-    // whose id matches the parsed type get a big score bonus. Purely
-    // structural — parse tree fields are closed-class lexical
-    // extractions, not LLM-guessed intents.
+    // T14.15 (2026-04-14) — parseSentence was deleted in T14.12, so
+    // brainState.parsed is now the stub returned by cluster.readInput
+    // which does NOT populate `entities.componentTypes`. The
+    // `parsedTypes` array below will be empty for most calls until
+    // T14.17 wires `cluster.entityReadout()` to return learned entity-
+    // slot clusters from the sem region, at which point this block
+    // reads from that instead. Keeping the optional-chain reads
+    // against brainState.parsed means the code handles both pre- and
+    // post-T14.17 payload shapes without branching — when entities
+    // are present they boost, when they're not the semantic cosine
+    // match alone decides the primitive.
     const parsed = brainState.parsed || null;
     const parsedTypes = (parsed?.entities?.componentTypes || [])
       .map(t => t.replace(/s$/, '')); // strip trailing plural
+
+    // T14.17 — cortex entity readout. When the engine passes the cortex
+    // cluster via `brainState.cortexCluster`, read the sem region as a
+    // semantic activation vector and find primitives whose descEmbed
+    // is closest to it. This is a SECOND semantic match (on top of the
+    // userEmbed cosine below) that reflects what the cortex is actively
+    // representing RIGHT NOW, not just what the user literally typed.
+    // The two signals get combined so primitives matching either a
+    // literal phrase or the cortex's current semantic activation get
+    // the structural bonus.
+    const cortex = brainState.cortexCluster || null;
+    let cortexEntityVec = null;
+    if (cortex && typeof cortex.entityReadout === 'function') {
+      const readout = cortex.entityReadout();
+      if (readout && readout.length > 0) {
+        let norm = 0;
+        for (let i = 0; i < readout.length; i++) norm += readout[i] * readout[i];
+        if (norm > 0.01) cortexEntityVec = readout;
+      }
+    }
 
     // Semantic match — which primitive is closest to the user's request
     const userEmbed = sharedEmbeddings.getSentenceEmbedding(userRequest);
@@ -146,6 +170,12 @@ export class ComponentSynth {
     let bestPrim = null;
     for (const prim of this._primitives) {
       let score = sharedEmbeddings.similarity(userEmbed, prim.descEmbed);
+      // T14.17 — blend in cortex entity readout similarity when
+      // available. Weight 0.25 on the cortex cosine so it nudges the
+      // ranking without overriding the literal-text userEmbed match.
+      if (cortexEntityVec) {
+        score += sharedEmbeddings.similarity(cortexEntityVec, prim.descEmbed) * 0.25;
+      }
       // Structural bonus: if the parser pulled a component-type
       // token and the primitive id matches it, boost by 0.35 —
       // big enough to overwhelm most semantic ambiguity but small

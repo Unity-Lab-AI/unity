@@ -1,17 +1,64 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"><title>Unity GPU Compute</title></head>
+<head>
+<meta charset="UTF-8">
+<title>Unity GPU Compute</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧮</text></svg>">
+</head>
 <body style="background:#0a0a0a;color:#22c55e;font-family:monospace;padding:20px;">
 <h3>Unity GPU Compute Worker</h3>
 <div id="status">Connecting to brain server...</div>
+<div id="hierarchy" style="margin-top:12px;font-size:11px;color:#666;line-height:1.6;"></div>
 <div id="stats" style="margin-top:10px;font-size:12px;color:#555;"></div>
 <div id="perf" style="margin-top:10px;font-size:11px;color:#444;"></div>
 <script type="module">
 import { GPUCompute } from './js/brain/gpu-compute.js';
 
 const statusEl = document.getElementById('status');
+const hierarchyEl = document.getElementById('hierarchy');
 const statsEl = document.getElementById('stats');
 const perfEl = document.getElementById('perf');
+
+// Render the T17.7 system hierarchy — 7 main-brain clusters, their
+// registered sub-regions, language cross-projections, the intra-
+// cluster synapse matrix. Called after each gpu_init, sparse upload,
+// and rebind so the display reflects live GPU state.
+function renderHierarchy() {
+  if (!hierarchyEl) return;
+  const clusterNames = Object.keys(clusterState);
+  const clusterLines = clusterNames.map((name) => {
+    const s = clusterState[name];
+    const regionCount = s.regions ? Object.keys(s.regions).length : 0;
+    const regionNames = s.regions ? Object.keys(s.regions) : [];
+    const regionText = regionNames.length > 0
+      ? regionNames.map((r) => `${r}(${s.regions[r].side})`).join(', ')
+      : '(homogeneous)';
+    return `<div>  <b>${name}</b> — ${s.size.toLocaleString()} neurons, ${regionCount} region${regionCount === 1 ? '' : 's'}: <span style="color:#888">${regionText}</span></div>`;
+  }).join('');
+
+  // Count sparse matrices on GPU. Cross-projections follow the
+  // `<cluster>_<src>_to_<dst>` naming convention; the intra matrix
+  // is `<cluster>_intraSynapses`. Anything else falls into "other".
+  let crossCount = 0;
+  let intraCount = 0;
+  let otherCount = 0;
+  let boundCount = 0;
+  const matrixNames = (gpu && gpu._sparseMatrices) ? Object.keys(gpu._sparseMatrices) : [];
+  for (const n of matrixNames) {
+    const entry = gpu._sparseMatrices[n];
+    if (entry && entry.binding) boundCount++;
+    if (/_to_/.test(n)) crossCount++;
+    else if (/intraSynapses$/.test(n)) intraCount++;
+    else otherCount++;
+  }
+
+  hierarchyEl.innerHTML = `
+    <div style="color:#888;font-weight:bold;margin-bottom:4px;">GPU system hierarchy — unified single-cortex:</div>
+    <div><b>${clusterNames.length}</b>/7 top-level clusters initialized (LIF neuron buffers):</div>
+    ${clusterLines}
+    <div style="margin-top:4px;"><b>${matrixNames.length}</b> sparse matrices uploaded — <b>${crossCount}</b> cross-projections, <b>${intraCount}</b> intra-cluster synapse matri${intraCount === 1 ? 'x' : 'ces'}${otherCount > 0 ? `, ${otherCount} other` : ''}${boundCount > 0 ? ` (<span style="color:#a855f7">${boundCount} cluster-bound to main-cortex slices</span>)` : ''}.</div>
+  `;
+}
 
 let gpu = null;
 let gpuReady = false;
@@ -31,6 +78,26 @@ let totalComputeMs = 0;
   }
   statusEl.textContent = 'GPU ready — connecting to brain server...';
   statusEl.style.color = '#22c55e';
+  // Seed an empty hierarchy pane so the layout reserves the space
+  // even before the first cluster upload / sparse matrix arrives.
+  renderHierarchy();
+
+  // T18.6.a — register device-lost callback BEFORE connecting to the
+  // server so a device.lost event fired mid-upload gets surfaced as a
+  // `device_lost` WebSocket message to the server log instead of just
+  // cascading phantom "size too large" errors on the client console.
+  gpu.setDeviceLostCallback((info) => {
+    const reason = info && info.reason ? info.reason : 'unknown';
+    const message = info && info.message ? info.message : '(no message)';
+    statusEl.textContent = `WebGPU DEVICE LOST — reason=${reason}. Reload this tab after fixing cortex N.`;
+    statusEl.style.color = '#ef4444';
+    gpuReady = false;
+    try {
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'device_lost', reason, message }));
+      }
+    } catch { /* non-fatal */ }
+  });
 
   // NOW connect WebSocket — GPU is ready
   connectToServer();
@@ -38,12 +105,39 @@ let totalComputeMs = 0;
 
 const clusterState = {}; // persists across reconnects
 
+// T18.11 — exponential-backoff reconnect state. Resets to 0 on every
+// successful ws.onopen, increments on every ws.onclose. Delay at
+// attempt N is `min(60, 3 * 2^N) * 1000` ms → 3 s, 6 s, 12 s, 24 s,
+// 48 s, 60 s (cap), 60 s, ...  Pre-T18.11 this was a flat 3 s retry
+// with no cap. During heavy ELA-K teach any transient WebSocket
+// hiccup (Chrome throttling a backgrounded tab, GPU dispatch stall,
+// server event-loop saturation) caused the tab to spam reconnects
+// every 3 s indefinitely. Each reconnect triggered the server's
+// ws.on('close') branch which reset `_gpuInitialized = {}`, prompting
+// main-brain LIF re-init uploads — stacking VRAM pressure while the
+// curriculum teach was already pushing the device.
+let _reconnectAttempt = 0;
+
+// Concurrent fullStep calls across clusters run in parallel via
+// Promise.all. The readback path uses a per-call 4-byte disposable
+// buffer so mapAsync lifecycles cannot race, and the old compute-
+// request serialization queue is gone — all per-cluster compute
+// requests process in parallel at ~7× GPU throughput.
+
 function connectToServer() {
-  // R14 — brain-server moved from 8080 to 7525
+  // brain-server runs on port 7525 (moved off 8080 to avoid colliding
+  // with llama.cpp / LocalAI / every other local service).
   ws = new WebSocket('ws://localhost:7525');
+  // Binary frames arrive as ArrayBuffer (not Blob) — skips the async
+  // Blob→ArrayBuffer copy for 100MB+ sparse matrix uploads.
+  ws.binaryType = 'arraybuffer';
 
   ws.onopen = () => {
     statusEl.textContent = 'GPU + Server connected — registering as compute client...';
+    // T18.11 — reset backoff counter on successful connect so the next
+    // disconnect starts over at 3 s instead of carrying forward a
+    // stale exponent from an earlier transient hiccup.
+    _reconnectAttempt = 0;
     ws.send(JSON.stringify({ type: 'gpu_register' }));
   };
 
@@ -59,71 +153,586 @@ function connectToServer() {
 
   ws.onmessage = async (e) => {
   try {
+    // Binary frame path — "SPRS" magic = sparse op request. Decode
+    // header + payload, dispatch to gpu, send binary response.
+    if (e.data instanceof ArrayBuffer || e.data instanceof Blob) {
+      // binaryType='arraybuffer' set in connectToServer so e.data is
+      // ArrayBuffer directly. Blob path kept as safety fallback.
+      const buf = e.data instanceof ArrayBuffer ? e.data : await e.data.arrayBuffer();
+      const sizeMb = (buf.byteLength / 1e6).toFixed(1);
+      // T18.15 — throttled binary-frame telemetry. The pre-T18.15 log
+      // was one line per frame; at ELA-K teach velocity through T18.8
+      // batched Hebbian dispatch that's 500-1000 frames/sec streaming
+      // into Chrome's console. Chrome's dedup counter collapses them
+      // into lines like "143 [GPU Compute] binary frame received ..."
+      // which LOOKS identical to the prior T18.10/11 cascade-is-firing
+      // visual even when the system is completely healthy (Gee's
+      // 2026-04-19 "I killed it before it killed my system again!"
+      // moment — he panicked at normal T18.8 cadence because the
+      // dedup-counter display matched the cascade symptom he's seen
+      // before). Throttled log emits one summary line every 5 seconds
+      // showing total frames / per-type breakdown since last emit, so
+      // the operator sees healthy activity without a flood. First 5
+      // frames of every page load still log individually so the initial
+      // SPRS protocol sanity can be visually verified.
+      if (!window._sprsFrameStats) {
+        window._sprsFrameStats = {
+          firstEmitted: 0,
+          windowStart: Date.now(),
+          windowCount: 0,
+          windowTotalBytes: 0,
+          windowByType: {},
+          totalFrames: 0,
+          totalBytes: 0,
+        };
+      }
+      const s = window._sprsFrameStats;
+      const magic4 = String.fromCharCode(new Uint8Array(buf, 0, 4)[0], new Uint8Array(buf, 0, 4)[1], new Uint8Array(buf, 0, 4)[2], new Uint8Array(buf, 0, 4)[3]);
+      const frameType = magic4 === 'SPRS' ? new DataView(buf).getUint8(4) : -1;
+      s.windowCount++;
+      s.windowTotalBytes += buf.byteLength;
+      s.totalFrames++;
+      s.totalBytes += buf.byteLength;
+      const tk = `type${frameType}`;
+      s.windowByType[tk] = (s.windowByType[tk] || 0) + 1;
+      if (s.firstEmitted < 5) {
+        console.log(`[GPU Compute] binary frame #${s.totalFrames} size=${sizeMb}MB, first4=${magic4}, type=${frameType}`);
+        s.firstEmitted++;
+      } else {
+        const now = Date.now();
+        const elapsed = now - s.windowStart;
+        if (elapsed >= 5000) {
+          const windowMB = (s.windowTotalBytes / 1e6).toFixed(1);
+          const fps = (s.windowCount / (elapsed / 1000)).toFixed(0);
+          const typeBreakdown = Object.entries(s.windowByType).map(([k, v]) => `${k}=${v}`).join(' ');
+          console.log(`[GPU Compute] T18.15 binary frame window — ${s.windowCount} frames in ${(elapsed/1000).toFixed(1)}s (${fps}/s, ${windowMB} MB total, ${typeBreakdown}). Lifetime: ${s.totalFrames} frames, ${(s.totalBytes/1e6).toFixed(1)} MB.`);
+          s.windowStart = now;
+          s.windowCount = 0;
+          s.windowTotalBytes = 0;
+          s.windowByType = {};
+        }
+      }
+      const view = new DataView(buf);
+      const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+      if (magic === 'SPRS') {
+        const typeByte = view.getUint8(4);
+        const reqId = view.getUint32(5, true);
+        const nameLen = view.getUint16(9, true);
+        let off = 11;
+        const nameBytes = new Uint8Array(buf, off, nameLen);
+        const name = new TextDecoder('utf-8').decode(nameBytes);
+        off += nameLen;
+        // Skip 4-byte-alignment pad after name so Float32/Uint32 views
+        // created below land on aligned byteOffsets. Matches server-side
+        // _encodeSparseHeader padding.
+        off = (off + 3) & ~3;
+        if (typeByte === 1) {
+          // Legacy single-shot upload (kept for small matrices). Reads
+          // rows/cols/nnz + whole values+colIdx+rowPtr in one frame.
+          const rows = view.getUint32(off, true); off += 4;
+          const cols = view.getUint32(off, true); off += 4;
+          const nnz  = view.getUint32(off, true); off += 4;
+          const values = new Float32Array(buf, off, nnz); off += nnz * 4;
+          const colIdx = new Uint32Array(buf, off, nnz); off += nnz * 4;
+          const rowPtr = new Uint32Array(buf, off, rows + 1);
+          try {
+            gpu.uploadSparseMatrix(name, rows, cols, values, colIdx, rowPtr);
+            const ack = new ArrayBuffer(9);
+            const av = new DataView(ack);
+            av.setUint8(0,'S'.charCodeAt(0)); av.setUint8(1,'P'.charCodeAt(0));
+            av.setUint8(2,'R'.charCodeAt(0)); av.setUint8(3,'R'.charCodeAt(0));
+            av.setUint8(4, 1);
+            av.setUint32(5, reqId, true);
+            ws.send(ack);
+            renderHierarchy();
+          } catch (err) {
+            console.warn('[GPU Compute] sparse_upload binary failed:', err.message);
+          }
+          return;
+        }
+        if (typeByte === 4) {
+          // CHUNKED UPLOAD — streams values+colIdx to GPU writeBuffer
+          // at offsets as chunks arrive. First chunk carries meta +
+          // rowPtr. Last chunk triggers SPRR ack back to server.
+          //
+          // Wire layout after header:
+          //   chunkSeq (u32) + totalChunks (u32) + flags (u32)
+          //   if (flags & 1):  meta = rows(u32) + cols(u32) + nnz(u32) + rowPtrLen(u32) + rowPtr
+          //   if (flags & 2):  T18.6.b binding block follows rowPtr
+          //                    srcClusterNameLen(u16) + srcClusterName + pad-to-u32
+          //                    dstClusterNameLen(u16) + dstClusterName + pad-to-u32
+          //                    srcStart(u32) + srcEnd(u32) + dstStart(u32) + dstEnd(u32)
+          //   valuesOffset (u32) + valuesByteLen (u32) + values chunk
+          //   colIdxOffset (u32) + colIdxByteLen (u32) + colIdx chunk
+          const chunkSeq = view.getUint32(off, true); off += 4;
+          const totalChunks = view.getUint32(off, true); off += 4;
+          const flags = view.getUint32(off, true); off += 4;
+          try {
+            if (flags & 1) {
+              const rows = view.getUint32(off, true); off += 4;
+              const cols = view.getUint32(off, true); off += 4;
+              const nnz  = view.getUint32(off, true); off += 4;
+              const rowPtrLen = view.getUint32(off, true); off += 4;
+              const rowPtr = new Uint32Array(buf, off, rowPtrLen);
+              off += rowPtrLen * 4;
+              // T18.6.b — parse optional cluster-binding block so the
+              // matrix comes up cluster-bound on first upload (no
+              // standalone preSpikes/postCurrents/postSpikes buffers
+              // allocated — 60 MB+ VRAM saved per cross-projection at
+              // biological scale). Phase C.1 rebind is the fallback
+              // for matrices that arrive without binding metadata
+              // (e.g., loaded from a pre-T18.6 persistence file).
+              let binding = null;
+              if (flags & 2) {
+                const srcNameLen = view.getUint16(off, true); off += 2;
+                const srcName = new TextDecoder('utf-8').decode(new Uint8Array(buf, off, srcNameLen));
+                off += srcNameLen;
+                const padSrc = (4 - ((2 + srcNameLen) % 4)) % 4;
+                off += padSrc;
+                const dstNameLen = view.getUint16(off, true); off += 2;
+                const dstName = new TextDecoder('utf-8').decode(new Uint8Array(buf, off, dstNameLen));
+                off += dstNameLen;
+                const padDst = (4 - ((2 + dstNameLen) % 4)) % 4;
+                off += padDst;
+                const srcStart = view.getUint32(off, true); off += 4;
+                const srcEnd   = view.getUint32(off, true); off += 4;
+                const dstStart = view.getUint32(off, true); off += 4;
+                const dstEnd   = view.getUint32(off, true); off += 4;
+                binding = {
+                  srcCluster: srcName,
+                  srcRegion: { start: srcStart, end: srcEnd },
+                  dstCluster: dstName,
+                  dstRegion: { start: dstStart, end: dstEnd },
+                };
+              }
+              gpu._beginSparseUpload(name, rows, cols, nnz, rowPtr, binding);
+            }
+            const valuesOffset = view.getUint32(off, true); off += 4;
+            const valuesByteLen = view.getUint32(off, true); off += 4;
+            const valuesChunk = valuesByteLen > 0 ? new Float32Array(buf, off, valuesByteLen / 4) : null;
+            off += valuesByteLen;
+            const colIdxOffset = view.getUint32(off, true); off += 4;
+            const colIdxByteLen = view.getUint32(off, true); off += 4;
+            const colIdxChunk = colIdxByteLen > 0 ? new Uint32Array(buf, off, colIdxByteLen / 4) : null;
+            off += colIdxByteLen;
+            gpu._appendSparseUpload(name, valuesOffset, valuesChunk, colIdxOffset, colIdxChunk);
+            if (chunkSeq === totalChunks - 1) {
+              gpu._finishSparseUpload(name);
+              renderHierarchy();
+              const ack = new ArrayBuffer(9);
+              const av = new DataView(ack);
+              av.setUint8(0,'S'.charCodeAt(0)); av.setUint8(1,'P'.charCodeAt(0));
+              av.setUint8(2,'R'.charCodeAt(0)); av.setUint8(3,'R'.charCodeAt(0));
+              av.setUint8(4, 4);
+              av.setUint32(5, reqId, true);
+              ws.send(ack);
+            }
+          } catch (err) {
+            console.warn('[GPU Compute] sparse_upload_chunk failed:', err.message, 'chunkSeq=', chunkSeq, 'of', totalChunks);
+          }
+          return;
+        }
+        if (typeByte === 2) {
+          // PROPAGATE — view directly, no copy
+          const preLen = view.getUint32(off, true); off += 4;
+          const preSpikes = new Uint32Array(buf, off, preLen);
+          try {
+            if (preLen > 0) gpu.writeSparsePreSpikes(name, preSpikes);
+            const currents = await gpu.propagateSparse(name);
+            const clen = currents ? currents.length : 0;
+            const resp = new ArrayBuffer(13 + clen * 4);
+            const rv = new DataView(resp);
+            rv.setUint8(0,'S'.charCodeAt(0)); rv.setUint8(1,'P'.charCodeAt(0));
+            rv.setUint8(2,'R'.charCodeAt(0)); rv.setUint8(3,'R'.charCodeAt(0));
+            rv.setUint8(4, 2);
+            rv.setUint32(5, reqId, true);
+            rv.setUint32(9, clen, true);
+            if (currents) {
+              new Float32Array(resp, 13, clen).set(currents);
+            }
+            ws.send(resp);
+          } catch (err) {
+            console.warn('[GPU Compute] sparse_propagate binary failed:', err.message);
+          }
+          return;
+        }
+        if (typeByte === 3) {
+          // HEBBIAN — view directly, no copy
+          const preLen = view.getUint32(off, true); off += 4;
+          const preSpikes = new Uint32Array(buf, off, preLen); off += preLen * 4;
+          const postLen = view.getUint32(off, true); off += 4;
+          const postSpikes = new Uint32Array(buf, off, postLen); off += postLen * 4;
+          const lr = view.getFloat32(off, true);
+          try {
+            if (preLen > 0) gpu.writeSparsePreSpikes(name, preSpikes);
+            if (postLen > 0) gpu.writeSparsePostSpikes(name, postSpikes);
+            gpu.hebbianSparse(name, lr);
+            const ack = new ArrayBuffer(9);
+            const av = new DataView(ack);
+            av.setUint8(0,'S'.charCodeAt(0)); av.setUint8(1,'P'.charCodeAt(0));
+            av.setUint8(2,'R'.charCodeAt(0)); av.setUint8(3,'R'.charCodeAt(0));
+            av.setUint8(4, 3);
+            av.setUint32(5, reqId, true);
+            ws.send(ack);
+          } catch (err) {
+            console.warn('[GPU Compute] sparse_hebbian binary failed:', err.message);
+          }
+          return;
+        }
+        if (typeByte === 5) {
+          // T18.8 — BATCHED bound HEBBIAN. One SPRS frame carries N
+          // (name, lr) tuples. Bound mode — pre/post spikes read directly
+          // from the bound src/dst cluster spike buffers at the region
+          // offsets stored on the matrix, so no per-op writeSparsePreSpikes/
+          // writeSparsePostSpikes calls. We just fire N `gpu.hebbianSparse`
+          // calls back-to-back; each one submits a compute-pass encoder
+          // to the GPU device queue and returns immediately. The GPU
+          // queues + pipelines them without JS intervention. Single ACK
+          // for the whole batch unblocks the server-side batch promise
+          // which fans out to every caller that awaited.
+          //
+          // Wire layout after the standard header (name is empty here —
+          // the op-specific names are inside each op record):
+          //   opCount (u16) + pad (u16),
+          //   for each op:
+          //     opNameLen (u16) + pad (u16),
+          //     opName bytes,
+          //     pad to u32 boundary,
+          //     lr (f32)
+          const opCount = view.getUint16(off, true); off += 2;
+          off += 2; // pad to u32
+          let fired = 0;
+          try {
+            for (let i = 0; i < opCount; i++) {
+              const opNameLen = view.getUint16(off, true); off += 2;
+              off += 2; // pad
+              const opName = new TextDecoder('utf-8').decode(new Uint8Array(buf, off, opNameLen));
+              off += opNameLen;
+              off = (off + 3) & ~3; // align to u32
+              const opLr = view.getFloat32(off, true); off += 4;
+              gpu.hebbianSparse(opName, opLr);
+              fired++;
+            }
+          } catch (err) {
+            console.warn(`[GPU Compute] batched_hebbian binary failed at op ${fired}/${opCount}:`, err.message);
+          }
+          const ack = new ArrayBuffer(9);
+          const av = new DataView(ack);
+          av.setUint8(0,'S'.charCodeAt(0)); av.setUint8(1,'P'.charCodeAt(0));
+          av.setUint8(2,'R'.charCodeAt(0)); av.setUint8(3,'R'.charCodeAt(0));
+          av.setUint8(4, 5);
+          av.setUint32(5, reqId, true);
+          ws.send(ack);
+          return;
+        }
+      }
+      return; // binary frame we don't recognize
+    }
+
     const msg = JSON.parse(e.data);
 
     // ── INIT: Server sends full voltages once per cluster ──
     if (msg.type === 'gpu_init' && gpuReady) {
-      const { clusterName, size, lifParams } = msg;
+      const { clusterName, size, lifParams, regions } = msg;
+
+      // T18.14.c — skip re-upload when this cluster is already
+      // initialized in this compute.html tab AND the requested size
+      // matches. Server's `ws.on('close')` resets `_gpuInitialized={}`
+      // so the tick loop re-sends gpu_init on any WS reconnect — but
+      // when the browser tab is the same (transient WS hiccup, not a
+      // fresh page load), the GPU context + cluster buffers are still
+      // alive. Re-calling `gpu.uploadCluster` would waste ~6.3 GB of
+      // allocation work + delay main brain re-online + widen the
+      // reconnect-storm window during which another hiccup can fire.
+      // Short-circuit with an immediate gpu_init_ack so the server
+      // flips `_gpuInitializedConfirmed[clusterName]=true` and the
+      // tick loop resumes. If the size changed (legitimate re-init
+      // reason — server restart with different config), fall through
+      // to the normal path which now also has T18.14.b's destroy-old
+      // guard inside uploadCluster so no orphaning happens.
+      if (clusterState[clusterName] && clusterState[clusterName].initialized && clusterState[clusterName].size === size) {
+        ws.send(JSON.stringify({ type: 'gpu_init_ack', clusterName, size }));
+        const totalInit = Object.keys(clusterState).length;
+        statusEl.textContent = `GPU already initialized: ${totalInit}/7 clusters — ${clusterName} (${size.toLocaleString()} neurons) [T18.14.c skip-reinit]`;
+        console.log(`[GPU] T18.14.c — skipped re-init for ${clusterName} (already initialized at ${size.toLocaleString()} neurons; same tab, transient WS reconnect)`);
+        return;
+      }
 
       // Initialize at Vrest — NO voltage transfer needed
       // GPU creates buffers and fills with Vrest internally. Zero JS allocation.
-      gpu.uploadCluster(clusterName, size, null, null, lifParams);
-      clusterState[clusterName] = { initialized: true, size, lifParams };
+      //
+      // T17.7 Phase B.1 — `regions` metadata carries per-cluster
+      // sub-region slice offsets + L/R side tags. uploadCluster
+      // validates and stores on bufs.regions; subsequent compute_batch
+      // calls updateRegionGates(clusterName, psi) populate the per-tick
+      // Ψ-modulated hemisphere gate table that LIF_SHADER reads.
+      // When regions is absent (clusters prior to this rollout), the
+      // cluster remains homogeneous (numRegions=0, gate=1.0) matching
+      // pre-B.1 behavior.
+      gpu.uploadCluster(clusterName, size, null, null, lifParams, regions);
+      clusterState[clusterName] = { initialized: true, size, lifParams, regions: regions || null };
 
       // Tell server this cluster is ready on GPU
       ws.send(JSON.stringify({ type: 'gpu_init_ack', clusterName, size }));
 
       const totalInit = Object.keys(clusterState).length;
+      // Seven main-brain clusters total (cortex / hippocampus / amygdala /
+      // basalGanglia / cerebellum / hypothalamus / mystery). Language
+      // cortex lives as sub-regions of cortex per T17.7 — not an 8th
+      // cluster. Display was hardcoded to "/8" pre-T17.7; now correct.
       statusEl.textContent = `GPU initialized: ${totalInit}/7 clusters — ${clusterName} (${size.toLocaleString()} neurons)`;
       console.log(`[GPU] Initialized ${clusterName}: ${size.toLocaleString()} neurons (${totalInit}/7)`);
+      renderHierarchy();
       return;
     }
 
     // ── STEP: Server sends only tonic + noise (two numbers) ──
     if (msg.type === 'compute_request' && gpuReady) {
-      const { clusterName, size } = msg;
-      const state = clusterState[clusterName];
+      // Parallel dispatch — each onmessage invocation fires its own
+      // async handleComputeRequest which awaits fullStep; the browser
+      // event loop lets multiple invocations overlap, so every
+      // cluster's GPU work runs concurrently on the device command
+      // queue. Readback uses per-call disposable buffers so mapAsync
+      // lifecycles never collide.
+      handleComputeRequest(msg).catch(err => {
+        console.warn('[GPU Compute] request failed:', err && err.message ? err.message : err);
+      });
+      return;
+    }
 
-      // If not initialized yet, request init
-      if (!state?.initialized) {
-        // Can't compute without init — tell server we missed
-        ws.send(JSON.stringify({ type: 'compute_result', clusterName, spikeCount: 0, spikeIndices: [], size }));
+    // BATCHED compute — one message per tick carries all per-cluster
+    // params + substep count. compute.html runs the entire substep ×
+    // cluster loop internally and sends back one aggregated result.
+    // This cuts WebSocket traffic by roughly 35× per tick vs the old
+    // one-message-per-cluster-per-substep protocol, eliminating the
+    // per-frame protocol overhead that was dominating tick latency at
+    // biological scale.
+    //
+    // Batch mutex is set at the call site via try/finally so
+    // exceptions never leave the mutex stuck in the "in flight" state
+    // and deadlock the brain.
+    if (msg.type === 'compute_batch' && gpuReady) {
+      if (_batchInFlight) {
+        // Previous batch still running — drop this one. Server tick
+        // loop sees it as a miss and retries next tick.
+        ws.send(JSON.stringify({
+          type: 'compute_batch_result',
+          batchId: msg.batchId,
+          perCluster: {},
+          dropped: 'another batch in flight',
+        }));
         return;
       }
+      _batchInFlight = true;
+      handleComputeBatch(msg).catch(err => {
+        console.warn('[GPU Compute] batch failed:', err && err.message ? err.message : err);
+      }).finally(() => {
+        _batchInFlight = false;
+      });
+      return;
+    }
 
-      // FULL GPU PIPELINE — zero JS loops for N neurons (scales to hardware)
-      // 1. GPU generates currents (PCG hash noise — no Math.random loop)
-      // 2. GPU runs LIF shader (voltage update + spike check)
-      // 3. GPU counts spikes (atomic counter — no JS scan)
-      // I = (tonic × driveBaseline × emotionalGate × gainMultiplier + errorCorrection) + noise
-      const tonic = msg.tonicDrive || 16;
-      const noiseAmp = msg.noiseAmp || 5;
-      const gain = msg.gainMultiplier || 1.0;
-      const emoGate = msg.emotionalGate || 1.0;
-      const drive = msg.driveBaseline || 1.0;
-      const errCorr = msg.errorCorrection || 0;
-      const effectiveDrive = tonic * drive * emoGate * gain + errCorr;
+    // ── SPARSE OPS — GPU language cortex cross-region projections ──
+    //
+    // Server uploads each cross-projection as a standalone sparse CSR
+    // matrix keyed by name (e.g. "sem_to_motor"). Then propagate +
+    // Hebbian dispatches run on GPU instead of blocking Node's main
+    // thread with CPU sparse matmul. Large matrices ship via the
+    // chunked binary upload path (type=4) above; small ones use the
+    // legacy single-shot JSON path below.
+    //
+    // All three message types carry a `reqId` for request/response
+    // correlation so the server can Promise.resolve on the matching
+    // ack. Spikes are transferred as regular arrays (not typed —
+    // JSON through WebSocket doesn't preserve typed arrays).
 
-      const t0 = performance.now();
+    // T17.7 Phase B.2 — server pushes a per-neuron current pattern
+    // into a cluster's region slice via GPU's writeCurrentSlice. Used
+    // by injectText (text → Wernicke phon slice) and any future
+    // sensory injection that needs to land on a specific sub-region.
+    // Ψ-modulated via Phase A.3 hemisphereGate when the region is
+    // lateralized — left-lateralized Wernicke phon receives less
+    // current at low Ψ (hemispheric divergence state) and full current
+    // at high Ψ (bilateral integration). Consistent with global-
+    // workspace theory and Gee's main-equation-Ψ binding constraint.
+    // T17.7 Phase B.3 — mirror a sub-region spike pattern from the
+    // standalone cortexCluster's lastSpikes into the main cortex's
+    // GPU spike buffer at the corresponding slice. Used during the
+    // Phase B dual-cortex bridge so main-cortex sub-region state
+    // tracks standalone state; Phase E deletes the standalone and
+    // main-cortex slices become authoritative.
+    //
+    // Sparse format only (no dense variant) — spike patterns are
+    // naturally sparse (firing rate ~2% at biological baseline), so
+    // shipping 30M × u32 per tick would be 120MB for 3% spike count
+    // vs ~200KB for the sparse indices alone. Dense format would only
+    // make sense if firing rate > ~25%, which never happens in
+    // practice for main cortex sub-regions.
+    if (msg.type === 'write_spike_slice' && gpuReady) {
+      const { clusterName, regionName, sparseIndices } = msg;
+      try {
+        // T17.7 Phase C.1 — route through writeSpikeSliceSparse which
+        // zeroes the region via encoder.clearBuffer (GPU-native, no CPU
+        // allocation) then writes 1's at sparse indices via coalesced
+        // writeBuffer calls. At biological scale the dense path would
+        // allocate ~132 MB per sem-region write; K curriculum firing
+        // 10+ writes per iter × 1000s of iters would thrash GC.
+        gpu.writeSpikeSliceSparse(clusterName, regionName, Array.isArray(sparseIndices) ? sparseIndices : []);
+      } catch (err) {
+        console.warn(`[GPU Compute] write_spike_slice ${clusterName}/${regionName} failed:`, err.message);
+      }
+      return;
+    }
 
-      // ALL ON GPU — no JS loops, no CPU→GPU current upload, no GPU→CPU spike readback
-      const result = await gpu.fullStep(clusterName, effectiveDrive, noiseAmp);
+    // T17.7 Phase C.1 — pure clear of a region slice on the spikes
+    // buffer. Curriculum _clearSpikes fires one of these per region
+    // (8 per teach iteration on main cortex) between pattern writes.
+    // GPU-native clearBuffer keeps the per-iter CPU work bounded.
+    if (msg.type === 'clear_spike_region' && gpuReady) {
+      const { clusterName, regionName } = msg;
+      try {
+        gpu.clearSpikeRegion(clusterName, regionName);
+      } catch (err) {
+        console.warn(`[GPU Compute] clear_spike_region ${clusterName}/${regionName} failed:`, err.message);
+      }
+      return;
+    }
 
-      // Send back spike count only — 4 bytes instead of N-sized array
-      // Server doesn't need individual spike indices (no intra-cluster synapses at scale)
-      ws.send(JSON.stringify({
-        type: 'compute_result',
-        clusterName,
-        spikeCount: result.spikeCount,
-        size: state.size,
-      }));
+    // T17.7 Phase D — GPU-side bucket reduction over a region sub-slice
+    // so generateSentenceAwait can argmax-decode the main-cortex motor
+    // slice per tick without shipping the full ~6.6M-neuron spike
+    // array back. Bucket counts (typically 26 letters) are echoed
+    // in the ack; server consumes them via argmax.
+    if (msg.type === 'readback_letter_buckets' && gpuReady) {
+      const { reqId, clusterName, regionName, bucketCount, subSliceLen, startOffset } = msg;
+      try {
+        const counts = await gpu.readbackLetterBuckets(
+          clusterName, regionName, bucketCount, subSliceLen, startOffset ?? 0,
+        );
+        ws.send(JSON.stringify({
+          type: 'readback_letter_buckets_ack',
+          reqId,
+          clusterName, regionName,
+          counts: counts ? Array.from(counts) : null,
+        }));
+      } catch (err) {
+        ws.send(JSON.stringify({
+          type: 'readback_letter_buckets_ack',
+          reqId,
+          clusterName, regionName,
+          error: err.message,
+        }));
+      }
+      return;
+    }
 
-      stepsComputed++;
-      const elapsed = performance.now() - t0;
-      totalComputeMs += elapsed;
-      const avg = totalComputeMs / stepsComputed;
-      statsEl.textContent = `Steps: ${stepsComputed.toLocaleString()} | Avg: ${avg.toFixed(1)}ms | Last: ${elapsed.toFixed(1)}ms | ${state.size.toLocaleString()} neurons`;
-      perfEl.textContent = `Throughput: ${(state.size / (elapsed / 1000)).toFixed(0)} neurons/sec | Spikes: ${result.spikeCount.toLocaleString()} (${(result.spikeCount/state.size*100).toFixed(1)}%)`;
+    if (msg.type === 'write_current_slice' && gpuReady) {
+      const { clusterName, regionName, values, sparseIndices, sparseValues, psi } = msg;
+      try {
+        // Resolve the region size so we can allocate a dense buffer
+        // for sparse-expansion mode.
+        const region = gpu.getRegion(clusterName, regionName);
+        if (!region) {
+          console.warn(`[GPU Compute] write_current_slice ${clusterName}/${regionName}: region not found`);
+          return;
+        }
+        const sliceLen = region.end - region.start;
+        let arr;
+        if (Array.isArray(sparseIndices) && Array.isArray(sparseValues) && sparseIndices.length === sparseValues.length) {
+          // Sparse mode — expand to dense. For a 26M amygdala with
+          // 100 touched indices this is ~100MB zero-fill + 100 writes
+          // instead of a 100MB JSON payload from server (400×
+          // reduction in WebSocket bandwidth for large sparse cases).
+          arr = new Float32Array(sliceLen);
+          for (let i = 0; i < sparseIndices.length; i++) {
+            const idx = sparseIndices[i];
+            if (idx >= 0 && idx < sliceLen) arr[idx] = sparseValues[i];
+          }
+        } else if (values) {
+          // Dense mode — used when the caller has mostly-filled buffer
+          // (text injection into Wernicke phon at 6M).
+          arr = values instanceof Float32Array ? values : new Float32Array(values);
+        } else {
+          return;
+        }
+        gpu.writeCurrentSlice(clusterName, regionName, arr, { psi });
+      } catch (err) {
+        console.warn(`[GPU Compute] write_current_slice ${clusterName}/${regionName} failed:`, err.message);
+      }
+      return;
+    }
+
+    if (msg.type === 'sparse_upload' && gpuReady) {
+      const { reqId, name, rows, cols, values, colIdx, rowPtr } = msg;
+      try {
+        const ok = gpu.uploadSparseMatrix(
+          name, rows, cols,
+          new Float32Array(values),
+          new Uint32Array(colIdx),
+          new Uint32Array(rowPtr),
+        );
+        ws.send(JSON.stringify({ type: 'sparse_upload_ack', reqId, name, ok, nnz: values.length }));
+        if (ok) renderHierarchy();
+      } catch (err) {
+        ws.send(JSON.stringify({ type: 'sparse_upload_ack', reqId, name, ok: false, error: err.message }));
+      }
+      return;
+    }
+
+    if (msg.type === 'sparse_propagate' && gpuReady) {
+      const { reqId, name, preSpikes } = msg;
+      try {
+        if (preSpikes && preSpikes.length > 0) {
+          gpu.writeSparsePreSpikes(name, new Uint32Array(preSpikes));
+        }
+        const currents = await gpu.propagateSparse(name);
+        // Compress output — pack as plain array for JSON. At M+ scale,
+        // this is the biggest WebSocket payload. Could optimize to
+        // binary WebSocket frames later; for now plain JSON works.
+        ws.send(JSON.stringify({
+          type: 'sparse_propagate_ack',
+          reqId, name,
+          currents: currents ? Array.from(currents) : null,
+        }));
+      } catch (err) {
+        ws.send(JSON.stringify({ type: 'sparse_propagate_ack', reqId, name, error: err.message }));
+      }
+      return;
+    }
+
+    if (msg.type === 'sparse_hebbian' && gpuReady) {
+      const { reqId, name, preSpikes, postSpikes, lr } = msg;
+      try {
+        if (preSpikes && preSpikes.length > 0) {
+          gpu.writeSparsePreSpikes(name, new Uint32Array(preSpikes));
+        }
+        if (postSpikes && postSpikes.length > 0) {
+          gpu.writeSparsePostSpikes(name, new Uint32Array(postSpikes));
+        }
+        const ok = gpu.hebbianSparse(name, lr ?? 0.01);
+        ws.send(JSON.stringify({ type: 'sparse_hebbian_ack', reqId, name, ok }));
+      } catch (err) {
+        ws.send(JSON.stringify({ type: 'sparse_hebbian_ack', reqId, name, error: err.message }));
+      }
+      return;
+    }
+
+    // T17.7 Phase C.1 — rebind an already-uploaded cross-projection
+    // matrix from standalone to cluster-bound mode. No matrix data
+    // re-transferred; only the per-dispatch src/dst buffer resolution
+    // changes. Server sends this once per projection after both the
+    // main cortex cluster and the standalone cortexCluster have finished
+    // their initial GPU uploads.
+    if (msg.type === 'rebind_sparse' && gpuReady) {
+      const { reqId, name, binding } = msg;
+      try {
+        const ok = gpu.rebindSparseMatrix(name, binding);
+        ws.send(JSON.stringify({ type: 'rebind_sparse_ack', reqId, name, ok }));
+        if (ok) renderHierarchy();
+      } catch (err) {
+        ws.send(JSON.stringify({ type: 'rebind_sparse_ack', reqId, name, ok: false, error: err.message }));
+      }
+      return;
     }
   } catch (err) {
     console.warn('[GPU Compute] Error:', err.message, err.stack);
@@ -131,11 +740,240 @@ function connectToServer() {
 };
 
   ws.onclose = () => {
-    statusEl.textContent = 'Disconnected — reconnecting in 3s...';
+    // T18.11 — exponential backoff: 3s, 6s, 12s, 24s, 48s, 60s cap.
+    // Prevents the tight 3 s-flat reconnect storm that compounded VRAM
+    // pressure during ELA-K teach stress. Cap at 60 s so a legitimately-
+    // restarted server still gets picked up within a minute.
+    const delaySec = Math.min(60, 3 * Math.pow(2, _reconnectAttempt));
+    _reconnectAttempt++;
+    statusEl.textContent = `Disconnected — reconnecting in ${delaySec}s... (attempt ${_reconnectAttempt})`;
     statusEl.style.color = '#f59e0b';
-    setTimeout(() => connectToServer(), 3000);
+    setTimeout(() => connectToServer(), delaySec * 1000);
   };
 } // end connectToServer
+
+// BATCHED compute handler. Runs the full substep × cluster loop
+// internally. Per substep, every cluster dispatches in parallel via
+// Promise.all. Across substeps, execution is serialized because
+// substep N+1 depends on substep N's voltage state (recurrent Rulkov
+// iteration). Accumulates per-cluster spike totals + tracks the
+// last-substep count for the server's firingRate EMA.
+//
+// `_batchInFlight` is set true while handleComputeBatch runs and
+// released via try/finally at the onmessage call site so exceptions
+// inside the batch handler never leave it stuck and deadlock the
+// brain. Concurrent compute_batch messages (e.g. server retrying
+// after a timeout) get dropped via an early-return at the call site;
+// the server records them as misses and retries the next tick.
+let _batchInFlight = false;
+
+async function handleComputeBatch(msg) {
+  const { batchId, substeps, clusters, psi } = msg;
+  if (!Array.isArray(clusters) || clusters.length === 0) {
+    ws.send(JSON.stringify({ type: 'compute_batch_result', batchId, perCluster: {} }));
+    return;
+  }
+
+  // Verify every cluster is initialized before running the batch —
+  // any missing one gets an empty result so the server's tick loop
+  // can miss-count it and keep going.
+  const ready = clusters.filter(c => {
+    const s = clusterState[c.name];
+    return s && s.initialized;
+  });
+  if (ready.length === 0) {
+    const empty = {};
+    for (const c of clusters) empty[c.name] = { spikeCountTotal: 0, lastSpikeCount: 0 };
+    ws.send(JSON.stringify({ type: 'compute_batch_result', batchId, perCluster: empty }));
+    return;
+  }
+
+  const t0 = performance.now();
+  const perCluster = {};
+  for (const c of ready) {
+    perCluster[c.name] = { spikeCountTotal: 0, lastSpikeCount: 0 };
+  }
+
+  // Precompute effective drive per cluster once for the whole batch.
+  // Brain-state modulation (psiGain, emotionalGate, driveBaseline,
+  // errorCorrection) only changes between server ticks, not between
+  // substeps within one tick, so holding them constant across the
+  // batch matches the server's semantics exactly.
+  const effectiveDrives = {};
+  const noiseAmps = {};
+  for (const c of ready) {
+    const tonic = c.tonicDrive ?? 16;
+    const drive = c.driveBaseline ?? 1.0;
+    const emoGate = c.emotionalGate ?? 1.0;
+    const gain = c.gainMultiplier ?? 1.0;
+    const errCorr = c.errorCorrection ?? 0;
+    effectiveDrives[c.name] = tonic * drive * emoGate * gain + errCorr;
+    noiseAmps[c.name] = c.noiseAmp ?? 5;
+  }
+
+  // T17.7 Phase A.3 — update per-cluster regionGates storage buffer
+  // with current Ψ-computed gate values before the first substep.
+  // Gates are stable within a single compute_batch so we update once
+  // per batch, not per substep. Clusters without registered regions
+  // (no language sub-regions yet) get numRegions=0 and the LIF
+  // shader's lookupRegionGate returns 1.0 for every neuron —
+  // homogeneous behavior, zero regression vs pre-A.3.
+  //
+  // Mystery Ψ binding constraint: per Gee 2026-04-18, the main
+  // equation has Ψ woven into every term. This is the per-region
+  // Ψ binding — each lateralized sub-region's drive modulates by
+  // 0.5 + 0.5·sigmoid(Ψ·4.0). Global Ψ also modulates via
+  // gainMultiplier (already in effectiveDrive). Two distinct Ψ
+  // contributions to the firing equation, consistent with the
+  // consciousness architecture.
+  if (typeof psi === 'number' && typeof gpu.updateRegionGates === 'function') {
+    for (const c of ready) {
+      try { gpu.updateRegionGates(c.name, psi); } catch { /* non-fatal */ }
+    }
+  }
+
+  // Run substeps * clusters. Within a substep, all clusters dispatch
+  // in parallel via Promise.all — the per-call disposable readback
+  // buffer rules out any shared-state collision between them. Across
+  // substeps, execution is serialized so each substep sees the
+  // voltage state the previous one left on the GPU.
+  //
+  // T18.4.f — per-phase timing telemetry. Track wall-clock time spent
+  // in each phase (substep loop vs. voltage-mean readback) so the
+  // server can surface per-phase breakdown in the performance card
+  // instead of only seeing total step time.
+  const phaseT = { substepLoopMs: 0, voltReadbackMs: 0, totalMs: 0 };
+
+  const loopStart = performance.now();
+  for (let sub = 0; sub < substeps; sub++) {
+    const results = await Promise.all(ready.map(async (c) => {
+      const r = await gpu.fullStep(c.name, effectiveDrives[c.name], noiseAmps[c.name]);
+      return { name: c.name, spikeCount: r.spikeCount };
+    }));
+    for (const r of results) {
+      const acc = perCluster[r.name];
+      acc.spikeCountTotal += r.spikeCount;
+      acc.lastSpikeCount = r.spikeCount;
+    }
+  }
+  phaseT.substepLoopMs = +(performance.now() - loopStart).toFixed(2);
+
+  // T18.4.c — Once-per-tick voltage mean readback (GPU atomic reduction).
+  // Fires after the last substep so the mean reflects settled state.
+  // Running this every substep would be wasteful — mean voltage is a
+  // slow telemetry signal, one readback per tick is sufficient.
+  const vrStart = performance.now();
+  const voltMeans = await Promise.all(ready.map(async (c) => {
+    try {
+      const mean = await gpu.readbackVoltageMean(c.name);
+      return { name: c.name, meanVoltage: mean };
+    } catch (err) {
+      return { name: c.name, meanVoltage: null };
+    }
+  }));
+  for (const v of voltMeans) {
+    if (perCluster[v.name] && v.meanVoltage !== null) {
+      perCluster[v.name].meanVoltage = v.meanVoltage;
+    }
+  }
+  phaseT.voltReadbackMs = +(performance.now() - vrStart).toFixed(2);
+
+  // T17.7 Phase B.4 — per-region spike count readback for every
+  // cluster that has regions metadata. Feeds the server's divergence
+  // metric (standalone cortexCluster sub-region spikes vs main cortex
+  // sub-region spikes). Server uses divergence to augment the
+  // cerebellum's error correction signal — biological self-correction
+  // per Gee 'the brain doesnt error; thats the brain centers error
+  // correction handeling of the brain center that handles eror correction'.
+  //
+  // 8 readbacks per cortex tick × ~2ms each = ~16ms overhead; tracked
+  // separately in phaseT.regionSpikeMs so telemetry surfaces any
+  // ballooning. Other clusters with only a 'whole' bilateral region
+  // do 1 readback each (basically free vs voltage stat).
+  const rsStart = performance.now();
+  for (const c of ready) {
+    const state = clusterState[c.name];
+    if (!state || !state.regions) continue;
+    const regionNames = Object.keys(state.regions);
+    if (regionNames.length === 0) continue;
+    const counts = await Promise.all(regionNames.map(async (rn) => {
+      try {
+        const n = await gpu.readbackSpikeSlice(c.name, rn);
+        return [rn, n];
+      } catch { return [rn, null]; }
+    }));
+    const regionSpikes = {};
+    for (const [rn, n] of counts) {
+      if (n !== null) regionSpikes[rn] = n;
+    }
+    if (Object.keys(regionSpikes).length > 0) {
+      perCluster[c.name].regionSpikes = regionSpikes;
+    }
+  }
+  phaseT.regionSpikeMs = +(performance.now() - rsStart).toFixed(2);
+  phaseT.totalMs = +(performance.now() - t0).toFixed(2);
+
+  ws.send(JSON.stringify({
+    type: 'compute_batch_result',
+    batchId,
+    perCluster,
+    // T18.4.f — per-phase GPU timing (substep loop + voltage readback +
+    // total batch time). Server surfaces these as percentages of total
+    // step time so we can see where the 31s (or whatever) budget goes.
+    phaseTimingMs: phaseT,
+  }));
+
+  // Telemetry
+  const elapsed = performance.now() - t0;
+  stepsComputed += ready.length * substeps;
+  totalComputeMs += elapsed;
+  const totalSize = ready.reduce((s, c) => s + (clusterState[c.name]?.size || 0), 0);
+  statsEl.textContent = `Batch: ${ready.length}×${substeps} steps in ${elapsed.toFixed(0)}ms | Total: ${stepsComputed.toLocaleString()} steps | ${(totalSize / 1e6).toFixed(0)}M neurons`;
+  const totalSpikes = Object.values(perCluster).reduce((s, p) => s + p.lastSpikeCount, 0);
+  perfEl.textContent = `Throughput: ${((totalSize * substeps) / (elapsed / 1000) / 1e9).toFixed(2)} Gneurons/sec | Last-substep spikes: ${totalSpikes.toLocaleString()}`;
+}
+
+// Per-cluster compute request handler — single fullStep per call.
+// Parallelism across clusters happens at the onmessage layer via
+// independent async invocations; the per-call disposable readback
+// buffer makes it safe for multiple fullSteps to overlap on the
+// device command queue.
+async function handleComputeRequest(msg) {
+  const { clusterName, size } = msg;
+  const state = clusterState[clusterName];
+
+  if (!state?.initialized) {
+    ws.send(JSON.stringify({ type: 'compute_result', clusterName, spikeCount: 0, spikeIndices: [], size }));
+    return;
+  }
+
+  // FULL GPU PIPELINE — zero JS loops for N neurons (scales to hardware)
+  //   I = (tonic × driveBaseline × emotionalGate × gainMultiplier + errorCorrection) + noise
+  const tonic = msg.tonicDrive || 16;
+  const noiseAmp = msg.noiseAmp || 5;
+  const gain = msg.gainMultiplier || 1.0;
+  const emoGate = msg.emotionalGate || 1.0;
+  const drive = msg.driveBaseline || 1.0;
+  const errCorr = msg.errorCorrection || 0;
+  const effectiveDrive = tonic * drive * emoGate * gain + errCorr;
+
+  const t0 = performance.now();
+  const result = await gpu.fullStep(clusterName, effectiveDrive, noiseAmp);
+
+  ws.send(JSON.stringify({
+    type: 'compute_result',
+    clusterName,
+    spikeCount: result.spikeCount,
+    size: state.size,
+  }));
+
+  stepsComputed++;
+  const elapsed = performance.now() - t0;
+  totalComputeMs += elapsed;
+  const avg = totalComputeMs / stepsComputed;
+  statsEl.textContent = `Steps: ${stepsComputed.toLocaleString()} | Avg: ${avg.toFixed(1)}ms | Last: ${elapsed.toFixed(1)}ms | ${state.size.toLocaleString()} neurons`;
+  perfEl.textContent = `Throughput: ${(state.size / (elapsed / 1000)).toFixed(0)} neurons/sec | Spikes: ${result.spikeCount.toLocaleString()} (${(result.spikeCount/state.size*100).toFixed(1)}%)`;
+}
 </script>
 </body>
 </html>

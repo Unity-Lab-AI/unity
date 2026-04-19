@@ -187,4 +187,36 @@ export class ChatPanel {
       this._appendMessage(role, text);
     }
   }
+
+  /**
+   * Ghost bubble for when Unity went silent on purpose. Rendered as a
+   * greyed-out italic message with a reason label ("pre-K — can't speak
+   * yet", "motor unstable — try rephrasing", etc.) so the user sees
+   * WHY she didn't answer instead of being ghosted. Silent bubbles are
+   * NOT persisted to chat history — they're session-only signals.
+   */
+  addSilentMessage(reason, detail, minGrade) {
+    if (!this._open) return;
+    const msg = document.createElement('div');
+    msg.className = 'chat-msg chat-msg-silent';
+    msg.style.cssText = 'opacity:0.55; font-style:italic; border-left:2px solid #666; padding-left:8px; margin:6px 0; font-size:12px; color:#9a9aa8;';
+
+    const label = document.createElement('span');
+    label.className = 'chat-msg-label';
+    label.style.cssText = 'color:#ff4d9a; font-weight:600; display:block; font-size:10px; letter-spacing:0.5px; text-transform:uppercase; margin-bottom:2px;';
+    const reasonLabel = reason === 'pre_kindergarten' ? 'Unity — pre-K, not speaking yet'
+      : reason === 'motor_unstable' ? 'Unity — motor unstable'
+      : reason === 'language_not_ready' ? 'Unity — language booting'
+      : 'Unity — silent';
+    label.textContent = minGrade ? `${reasonLabel} (lowest grade: ${minGrade})` : reasonLabel;
+
+    const body = document.createElement('span');
+    body.className = 'chat-msg-text';
+    body.textContent = detail || 'She heard you but her motor region couldn\'t commit a stable letter sequence.';
+
+    msg.appendChild(label);
+    msg.appendChild(body);
+    this._messagesEl.appendChild(msg);
+    this._messagesEl.scrollTop = this._messagesEl.scrollHeight;
+  }
 }

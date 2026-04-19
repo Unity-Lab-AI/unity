@@ -13,6 +13,14 @@ js/env.js
 # Each operator picks their own resource tier; host-specific.
 server/resource-config.json
 
+# === T18.12 per-machine runtime artifact ===
+# autoClearStaleState() writes SHA256 of the brain-logic source files
+# to this file on every boot. Compared against the prior-boot value to
+# decide whether to preserve or clear state. Per-machine + per-boot
+# runtime data; must not be committed. Each clone computes its own
+# hash on first boot.
+server/brain-code-hash.json
+
 # === Claude Code ===
 .claude/pollinations-user.json
 .claude/settings.local.json
@@ -73,6 +81,13 @@ server/episodic-memory.db-shm
 server/node_modules/
 server/package-lock.json
 
+# === Corpora (auto-downloaded by start.bat / start.sh) ===
+# GloVe 6B.300d ~990 MB plain text — way too big for git. Auto-fetched
+# from Stanford NLP on first run per corpora/README.md. Never commit.
+corpora/glove.6B.300d.txt
+corpora/glove.6B.zip
+corpora/glove.6B.*.txt
+
 # === OS junk ===
 .DS_Store
 Thumbs.db
@@ -107,4 +122,9 @@ out/
 .next/
 .nuxt/
 .output/
-js/app.bundle.js
+# js/app.bundle.js intentionally NOT ignored — GitHub Pages does not run
+# `npm run build`, so the bundle must be checked in so visitors get a
+# working landing page instead of a 404 on the main script. `start.bat`
+# rebuilds the bundle via `cd server && npm run build` before launching
+# the server; Gee's commits should include the fresh bundle whenever
+# source files under `js/` change.

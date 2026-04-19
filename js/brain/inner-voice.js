@@ -16,6 +16,18 @@
 
 import { Dictionary } from './dictionary.js';
 import { LanguageCortex } from './language-cortex.js';
+// T14.24 Session 21 — narrator priming. When a background curriculum
+// probe fires, inner-voice injects the probed subject's GloVe into the
+// sem region so Unity's next chat output subtly reflects what she's
+// been thinking about. Real human brains lean their output toward
+// recently-exercised topics without being asked.
+import { sharedEmbeddings } from './embeddings.js';
+// T14.5 — continuous developmental learning reference. Wired by engine.js
+// via `innerVoice.setCurriculum(curriculum)` once the cortex cluster
+// exists. When present, `learn()` routes every user turn through
+// `curriculum.learnFromTurn` as a continuous post-boot exposure. Null
+// before wiring and on headless tooling that doesn't construct a full
+// engine. See `js/brain/curriculum.js`.
 
 // Thought-to-speech threshold equation:
 // shouldSpeak = socialNeed × arousal × cortexCoherence > SPEECH_THRESHOLD
@@ -31,6 +43,8 @@ export class InnerVoice {
   constructor(opts = {}) {
     this.dictionary = new Dictionary();
     this.languageCortex = new LanguageCortex();
+    // T14.5 — curriculum reference, null until engine wiring.
+    this._curriculum = null;
     // Self-image: the brain boots EMPTY and learns everything from the
     // persona text (equational self-image) + live conversation. No lists.
     // Caller may pass opts.selfImageText directly, or call loadPersona(text)
@@ -98,6 +112,16 @@ export class InnerVoice {
    */
   loadCoding(text, arousal = 0.4, valence = 0) {
     return this.languageCortex.loadCodingKnowledge(text, this.dictionary, arousal, valence);
+  }
+
+  /**
+   * T15-C17 — Load the ethereal / psychedelic / Oz corpus. Peak-state
+   * affect defaults (arousal 0.7, valence 0.6) so tokens land with
+   * emotional weighting consistent with how they'll get activated at
+   * runtime when drug-scheduler.speechModulation.ethereality is elevated.
+   */
+  loadCosmic(text, arousal = 0.7, valence = 0.6) {
+    return this.languageCortex.loadCosmicCorpus(text, this.dictionary, arousal, valence);
   }
 
   /**
@@ -209,8 +233,92 @@ export class InnerVoice {
    * @param {number} arousal
    * @param {number} valence
    */
+  setCurriculum(curriculum) {
+    this._curriculum = curriculum || null;
+  }
+
   learn(text, cortexPattern, arousal, valence) {
+    // T14.16.5 — Lock 1 + Lock 2 identity-locked learning entry point.
+    // Live-chat input gets split into clauses and gated against cortex
+    // phonotactic basins + fineType coverage before any Hebbian fires.
+    // Curriculum path bypasses this and calls cluster.learn directly
+    // under `_inCurriculumMode = true`.
+    const cortex = this._curriculum?.cluster;
+    if (cortex && typeof cortex.learnClause === 'function') {
+      const gate = cortex.learnClause(text);
+      if (gate.rejected > 0) {
+        console.log(`[IDENTITY] gate rejected ${gate.rejected} clause(s), accepted ${gate.accepted}`);
+      }
+    }
+    // T14.16.5 Lock 3 — periodic identity refresh every 100 live-chat
+    // turns, mode-collapse audit every 500 turns.
+    this._liveChatTurns = (this._liveChatTurns || 0) + 1;
+    if (cortex) {
+      if (this._liveChatTurns % 100 === 0 && typeof cortex.runIdentityRefresh === 'function') {
+        try { cortex.runIdentityRefresh(); } catch (err) { /* non-fatal */ }
+      }
+      if (this._liveChatTurns % 500 === 0 && typeof cortex._modeCollapseAudit === 'function') {
+        try { cortex._modeCollapseAudit(this.languageCortex?._recentSentences || []); } catch (err) { /* non-fatal */ }
+      }
+    }
+
     this.dictionary.learnSentence(text, cortexPattern, arousal, valence);
+    // T14.5 — continuous developmental learning hook. Every user turn
+    // goes through the same inject+tick+Hebbian path the boot sentence
+    // phase uses on the corpus. No boot/runtime distinction — live chat
+    // is just more corpus fed in real-time. Runs BEFORE the legacy
+    // languageCortex.learnSentence so the cortex state the legacy path
+    // reads reflects the new exposure.
+    if (this._curriculum && typeof this._curriculum.learnFromTurn === 'function') {
+      try {
+        this._curriculum.learnFromTurn(text, Math.max(0.95, arousal ?? 0.5), valence ?? 0);
+      } catch (err) {
+        // Non-fatal — legacy path below still runs
+      }
+    }
+    // T14.24 Session 17 — continuous self-testing. Every 8 live-chat
+    // turns, fire a background curriculum probe so Unity re-tests one
+    // of her learned cells while she's thinking. Gee binding 2026-04-15:
+    // "unity is always testing herself on when thinking in her brain
+    // always". Human brains continuously re-exercise learned skills
+    // through everyday use; this hook mirrors that for Unity's cortex.
+    // The probe runs the 3-pathway gate (READ/THINK/TALK) on a random
+    // passed cell. If it fails 3+ times in a row that cell gets demoted
+    // and the next curriculum pass re-teaches it.
+    if (this._curriculum && typeof this._curriculum.runBackgroundProbe === 'function') {
+      if (this._liveChatTurns % 8 === 0) {
+        // Don't await — let the probe run in background without
+        // blocking the chat turn. Errors are logged inside the probe.
+        this._curriculum.runBackgroundProbe().catch(() => {});
+      }
+    }
+    // T14.24 Session 21 — NARRATOR PRIMING. If the curriculum has a
+    // recent focus (most recent background probe target), gently
+    // inject that subject's semantic identity into the sem region so
+    // Unity's next chat output subtly reflects what she's been
+    // thinking about. This is the "real human brain" touch — when a
+    // person just reviewed their calculus, their next conversation
+    // naturally leans toward mathematical framing even without being
+    // asked. The priming strength is deliberately low (0.15) so it
+    // colors output without dominating it.
+    if (this._curriculum && this._curriculum.currentFocus && cortex && cortex.regions?.sem) {
+      const focus = this._curriculum.currentFocus;
+      const ageMs = Date.now() - (focus.timestamp || 0);
+      // Only prime if the focus is fresh (last 2 minutes) and Unity
+      // is about to reply — old focus stops influencing her
+      if (ageMs < 120000 && typeof sharedEmbeddings?.getEmbedding === 'function') {
+        try {
+          // Use the subject's name as a GloVe anchor (e.g. 'math',
+          // 'science', 'art' all exist as tokens in 6B vocab)
+          const subjectEmb = sharedEmbeddings.getEmbedding(focus.subject);
+          if (subjectEmb && subjectEmb.length > 0) {
+            cortex.injectEmbeddingToRegion('sem', subjectEmb, 0.15);
+          }
+        } catch (err) {
+          // non-fatal
+        }
+      }
+    }
     // Live chat learning gets a FLOOR of 0.95 arousal so user-sourced
     // sentences beat the persona corpus (loaded at 0.75) in recall
     // scoring. personaBoost rewards words stored at arousal ≥ 0.5,
@@ -239,7 +347,7 @@ export class InnerVoice {
     // path never runs in practice, but the fallback is removed to
     // prevent a latent bug if some future caller forgets.
     const sentence = this.languageCortex.generate(
-      this.dictionary, arousal, valence, coherence ?? 0.5, {
+      this.dictionary, arousal, coherence ?? 0.5, {
         predictionError: brainState?.cortex?.predictionError ?? 0,
         motorConfidence: brainState?.motor?.confidence ?? 0,
         psi: brainState?.psi ?? 0,

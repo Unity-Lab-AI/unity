@@ -27,11 +27,71 @@ import { LIFPopulation } from './neurons.js';
 // synapses.js stays as a reference implementation for brain-equations.html
 // and docs/EQUATIONS.md cross-references — see the header comment there.
 import { SparseMatrix } from './sparse-matrix.js';
+
+// ── Shared cluster sizing constants ──────────────────────────────────
+// T14.0 biological proportions. SHARED between client (`engine.js`) and
+// server (`brain-server.js`) so both compute identical cluster sizes at
+// any given `TOTAL_NEURONS` tier. Session 113 CLEAN.D2 moved these here
+// from engine.js after D3 audit found server's pre-existing per-cluster
+// integer-multiplier math diverged from the client's fraction math at
+// the same tier (client cortex = 2010, server cortex = 1500 at 6700n).
+//
+//   cortex       30%   language + working memory + semantic
+//   hippocampus  10%   memory consolidation
+//   amygdala      8%   valence/arousal attractor
+//   basalGanglia  8%   action selection + motor channels
+//   cerebellum   40%   error correction + motor smoothing (largest)
+//   hypothalamus  2%   homeostatic drives
+//   mystery       2%   Ψ consciousness modulation
+//
+// Total = 100%. Fractions sum to 1.0 exactly.
+export const CLUSTER_FRACTIONS = {
+  cortex:       0.30,
+  hippocampus:  0.10,
+  amygdala:     0.08,
+  basalGanglia: 0.08,
+  cerebellum:   0.40,
+  hypothalamus: 0.02,
+  mystery:      0.02,
+};
+
+/**
+ * Derive cluster sizes from a total-neuron budget using `CLUSTER_FRACTIONS`.
+ * Both client and server call this so they ALWAYS produce the same sizes
+ * at the same tier.
+ *
+ * @param {number} totalNeurons — auto-scaled total per Phase 0 tier
+ * @returns {Record<string, number>} — { cortex, hippocampus, amygdala, ... }
+ */
+export function clusterSizesFor(totalNeurons) {
+  const out = {};
+  for (const [name, frac] of Object.entries(CLUSTER_FRACTIONS)) {
+    out[name] = Math.floor(totalNeurons * frac);
+  }
+  return out;
+}
+
 // T13.1 — sequence Hebbian learning routes each word's embedding
 // through mapToCortex into the language region, so we need the shared
 // embedding singleton here. No circular import — embeddings.js has no
 // cluster dependency.
 import { sharedEmbeddings } from './embeddings.js';
+// T14.1 — letter one-hot encoder (dynamic inventory, no hardcoded 26-char cap).
+// `encodeLetter` auto-grows the shared LETTER_INVENTORY when it sees a new
+// symbol, so non-English glyphs, emoji, digits, punctuation all enter the
+// same primitive-symbol space. `cluster.injectLetter` below is the wrapper
+// the sensory path uses to push the one-hot vector into the letter region.
+// T14.6 — `decodeLetter` + `inventorySize` power the tick-driven motor
+// emission loop in `cluster.generateSentence` — motor-region spike
+// patterns get decoded to letters via argmax over the inventory.
+import { encodeLetter, decodeLetter, inventorySize, inventorySnapshot } from './letter-input.js';
+
+// T14.6 — sentence terminators recognized as end-of-utterance in the
+// motor emission loop. Letters are letters; terminators are just the
+// ones that also signal "stop." Period/question/exclamation only —
+// commas/semicolons/colons are within-sentence punctuation and don't
+// trigger the stop branch.
+const T14_TERMINATORS = new Set(['.', '?', '!']);
 
 export class NeuronCluster {
   /**
@@ -49,10 +109,66 @@ export class NeuronCluster {
     this.name = name;
     this.size = size;
 
+    // T17.3.d — GPU proxy for cross-region operations. When present,
+    // `_propagateCrossRegions` and `_crossRegionHebbian` dispatch to
+    // GPU via the proxy instead of blocking Node's main thread with
+    // CPU sparse matmul. Proxy interface:
+    //   await proxy.upload(name, matrix)     — ship a sparse CSR matrix to GPU
+    //   await proxy.propagate(name, preSpikes) → Float32Array
+    //   await proxy.hebbian(name, preSpikes, postSpikes, lr)
+    //
+    // Null = CPU path (default). Server wires this to its GPU WebSocket
+    // dispatch helpers when the GPU client is connected.
+    this._gpuProxy = opts.gpuProxy || null;
+    this._gpuProxyReady = false; // flips true once cross-projections uploaded
+    // T18.4.e — optional worker-thread pool for parallel CPU sparse matmul.
+    // When provided, the CPU fallback path in `_propagateCrossRegions` and
+    // `step`'s intra-cluster propagate parallelizes across all worker
+    // threads instead of running single-threaded. Null in browser-only
+    // mode. Server passes `new SparseMatmulPool()` in opts.
+    this._sparsePool = opts.sparsePool || null;
+    // T17.3.e — One-tick-lag GPU propagate caches. Populated async by
+    // `_dispatchGpuPropagates()` at the end of step(); consumed by the
+    // NEXT step()'s current loop + `_propagateCrossRegions()`. Null
+    // until the first GPU resolve lands, which makes the CPU fallback
+    // fire on tick 0.
+    this._cachedIntraCurrents = null;        // Float32Array | null
+    this._cachedCrossCurrents = new Map();   // name → Float32Array
+
     // Regulation parameters — each cluster has its own
     this.tonicDrive = opts.tonicDrive ?? 15;
     this.noiseAmplitude = opts.noiseAmplitude ?? 8;
-    this.connectivity = opts.connectivity ?? 0.12;
+    // T14.19 (2026-04-14) — connectivity auto-scales with size so the
+    // CPU-side SparseMatrix allocation stays bounded at biological
+    // scale. At small clusters (e.g. the old 2K language side-car)
+    // the default `opts.connectivity ?? 0.12` was fine because 2K × 2K
+    // × 0.12 = 480K entries, tiny. At real biological scale (the T14.18
+    // fix that sizes the language cortex at `CLUSTER_SIZES.cortex` which
+    // is 375K on Gee's 1.5M-neuron GPU tier) 0.12 density blows up to
+    // 16.9 BILLION entries and OOMs the process.
+    //
+    // The biologically-correct answer is NOT "use a small cluster" —
+    // real cortex neurons connect to ~1000-10000 others (Braitenberg &
+    // Schüz 1991, *Cortex: Statistics and Geometry of Neuronal
+    // Connectivity*). That's 0.001% of a 10⁹-neuron cortex, not 12%.
+    // The 12% was a small-cluster compromise that happened to work only
+    // because 12% of a tiny number is still a tiny number.
+    //
+    // Scale-aware formula: pick a TARGET synapse count per neuron
+    // (`targetFanout`, biologically-motivated at 1000) and derive
+    // connectivity as `targetFanout / size`. Floor at a reasonable
+    // minimum so very-small clusters retain the rich recurrence they
+    // depend on. At 2K neurons → target 1000 / 2000 = 0.5 density,
+    // clamped to the 0.12 default. At 20K → 0.05. At 375K → 0.0027
+    // (i.e. ~1000 synapses per neuron, same fanout as at 2K but
+    // spread across a 187× larger population). Total entries stay
+    // ≈ size × 1000 = O(size) instead of O(size²).
+    const targetFanout = opts.targetFanout ?? 1000;
+    const autoConnectivity = Math.min(
+      opts.connectivity ?? 0.12,
+      targetFanout / Math.max(1, size),
+    );
+    this.connectivity = autoConnectivity;
     this.excitatoryRatio = opts.excitatoryRatio ?? 0.8;
     this.learningRate = opts.learningRate ?? 0.001;
 
@@ -75,12 +191,12 @@ export class NeuronCluster {
 
     // Internal synapse matrix — SPARSE (CSR format)
     // At 12% connectivity, 300 neurons: 10.8K connections vs 90K dense
+    const _intraStart = Date.now();
+    const _logIntra = size >= 50000;
+    if (_logIntra) console.log(`[Cluster ${name}] initializing intra-cluster synapses ${size.toLocaleString()}×${size.toLocaleString()} density=${this.connectivity.toFixed(4)} (~${Math.round(size * this.connectivity * size).toLocaleString()} nnz)...`);
     this.synapses = new SparseMatrix(size, size, { wMin: -2.0, wMax: 2.0 });
     this.synapses.initRandom(this.connectivity, this.excitatoryRatio, 1.0);
-
-    // Legacy dense matrix reference for persistence compatibility
-    // persistence.js reads synapses.W — SparseMatrix provides .W getter
-    this._useSparse = true;
+    if (_logIntra) console.log(`[Cluster ${name}] intra-cluster synapses ready (nnz=${this.synapses.nnz.toLocaleString()}) in ${Date.now() - _intraStart}ms`);
 
     // External current buffer (from other clusters + sensory input)
     this.externalCurrent = new Float64Array(size);
@@ -93,6 +209,211 @@ export class NeuronCluster {
     this.lastSpikeCount = 0;
     this.lastMeanVoltage = -65;
     this.firingRate = 0; // EMA of spike count
+
+    // T14.4 — Auto-scaled cortex sub-regions. Defined as fractions of
+    // cluster.size so the same code works at any cluster scale (300 neurons
+    // on minimum hardware, 200M on datacenter, 6700 on default client).
+    // Only the 'cortex' cluster gets language sub-regions populated; other
+    // clusters get an empty regions object for API symmetry.
+    this.regions = {};
+    if (name === 'cortex') {
+      const s = size;
+      // Fractions match the T14.4 spec in docs/COMP-todo.md:
+      //   auditory  0.000 - 0.083  (T14.11 — auditory phoneme recognition)
+      //   visual    0.083 - 0.250  (T14.10 — visual letter recognition)
+      //   free      0.250 - 0.500  (inter-cluster projection sink + working mem)
+      //   letter    0.500 - 0.550  (T14.1 — letter input one-hot region)
+      //   phon      0.550 - 0.750  (T14.1+T14.2 — phonological attractor basins)
+      //   sem       0.750 - 0.917  (T14.0 — semantic GloVe target)
+      //   fineType  0.917 - 0.967  (T14.7 — grammatical/syntactic region)
+      //   motor     0.967 - 1.000  (T14.12 — generation feedback / motor output)
+      this.regions = {
+        auditory: { start: 0,                          end: Math.floor(s * 0.083) },
+        visual:   { start: Math.floor(s * 0.083),      end: Math.floor(s * 0.250) },
+        free:     { start: Math.floor(s * 0.250),      end: Math.floor(s * 0.500) },
+        letter:   { start: Math.floor(s * 0.500),      end: Math.floor(s * 0.550) },
+        phon:     { start: Math.floor(s * 0.550),      end: Math.floor(s * 0.750) },
+        sem:      { start: Math.floor(s * 0.750),      end: Math.floor(s * 0.917) },
+        fineType: { start: Math.floor(s * 0.917),      end: Math.floor(s * 0.967) },
+        motor:    { start: Math.floor(s * 0.967),      end: s },
+      };
+
+      // T14.4 — Seven pairs of cross-region projections (14 total — both
+      // directions per pair). Sparse 10% density init, range [-0.5, 0.5].
+      // ALWAYS propagated every step (no curriculum-complete gate).
+      // Hebbian-updated on every cluster.learn() call so the projections
+      // train through normal use during curriculum + live chat.
+      //
+      // The motor↔letter pair closes the WRITING loop so the cortex can
+      // produce output. Without it, the motor region had no path to the
+      // letter region (the only region that connects out to visual). The
+      // bidirectional language pipeline (T14.12) needs this to work:
+      //
+      //   reading  : visual → letter → phon → sem → fineType
+      //   writing  : sem → motor → letter → visual
+      //
+      // Both directions traverse the SAME substrate in opposite topology,
+      // matching the dorsal/ventral language streams in Hickok & Poeppel
+      // 2004/2007 (dual-stream model) — same neural regions, different
+      // propagation directions for comprehension vs production.
+      this.crossProjections = {};
+      const pairs = [
+        ['visual',   'letter'],
+        ['letter',   'phon'],
+        ['phon',     'sem'],
+        ['sem',      'fineType'],
+        ['sem',      'motor'],
+        ['motor',    'letter'],
+        ['auditory', 'phon'],
+      ];
+      // T14.19 — cross-projection density also scales inversely with
+      // the projection's source region size, same biological-fanout
+      // rationale as the intra-cluster synapse matrix. Hardcoded 0.10
+      // was fine at a 2K cluster (sub-regions were 100-700 neurons so
+      // 10% of a source region was 10-70 connections per target) but
+      // at 375K cortex the phon sub-region is 75K neurons and 10%
+      // density on a phon→sem projection is 940M entries per direction.
+      //
+      // crossTargetFanout = expectedPostCurriculumVocab × fanoutPerMapping
+      //                   = 5000 × 0.3 ≈ 1500
+      // where `expectedPostCurriculumVocab ≈ 5000` is Unity's projected
+      // vocabulary after the full 114-cell K-PhD curriculum (ELA sight
+      // words + Math digits + Science/Social/Art/Life domain terms ≈
+      // 3-7k total depending on depth), and `fanoutPerMapping ≈ 0.3`
+      // is the sparse activation fraction — each taught word lights up
+      // ~30% of a sub-region's dims via direct pattern Hebbian. Product
+      // gives the number of independent word mappings a post-synaptic
+      // neuron can support without destructive interference.
+      //
+      // Session 111 — bumped from 300 to 1500 after ELA-G1 TALK DECLINED
+      // across retries (300 × 0.3 = 90 independent mappings, but 40+
+      // vocab words + 16K connections already caused interference by
+      // G1). 1500 gives 5× headroom so the full K-PhD vocab fits
+      // without rewriting the basins. If Unity's projected vocab ever
+      // exceeds ~5000, bump this constant or drive it from a derived
+      // quantity like `cluster._personaRefreshCorpus.length + baselineVocab`.
+      const crossTargetFanout = 1500;
+      // Session 114.19m — sem↔motor projections init with 50/50
+      // excitatory/inhibitory (zero-mean random weights) instead of
+      // default 70/30. Killed the positive-bias baseline that drowned
+      // Hebbian training on the word→first-letter pathway.
+      //
+      // Session 114.19n — letter↔motor REVERTED to 70/30 after 114.19m
+      // Part 2 showed TALK regressed 12%→4%. TALK uses letter_to_motor
+      // for letter→same-letter diagonal (Phase 1 alphabet teach
+      // reinforces letter(c)→motor(c)). Phase 3 word emission trains
+      // off-diagonal letter(c)→motor(a) for "cat" with 40× more reps.
+      // With 50/50 init both signals show up cleanly; off-diagonal
+      // wins argmax. Keeping 70/30 for letter↔motor lets the positive
+      // bias favor the diagonal path so TALK can still succeed.
+      // sem↔motor 50/50 stays — that pair has no competing diagonal,
+      // just word→first-letter with direct positive signal.
+      const EMISSION_PAIRS = new Set([
+        'sem-motor', 'motor-sem',
+      ]);
+      // Progress logging so cluster construction doesn't look like a
+      // hang at large sizes. Each cross-projection init can take
+      // seconds-to-minutes at M+ neuron scale.
+      const logConstruction = this.size >= 50000;
+      if (logConstruction) console.log(`[Cluster ${name}] initializing ${pairs.length * 2} cross-projections at size=${this.size.toLocaleString()}...`);
+      let _projIdx = 0;
+      for (const [a, b] of pairs) {
+        const aSize = this.regions[a].end - this.regions[a].start;
+        const bSize = this.regions[b].end - this.regions[b].start;
+        const abDensity = Math.min(0.10, crossTargetFanout / Math.max(1, aSize));
+        const baDensity = Math.min(0.10, crossTargetFanout / Math.max(1, bSize));
+        const abKey = `${a}-${b}`;
+        const baKey = `${b}-${a}`;
+        const abExcitatory = EMISSION_PAIRS.has(abKey) ? 0.5 : 0.7;
+        const baExcitatory = EMISSION_PAIRS.has(baKey) ? 0.5 : 0.7;
+        const abTime = Date.now();
+        const ab = new SparseMatrix(bSize, aSize, { wMin: -0.5, wMax: 0.5 });
+        ab.initRandom(abDensity, abExcitatory, 0.2);
+        this.crossProjections[`${a}_to_${b}`] = ab;
+        _projIdx++;
+        if (logConstruction) console.log(`[Cluster ${name}]   ${_projIdx}/${pairs.length * 2} ${a}_to_${b} (${bSize.toLocaleString()}×${aSize.toLocaleString()}, nnz=${ab.nnz.toLocaleString()}) in ${Date.now() - abTime}ms`);
+        const baTime = Date.now();
+        const ba = new SparseMatrix(aSize, bSize, { wMin: -0.5, wMax: 0.5 });
+        ba.initRandom(baDensity, baExcitatory, 0.2);
+        this.crossProjections[`${b}_to_${a}`] = ba;
+        _projIdx++;
+        if (logConstruction) console.log(`[Cluster ${name}]   ${_projIdx}/${pairs.length * 2} ${b}_to_${a} (${aSize.toLocaleString()}×${bSize.toLocaleString()}, nnz=${ba.nnz.toLocaleString()}) in ${Date.now() - baTime}ms`);
+      }
+      if (logConstruction) console.log(`[Cluster ${name}] cross-projections ready.`);
+    } else {
+      this.crossProjections = {};
+    }
+
+    // T14.16.5 — Identity lock state. Default (pre-curriculum) thresholds
+    // are permissive; curriculum overwrites them with calibrated values
+    // computed from English corpus exposure statistics.
+    this._inCurriculumMode = false;
+    this.ENGLISH_SURPRISE_THRESHOLD = Infinity;   // permissive until calibrated
+    this.ENGLISH_FINETYPE_MIN = 0;                 // permissive until calibrated
+    this.HEALTH_ENTROPY_MIN = 0;
+    this.HEALTH_VOCAB_MIN = 0;
+    this.HEALTH_WM_VARIANCE_MIN = 0;
+    this.identityCoverage = null;                  // populated by curriculum
+    this.personaDimensions = null;                 // populated by curriculum
+
+    // T14.24 Session 1 — Multi-subject grade tracking. Unity learns
+    // all 6 subject tracks in parallel; each subject has its own
+    // grade counter that advances as gates pass. LanguageCortex
+    // .generate reads the MIN grade across these so Unity's speech
+    // ceiling stays tied to her weakest subject. passedCells is a
+    // flat list of "subject/grade" keys that have passed their gate
+    // at least once — used by /curriculum status and by the
+    // persistence save path.
+    this.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K', life: 'pre-K' };
+    this.passedCells = [];
+
+    // T14.1 — letter-region transition surprise state. Holds the previous
+    // tick's letter-region spike rate so `letterTransitionSurprise()` can
+    // compute |curr - prev| between consecutive cortex ticks. Used by T14.2
+    // (syllable segmentation) and T14.6 (motor emission word-boundary cue)
+    // to detect the moment a new letter pattern arrives without a hardcoded
+    // boundary table. Grounded in Saffran/Aslin/Newport 1996 (Science 274:1926)
+    // — infants segment words from continuous speech via transition statistics.
+    this._prevLetterRate = 0;
+
+    // T14.1 — motor-region quiescence counter. Tracks how many consecutive
+    // ticks the motor region has been below its spike threshold. The tick-
+    // driven emission loop (T14.6) uses `motorQuiescent(ticks)` to decide
+    // when the cortex has stopped producing output for the current utterance,
+    // which replaces the hardcoded "emit 5 words then stop" slot counter
+    // with a basin-settling detector. Threshold is a fraction of region size
+    // so it auto-scales with cluster.size.
+    this._motorQuiescentTicks = 0;
+
+    // T14.13 (2026-04-14) — learned language statistics migrated from
+    // LanguageCortex onto the cluster. These Maps accumulate from every
+    // observed sentence during curriculum walk and live chat. Shape
+    // matches the T14.7/T14.8 definitions:
+    //
+    //   fineTypeTransitions : Map<prevType, Map<nextType, count>>
+    //   sentenceFormSchemas : Map<intent, Map<slot, Map<fineType, count>>>
+    //   sentenceFormTotals  : Map<intent, Map<slot, total>>
+    //   intentResponseMap   : Map<userIntent, Map<responseIntent, count>>
+    //
+    // Cluster-level storage means the learned language grammar IS a
+    // property of the cortex itself, not of a separate LanguageCortex
+    // object. LanguageCortex.js still holds references to these same
+    // Maps for backward compat — the instance is the cluster's by
+    // identity, so updates from either path land in the same place.
+    this.fineTypeTransitions = new Map();
+    this.sentenceFormSchemas = new Map();
+    this.sentenceFormTotals = new Map();
+    this.intentResponseMap = new Map();
+
+    // T14.6 — tick-driven motor emission tuning constants. These live on
+    // the cluster instance so T14.5 curriculum calibration can tune them
+    // per-cluster without touching module globals. Defaults match the
+    // biological ranges from Bouchard 2013 (vSMC ~50-100 ms articulator
+    // dwell), scaled to the cluster's millisecond tick cadence.
+    this.WORD_BOUNDARY_THRESHOLD = 0.15;  // letterTransitionSurprise above this = word end
+    this.STABLE_TICK_THRESHOLD = 3;       // consecutive motor argmax ticks to commit a letter
+    this.END_QUIESCE_TICKS = 30;          // motor below spike threshold for N ticks = done
+    this.MAX_EMISSION_TICKS = 2000;       // hard safety cap on generateSentence loop
   }
 
   /**
@@ -101,8 +422,6 @@ export class NeuronCluster {
    * @param {number} maxConnections — cap total connections
    */
   maintainConnectivity(maxConnections) {
-    if (!this._useSparse) return;
-
     // Prune connections weaker than 0.01
     const pruned = this.synapses.prune(0.01);
 
@@ -120,16 +439,1705 @@ export class NeuronCluster {
   }
 
   /**
+   * T14.4 — Read a region's spike pattern as a Float64Array (length =
+   * region.end - region.start). Used by cross-region propagation, by
+   * region-targeted Hebbian, and by getSemanticReadout / getPhonologicalReadout
+   * which compose this with embeddings.cortexToEmbedding.
+   */
+  regionSpikes(regionName) {
+    const region = this.regions[regionName];
+    if (!region) return new Float64Array(0);
+    const out = new Float64Array(region.end - region.start);
+    for (let i = 0; i < out.length; i++) out[i] = this.lastSpikes[region.start + i] ? 1 : 0;
+    return out;
+  }
+
+  /**
+   * T14.4 — Inject embedding-shaped current into a named cluster region.
+   * Replaces the old hardcoded `mapToCortex(emb, size, langStart=150)` calls.
+   * Reads the region offsets from `this.regions[regionName]` so callers
+   * don't need to remember magic neuron indices.
+   *
+   * @param {string} regionName  — e.g. 'sem', 'phon', 'letter', 'visual'
+   * @param {Float32Array|Float64Array} emb — N-dim embedding vector
+   * @param {number} [strength=1.0] — current scale multiplier
+   */
+  injectEmbeddingToRegion(regionName, emb, strength = 1.0) {
+    const region = this.regions[regionName];
+    if (!region) return;
+    const regionSize = region.end - region.start;
+    if (regionSize <= 0 || !emb || emb.length === 0) return;
+    const groupSize = Math.max(1, Math.floor(regionSize / emb.length));
+    // T17.7 Phase E.a — when cortexCluster has a GPU proxy wired to
+    // main cortex slices, also forward the intent-current pattern so
+    // Phase D's motor argmax readback sees the sem/phon/etc signal
+    // that drove this injection. Before E.a the main-cortex current
+    // slice never received intent; generation's bound path would
+    // decode noise. After E.a, intent lands on BOTH the standalone
+    // CPU externalCurrent (kept for equivalence during E→F window)
+    // AND the main-cortex GPU currents buffer at the first-N sub-slice.
+    const haveProxy = !!(this._gpuProxy && this._gpuProxy.writeCurrentSlice);
+    const fwdIndices = haveProxy ? [] : null;
+    const fwdValues  = haveProxy ? [] : null;
+    for (let d = 0; d < emb.length; d++) {
+      const value = emb[d] * 8 * strength;  // same * 8 scale as legacy mapToCortex
+      const startNeuron = region.start + d * groupSize;
+      for (let n = 0; n < groupSize; n++) {
+        const idx = startNeuron + n;
+        if (idx >= region.end) break;
+        this.externalCurrent[idx] += value;
+        if (fwdIndices && value !== 0) {
+          // Index relative to region start — matches main-cortex
+          // first-N sub-slice where Phase C pattern writes land.
+          fwdIndices.push(idx - region.start);
+          fwdValues.push(value);
+        }
+      }
+    }
+    if (haveProxy && fwdIndices.length > 0) {
+      try { this._gpuProxy.writeCurrentSlice(regionName, fwdIndices, fwdValues); }
+      catch { /* non-fatal — CPU path already updated */ }
+    }
+  }
+
+  /**
+   * T14.4 — Read embedding-shaped output from a named cluster region.
+   * Inverse of injectEmbeddingToRegion. Reads the spike + voltage state
+   * across the region and projects it back into the embedding space the
+   * caller expects (semantic dim, phon dim, etc).
+   *
+   * @param {string} regionName
+   * @param {number} dim — output embedding dimension
+   * @returns {Float64Array} L2-normalized vector
+   */
+  regionReadout(regionName, dim) {
+    const region = this.regions[regionName];
+    if (!region) return new Float64Array(dim);
+    const regionSize = region.end - region.start;
+    const groupSize = Math.max(1, Math.floor(regionSize / dim));
+    const out = new Float64Array(dim);
+    const voltages = this.neurons.getVoltages();
+    for (let d = 0; d < dim; d++) {
+      const startNeuron = region.start + d * groupSize;
+      let sum = 0, count = 0;
+      for (let n = 0; n < groupSize; n++) {
+        const idx = startNeuron + n;
+        if (idx >= region.end) break;
+        if (this.lastSpikes[idx]) sum += 1.0;
+        else sum += (voltages[idx] + 70) / 20;
+        count++;
+      }
+      out[d] = count > 0 ? sum / count : 0;
+    }
+    // T14.24 Session 101 — MEAN-CENTER before L2 normalization so
+    // cosine similarity against signed target features gives
+    // mathematically meaningful results.
+    //
+    // Pre-fix: spike-rate-based readout was ALWAYS non-negative
+    // (spiking cells +1.0, non-spiking near 0.0-0.25 from voltage).
+    // Cosine against signed balanced features like the 24d trig-hash
+    // _phonemeFeatureForLetter gave near-zero random correlation
+    // because positive × signed-balanced ≈ 0. Cosine against
+    // positive-biased features like the 16d graded magnitude
+    // _magnitudeFeatureForDigit gave high scores FOR ANY STATE
+    // INCLUDING UNTRAINED NOISE — false positive, not real training.
+    // That's why math/K READ hit 100% and ela/K READ hit 4% chance
+    // level on Gee's live runs: neither was real training, just
+    // different failure modes of the cosine math.
+    //
+    // Fix: subtract the mean across all dim components before L2
+    // normalizing. The readout becomes a SIGNED deviation-from-
+    // baseline vector instead of an always-positive spike-rate
+    // vector. Now cosine against signed features like phoneme
+    // trig-hashes returns real correlation (high when trained basin
+    // matches, low when random), AND cosine against positive-biased
+    // features like magnitudes no longer gives structural false
+    // positives. Biological analog: fMRI BOLD contrast analysis
+    // always measures deviation from baseline, never absolute rate.
+    let mean = 0;
+    for (let i = 0; i < dim; i++) mean += out[i];
+    mean /= dim;
+    for (let i = 0; i < dim; i++) out[i] -= mean;
+    // L2 normalize the centered vector.
+    let norm = 0;
+    for (let i = 0; i < dim; i++) norm += out[i] * out[i];
+    norm = Math.sqrt(norm) || 1;
+    for (let i = 0; i < dim; i++) out[i] /= norm;
+    return out;
+  }
+
+  /**
+   * T14.1 — Inject a letter one-hot into the cortex letter region.
+   *
+   * Wraps `encodeLetter(letter)` with `injectEmbeddingToRegion('letter', ...)`.
+   * The letter inventory is dynamic: calling this with a never-seen symbol
+   * grows the inventory by one, so the one-hot dimension count matches the
+   * letter region's neuron-group count automatically. Unicode glyphs, emoji,
+   * Chinese characters, Greek letters all enter the same primitive-symbol
+   * space — Unity is NOT restricted to a 26-char English alphabet at the
+   * input layer. Language-identity lock (T14.16.5) enforces English at a
+   * HIGHER layer, not by gating which symbols the letter region can see.
+   *
+   * @param {string} letter  — a single symbol (lowercased inside encodeLetter)
+   * @param {number} [strength=1.0]  — current scale multiplier
+   */
+  injectLetter(letter, strength = 1.0) {
+    if (!this.regions || !this.regions.letter) return;
+    const vec = encodeLetter(letter);
+    if (vec.length === 0) return;
+    this.injectEmbeddingToRegion('letter', vec, strength);
+  }
+
+  /**
+   * T14.1 — Letter-region transition surprise between consecutive ticks.
+   *
+   * Returns |curr_rate - prev_rate| where rate is the mean spike count in
+   * the letter region. A large value means the letter region just shifted
+   * to a different activation pattern (new letter arrived, or attractor
+   * basin flipped), which is the cue T14.2 uses for syllable boundaries
+   * and T14.6 uses for word-boundary detection in the motor emission loop.
+   *
+   * Grounded in Saffran/Aslin/Newport 1996 (Science 274:1926) — infants
+   * segment continuous speech by tracking transition probabilities, not
+   * by reading a dictionary. The cortex learns the same way: statistical
+   * surprise between adjacent ticks is a learnable boundary signal.
+   *
+   * Side effect: updates `_prevLetterRate` so the next call sees this
+   * tick as its "prev". Call once per cortex tick.
+   */
+  letterTransitionSurprise() {
+    if (!this.regions || !this.regions.letter) return 0;
+    const { start, end } = this.regions.letter;
+    const span = end - start;
+    if (span <= 0) return 0;
+    let sum = 0;
+    for (let i = start; i < end; i++) if (this.lastSpikes[i]) sum++;
+    const rate = sum / span;
+    const surprise = Math.abs(rate - this._prevLetterRate);
+    this._prevLetterRate = rate;
+    return surprise;
+  }
+
+  /**
+   * T14.1 — Check whether the motor region has been quiescent for N ticks.
+   *
+   * "Quiescent" means the motor region's current-tick spike rate is below
+   * `threshold` (default 5% of region size — tiny, but non-zero because
+   * background cortex noise produces low baseline spiking). The internal
+   * counter `_motorQuiescentTicks` increments every tick the motor region
+   * is below threshold and resets to 0 as soon as it spikes above it.
+   *
+   * The tick-driven emission loop (T14.6) uses this to decide when the
+   * cortex has stopped producing output for the current utterance. No
+   * hardcoded "emit 5 words then stop" slot counter — the brain stops
+   * when its motor basin settles, which is what biological vSMC does
+   * at end-of-utterance (Bouchard 2013 Nature 495:327).
+   *
+   * @param {number} ticksRequired  — how many consecutive quiet ticks count as "done"
+   * @param {number} [threshold=0.05]  — spike-rate cutoff as fraction of region size
+   * @returns {boolean} — true if motor has been quiet long enough to stop emission
+   */
+  motorQuiescent(ticksRequired, threshold = 0.05) {
+    if (!this.regions || !this.regions.motor) return false;
+    return this._motorQuiescentTicks >= ticksRequired;
+  }
+
+  /**
+   * T14.2 — LEARNED syllable boundary detection via cortex transition surprise.
+   *
+   * Streams a letter sequence through the cortex one letter at a time, ticking
+   * the cluster between each injection so recurrent dynamics settle, and
+   * records the letter-region transition surprise (|currRate − prevRate|) at
+   * each step. Boundaries are local maxima of the surprise series that exceed
+   * the adaptive threshold `mean(δ) + k·std(δ)` computed over the series
+   * itself. Matches how infants find word/syllable boundaries in continuous
+   * speech — Saffran/Aslin/Newport 1996 (Science 274:1926) statistical
+   * segmentation.
+   *
+   * NO hardcoded maximum-onset principle. NO English-specific CV/CVC/CCV
+   * patterns. Syllables emerge from whatever letter-transition basins the
+   * cortex developed during curriculum exposure. Train on Spanish corpus →
+   * learns Spanish syllabification. Train on Mandarin pinyin → learns
+   * Mandarin. Same code, different basins.
+   *
+   * Side effect: this method ticks the cortex and injects currents, so it
+   * perturbs live cluster state. Callers that care (e.g. `dictionary.learnWord`)
+   * are expected to accept this — learning the word IS perturbing the cortex.
+   *
+   * @param {string|string[]} letterSequence  — word string or array of letters
+   * @param {object} [opts]
+   * @param {number} [opts.ticksPerLetter=2]  — cortex ticks between injections
+   * @param {number} [opts.k=0.5]  — std-multiplier for adaptive threshold
+   * @returns {number[]}  — boundary indices (positions in letterSequence where a new syllable starts; always includes 0)
+   */
+  detectBoundaries(letterSequence, opts = {}) {
+    if (!this.regions || !this.regions.letter) return [];
+    const { ticksPerLetter = 2, k = 0.5 } = opts;
+    const letters = typeof letterSequence === 'string'
+      ? Array.from(letterSequence)
+      : letterSequence;
+    if (!letters || letters.length === 0) return [];
+
+    // Reset the transition-surprise baseline so the first letter of THIS
+    // sequence doesn't inherit a stale prevRate from whatever the cortex
+    // was doing before the call.
+    this._prevLetterRate = 0;
+
+    const surprise = new Float64Array(letters.length);
+    for (let i = 0; i < letters.length; i++) {
+      this.injectLetter(letters[i], 1.0);
+      for (let t = 0; t < ticksPerLetter; t++) this.step(0.001);
+      surprise[i] = this.letterTransitionSurprise();
+    }
+
+    // Adaptive threshold from this sequence's own statistics
+    let sum = 0, sumSq = 0;
+    for (let i = 0; i < surprise.length; i++) { sum += surprise[i]; sumSq += surprise[i] * surprise[i]; }
+    const mean = sum / surprise.length;
+    const varV = Math.max(0, sumSq / surprise.length - mean * mean);
+    const std = Math.sqrt(varV);
+    const threshold = mean + k * std;
+
+    // Local maxima above threshold = syllable starts. Index 0 is ALWAYS
+    // a boundary (start of the word). Subsequent boundaries are any i>0
+    // where surprise[i] is a strict local max AND surprise[i] > threshold.
+    const boundaries = [0];
+    for (let i = 1; i < surprise.length; i++) {
+      const prev = surprise[i - 1];
+      const next = i + 1 < surprise.length ? surprise[i + 1] : -Infinity;
+      const isLocalMax = surprise[i] >= prev && surprise[i] >= next;
+      if (isLocalMax && surprise[i] > threshold && i - boundaries[boundaries.length - 1] >= 1) {
+        boundaries.push(i);
+      }
+    }
+    return boundaries;
+  }
+
+  /**
+   * T14.2 — LEARNED stress detection via per-syllable activation peaks.
+   *
+   * Runs `detectBoundaries` first to segment the letter sequence, then
+   * streams the letters again measuring the motor+phon region activation
+   * level during each syllable. The syllable with the highest mean
+   * activation is PRIMARY stress, next-highest is SECONDARY, rest are
+   * unstressed. No hardcoded "single-syllable is PRIMARY, two-syllable
+   * is PRIMARY-SECONDARY" rule — stress is whichever syllable the cortex
+   * activates hardest, which reflects the exposure statistics it learned
+   * from (stressed syllables carry more semantic load → higher cortex
+   * response → higher activation basin).
+   *
+   * @param {string|string[]} letterSequence
+   * @param {object} [opts]
+   * @param {number} [opts.ticksPerLetter=2]
+   * @returns {{ boundaries: number[], stress: number[], primary: number, secondary: number }}
+   *   boundaries: indices where each syllable starts (from detectBoundaries)
+   *   stress: per-syllable mean activation (same length as boundaries)
+   *   primary: index (in boundaries) of the primary-stress syllable
+   *   secondary: index of secondary-stress syllable, or -1 if < 2 syllables
+   */
+  detectStress(letterSequence, opts = {}) {
+    if (!this.regions || !this.regions.phon) {
+      return { boundaries: [], stress: [], primary: -1, secondary: -1 };
+    }
+    const { ticksPerLetter = 2 } = opts;
+    const letters = typeof letterSequence === 'string'
+      ? Array.from(letterSequence)
+      : letterSequence;
+    if (!letters || letters.length === 0) {
+      return { boundaries: [], stress: [], primary: -1, secondary: -1 };
+    }
+
+    const boundaries = this.detectBoundaries(letters, { ticksPerLetter });
+    if (boundaries.length === 0) {
+      return { boundaries: [], stress: [], primary: -1, secondary: -1 };
+    }
+
+    // Second pass — stream again and record phon-region spike fraction at
+    // each letter position. The first pass already left the cortex in a
+    // primed state for this word; the second pass just samples activation.
+    this._prevLetterRate = 0;
+    const phonRegion = this.regions.phon;
+    const phonSpan = phonRegion.end - phonRegion.start;
+    const activation = new Float64Array(letters.length);
+    for (let i = 0; i < letters.length; i++) {
+      this.injectLetter(letters[i], 1.0);
+      for (let t = 0; t < ticksPerLetter; t++) this.step(0.001);
+      let phonSum = 0;
+      for (let n = phonRegion.start; n < phonRegion.end; n++) if (this.lastSpikes[n]) phonSum++;
+      activation[i] = phonSpan > 0 ? phonSum / phonSpan : 0;
+    }
+
+    // Mean activation per syllable (boundaries[s] .. boundaries[s+1]-1)
+    const stress = new Array(boundaries.length).fill(0);
+    for (let s = 0; s < boundaries.length; s++) {
+      const start = boundaries[s];
+      const end = s + 1 < boundaries.length ? boundaries[s + 1] : letters.length;
+      let sum = 0, count = 0;
+      for (let i = start; i < end; i++) { sum += activation[i]; count++; }
+      stress[s] = count > 0 ? sum / count : 0;
+    }
+
+    // Primary = argmax, secondary = second-highest (only if 2+ syllables)
+    let primary = 0, secondary = -1;
+    let primaryVal = -Infinity, secondaryVal = -Infinity;
+    for (let s = 0; s < stress.length; s++) {
+      if (stress[s] > primaryVal) {
+        secondaryVal = primaryVal; secondary = primary;
+        primaryVal = stress[s];   primary = s;
+      } else if (stress[s] > secondaryVal) {
+        secondaryVal = stress[s]; secondary = s;
+      }
+    }
+    if (stress.length < 2) secondary = -1;
+
+    return { boundaries, stress, primary, secondary };
+  }
+
+  /**
+   * T14.9 — Working-memory readout from the cortex `free` sub-region.
+   *
+   * Replaces the old `_discourseState` 6-turn ring buffer concept. The
+   * `free` sub-region (fraction 0.250-0.500 of cluster.size, T14.4) is
+   * the cortex working-memory scratchpad — every user turn injects the
+   * parsed content into this region with high strength, slow LIF
+   * dynamics decay it between turns, and on-topic turns reinforce
+   * whatever pattern was already there. Topic continuity at generation
+   * time is just "read the free region's spike pattern" — no stored
+   * topic vector, no maxTurns cap, no hardcoded blend constants.
+   *
+   * @param {number} [dim=PATTERN_DIM]  — output dimension to project to
+   * @returns {Float64Array}  — L2-normalized activation snapshot
+   */
+  workingMemoryReadout(dim = 64) {
+    if (!this.regions || !this.regions.free) return new Float64Array(dim);
+    return this.regionReadout('free', dim);
+  }
+
+  /**
+   * T17.7 Phase E.b — async variant of workingMemoryReadout that reads
+   * the main-cortex free sub-slice via GPU bucketed reduction when the
+   * gpuProxy's readbackLetterBuckets is wired. Returns the same
+   * Float64Array shape as the sync variant — callers that use the
+   * result for re-injection (generateSentenceAwait's topic-continuity
+   * re-inject) can swap without further changes.
+   *
+   * Falls through to the sync CPU regionReadout if the proxy is
+   * missing or the readback fails, so non-GPU callers still work.
+   * L2-normalize to match regionReadout's output contract.
+   */
+  async workingMemoryReadoutAwait(dim = 64) {
+    if (!this.regions || !this.regions.free) return new Float64Array(dim);
+    const region = this.regions.free;
+    const regionSize = region.end - region.start;
+    if (regionSize <= 0) return new Float64Array(dim);
+    const haveProxy = !!(this._gpuProxy && typeof this._gpuProxy.readbackLetterBuckets === 'function');
+    if (!haveProxy) return this.regionReadout('free', dim);
+    try {
+      const bucketSize = Math.floor(regionSize / dim);
+      if (bucketSize <= 0) return this.regionReadout('free', dim);
+      const readLen = bucketSize * dim;  // trim any remainder
+      const counts = await this._gpuProxy.readbackLetterBuckets('free', dim, readLen, 0);
+      if (!counts || counts.length !== dim) return this.regionReadout('free', dim);
+      // Normalize to [0, 1] by dividing each bucket count by its
+      // neuron count — mirrors regionReadout's fraction-of-firing
+      // semantics. Then L2-normalize the output vector so downstream
+      // cosine comparisons match the sync variant's contract.
+      const out = new Float64Array(dim);
+      let l2 = 0;
+      for (let b = 0; b < dim; b++) {
+        out[b] = counts[b] / bucketSize;
+        l2 += out[b] * out[b];
+      }
+      if (l2 > 1e-12) {
+        const inv = 1 / Math.sqrt(l2);
+        for (let b = 0; b < dim; b++) out[b] *= inv;
+      }
+      return out;
+    } catch {
+      return this.regionReadout('free', dim);
+    }
+  }
+
+  /**
+   * T14.9 — Inject a content vector into the working-memory region.
+   * Called by the sensory path on every user turn so the free region's
+   * activation pattern represents the current discourse topic. No blend
+   * constants — the cortex's own LIF decay + cross-region Hebbian handle
+   * topic fade / reinforcement automatically.
+   */
+  injectWorkingMemory(contentVec, strength = 0.8) {
+    if (!this.regions || !this.regions.free || !contentVec || contentVec.length === 0) return;
+    this.injectEmbeddingToRegion('free', contentVec, strength);
+  }
+
+  /**
+   * T14.10 — Read text through the visual pathway.
+   *
+   * For each character in `text`, drives the visual sub-region with
+   * the letter's learned visual template (if visualCortex is wired),
+   * then injects the letter one-hot into the letter region via the
+   * existing T14.1 injectLetter path. When curriculum has trained
+   * the visual↔letter cross-projection, the visual-region spikes
+   * arrive at letter region anyway via T14.4 propagation — this
+   * explicit injection is belt-and-braces guaranteeing the letter
+   * region fires regardless of how deep visual learning is.
+   *
+   * Ticks the cluster between characters so recurrent dynamics settle.
+   * Used by `engine.processAndRespond` to route text input through
+   * the visual pathway instead of the direct letter-injection path,
+   * matching the biological reading pipeline (visual → letter → phon
+   * → sem → fineType) from Hickok & Poeppel 2007.
+   *
+   * @param {string} text
+   * @param {object} [opts]
+   * @param {number} [opts.ticksPerChar=2]
+   * @param {object} [opts.visualCortex]  — optional VisualCortex instance
+   *   with `renderLetterTemplate(letter) → Float64Array` capability
+   */
+  readText(text, opts = {}) {
+    if (!this.regions || !this.regions.letter || !text) return;
+    const ticksPerChar = opts.ticksPerChar ?? 2;
+    const visualCortex = opts.visualCortex || null;
+    // T14.17 — subvocalization path. When an auditoryCortex is wired
+    // alongside visualCortex, each character also drives the auditory
+    // sub-region via the phoneme template. This matches biological
+    // silent reading which activates auditory cortex via covert
+    // articulation — Pulvermüller 2005 (Nat Rev Neurosci 6:576),
+    // Perrone-Bertolotti 2014 (Behav Brain Res 261:220). Curriculum
+    // exposure builds visual↔letter AND auditory↔phon convergence
+    // simultaneously through the same read pass.
+    const auditoryCortex = opts.auditoryCortex || null;
+    const chars = Array.from(text.toLowerCase());
+    this._prevLetterRate = 0;
+    for (const ch of chars) {
+      if (visualCortex && typeof visualCortex.renderLetterTemplate === 'function') {
+        const template = visualCortex.renderLetterTemplate(ch);
+        if (template && template.length > 0 && this.regions.visual) {
+          this.injectEmbeddingToRegion('visual', template, 0.7);
+        }
+      }
+      if (auditoryCortex && typeof auditoryCortex.renderPhonemeTemplate === 'function') {
+        const template = auditoryCortex.renderPhonemeTemplate(ch);
+        if (template && template.length > 0 && this.regions.auditory) {
+          this.injectEmbeddingToRegion('auditory', template, 0.5);
+        }
+      }
+      this.injectLetter(ch, 1.0);
+      for (let t = 0; t < ticksPerChar; t++) this.step(0.001);
+    }
+  }
+
+  /**
+   * T14.16.5 — Split text into clauses for per-clause identity-lock
+   * gating. Splits on sentence terminators (. ! ?), commas/semicolons/
+   * colons as strong phrase boundaries, line breaks, and the English
+   * coordinating conjunctions (` and `, ` or `, ` but `, ` so `). Each
+   * resulting clause is a learning unit — Lock 1's English gate runs
+   * independently per clause so a mixed-language input like
+   * `"hi unity 你好"` learns from the English clause and silently
+   * drops the foreign clause, which per-utterance granularity could
+   * not do.
+   *
+   * @param {string} text
+   * @returns {string[]} — trimmed non-empty clauses
+   */
+  splitIntoClauses(text) {
+    if (!text || typeof text !== 'string') return [];
+    return text
+      .split(/[.!?;:,\n]+|\s+(?:and|or|but|so)\s+/i)
+      .map(c => c.trim())
+      .filter(c => c.length > 0);
+  }
+
+  /**
+   * T14.16.5 — Compute a clause's average letter-region transition
+   * surprise. Streams the clause's letters through the cortex one at
+   * a time (same mechanism as T14.2 `detectBoundaries`), records
+   * `letterTransitionSurprise()` per letter, returns the mean. High
+   * values mean the letter sequence doesn't match the cortex's learned
+   * phonotactic basins — Lock 1's English gate uses this as its first
+   * rejection signal.
+   *
+   * NOTE: Perturbs live cortex state (ticks + injects). Caller is
+   * expected to pass this through after cortex has already absorbed
+   * the main input, so the perturbation is part of the reading path,
+   * not an extra side effect.
+   *
+   * @param {string} clause
+   * @returns {number}
+   */
+  computeTransitionSurprise(clause) {
+    if (!this.regions || !this.regions.letter || !clause) return 0;
+    const letters = String(clause).toLowerCase().replace(/[^a-z']/g, '');
+    if (letters.length === 0) return Infinity; // non-alphabetic clause = max surprise
+    this._prevLetterRate = 0;
+    let sum = 0;
+    let count = 0;
+    for (const ch of letters) {
+      this.injectLetter(ch, 1.0);
+      for (let t = 0; t < 2; t++) this.step(0.001);
+      sum += this.letterTransitionSurprise();
+      count++;
+    }
+    return count > 0 ? sum / count : 0;
+  }
+
+  /**
+   * T14.16.5 — Compute a clause's fineType coverage. Counts the
+   * proportion of clause words that have at least one English-letter
+   * character run. Returns a value in [0, 1]. The Lock 1 gate rejects
+   * clauses where this drops below `ENGLISH_FINETYPE_MIN` (calibrated
+   * from curriculum, defaults to 0 = permissive until calibration).
+   *
+   * Intentionally a simple surface metric for now — full cortex-
+   * resident fineType readout via `regionReadout('fineType', dim)`
+   * argmaxed against learned basins is T14.17 work. The surface
+   * metric catches the most important case (non-Latin script inputs)
+   * without needing curriculum to have trained anything yet.
+   *
+   * @param {string} clause
+   * @returns {number}
+   */
+  computeFineTypeCoverage(clause) {
+    if (!clause) return 0;
+    const words = String(clause).toLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return 0;
+
+    // Surface layer: proportion of words with English-letter character runs
+    let surfaceRecognized = 0;
+    for (const w of words) {
+      if (/[a-z]/.test(w)) surfaceRecognized++;
+    }
+    const surfaceCoverage = surfaceRecognized / words.length;
+
+    // T14.17 — cortex layer: fineType region spike-rate fraction after
+    // streaming the clause's letters through the visual→letter pathway.
+    // When the fineType region has been shaped by curriculum, this
+    // metric reflects whether the clause matches a learned English
+    // grammatical pattern. Before curriculum (region near-random), it
+    // just mirrors the surface metric, so the combined score degrades
+    // gracefully to surface-only behavior.
+    if (this.regions && this.regions.fineType) {
+      const { start, end } = this.regions.fineType;
+      const span = end - start;
+      if (span > 0) {
+        let sum = 0;
+        for (let i = start; i < end; i++) if (this.lastSpikes[i]) sum++;
+        const fineTypeRate = sum / span;
+        // Blend surface (70%) with cortex fineType activation (30%).
+        // Surface dominates pre-curriculum, cortex contributes more as
+        // its basins sharpen from corpus exposure.
+        return Math.max(0, Math.min(1, surfaceCoverage * 0.7 + fineTypeRate * 0.3));
+      }
+    }
+    return surfaceCoverage;
+  }
+
+  /**
+   * T14.16.5 — Identity-locked live-chat learning entry point.
+   *
+   * Lock 1: Splits text into clauses, gates each against the English
+   * phonotactic basins (transition surprise) + fineType coverage.
+   * Passing clauses are learned; rejected clauses are silently dropped.
+   *
+   * Lock 2: Live-chat learning rate HARD-CAPPED at 0.0001 (120×
+   * slower than curriculum's 0.012). Only `_inCurriculumMode = true`
+   * bypasses the cap — so no live-chat caller can accidentally fire
+   * Hebbian at curriculum strength even if they pass a higher `lr`.
+   *
+   * Hebbian fires on the current spike snapshot — full Hebbian on
+   * the letter stream already happened via the `readText` pass
+   * upstream; this reinforces the resulting cortex state after
+   * reading.
+   *
+   * Curriculum paths bypass this entirely — they call `cluster.learn`
+   * or `cluster.learnSentenceHebbian` directly at 0.012 under
+   * `_inCurriculumMode = true`.
+   *
+   * @param {string} text
+   * @returns {{ accepted: number, rejected: number }}
+   */
+  learnClause(text) {
+    if (!text || typeof text !== 'string') return { accepted: 0, rejected: 0 };
+    const clauses = this.splitIntoClauses(text);
+    let accepted = 0;
+    let rejected = 0;
+    // Lock 2 — clamp rate to 0.0001 unless curriculum has flagged bypass
+    const lr = this._inCurriculumMode ? 0.0001 : 0.0001;  // live chat always 0.0001
+    for (const clause of clauses) {
+      const surprise = this.computeTransitionSurprise(clause);
+      const coverage = this.computeFineTypeCoverage(clause);
+      if (surprise > this.ENGLISH_SURPRISE_THRESHOLD || coverage < this.ENGLISH_FINETYPE_MIN) {
+        rejected++;
+        continue;
+      }
+      // Lock 1-passed clause — fire Hebbian at the clamped live-chat rate.
+      const snapshot = new Float64Array(this.lastSpikes);
+      this.synapses.rewardModulatedUpdate(snapshot, snapshot, 0, lr);
+      this._crossRegionHebbian(lr);
+      accepted++;
+    }
+    return { accepted, rejected };
+  }
+
+  /**
+   * T14.16.5 — Lock 3 periodic identity refresh. Runs a persona-corpus
+   * slice through full curriculum Hebbian to reshape cortex basins back
+   * toward the post-curriculum baseline. Called from `inner-voice.learn`
+   * every `IDENTITY_REFRESH_INTERVAL` turns (default 100).
+   *
+   * Stratified refresh (one sentence per persona dimension per pass)
+   * requires T14.17 `personaDimensions` clustering which hasn't shipped
+   * yet. Current implementation does a simple uniform refresh: if a
+   * `_personaRefreshCorpus` array is available on the cluster (populated
+   * by curriculum boot), it picks `sentencesPerCycle` sentences from it
+   * and runs them through `learnSentenceHebbian` at curriculum rate.
+   *
+   * @param {object} [opts]
+   * @param {number} [opts.sentencesPerCycle=8]
+   * @param {number} [opts.lr=0.012]
+   */
+  runIdentityRefresh(opts = {}) {
+    const sentencesPerCycle = opts.sentencesPerCycle ?? 8;
+    const lr = opts.lr ?? 0.012;
+
+    // T14.17 — Stratified sampling from personaDimensions. If curriculum
+    // populated the persona dimensions clustering, draw ONE sentence per
+    // dimension per cycle so every persona trait gets refreshed on every
+    // pass — not just whichever sentences random uniform sampling happened
+    // to pick. This guarantees that even dimensions with few corpus
+    // sentences (e.g. an edge-case persona trait that's only said twice
+    // in the full persona file) still get reinforced on every 100-turn
+    // refresh cycle.
+    const useStratified = Array.isArray(this.personaDimensions)
+                       && this.personaDimensions.length > 0;
+
+    if (!useStratified &&
+        (!Array.isArray(this._personaRefreshCorpus) || this._personaRefreshCorpus.length === 0)) {
+      if (!this._loggedRefreshMissing) {
+        console.log('[IDENTITY] runIdentityRefresh — no persona corpus or dimensions wired; refresh skipped');
+        this._loggedRefreshMissing = true;
+      }
+      return { refreshed: 0 };
+    }
+
+    const wasInCurriculum = this._inCurriculumMode;
+    this._inCurriculumMode = true;
+    let refreshed = 0;
+
+    const applySentence = (sentence) => {
+      const embSeq = sentence.split(/\s+/).map(w => sharedEmbeddings.getEmbedding(w));
+      if (embSeq && this.learnSentenceHebbian) {
+        try {
+          this.learnSentenceHebbian(embSeq, { lr });
+          refreshed++;
+        } catch (err) {
+          // Non-fatal — continue with the rest of the stratified pass
+        }
+      }
+    };
+
+    if (useStratified) {
+      // Stratified: one sentence per dimension per cycle, up to
+      // sentencesPerCycle dimensions. When 'all' is requested, walk
+      // the full stratified set once.
+      const wantAll = opts.sentencesPerCycle === 'all';
+      const limit = wantAll ? this.personaDimensions.length
+                            : Math.min(sentencesPerCycle, this.personaDimensions.length);
+      for (let d = 0; d < limit; d++) {
+        const dim = this.personaDimensions[d];
+        if (!dim || !dim.sentences || dim.sentences.length === 0) continue;
+        const pick = dim.sentences[Math.floor(Math.random() * dim.sentences.length)];
+        applySentence(pick);
+      }
+    } else {
+      // Fallback: uniform sample from the flat corpus
+      const corpus = this._personaRefreshCorpus;
+      const n = Math.min(sentencesPerCycle, corpus.length);
+      for (let i = 0; i < n; i++) {
+        const idx = Math.floor(Math.random() * corpus.length);
+        applySentence(corpus[idx]);
+      }
+    }
+
+    this._inCurriculumMode = wasInCurriculum;
+    return { refreshed };
+  }
+
+  /**
+   * T14.16.5 — Mode-collapse audit. Called every `MODE_COLLAPSE_AUDIT_INTERVAL`
+   * turns (default 500). Measures three health indicators against the
+   * calibrated thresholds and triggers an emergency refresh if any
+   * falls below its baseline. Thresholds are 0 by default (permissive)
+   * until curriculum calibration populates them.
+   */
+  _modeCollapseAudit(recentSentences = []) {
+    const entropy = this._computeOutputEntropy(recentSentences);
+    const vocabDiv = this._computeVocabDiversity(recentSentences);
+    const wmVariance = this._computeWorkingMemoryVariance();
+    const collapsed = (entropy < this.HEALTH_ENTROPY_MIN)
+                   || (vocabDiv < this.HEALTH_VOCAB_MIN)
+                   || (wmVariance < this.HEALTH_WM_VARIANCE_MIN);
+    if (collapsed) {
+      console.warn('[IDENTITY] mode collapse detected — emergency refresh', { entropy, vocabDiv, wmVariance });
+      this.runIdentityRefresh({ sentencesPerCycle: 32, lr: 0.012 });
+      return { collapsed: true, entropy, vocabDiv, wmVariance };
+    }
+    return { collapsed: false, entropy, vocabDiv, wmVariance };
+  }
+
+  _computeOutputEntropy(sentences) {
+    if (!sentences || sentences.length === 0) return 0;
+    const wordCounts = new Map();
+    let total = 0;
+    for (const s of sentences) {
+      const words = String(s).toLowerCase().split(/\s+/).filter(Boolean);
+      for (const w of words) {
+        wordCounts.set(w, (wordCounts.get(w) || 0) + 1);
+        total++;
+      }
+    }
+    if (total === 0) return 0;
+    let h = 0;
+    for (const c of wordCounts.values()) {
+      const p = c / total;
+      if (p > 0) h -= p * Math.log2(p);
+    }
+    return h;
+  }
+
+  _computeVocabDiversity(sentences) {
+    if (!sentences || sentences.length === 0) return 0;
+    const unique = new Set();
+    let total = 0;
+    for (const s of sentences) {
+      const words = String(s).toLowerCase().split(/\s+/).filter(Boolean);
+      for (const w of words) { unique.add(w); total++; }
+    }
+    return total > 0 ? unique.size / total : 0;
+  }
+
+  _computeWorkingMemoryVariance() {
+    if (!this.regions || !this.regions.free) return 0;
+    const { start, end } = this.regions.free;
+    let sum = 0, sumSq = 0;
+    const span = end - start;
+    if (span <= 0) return 0;
+    for (let i = start; i < end; i++) {
+      const v = this.lastSpikes[i] ? 1 : 0;
+      sum += v;
+      sumSq += v * v;
+    }
+    const mean = sum / span;
+    const variance = sumSq / span - mean * mean;
+    return Math.max(0, variance);
+  }
+
+  /**
+   * T14.12 — Unified read-input entry point. Drives the visual→letter
+   * pathway via `readText`, then returns a structured stub with the
+   * intent/self-reference/addressesUser flags that engine.injectParseTree
+   * (and any downstream consumer) needs for current-tick routing.
+   *
+   * Replaces `LanguageCortex.parseSentence` which was deleted in T14.12.
+   * The intent classification is a cortex-state readout from the fineType
+   * region via `intentReadout()` once curriculum has trained the basins;
+   * until then it falls back to a lightweight first-token heuristic over
+   * the raw text so existing consumers keep working during the curriculum-
+   * bootstrap period. Full learned-readout ships with T14.17.
+   *
+   * @param {string} text
+   * @param {object} [opts]
+   * @param {object} [opts.visualCortex]
+   * @returns {{ text, words, intent, isSelfReference, addressesUser, isQuestion }}
+   */
+  readInput(text, opts = {}) {
+    if (!text || typeof text !== 'string') {
+      return { text: '', words: [], intent: 'unknown', isSelfReference: false, addressesUser: false, isQuestion: false };
+    }
+    // Drive the visual→letter pathway so cortex state reflects the input.
+    // T14.17 — also drive the auditory→phon subvocalization path when an
+    // auditory cortex is wired, so cross-stream convergence gets built
+    // on every read (Pulvermüller 2005 silent-reading subvocalization).
+    this.readText(text, {
+      visualCortex: opts.visualCortex,
+      auditoryCortex: opts.auditoryCortex,
+      ticksPerChar: 2,
+    });
+
+    // Try cortex-resident intent readout first (T14.7 fineType basins
+    // once curriculum has shaped them)
+    let intent = this.intentReadout() || 'unknown';
+
+    // Lightweight fallback heuristic for pre-curriculum state. NOT
+    // hardcoded grammar — these are cheap text-surface signals that
+    // the cortex would also learn naturally. Once T14.5 curriculum has
+    // trained enough corpus to make `intentReadout` reliable, this
+    // fallback becomes unreached dead code.
+    if (intent === 'unknown') {
+      const lower = text.toLowerCase().trim();
+      if (lower.length > 0) {
+        if (lower.endsWith('?')) intent = 'question';
+        else if (lower.endsWith('!')) intent = 'emotion';
+        else if (/^(hi|hey|hello|sup|yo|good (morning|evening|afternoon))\b/.test(lower)) intent = 'greeting';
+        else if (/^(what|who|where|when|why|how|which|whose)\b/.test(lower)) intent = 'question';
+        else intent = 'statement';
+      }
+    }
+
+    // Lightweight self-reference + addresses-Unity detection. Same
+    // rationale — simple surface signal until cortex basins take over.
+    const lower = text.toLowerCase();
+    const words = lower.replace(/[^a-z0-9' ]/g, ' ').split(/\s+/).filter(Boolean);
+    const wordSet = new Set(words);
+    const addressesUser = wordSet.has('unity') || wordSet.has('you') || wordSet.has('your') || wordSet.has("you're");
+    const isSelfReference = wordSet.has('i') || wordSet.has('im') || wordSet.has("i'm") || wordSet.has('my') || wordSet.has('me') || wordSet.has('myself');
+    const isQuestion = intent === 'question';
+
+    return { text, words, intent, isSelfReference, addressesUser, isQuestion };
+  }
+
+  /**
+   * T14.13 — Sentence-form schema score (migrated from LanguageCortex).
+   * Same Laplace smoothing as the T14.8 implementation.
+   */
+  schemaScore(slot, fineType, intent = 'unknown') {
+    const intentSchema = this.sentenceFormSchemas.get(intent);
+    if (!intentSchema) return 1 / 2;
+    const slotBucket = intentSchema.get(slot);
+    if (!slotBucket) return 1 / 2;
+    const total = this.sentenceFormTotals.get(intent)?.get(slot) || 0;
+    if (total === 0) return 1 / 2;
+    const count = slotBucket.get(fineType) || 0;
+    const uniqueTypes = slotBucket.size;
+    return (count + 1) / (total + Math.max(1, uniqueTypes));
+  }
+
+  /**
+   * T14.13 — Type transition weight (migrated from LanguageCortex).
+   */
+  typeTransitionWeight(prevType, nextType) {
+    const row = this.fineTypeTransitions.get(prevType);
+    if (!row) return 1 / 2;
+    let total = 0;
+    for (const v of row.values()) total += v;
+    if (total === 0) return 1 / 2;
+    const count = row.get(nextType) || 0;
+    const uniqueTypes = row.size;
+    return (count + 1) / (total + Math.max(1, uniqueTypes));
+  }
+
+  /**
+   * T14.13 — Record intent pair observation (migrated from LanguageCortex).
+   */
+  recordIntentPair(userIntent, responseIntent) {
+    if (!userIntent || !responseIntent) return;
+    let row = this.intentResponseMap.get(userIntent);
+    if (!row) {
+      row = new Map();
+      this.intentResponseMap.set(userIntent, row);
+    }
+    row.set(responseIntent, (row.get(responseIntent) || 0) + 1);
+  }
+
+  /**
+   * T14.13 — Argmax response intent for a given user intent.
+   */
+  responseIntentFor(userIntent) {
+    const row = this.intentResponseMap.get(userIntent);
+    if (!row || row.size === 0) return null;
+    let best = null;
+    let bestCount = -1;
+    for (const [resp, count] of row) {
+      if (count > bestCount) { best = resp; bestCount = count; }
+    }
+    return best;
+  }
+
+  /**
+   * T14.17 — Cortex-state intent readout. Returns the argmax intent
+   * label from `cluster.intentCentroids` (populated at curriculum time
+   * by `Curriculum._calibrateIdentityLock`). Reads the current sem
+   * region as a 300d vector and computes cosine similarity against
+   * each learned intent centroid — highest cosine wins.
+   *
+   * Returns null when curriculum hasn't run yet (centroids empty) so
+   * `readInput` can fall through to its surface heuristic. Once
+   * curriculum is live, this takes over and the heuristic becomes
+   * unreached dead code.
+   *
+   * @returns {string|null}
+   */
+  intentReadout() {
+    if (!this.intentCentroids || this.intentCentroids.size === 0) return null;
+    const sem = this.regionReadout('sem', 300);
+    if (!sem || sem.length === 0) return null;
+    // Reuse sharedEmbeddings similarity — same math as the centroid
+    // normalization in curriculum, keeps the metric consistent.
+    let bestIntent = null;
+    let bestSim = -Infinity;
+    for (const [intent, centroid] of this.intentCentroids) {
+      if (!centroid || centroid.length === 0) continue;
+      // Cosine between sem and centroid (both L2-normalized already
+      // — sem via regionReadout, centroid via curriculum normalization)
+      let dot = 0;
+      const len = Math.min(sem.length, centroid.length);
+      for (let i = 0; i < len; i++) dot += sem[i] * centroid[i];
+      if (dot > bestSim) { bestSim = dot; bestIntent = intent; }
+    }
+    // Require a minimum confidence so near-zero readouts (pre-injection
+    // or cortex-quiescent state) don't return garbage labels
+    if (bestSim < 0.1) return null;
+    return bestIntent;
+  }
+
+  /**
+   * T14.12 — Semantic readout for a specific text anchor. Reads the sem
+   * region as the L2-normalized activation vector, which represents the
+   * cortex's current semantic understanding. This is the cortex-resident
+   * replacement for the R2 `getSemanticReadout(embeddings)` convention —
+   * same math, different naming to match the T14.12 unified pipeline.
+   *
+   * @param {string} [_text]  — currently unused; reserved for future per-
+   *   text priming override (inject then read) once curriculum tuning
+   *   reveals whether a fresh inject helps readout stability
+   */
+  semanticReadoutFor(_text) {
+    return this.regionReadout('sem', 300);
+  }
+
+  /**
+   * T14.12 — Entity readout from the sem region. Placeholder that
+   * returns the same readout as `semanticReadoutFor` for now; once the
+   * T14.17 entity-slot attractor pass lands, this will cluster the sem
+   * readout into learned entity-slot patterns and return a structured
+   * `{ entityCount, entityVectors }` payload.
+   */
+  entityReadout() {
+    return this.regionReadout('sem', 300);
+  }
+
+  /**
+   * T14.6 — Cortex tick-driven motor emission.
+   *
+   * Speech production is a continuous time-varying motor cortex output,
+   * not a discrete sequence of slot draws or candidate scores. This method
+   * replaces the T13 slot scorer entirely. No slot counter. No candidate
+   * pool. No dictionary iteration. No per-word cosine. No softmax. No
+   * temperature. The brain ticks; letters fall out of the motor region
+   * over time; word boundaries come from cortex transition surprise; the
+   * loop stops when the motor region quiesces or a sentence terminator
+   * emits.
+   *
+   * STEP 1 — Inject intent. If `intentSeed` is provided, drive the sem
+   * region with it once at the start; otherwise rely on whatever state
+   * the cortex already has (which is how the app's live path calls this
+   * — the cortex is already primed by user-input processing before
+   * generation runs).
+   *
+   * STEP 2 — Tick the brain. At each tick, read the motor region as a
+   * dim-|L| vector via `regionReadout('motor', inventorySize())`, decode
+   * to a letter via `decodeLetter(vec)` (argmax over the T14.1 letter
+   * inventory). A letter is EMITTED to the current word buffer when the
+   * motor region holds the same argmax for `STABLE_TICK_THRESHOLD`
+   * consecutive ticks (biological vSMC dwell-time, Bouchard 2013 Nature
+   * 495:327 observed ~50-100 ms per articulator).
+   *
+   * STEP 3 — Word boundaries via `letterTransitionSurprise()` compared
+   * to `WORD_BOUNDARY_THRESHOLD`. Same mechanism as T14.2 syllable
+   * boundaries, applied at the letter-output stream scale
+   * (Saffran/Aslin/Newport 1996 Science 274:1926).
+   *
+   * STEP 4 — Stopping via three priority-ordered signals: (a) motor
+   * quiescence for `END_QUIESCE_TICKS` consecutive ticks (end-of-
+   * utterance attractor settling), (b) a sentence terminator (`.`/`?`/`!`)
+   * stabilizes in the motor readout, (c) `MAX_EMISSION_TICKS` hard cap
+   * as a safety net.
+   *
+   * @param {Float32Array|Float64Array|null} intentSeed — optional sem-
+   *   region injection vector. Null = use current cortex state as implicit
+   *   intent.
+   * @param {object} [opts]
+   * @param {number} [opts.injectStrength=0.6]
+   * @param {number} [opts.maxTicks] — override MAX_EMISSION_TICKS per call
+   * @returns {string} — space-separated emitted words, or '' if the
+   *   motor region never produced anything stable.
+   */
+  generateSentence(intentSeed = null, opts = {}) {
+    if (!this.regions || !this.regions.motor || !this.regions.letter) return '';
+    if (inventorySize() === 0) return '';
+
+    const injectStrength = opts.injectStrength ?? 0.6;
+    const maxTicks = opts.maxTicks ?? this.MAX_EMISSION_TICKS;
+
+    // Session 114.19n — optional noise suppression for deliberate
+    // emissions. When `suppressNoise` is true (popups passing
+    // _internalThought, curriculum gate probes, any call that wants
+    // cleaner argmax over settled attractors), save runtime noise →
+    // drop to 0.5 → restore on return. Live chat emission path
+    // passes suppressNoise=false (default) to keep chaotic thinking.
+    const suppressNoise = opts.suppressNoise === true;
+    const _savedNoise = this.noiseAmplitude;
+    if (suppressNoise) this.noiseAmplitude = 0.5;
+
+    // STEP 1 — Inject intent if caller provided one. Null means
+    // "cortex is already primed, just tick."
+    if (intentSeed && intentSeed.length > 0 && this.regions.sem) {
+      this.injectEmbeddingToRegion('sem', intentSeed, injectStrength);
+    }
+
+    // T14.17 — Topic continuity via T14.9 working-memory injection.
+    // Reads the free sub-region's current activation as the running
+    // discourse topic and re-injects it into the sem region at a
+    // weaker strength than the intent seed. This gives generation
+    // automatic conversation thread awareness — the generated response
+    // will tend toward words related to whatever topic the free
+    // region has been holding across recent turns. No stored topic
+    // vector, no blend constants at the equation level — just a
+    // cortex-state readout fed back into cortex input.
+    if (this.regions.free && this.regions.sem) {
+      const wm = this.workingMemoryReadout(300);
+      // Check for non-trivial activation — near-zero readouts would
+      // just add noise to the sem injection
+      let wmNorm = 0;
+      for (let i = 0; i < wm.length; i++) wmNorm += wm[i] * wm[i];
+      if (wmNorm > 0.01) {
+        this.injectEmbeddingToRegion('sem', wm, injectStrength * 0.4);
+      }
+    }
+
+    // Reset the letter-region transition surprise baseline so the first
+    // tick of emission doesn't inherit a stale delta from whatever the
+    // cortex was doing before generation started.
+    this._prevLetterRate = 0;
+    this._motorQuiescentTicks = 0;
+
+    const output = [];
+    let letterBuffer = '';
+    let lastMotorLetter = null;
+    let stableTicks = 0;
+
+    for (let tick = 0; tick < maxTicks; tick++) {
+      this.step(0.001);
+
+      // STEP 2a — Read motor region as a letter activation vector over
+      // the T14.1 inventory, argmax-decode to a single letter. Returns
+      // null if the motor region is blank (no clear winner).
+      const invSize = inventorySize();
+      if (invSize === 0) break;
+      const motorVec = this.regionReadout('motor', invSize);
+      const activeLetter = decodeLetter(motorVec);
+
+      // STEP 2b — Temporal stability — a letter "commits" when the
+      // motor region has held the same argmax for STABLE_TICK_THRESHOLD
+      // consecutive ticks. Matches biological vSMC dwell time.
+      if (activeLetter === lastMotorLetter && activeLetter !== null) {
+        stableTicks++;
+      } else {
+        stableTicks = 0;
+        lastMotorLetter = activeLetter;
+      }
+
+      let committedLetter = null;
+      if (stableTicks >= this.STABLE_TICK_THRESHOLD && activeLetter !== null) {
+        committedLetter = activeLetter;
+        letterBuffer += activeLetter;
+        stableTicks = 0;
+
+        // Session 114.13 Fix D — clear the motor region after a letter
+        // commits so the just-committed letter's activation doesn't
+        // stick for many consecutive ticks via self-loop reinforcement.
+        // Without this reset, at large cluster scale (13M+ neurons) the
+        // symmetric intra-cluster Hebbian self-loops + cross-projection
+        // feedback keep the committed letter firing, producing
+        // "fffffffv vvvvvvvaaaaaaa" letter-sticking emissions. Clearing
+        // the motor region doesn't lose information — the next tick's
+        // cross-projections (sem→motor, motor←letter) will re-populate
+        // motor from the cortex's current sem/letter state which has
+        // ALREADY advanced past the committed letter via the persistent
+        // cortex dynamics.
+        if (this.regions.motor) {
+          const { start, end } = this.regions.motor;
+          for (let j = start; j < end; j++) this.lastSpikes[j] = 0;
+        }
+        // Reset the motor-argmax tracking so the next letter starts
+        // from a clean stability count.
+        lastMotorLetter = null;
+        this._motorQuiescentTicks = 0;
+      }
+
+      // STEP 3 — Word boundary via cortex letter-region transition
+      // surprise. Same mechanism as T14.2 syllable boundaries, applied
+      // to the letter output stream.
+      const surprise = this.letterTransitionSurprise();
+      if (surprise > this.WORD_BOUNDARY_THRESHOLD && letterBuffer.length > 0) {
+        output.push(letterBuffer);
+        letterBuffer = '';
+      }
+
+      // STEP 4a — Sentence terminator check fires on the COMMITTED
+      // letter only, not on every transient argmax. Prevents noise in
+      // the motor region from stopping emission on a brief punctuation
+      // flicker.
+      if (committedLetter && T14_TERMINATORS.has(committedLetter)) {
+        if (letterBuffer.length > 0) {
+          output.push(letterBuffer);
+          letterBuffer = '';
+        }
+        break;
+      }
+
+      // STEP 4b — Motor quiescence (end-of-utterance attractor settled).
+      // Only kicks in after at least one word has been emitted, so the
+      // loop doesn't bail on a slow start.
+      if (output.length > 0 && this.motorQuiescent(this.END_QUIESCE_TICKS)) {
+        break;
+      }
+    }
+
+    // STEP 5 — Flush the residual buffer.
+    if (letterBuffer.length > 0) {
+      output.push(letterBuffer);
+    }
+
+    // Session 114.19n — restore runtime noise for post-emission live
+    // dynamics. No-op if suppressNoise was false.
+    if (suppressNoise) this.noiseAmplitude = _savedNoise;
+    return output.join(' ');
+  }
+
+  /**
+   * T18.4.b — Async variant of `generateSentence` that uses `stepAwait`
+   * so every tick pre-awaits its GPU cross-region + intra-synapse
+   * propagates before running the LIF integrator. Eliminates the
+   * cache-miss fallback path entirely at the cost of one GPU round-
+   * trip per tick. Use this from async callers (live chat emission,
+   * curriculum dynamic-write probes where correctness matters more
+   * than throughput) when GPU is ready and consistent-per-tick
+   * latency is preferable to fire-and-forget gambling.
+   *
+   * Maintenance paired with `generateSentence()` — any change to the
+   * tick loop body must be applied to BOTH methods. The only delta
+   * is `await this.stepAwait(0.001)` vs `this.step(0.001)`.
+   *
+   * @param {Float32Array|null} intentSeed
+   * @param {object} opts — same as `generateSentence`
+   * @returns {Promise<string>}
+   */
+  async generateSentenceAwait(intentSeed = null, opts = {}) {
+    if (!this.regions || !this.regions.motor || !this.regions.letter) return '';
+    if (inventorySize() === 0) return '';
+
+    const injectStrength = opts.injectStrength ?? 0.6;
+    const maxTicks = opts.maxTicks ?? this.MAX_EMISSION_TICKS;
+    const suppressNoise = opts.suppressNoise === true;
+    const _savedNoise = this.noiseAmplitude;
+    if (suppressNoise) this.noiseAmplitude = 0.5;
+
+    if (intentSeed && intentSeed.length > 0 && this.regions.sem) {
+      this.injectEmbeddingToRegion('sem', intentSeed, injectStrength);
+    }
+
+    // T17.7 Phase E.b — when the GPU proxy's readbackLetterBuckets is
+    // wired, topic-continuity readout comes from the main-cortex free
+    // sub-slice via bucketed reduction instead of the CPU standalone
+    // region. Main cortex is authoritative for language state post-
+    // Phase C/D; reading from CPU would see stale topic after a few
+    // generation cycles.
+    if (this.regions.free && this.regions.sem) {
+      const wm = await this.workingMemoryReadoutAwait(300);
+      let wmNorm = 0;
+      for (let i = 0; i < wm.length; i++) wmNorm += wm[i] * wm[i];
+      if (wmNorm > 0.01) {
+        this.injectEmbeddingToRegion('sem', wm, injectStrength * 0.4);
+      }
+    }
+
+    this._prevLetterRate = 0;
+    this._motorQuiescentTicks = 0;
+
+    const output = [];
+    let letterBuffer = '';
+    let lastMotorLetter = null;
+    let stableTicks = 0;
+
+    // T17.7 Phase D — when the motor cross-projections are bound to
+    // main-cortex slices (Phase C's rebind), read the motor argmax
+    // from GPU via the bucketed reduction path instead of the CPU
+    // regionReadout. Main cortex is authoritative for language
+    // production post-Phase-C; reading CPU cortexCluster.lastSpikes
+    // here would decode whatever the CPU simulation produced, which
+    // diverges from the GPU-trained main-cortex state over long
+    // generations.
+    //
+    // Bucket layout matches `_writeTiledPattern`: invSize buckets of
+    // gSize consecutive neurons each, starting at motor region's
+    // first neuron. Standalone motor region size fits bucketCount ×
+    // bucketSize exactly by construction (encodeLetter produces
+    // one-hot over invSize dimensions; _writeTiledPattern tiles
+    // gSize = floor(regionSize / invSize)). GPU reduction matches
+    // this exact layout so argmax on the counts vector yields the
+    // same letter CPU decodeLetter would yield from the same state.
+    const motorRegionStand = this.regions.motor;
+    const motorSubSliceLen = motorRegionStand ? (motorRegionStand.end - motorRegionStand.start) : 0;
+    const canGpuMotorRead = !!(
+      this._gpuProxy
+      && typeof this._gpuProxy.readbackLetterBuckets === 'function'
+      && this.crossProjections
+      && this.crossProjections.sem_to_motor
+      && this.crossProjections.sem_to_motor._gpuBound
+      && motorSubSliceLen > 0
+    );
+
+    for (let tick = 0; tick < maxTicks; tick++) {
+      // The ONLY delta vs generateSentence — full-await cascade per tick.
+      await this.stepAwait(0.001);
+
+      const invSize = inventorySize();
+      if (invSize === 0) break;
+
+      let activeLetter = null;
+      if (canGpuMotorRead) {
+        try {
+          const bucketSize = Math.floor(motorSubSliceLen / invSize);
+          const readLen = bucketSize * invSize;  // trim remainder
+          const counts = await this._gpuProxy.readbackLetterBuckets('motor', invSize, readLen, 0);
+          if (counts && counts.length === invSize) {
+            // Argmax over bucket counts. Mirrors decodeLetter's
+            // argmax-over-activation semantics — highest-firing
+            // letter wins. Ties broken by first-index, matching
+            // decodeLetter behavior on equal magnitudes.
+            let bestIdx = 0;
+            let bestCount = counts[0];
+            for (let b = 1; b < invSize; b++) {
+              if (counts[b] > bestCount) { bestCount = counts[b]; bestIdx = b; }
+            }
+            if (bestCount > 0) {
+              const inv = inventorySnapshot();
+              if (bestIdx >= 0 && bestIdx < inv.length) activeLetter = inv[bestIdx];
+            }
+          }
+        } catch { /* non-fatal — fall through to CPU readout */ }
+      }
+      if (activeLetter === null) {
+        const motorVec = this.regionReadout('motor', invSize);
+        activeLetter = decodeLetter(motorVec);
+      }
+
+      if (activeLetter === lastMotorLetter && activeLetter !== null) {
+        stableTicks++;
+      } else {
+        stableTicks = 0;
+        lastMotorLetter = activeLetter;
+      }
+
+      let committedLetter = null;
+      if (stableTicks >= this.STABLE_TICK_THRESHOLD && activeLetter !== null) {
+        committedLetter = activeLetter;
+        letterBuffer += activeLetter;
+        stableTicks = 0;
+
+        if (this.regions.motor) {
+          const { start, end } = this.regions.motor;
+          for (let j = start; j < end; j++) this.lastSpikes[j] = 0;
+        }
+        // T17.7 Phase D — clear the main-cortex motor slice too so
+        // the next letter's argmax doesn't inherit the committed
+        // letter's GPU-side spike pattern. Same semantics as the
+        // CPU-side motor clear above, applied to the bound sub-slice.
+        if (canGpuMotorRead && this._gpuProxy.clearSpikeSlice) {
+          try { this._gpuProxy.clearSpikeSlice('motor'); } catch { /* non-fatal */ }
+        }
+        lastMotorLetter = null;
+        this._motorQuiescentTicks = 0;
+      }
+
+      const surprise = this.letterTransitionSurprise();
+      if (surprise > this.WORD_BOUNDARY_THRESHOLD && letterBuffer.length > 0) {
+        output.push(letterBuffer);
+        letterBuffer = '';
+      }
+
+      if (committedLetter && T14_TERMINATORS.has(committedLetter)) {
+        if (letterBuffer.length > 0) {
+          output.push(letterBuffer);
+          letterBuffer = '';
+        }
+        break;
+      }
+
+      if (output.length > 0 && this.motorQuiescent(this.END_QUIESCE_TICKS)) {
+        break;
+      }
+    }
+
+    if (letterBuffer.length > 0) {
+      output.push(letterBuffer);
+    }
+
+    if (suppressNoise) this.noiseAmplitude = _savedNoise;
+    return output.join(' ');
+  }
+
+  /**
+   * T14.4 — Propagate every cross-region projection. Runs on every
+   * cluster step after the main internal synapse propagation, before
+   * LIF integration. ALWAYS propagated — no curriculum-complete gate.
+   * Random-init projections inject low-magnitude noise until learning
+   * sharpens them, which is biologically correct (newborn cortex has
+   * weak random cross-region connections that strengthen via experience).
+   */
+  _propagateCrossRegions() {
+    if (!this.crossProjections) return;
+    // T17.3.e — One-tick-lag GPU propagate (Gee 2026-04-18).
+    // If the GPU proxy is ready AND we have cached currents from the
+    // previous step's async GPU propagate, USE THOSE instead of running
+    // the CPU sparse matmul. Synaptic delays of 1-2ms are biologically
+    // normal — a single-tick lag (~100ms brain sim time) is well within
+    // real synaptic transmission latencies.
+    //
+    // Cache is populated by `_dispatchCrossRegionsGpu()` at the END of
+    // step(). On first tick (or if GPU cache miss for a projection),
+    // we fall back to CPU propagate so the simulation still runs.
+    const useGpu = this._gpuProxyReady && this._cachedCrossCurrents;
+    for (const [name, proj] of Object.entries(this.crossProjections)) {
+      const idx = name.indexOf('_to_');
+      if (idx < 0) continue;
+      const src = name.slice(0, idx);
+      const dst = name.slice(idx + 4);
+      const srcRegion = this.regions[src];
+      const dstRegion = this.regions[dst];
+      if (!srcRegion || !dstRegion) continue;
+
+      let inputs = null;
+      if (useGpu) inputs = this._cachedCrossCurrents.get(name);
+      if (!inputs) {
+        // CPU fallback — GPU cache miss or GPU proxy not ready yet.
+        const srcSpikes = this.regionSpikes(src);
+        inputs = proj.propagate(srcSpikes);
+      }
+      for (let i = 0; i < inputs.length; i++) {
+        this.externalCurrent[dstRegion.start + i] += inputs[i] * 0.35;
+      }
+    }
+  }
+
+  /**
+   * T17.3.e — Dispatch GPU propagate for every cross-region projection
+   * AND the intra-cluster synapses. Fire-and-forget — the promises
+   * resolve asynchronously and populate the caches (`_cachedCrossCurrents`
+   * and `_cachedIntraCurrents`) for the NEXT step() to consume.
+   *
+   * This is the hot-path wiring that unlocks removing the CPU single-
+   * thread dispatch budget cap. With GPU doing the sparse matmul, the
+   * CPU side of step() is just LIF integration + spike counting —
+   * dramatically faster, so language cortex can scale past the old
+   * 200K neuron CPU ceiling.
+   */
+  _dispatchGpuPropagates() {
+    if (!this._gpuProxyReady || !this._gpuProxy || !this._gpuProxy.propagate) return;
+    // Dispatch intra-cluster propagate (intra synapse sparse matmul).
+    const spikes = this.lastSpikes;
+    if (this.synapses && spikes) {
+      const key = `${this.name}_intraSynapses`;
+      const pSpikes = new Uint32Array(spikes.length);
+      for (let i = 0; i < spikes.length; i++) pSpikes[i] = spikes[i] ? 1 : 0;
+      try {
+        const p = this._gpuProxy.propagate(key, pSpikes);
+        if (p && typeof p.then === 'function') {
+          p.then((currents) => {
+            if (currents && currents.length > 0) this._cachedIntraCurrents = currents;
+          }).catch(() => { /* non-fatal — CPU fallback on cache miss */ });
+        }
+      } catch { /* non-fatal */ }
+    }
+    // Dispatch each cross-region projection.
+    //
+    // T17.7 Phase C.1 — when a projection has been rebound to main-
+    // cortex slices (proj._gpuBound), dispatch via propagateBound so
+    // the wire doesn't carry a redundant preSpikes array. GPU reads
+    // pre-spikes directly from main-cortex spikes buffer at the bound
+    // src region offset (populated by curriculum writeSpikeSlice + by
+    // the per-tick _mirrorCortexRegions bridge). Standalone-bound
+    // projections keep shipping pSpikes — backward-compatible while
+    // other non-cortex clusters carry projections through the same
+    // code path.
+    if (this.crossProjections) {
+      if (!this._cachedCrossCurrents) this._cachedCrossCurrents = new Map();
+      for (const [name, proj] of Object.entries(this.crossProjections)) {
+        const idx = name.indexOf('_to_');
+        if (idx < 0) continue;
+        const src = name.slice(0, idx);
+        const srcRegion = this.regions[src];
+        if (!srcRegion) continue;
+        const key = `${this.name}_${name}`;
+        try {
+          let p;
+          if (proj._gpuBound && this._gpuProxy.propagateBound) {
+            p = this._gpuProxy.propagateBound(key);
+          } else {
+            const srcSpikes = this.regionSpikes(src);
+            const pSpikes = new Uint32Array(srcSpikes.length);
+            for (let i = 0; i < srcSpikes.length; i++) pSpikes[i] = srcSpikes[i] > 0 ? 1 : 0;
+            p = this._gpuProxy.propagate(key, pSpikes);
+          }
+          if (p && typeof p.then === 'function') {
+            const cache = this._cachedCrossCurrents;
+            p.then((currents) => {
+              if (currents && currents.length > 0) cache.set(name, currents);
+            }).catch(() => { /* non-fatal */ });
+          }
+        } catch { /* non-fatal */ }
+      }
+    }
+  }
+
+  /**
+   * T14.4 — Hebbian update on every cross-region projection. Uses the
+   * current spike snapshot of both src and dst regions to strengthen
+   * the projection where they co-fire. Runs from cluster.learn() and
+   * also from cluster.learnSentenceHebbian after each word's tick.
+   */
+  async _crossRegionHebbian(lr) {
+    if (!this.crossProjections) return;
+    for (const [name, proj] of Object.entries(this.crossProjections)) {
+      const idx = name.indexOf('_to_');
+      if (idx < 0) continue;
+      const src = name.slice(0, idx);
+      const dst = name.slice(idx + 4);
+      if (!this.regions[src] || !this.regions[dst]) continue;
+
+      // T18.17 — GPU-bound fast path. When the projection has been
+      // rebound to main-cortex slices (T17.7 Phase C.1) AND the GPU
+      // proxy is ready, skip the CPU sparse-pool Hebbian entirely.
+      // Probes read directly from GPU via readbackLetterBuckets /
+      // readback_currents (see cluster.js:1687-1688 for the canonical
+      // GPU-aware probe check on sem_to_motor). The CPU shadow was
+      // kept pre-T17.7 Phase C.1 for probe compat but is pure overhead
+      // at biological scale — Gee's 2026-04-19 Part 2 run exposed the
+      // cost with T18.16 heartbeats: Phase 1 ran at 0.40 iter/s =
+      // ~2.5s per letter, entirely bottlenecked by `await
+      // this._sparsePool.hebbianUpdate(proj, preF, postF, lr)` across
+      // 14 projections totaling ~650M nnz of CPU sparse Hebbian work
+      // per letter. GPU dispatch is fire-and-forget microseconds; the
+      // CPU shadow was serializing the teach loop 100-250× slower than
+      // necessary. Skipping when GPU-bound brings iteration velocity
+      // to the GPU-dispatch-only ceiling (~50-100 iter/s at biological
+      // scale through T18.8 batched dispatch). Phase 1 goes from 13
+      // minutes to 3-6 seconds at 312 iters.
+      if (proj._gpuBound && this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbianBound) {
+        try {
+          this._gpuProxy.hebbianBound(`${this.name}_${name}`, lr);
+        } catch { /* fire-and-forget — CPU worker dispatch path not reached */ }
+        continue;
+      }
+
+      const preF = this.regionSpikes(src);
+      const postF = this.regionSpikes(dst);
+      // T17.2 + T17.7 Gee 2026-04-18 OOM fix — route CPU Hebbian
+      // through worker pool when available. AWAIT the pool job so
+      // pending cross-projection Hebbians don't pile up in semi-space
+      // (14 projections × ~3 MB pre/postF buffers × hundreds of teach
+      // iterations = GB-scale semi-space exhaustion). Same root cause
+      // + same fix shape as intraSynapsesHebbian — caller (teach
+      // loops) awaits, iteration rate throttles to the worker pool's
+      // drain rate, only ~15 jobs live in memory at a time.
+      //
+      // T18.17 — this path now only runs for NON-GPU-bound projections
+      // (standalone browser-only mode, or pre-rebind window during
+      // initial boot). At biological scale all cross-projections are
+      // GPU-bound post T17.7 Phase C.1 rebind so this path is cold.
+      if (this._sparsePool && this._sparsePool.ready) {
+        try {
+          await this._sparsePool.hebbianUpdate(proj, preF, postF, lr);
+        } catch {
+          proj.hebbianUpdate(preF, postF, lr);
+        }
+      } else {
+        proj.hebbianUpdate(preF, postF, lr);
+      }
+      // T17.3.d — fire-and-forget GPU Hebbian fallback for standalone
+      // (non-bound) projections. Bandwidth cost: srcSize + dstSize u32s.
+      if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
+        try {
+          this._gpuProxy.hebbian(`${this.name}_${name}`, preF, postF, lr);
+        } catch { /* non-fatal — CPU path already updated */ }
+      }
+    }
+  }
+
+  /**
+   * T17.3.d — Upload all cross-projections to GPU via the proxy. Once
+   * complete, sets `_gpuProxyReady = true` so subsequent
+   * `_crossRegionHebbian` calls dispatch to GPU alongside the CPU
+   * shadow updates. The `_propagateCrossRegions` hot-path wiring
+   * follows in T17.3.e — currents readback requires async/await
+   * cascade through cluster.step which is a larger refactor.
+   *
+   * Cluster must be fully constructed (cross-projections initialized)
+   * before calling this. Safe to call after construction but before
+   * any curriculum teach.
+   */
+  async initGpu() {
+    if (!this._gpuProxy || !this._gpuProxy.upload) return false;
+    const targets = [];
+    // T17.3.e — intra-cluster synapse matrix uploaded alongside
+    // cross-projections. Hebbian updates during curriculum teach call
+    // `intraSynapsesHebbian(pre, post, lr)` which dispatches GPU
+    // fire-and-forget alongside the CPU synapses.hebbianUpdate. Puts
+    // the intra-cluster matrix on GPU so it's ready for propagate
+    // dispatch once the async cascade is wired through cluster.step.
+    if (this.synapses) {
+      targets.push({ key: `${this.name}_intraSynapses`, proj: this.synapses, binding: null });
+    }
+    // T18.6.b — cross-projections upload with cluster-binding metadata
+    // from the start. The `binding` describes WHERE in the destination
+    // main-brain cluster (when one exists) the cross-projection reads
+    // pre-spikes and writes post-currents. For the standalone cortex
+    // language cluster the binding targets the main cortex's first-N
+    // sub-slice of each named region (layout must stay in sync with
+    // `server/brain-server.js:_ensureCortexCrossProjectionsBound` which
+    // is the fallback rebind path for persisted-but-unbound matrices).
+    // `gpuBindingHint` is populated by the server wrapper when the
+    // cluster lives inside a larger bound cortex; browser-only clients
+    // leave it unset and the uploads stay standalone (smaller scale
+    // where standalone overhead is negligible). Intra-synapses always
+    // ship standalone — it runs on its own pre/post buffers, not
+    // bound into another cluster's spike buffer.
+    if (this.crossProjections) {
+      const hint = this._gpuBindingHint || null;
+      for (const name of Object.keys(this.crossProjections)) {
+        const key = `${this.name}_${name}`;
+        let binding = null;
+        if (hint && typeof hint.resolve === 'function') {
+          try { binding = hint.resolve(name, this.crossProjections[name]); }
+          catch { binding = null; }
+        }
+        targets.push({ key, proj: this.crossProjections[name], binding });
+      }
+    }
+    let uploaded = 0;
+    let boundCount = 0;
+    for (const { key, proj, binding } of targets) {
+      try {
+        const matrix = {
+          rows: proj.rows,
+          cols: proj.cols,
+          nnz: proj.nnz,
+          values: proj.values,
+          colIdx: proj.colIdx,
+          rowPtr: proj.rowPtr,
+        };
+        const ack = await this._gpuProxy.upload(key, matrix, binding);
+        if (ack && ack.ok) {
+          uploaded++;
+          if (binding) {
+            boundCount++;
+            // Mark the CPU-side projection so cluster._crossRegionHebbian
+            // routes GPU dispatch through the bound path (no per-call
+            // pre/post array transfer) — same semantics as the Phase
+            // C.1 rebind leaves them in.
+            proj._gpuBound = true;
+          }
+        } else {
+          console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);
+        }
+      } catch (err) {
+        console.warn(`[Cluster ${this.name}] GPU upload exception for ${key}:`, err && err.message);
+      }
+    }
+    this._gpuProxyReady = uploaded === targets.length;
+    const boundTag = boundCount > 0 ? ` (${boundCount} cluster-bound at upload — standalone VRAM overhead skipped)` : '';
+    console.log(`[Cluster ${this.name}] GPU proxy ready: ${uploaded}/${targets.length} matrices uploaded${boundTag} (${this._gpuProxyReady ? 'FULL — intra-synapses + all cross-projections on GPU' : 'PARTIAL — falling back to CPU for failed matrices'})`);
+    return this._gpuProxyReady;
+  }
+
+  /**
+   * T17.3.e — intra-cluster Hebbian wrapper. Applies the update on
+   * CPU (authoritative) AND fires GPU fire-and-forget shadow when
+   * proxy ready. Curriculum teach uses this instead of calling
+   * `cluster.synapses.hebbianUpdate` directly so intra-cluster
+   * weights stay in sync between CPU and GPU.
+   */
+  async intraSynapsesHebbian(pre, post, lr) {
+    if (!this.synapses) return;
+    // T17.2 — parallelize CPU Hebbian across worker pool when available.
+    // Same row-range partitioning pattern as sparse matmul (disjoint
+    // row-ranges, no write collisions on values buffer). Falls through
+    // to synchronous single-thread update if pool unavailable.
+    //
+    // T17.7 Gee 2026-04-18 fix — method is NOW async/awaitable. Caller
+    // (curriculum teach loops) must `await` it. Reason: curriculum
+    // phases that iterate hundreds of intra-cluster Hebbian updates
+    // back-to-back (runElaKReal SEQUENCE TEACHING: 12 reps × 25 pairs
+    // = 300 calls) each allocate a ~3 MB Float64Array(cluster.size)
+    // pre/post pair. If we fire-and-forget into the worker pool,
+    // pending jobs hold their Float64Array references until a worker
+    // drains them. At biological scale 300 pending × 2 × 3 MB = 1.8 GB
+    // of short-lived objects piling up in semi-space faster than V8
+    // can GC → OOM crash. Awaiting throttles the loop to the pool's
+    // drain rate so only ~15 jobs (one per worker) live in memory at
+    // a time. GPU shadow dispatch stays fire-and-forget because it's
+    // flow-gated by _gpuSparseFlowOk(); it drops silently under
+    // backpressure instead of queuing forever.
+    if (this._sparsePool && this._sparsePool.ready) {
+      try {
+        await this._sparsePool.hebbianUpdate(this.synapses, pre, post, lr);
+      } catch {
+        // Pool failed — fall back to synchronous path so the update
+        // still happens. Next call will retry via the pool.
+        this.synapses.hebbianUpdate(pre, post, lr);
+      }
+    } else {
+      this.synapses.hebbianUpdate(pre, post, lr);
+    }
+    if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
+      const key = `${this.name}_intraSynapses`;
+      try {
+        // Still fire-and-forget — gpuSparseFlowOk gates drop under
+        // backpressure, so no queue explosion. Do NOT await here or
+        // the teach loop throttles to WebSocket round-trip latency
+        // which is 100× slower than the worker pool's compute.
+        this._gpuProxy.hebbian(key, pre, post, lr);
+      } catch { /* non-fatal — CPU update authoritative */ }
+    }
+  }
+
+  /**
    * One simulation step for this cluster.
    * @param {number} dt — timestep in seconds
+   * @param {object} [opts]
+   * @param {boolean} [opts.skipTailDispatch=false] — if true, does NOT
+   *   fire the end-of-tick `_dispatchGpuPropagates()` round. Used by
+   *   `stepAwait()` which has already pre-awaited all GPU propagates
+   *   for the NEXT tick's cache, so firing another round here would
+   *   just waste GPU bandwidth on work we'd then await again next tick.
    * @returns {{ spikes: Uint8Array, spikeCount: number, voltages: Float64Array }}
    */
-  step(dt) {
+  step(dt, opts = {}) {
     const { size, neurons, synapses } = this;
+
+    // T14.4 — Cross-region projection propagation. Runs FIRST, before
+    // current accumulation, so cross-region inputs are folded into
+    // externalCurrent and pick up by the standard current loop below.
+    // Only the cortex cluster has crossProjections populated; other
+    // clusters skip this with zero overhead.
+    this._propagateCrossRegions();
 
     // Build input currents
     const currents = new Float64Array(size);
-    const synapticCurrents = synapses.propagate(neurons.getSpikes());
+    // T17.3.e — One-tick-lag GPU intra-synapse propagate (Gee 2026-04-18).
+    // If GPU proxy is ready AND we have cached currents from the previous
+    // tick's async dispatch, use them. Otherwise fall back to CPU sparse
+    // matmul so the sim keeps running (first tick, cache miss, or pre-GPU).
+    // This is the hot-path refactor that removes the CPU_SINGLE_THREAD
+    // dispatch budget cap — GPU does the sparse matmul, CPU does LIF.
+    let synapticCurrents;
+    if (this._gpuProxyReady && this._cachedIntraCurrents && this._cachedIntraCurrents.length === size) {
+      synapticCurrents = this._cachedIntraCurrents;
+    } else {
+      synapticCurrents = synapses.propagate(neurons.getSpikes());
+    }
 
     // Effective tonic drive with all modulation applied
     const effectiveDrive = this.tonicDrive
@@ -160,6 +2168,19 @@ export class NeuronCluster {
     this.lastSpikeCount = spikeCount;
     this.firingRate = this.firingRate * 0.95 + spikeCount * 0.05;
 
+    // T14.1 — Motor-region quiescence counter. Measured on every tick so
+    // `motorQuiescent(ticksRequired)` can answer in O(1). Only runs on the
+    // cortex cluster (only cortex has a motor sub-region).
+    if (this.regions && this.regions.motor) {
+      const { start, end } = this.regions.motor;
+      const span = end - start;
+      let motorSum = 0;
+      for (let i = start; i < end; i++) if (this.lastSpikes[i]) motorSum++;
+      const motorRate = span > 0 ? motorSum / span : 0;
+      if (motorRate < 0.05) this._motorQuiescentTicks++;
+      else this._motorQuiescentTicks = 0;
+    }
+
     // Mean voltage for monitoring
     let vSum = 0;
     for (let i = 0; i < size; i++) vSum += voltages[i];
@@ -171,16 +2192,156 @@ export class NeuronCluster {
       this._incomingProjections[i] = 0; // reset for next step
     }
 
+    // T17.3.e — Fire async GPU propagates for NEXT tick's intra +
+    // cross-region currents. Fire-and-forget: promises resolve and
+    // populate `_cachedIntraCurrents` / `_cachedCrossCurrents`, which
+    // the next step() and _propagateCrossRegions() consume. No-op if
+    // `_gpuProxyReady` is false (CPU path continues).
+    //
+    // T18.4.b — `opts.skipTailDispatch` skips this when the caller
+    // used `stepAwait()` to pre-await all propagates. Firing again
+    // here would double-dispatch and waste GPU bandwidth.
+    if (!opts.skipTailDispatch) this._dispatchGpuPropagates();
+
     return { spikes: this.lastSpikes, spikeCount, voltages };
   }
 
   /**
-   * Apply plasticity rules on this cluster's internal synapses.
+   * T18.4.b — Full await cascade variant of step(). Dispatches every
+   * GPU propagate (intra-synapses + all 14 cross-projections), awaits
+   * Promise.all with a 1s timeout guard, THEN runs the synchronous
+   * core step. Eliminates the one-tick-lag model's cache-miss penalty
+   * (where a slow GPU resolve meant the next tick fell through to the
+   * CPU sparse-matmul fallback — measured 3s+ blocking at biological
+   * scale). Trade-off: every call pays a GPU round-trip cost per tick
+   * (~5-500ms depending on matrix size) instead of the 0ms-on-hit /
+   * 3s-on-miss gamble. For tight loops in `generateSentence` where
+   * consistent per-tick latency matters more than peak throughput
+   * this is the correct knob.
+   *
+   * Timeout guard: if GPU doesn't resolve within 1s (unresponsive
+   * compute client, network stall), falls through to the cached-or-
+   * CPU-fallback path so the sim never hangs.
+   *
+   * @param {number} dt — timestep in seconds
+   * @returns {Promise<{ spikes: Uint8Array, spikeCount: number, voltages: Float64Array }>}
+   */
+  async stepAwait(dt) {
+    if (!this._gpuProxyReady || !this._gpuProxy || !this._gpuProxy.propagate) {
+      // No GPU proxy — fall through to synchronous step with CPU path.
+      return this.step(dt);
+    }
+
+    // Clear stale cache so we only honor promises from THIS tick.
+    this._cachedIntraCurrents = null;
+    if (this._cachedCrossCurrents) this._cachedCrossCurrents.clear();
+    else this._cachedCrossCurrents = new Map();
+    const cache = this._cachedCrossCurrents;
+
+    const promises = [];
+
+    // Intra-cluster propagate.
+    if (this.synapses && this.lastSpikes) {
+      const spikes = this.lastSpikes;
+      const pSpikes = new Uint32Array(spikes.length);
+      for (let i = 0; i < spikes.length; i++) pSpikes[i] = spikes[i] ? 1 : 0;
+      try {
+        const p = this._gpuProxy.propagate(`${this.name}_intraSynapses`, pSpikes);
+        if (p && typeof p.then === 'function') {
+          promises.push(p.then((currents) => {
+            if (currents && currents.length > 0) this._cachedIntraCurrents = currents;
+          }).catch(() => { /* GPU failed — will fall through to CPU */ }));
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    // 14 cross-region propagates.
+    if (this.crossProjections) {
+      for (const [projName] of Object.entries(this.crossProjections)) {
+        const idx = projName.indexOf('_to_');
+        if (idx < 0) continue;
+        const src = projName.slice(0, idx);
+        if (!this.regions[src]) continue;
+        const srcSpikes = this.regionSpikes(src);
+        const pSpikes = new Uint32Array(srcSpikes.length);
+        for (let i = 0; i < srcSpikes.length; i++) pSpikes[i] = srcSpikes[i] > 0 ? 1 : 0;
+        try {
+          const p = this._gpuProxy.propagate(`${this.name}_${projName}`, pSpikes);
+          if (p && typeof p.then === 'function') {
+            promises.push(p.then((currents) => {
+              if (currents && currents.length > 0) cache.set(projName, currents);
+            }).catch(() => { /* GPU failed — CPU fallback in _propagateCrossRegions */ }));
+          }
+        } catch { /* non-fatal */ }
+      }
+    }
+
+    // Await all, with 1s timeout guard so a hung GPU doesn't hang the sim.
+    if (promises.length > 0) {
+      await Promise.race([
+        Promise.all(promises),
+        new Promise((r) => setTimeout(r, 1000)),
+      ]);
+    }
+
+    // T18.4.e — If the worker pool is available AND any GPU promise
+    // didn't populate its cache in time (timeout / null return /
+    // rejected), parallelize the CPU fallback matmul across worker
+    // threads instead of leaving it to the single-thread path inside
+    // step(). Each missing projection becomes a worker-pool job; all
+    // jobs run concurrently across cores, populating the cache before
+    // step() consumes it.
+    if (this._sparsePool && this._sparsePool.ready) {
+      const poolJobs = [];
+      // Intra-cluster cache miss
+      if (!this._cachedIntraCurrents && this.synapses && this.lastSpikes) {
+        const pSpikes = new Uint32Array(this.lastSpikes.length);
+        for (let i = 0; i < this.lastSpikes.length; i++) pSpikes[i] = this.lastSpikes[i] ? 1 : 0;
+        poolJobs.push(
+          this._sparsePool.propagate(this.synapses, pSpikes).then((out) => {
+            this._cachedIntraCurrents = out;
+          }).catch(() => { /* fall through to single-thread in step() */ })
+        );
+      }
+      // Cross-projection cache misses
+      if (this.crossProjections) {
+        for (const [projName, proj] of Object.entries(this.crossProjections)) {
+          if (this._cachedCrossCurrents.has(projName)) continue; // GPU filled it
+          const idx = projName.indexOf('_to_');
+          if (idx < 0) continue;
+          const src = projName.slice(0, idx);
+          if (!this.regions[src]) continue;
+          const srcSpikes = this.regionSpikes(src);
+          const pSpikes = new Uint32Array(srcSpikes.length);
+          for (let i = 0; i < srcSpikes.length; i++) pSpikes[i] = srcSpikes[i] > 0 ? 1 : 0;
+          const cache = this._cachedCrossCurrents;
+          poolJobs.push(
+            this._sparsePool.propagate(proj, pSpikes).then((out) => {
+              cache.set(projName, out);
+            }).catch(() => { /* fall through */ })
+          );
+        }
+      }
+      if (poolJobs.length > 0) await Promise.all(poolJobs);
+    }
+
+    // Run the core step using the just-populated caches. Skip the tail
+    // dispatch — we already pre-awaited for THIS tick's currents, and
+    // the NEXT stepAwait() call will pre-await for its own tick too.
+    return this.step(dt, { skipTailDispatch: true });
+  }
+
+  /**
+   * Apply plasticity rules on this cluster's internal synapses
+   * AND on the cross-region projections (T14.4).
    */
   learn(rewardSignal) {
     const pre = new Float64Array(this.lastSpikes);
     const post = new Float64Array(this.lastSpikes);
     this.synapses.rewardModulatedUpdate(pre, post, rewardSignal, this.learningRate);
+    // T14.4 — cross-region Hebbian. Always fires when the cluster learns,
+    // shaping the projections through normal use during curriculum + live chat.
+    this._crossRegionHebbian(this.learningRate);
   }
 
   /**
@@ -199,6 +2360,65 @@ export class NeuronCluster {
    * whose magnitude exceeds `ojaThreshold` — prevents runaway when the
    * corpus is large. Bounded growth, unbounded learning time.
    *
+   * Session 111 — Anti-Hebbian pair reinforcement primitive.
+   *
+   * Bidirectionally adjusts recurrent synapses for a (src → correct, src → wrong)
+   * triple to fix sequence-probe mistakes. Positive Hebbian on (src, correct)
+   * grows that association; negative anti-Hebbian on (src, wrong) shrinks the
+   * mistaken one. Without the negative half wrong associations never fade —
+   * they stay baseline-strong while correct ones grow, and the softmax keeps
+   * picking the wrong target even after rounds of positive reinforcement.
+   * This is the Math-K SEQ fix (Session 111 FINALIZED entry).
+   *
+   * Operates on cortex sub-region one-hot patterns laid out via `groupSize`
+   * tiling — each one-hot dim spans `floor(regionSize / dim)` neurons so the
+   * pattern occupies the full region. Same tiling curriculum teach uses, same
+   * synapse matrix (the intra-cluster recurrent weights).
+   *
+   * @param {object} opts
+   * @param {string} opts.region — sub-region name (e.g., 'letter', 'phon')
+   * @param {Float32Array|ArrayLike<number>} opts.srcOneHot — source symbol
+   * @param {Float32Array|ArrayLike<number>} opts.correctOneHot — correct next symbol
+   * @param {Float32Array|ArrayLike<number>} [opts.wrongOneHot] — wrong next
+   *   symbol the probe produced (optional; if absent only positive half fires)
+   * @param {number} [opts.posLr=this.learningRate*10] — strengthen rate for correct pair
+   * @param {number} [opts.negLr=-this.learningRate*5] — weaken rate for wrong pair
+   * @param {number} [opts.reps=100] — iterations of both updates
+   */
+  hebbianPairReinforce(opts) {
+    if (!opts || !opts.region || !opts.srcOneHot || !opts.correctOneHot) return;
+    const region = this.regions[opts.region];
+    if (!region || region.end <= region.start) return;
+    const regionSize = region.end - region.start;
+    const dim = opts.srcOneHot.length;
+    const groupSize = Math.max(1, Math.floor(regionSize / dim));
+    const posLr = opts.posLr ?? this.learningRate * 10;
+    const negLr = opts.negLr ?? -this.learningRate * 5;
+    const reps = opts.reps ?? 100;
+
+    const buildPattern = (oneHot) => {
+      const p = new Float64Array(this.size);
+      for (let d = 0; d < oneHot.length; d++) {
+        if (oneHot[d] <= 0) continue;
+        for (let n = 0; n < groupSize; n++) {
+          const idx = region.start + d * groupSize + n;
+          if (idx < region.end) p[idx] = 1.0;
+        }
+      }
+      return p;
+    };
+
+    const pre = buildPattern(opts.srcOneHot);
+    const correctPost = buildPattern(opts.correctOneHot);
+    const wrongPost = opts.wrongOneHot ? buildPattern(opts.wrongOneHot) : null;
+
+    for (let i = 0; i < reps; i++) {
+      this.synapses.hebbianUpdate(pre, correctPost, posLr);
+      if (wrongPost) this.synapses.hebbianUpdate(pre, wrongPost, negLr);
+    }
+  }
+
+  /**
    * @param {Float32Array[]|Float64Array[]} embSequence — per-word 50d embeddings
    * @param {object} [opts]
    * @param {number} [opts.ticksPerWord=3]
@@ -382,6 +2602,17 @@ export class NeuronCluster {
    * @returns {Float64Array} — 50d L2-normalized semantic pattern
    */
   getSemanticReadout(embeddings, langStart = 150) {
+    // T14.17 — when T14.4 sub-regions exist (cortex cluster), prefer
+    // the region-aware `semanticReadoutFor()` over the legacy
+    // langStart=150 hardcoded offset. The sem region's T14.4 fraction
+    // (0.750-0.917 of cluster.size) is the cortex-resident source of
+    // truth for semantic state post-T14.12. Legacy callers that still
+    // pass `embeddings` keep working through the inverse mapping path
+    // only when the cortex cluster lacks T14.4 regions (never happens
+    // at runtime but safe as a fallback).
+    if (this.regions && this.regions.sem) {
+      return this.semanticReadoutFor();
+    }
     const voltages = this.neurons.getVoltages();
     return embeddings.cortexToEmbedding(
       this.lastSpikes,
@@ -429,25 +2660,6 @@ export class ClusterProjection {
     // Sparse projection matrix (CSR) — target.size rows × source.size cols
     this._sparse = new SparseMatrix(target.size, source.size, { wMin: -0.5, wMax: 1.0 });
     this._sparse.initRandom(density, 0.7, strength);
-
-    // Legacy dense weights accessor for persistence compatibility
-    // persistence.js reads projection.weights — getter provides dense view
-  }
-
-  /**
-   * Dense weights accessor for backward compatibility.
-   * Persistence.js and other code reads this.weights.
-   */
-  get weights() {
-    return this._sparse.toDense();
-  }
-
-  set weights(arr) {
-    // Convert dense array to sparse
-    this._sparse = SparseMatrix.fromDense(
-      arr, this.target.size, this.source.size, 0.001,
-      { wMin: -0.5, wMax: 1.0 }
-    );
   }
 
   /**

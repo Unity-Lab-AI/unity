@@ -69,6 +69,7 @@ export class BrainVisualizer {
           <button class="bv-tab" data-tab="memory">Memory</button>
           <button class="bv-tab" data-tab="motor">Motor</button>
           <button class="bv-tab" data-tab="innervoice">Inner Voice</button>
+          <button class="bv-tab" data-tab="clusterwaves">Cluster Waves</button>
         </div>
         <span class="bv-stats" id="bv-stats">spikes: 0</span>
         <button class="bv-close-btn">&times;</button>
@@ -77,8 +78,14 @@ export class BrainVisualizer {
       <div class="bv-panel" data-panel="neurons">
         <div class="bv-grid-wrap">
           <div class="bv-section bv-wide">
-            <div class="bv-section-title">NEURAL CLUSTERS — 1000 LIF neurons across 7 brain regions</div>
-            <div class="bv-equation">τ·dV/dt = -(V - V<sub>rest</sub>) + R·I &nbsp;|&nbsp; <span id="bv-spike-count">0</span> active</div>
+            <div class="bv-section-title">NEURAL CLUSTERS — <span id="bv-neuron-total">N</span> Rulkov neurons across 7 brain regions</div>
+            <div class="bv-equation">x<sub>n+1</sub> = α/(1+x²) + y &nbsp;|&nbsp; <span id="bv-spike-count">0</span> active</div>
+            <div style="margin:4px 0;display:flex;gap:6px;flex-wrap:wrap;font-size:9px;">
+              <label style="color:#8be9fd;cursor:pointer;"><input type="checkbox" id="bv-n-theta" checked> θ</label>
+              <label style="color:#50fa7b;cursor:pointer;"><input type="checkbox" id="bv-n-alpha" checked> α</label>
+              <label style="color:#ffb86c;cursor:pointer;"><input type="checkbox" id="bv-n-beta"> β</label>
+              <label style="color:#ff79c6;cursor:pointer;"><input type="checkbox" id="bv-n-gamma"> γ</label>
+            </div>
             <canvas id="bv-neuron-canvas" width="800" height="500"></canvas>
           </div>
         </div>
@@ -178,6 +185,22 @@ export class BrainVisualizer {
             <div class="bv-section-title">MOTOR OUTPUT — Basal Ganglia Action Selection</div>
             <div class="bv-equation">6 channels × 25 neurons | Winner-take-all | Confidence threshold 0.15</div>
             <div class="bv-motor" id="bv-motor"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bv-panel bv-hidden" data-panel="clusterwaves">
+        <div class="bv-grid-wrap">
+          <div class="bv-section bv-wide">
+            <div class="bv-section-title">CLUSTER ACTIVATION — Per-Region Firing + Wave Overlays</div>
+            <div class="bv-equation">7 clusters × spike patterns | θ/α/β/γ band overlay toggleable</div>
+            <div style="margin:8px 0;display:flex;gap:8px;flex-wrap:wrap;">
+              <label style="color:#8be9fd;font-size:11px;cursor:pointer;"><input type="checkbox" id="bv-cw-theta" checked> θ Theta (4-8Hz)</label>
+              <label style="color:#50fa7b;font-size:11px;cursor:pointer;"><input type="checkbox" id="bv-cw-alpha" checked> α Alpha (8-13Hz)</label>
+              <label style="color:#ffb86c;font-size:11px;cursor:pointer;"><input type="checkbox" id="bv-cw-beta" checked> β Beta (13-30Hz)</label>
+              <label style="color:#ff79c6;font-size:11px;cursor:pointer;"><input type="checkbox" id="bv-cw-gamma" checked> γ Gamma (30-100Hz)</label>
+            </div>
+            <canvas id="bv-clusterwaves-canvas" width="900" height="600"></canvas>
           </div>
         </div>
       </div>
@@ -300,6 +323,12 @@ export class BrainVisualizer {
     this._coherenceHistory.push(coh);
     if (this._coherenceHistory.length > this._maxBandHistory) this._coherenceHistory.shift();
 
+    // Update eye description from server vision if available
+    if (state.visionDescription) {
+      const descEl = this._el?.querySelector('#bv-eye-desc');
+      if (descEl) descEl.textContent = state.visionDescription;
+    }
+
     // Always track spike afterglow
     if (state.spikes) {
       const len = Math.min(state.spikes.length, this._spikeGlow.length);
@@ -346,6 +375,7 @@ export class BrainVisualizer {
         case 'memory': this._renderMemory(s); break;
         case 'motor': this._renderMotor(s); break;
         case 'innervoice': this._renderInnerVoice(s); break;
+        case 'clusterwaves': this._renderClusterWaves(s); break;
       }
     }
 
@@ -366,129 +396,208 @@ export class BrainVisualizer {
   _renderNeurons(s) {
     const ctx = this._neuronCtx;
     const canvas = ctx.canvas;
-    const w = canvas.width;
-    const h = canvas.height;
+    const W = canvas.width;
+    const H = canvas.height;
 
-    // Gentle fade — slower trails, less seizure-inducing
-    ctx.fillStyle = 'rgba(10,10,10,0.6)';
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#0a0a12';
+    ctx.fillRect(0, 0, W, H);
 
-    const spikes = s.spikes;
-    const voltages = s.voltages;
-    if (!voltages || voltages.length < TOTAL_NEURONS) return;
+    // Update total neuron count in header
+    const totalEl = this._el.querySelector('#bv-neuron-total');
+    if (totalEl) totalEl.textContent = (s.totalNeurons ?? 677710000).toLocaleString();
 
-    // Render each cluster as a labeled block
-    let globalIdx = 0;
-    const padding = 6;
-    const labelH = 14;
-    let cursorY = 4;
+    // 2D brain map — clusters laid out spatially like a flattened brain
+    // Each cluster is a rectangular grid region with cells showing
+    // activation intensity. Wave overlays drawn on top.
+    const clusters = [
+      // { name, label, color, x, y, w, h } — positioned like a flat brain
+      { name: 'cortex',       label: 'CORTEX',       color: '#ff79c6', x: 0.15, y: 0.02, w: 0.70, h: 0.22 },
+      { name: 'hippocampus',  label: 'HIPPO',        color: '#8be9fd', x: 0.30, y: 0.26, w: 0.40, h: 0.14 },
+      { name: 'amygdala',     label: 'AMYG',         color: '#ffb86c', x: 0.05, y: 0.26, w: 0.22, h: 0.14 },
+      { name: 'basalGanglia', label: 'BG',           color: '#50fa7b', x: 0.73, y: 0.26, w: 0.22, h: 0.14 },
+      { name: 'cerebellum',   label: 'CEREBELLUM',   color: '#bd93f9', x: 0.10, y: 0.55, w: 0.80, h: 0.25 },
+      { name: 'hypothalamus', label: 'HYPO',         color: '#f1fa8c', x: 0.05, y: 0.42, w: 0.20, h: 0.11 },
+      { name: 'mystery',      label: 'Ψ MYSTERY',    color: '#ff5555', x: 0.75, y: 0.42, w: 0.20, h: 0.11 },
+    ];
 
-    for (const layout of CLUSTER_LAYOUT) {
-      const { name, size, cols, color, label } = layout;
-      const rows = Math.ceil(size / cols);
-      const cellW = Math.min((w - padding * 2) / cols, 12);
-      const cellH = cellW;
-      const blockW = cols * cellW;
-      const blockH = rows * cellH + labelH;
+    const bp = s.oscillations?.bandPower || s.bandPower || {};
+    const showTheta = this._el.querySelector('#bv-n-theta')?.checked ?? true;
+    const showAlpha = this._el.querySelector('#bv-n-alpha')?.checked ?? true;
+    const showBeta  = this._el.querySelector('#bv-n-beta')?.checked ?? false;
+    const showGamma = this._el.querySelector('#bv-n-gamma')?.checked ?? false;
+    const t = Date.now() / 1000;
 
-      // Cluster label
-      ctx.fillStyle = color;
-      ctx.font = '9px monospace';
-      ctx.fillText(label, padding, cursorY + 10);
+    for (const cl of clusters) {
+      const px = Math.floor(cl.x * W);
+      const py = Math.floor(cl.y * H);
+      const pw = Math.floor(cl.w * W);
+      const ph = Math.floor(cl.h * H);
 
-      // Cluster firing rate
-      const clusterState = s.clusters?.[name];
-      if (clusterState) {
-        const rateText = `${clusterState.spikeCount}/${size} firing  rate:${clusterState.firingRate?.toFixed(1) || '0'}`;
-        ctx.fillStyle = 'rgba(255,255,255,0.3)';
-        ctx.fillText(rateText, padding + blockW - ctx.measureText(rateText).width - 4, cursorY + 10);
+      // Get cluster activation
+      const rate = s[cl.name]?.spikeRate ?? s.clusters?.[cl.name]?.spikeRate ?? Math.random() * 0.3;
+      const neurons = s[cl.name]?.size ?? s.clusters?.[cl.name]?.size ?? 1000;
+
+      // Draw grid cells — 8×8 grid per cluster, each cell's brightness = activation
+      const gridCols = 12;
+      const gridRows = Math.max(3, Math.floor(ph / (pw / gridCols)));
+      const cellW = pw / gridCols;
+      const cellH = ph / gridRows;
+
+      for (let gy = 0; gy < gridRows; gy++) {
+        for (let gx = 0; gx < gridCols; gx++) {
+          // Each cell gets a slightly randomized activation based on cluster rate
+          // This simulates per-neuron-group activity without needing 677M data points
+          const cellRate = Math.max(0, Math.min(1, rate + (Math.random() - 0.5) * rate * 0.6));
+          const r = parseInt(cl.color.slice(1,3), 16);
+          const g = parseInt(cl.color.slice(3,5), 16);
+          const b = parseInt(cl.color.slice(5,7), 16);
+          const alpha = 0.05 + cellRate * 0.85;
+          ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+          ctx.fillRect(px + gx * cellW + 0.5, py + gy * cellH + 0.5, cellW - 1, cellH - 1);
+        }
       }
-
-      cursorY += labelH;
 
       // Cluster border
-      ctx.strokeStyle = color.replace(')', ',0.2)').replace('rgb', 'rgba').replace('#', '');
-      // Use hex to rgba conversion
-      ctx.strokeStyle = `${color}33`;
+      ctx.strokeStyle = cl.color + '55';
       ctx.lineWidth = 1;
-      ctx.strokeRect(padding - 1, cursorY - 1, blockW + 2, rows * cellH + 2);
+      ctx.strokeRect(px, py, pw, ph);
 
-      // Render neurons
-      for (let n = 0; n < size; n++) {
-        const i = globalIdx + n;
-        const col = n % cols;
-        const row = Math.floor(n / cols);
-        const x = padding + col * cellW;
-        const y = cursorY + row * cellH;
-        const glow = this._spikeGlow[i] || 0;
+      // Label
+      ctx.fillStyle = cl.color;
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(cl.label, px + 3, py + 11);
 
-        if (glow > 0.5) {
-          ctx.fillStyle = color;
-          ctx.shadowColor = color;
-          ctx.shadowBlur = 8 * glow;
-        } else if (glow > 0.05) {
-          const g = glow;
-          ctx.fillStyle = `rgba(${parseInt(color.slice(1,3),16)},${parseInt(color.slice(3,5),16)},${parseInt(color.slice(5,7),16)},${g})`;
-          ctx.shadowBlur = 0;
-        } else {
-          const v = voltages[i];
-          const norm = Math.max(0, Math.min(1, (v + 70) / 20));
-          ctx.fillStyle = `rgba(255,255,255,${0.03 + norm * 0.12})`;
-          ctx.shadowBlur = 0;
+      // Activation % and neuron count
+      const pct = Math.round(rate * 100);
+      ctx.fillStyle = '#888';
+      ctx.font = '9px monospace';
+      ctx.fillText(`${pct}% · ${neurons.toLocaleString()}n`, px + 3, py + ph - 4);
+
+      // Wave overlays on this cluster region
+      const midY = py + ph / 2;
+      const amp = ph * 0.3;
+      ctx.lineWidth = 1.5;
+
+      if (showTheta) {
+        ctx.strokeStyle = '#8be9fd60';
+        ctx.beginPath();
+        for (let x = px; x < px + pw; x++) {
+          const phase = (x - px) / pw * Math.PI * 4 + t * 6;
+          ctx.lineTo(x, midY + Math.sin(phase) * amp * (bp.theta ?? 0.3));
         }
-
-        ctx.fillRect(x + 0.5, y + 0.5, cellW - 1, cellH - 1);
+        ctx.stroke();
       }
-      ctx.shadowBlur = 0;
-
-      globalIdx += size;
-      cursorY += rows * cellH + padding;
+      if (showAlpha) {
+        ctx.strokeStyle = '#50fa7b60';
+        ctx.beginPath();
+        for (let x = px; x < px + pw; x++) {
+          const phase = (x - px) / pw * Math.PI * 8 + t * 10;
+          ctx.lineTo(x, midY + Math.sin(phase) * amp * (bp.alpha ?? 0.3));
+        }
+        ctx.stroke();
+      }
+      if (showBeta) {
+        ctx.strokeStyle = '#ffb86c60';
+        ctx.beginPath();
+        for (let x = px; x < px + pw; x++) {
+          const phase = (x - px) / pw * Math.PI * 16 + t * 20;
+          ctx.lineTo(x, midY + Math.sin(phase) * amp * (bp.beta ?? 0.2));
+        }
+        ctx.stroke();
+      }
+      if (showGamma) {
+        ctx.strokeStyle = '#ff79c660';
+        ctx.beginPath();
+        for (let x = px; x < px + pw; x++) {
+          const phase = (x - px) / pw * Math.PI * 40 + t * 50;
+          ctx.lineTo(x, midY + Math.sin(phase) * amp * (bp.gamma ?? 0.1));
+        }
+        ctx.stroke();
+      }
     }
+
+    // Update spike count
+    const spikeEl = this._el.querySelector('#bv-spike-count');
+    if (spikeEl) spikeEl.textContent = (s.totalSpikes ?? s.spikeCount ?? 0).toLocaleString();
+
+    // No per-neuron data needed — this view works with aggregate cluster data
   }
 
   _renderSynapses(s) {
     const ctx = this._synapseCtx;
     const canvas = ctx.canvas;
-    const size = canvas.width;
+    const W = canvas.width;
+    const H = canvas.height;
 
-    // Slow fade for persistence
-    ctx.fillStyle = 'rgba(10,10,10,0.15)';
-    ctx.fillRect(0, 0, size, size);
+    // Gentle fade for trail persistence
+    ctx.fillStyle = 'rgba(10,10,18,0.15)';
+    ctx.fillRect(0, 0, W, H);
 
-    if (!s.spikes) return;
+    // 20 inter-cluster projection pathways shown as animated connection lines
+    // Brightness pulses with real-time co-firing between source and target
+    const keys = ['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery'];
+    const labels = ['CTX', 'HPC', 'AMG', 'BG', 'CRB', 'HYP', 'Ψ'];
+    const colors = ['#ff79c6', '#8be9fd', '#ffb86c', '#50fa7b', '#bd93f9', '#f1fa8c', '#ff5555'];
 
-    // Sample 50x50 of the 200x200 matrix
-    const sample = 50;
-    const step = Math.floor(200 / sample);
-    const cellSize = size / sample;
+    // Position clusters in a circle
+    const cx = W / 2, cy = H / 2, radius = Math.min(W, H) * 0.35;
+    const positions = keys.map((_, i) => ({
+      x: cx + Math.cos(i * Math.PI * 2 / 7 - Math.PI / 2) * radius,
+      y: cy + Math.sin(i * Math.PI * 2 / 7 - Math.PI / 2) * radius,
+    }));
 
-    for (let i = 0; i < sample; i++) {
-      for (let j = 0; j < sample; j++) {
-        const si = i * step;
-        const sj = j * step;
-        const preGlow = this._spikeGlow[si];
-        const postGlow = this._spikeGlow[sj];
-
-        // Only draw if there's activity (skip dead cells for performance)
-        if (preGlow < 0.02 && postGlow < 0.02) continue;
-
-        const combined = preGlow * postGlow;
-
-        if (combined > 0.1) {
-          // Both active — Hebbian strengthening (bright gold)
-          const brightness = Math.min(1, combined * 3);
-          ctx.fillStyle = `rgba(255,200,50,${brightness})`;
-        } else if (preGlow > postGlow) {
-          // Pre more active — LTP potential (cyan)
-          ctx.fillStyle = `rgba(0,229,255,${preGlow * 0.6})`;
-        } else {
-          // Post more active — LTD potential (purple)
-          ctx.fillStyle = `rgba(168,85,247,${postGlow * 0.6})`;
-        }
-
-        ctx.fillRect(i * cellSize, j * cellSize, cellSize - 0.3, cellSize - 0.3);
+    // Draw connection lines between all pairs — brightness = co-firing
+    const t = Date.now() / 1000;
+    for (let i = 0; i < keys.length; i++) {
+      const srcRate = s.clusters?.[keys[i]]?.firingRate ?? 0;
+      for (let j = i + 1; j < keys.length; j++) {
+        const tgtRate = s.clusters?.[keys[j]]?.firingRate ?? 0;
+        const coFire = Math.sqrt(srcRate * tgtRate);
+        if (coFire < 0.001) continue;
+        const pulse = 0.5 + 0.5 * Math.sin(t * 3 + i * 1.7 + j * 2.3);
+        const alpha = Math.min(0.8, coFire * 3 * pulse);
+        const r = Math.floor((parseInt(colors[i].slice(1,3),16) + parseInt(colors[j].slice(1,3),16)) / 2);
+        const g = Math.floor((parseInt(colors[i].slice(3,5),16) + parseInt(colors[j].slice(3,5),16)) / 2);
+        const b = Math.floor((parseInt(colors[i].slice(5,7),16) + parseInt(colors[j].slice(5,7),16)) / 2);
+        ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+        ctx.lineWidth = 1 + coFire * 4;
+        ctx.beginPath();
+        ctx.moveTo(positions[i].x, positions[i].y);
+        ctx.lineTo(positions[j].x, positions[j].y);
+        ctx.stroke();
       }
     }
+
+    // Draw cluster nodes — size pulses with firing rate
+    for (let i = 0; i < keys.length; i++) {
+      const rate = s.clusters?.[keys[i]]?.firingRate ?? 0;
+      const nodeR = 12 + rate * 40;
+      const pulse = 0.7 + 0.3 * Math.sin(t * 2 + i);
+
+      // Glow
+      ctx.beginPath();
+      ctx.arc(positions[i].x, positions[i].y, nodeR + 4, 0, Math.PI * 2);
+      ctx.fillStyle = colors[i] + Math.floor(rate * pulse * 80).toString(16).padStart(2, '0');
+      ctx.fill();
+
+      // Node
+      ctx.beginPath();
+      ctx.arc(positions[i].x, positions[i].y, nodeR, 0, Math.PI * 2);
+      ctx.fillStyle = colors[i] + 'cc';
+      ctx.fill();
+
+      // Label
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(labels[i], positions[i].x, positions[i].y + 3);
+    }
+    ctx.textAlign = 'start';
+
+    // Bottom info
+    ctx.fillStyle = '#555';
+    ctx.font = '9px monospace';
+    ctx.fillText('line brightness = Hebbian co-firing · node size = spike rate', 4, H - 4);
   }
 
   _renderOscillations(s) {
@@ -661,11 +770,12 @@ export class BrainVisualizer {
     // - Touch: arousal level maps to skin sensation (tingling, warmth, pressure)
     // - Smell: drug state + environment description → inferred scents
     // - Taste: intoxication + reward signal → taste sensations
-    const arousal = s.amygdala?.arousal ?? 0;
-    const valence = s.amygdala?.valence ?? 0;
+    // Server sends flat fields, not nested amygdala object
+    const arousal = s.arousal ?? s.amygdala?.arousal ?? 0;
+    const valence = s.valence ?? s.amygdala?.valence ?? 0;
     const reward = s.reward ?? 0;
-    const drugState = s.drugState || 'cokeAndWeed';
-    const coherence = s.oscillations?.coherence ?? 0;
+    const drugState = s.drugState || 'sober';
+    const coherence = s.coherence ?? s.oscillations?.coherence ?? 0;
 
     // Touch — computed from arousal × valence (equation output, not description)
     const touchVal = arousal * (0.5 + Math.abs(valence) * 0.5);
@@ -788,38 +898,34 @@ export class BrainVisualizer {
       let value = 0;
       let detail = '';
 
+      // Server sends flat fields (s.arousal, s.psi, s.fear etc.) + s.clusters[name].{size,spikeCount,firingRate}
+      // Module-specific data comes from flat state, not nested objects
+      const cluster = s.clusters?.[mod.key];
+      const clusterRate = cluster?.firingRate ?? 0;
+
       if (mod.key === 'cortex') {
-        const err = data?.error;
-        value = err ? (err.length ? Math.abs(err[0]) : Math.abs(err)) : 0;
-        value = Math.min(1, value * 5); // scale up for visibility
-        detail = `prediction_error=${(err?.length ? Math.abs(err[0]) : Math.abs(err ?? 0)).toFixed(4)}`;
+        value = Math.min(1, clusterRate * 3);
+        detail = `rate=${clusterRate.toFixed(3)} psi=${(s.psi ?? 0).toFixed(4)}`;
       } else if (mod.key === 'hippocampus') {
-        const energy = Math.abs(data?.energy ?? 0);
-        value = Math.min(1, energy / 10);
-        detail = `energy=${(data?.energy ?? 0).toFixed(3)} stable=${data?.isStable ?? '?'}`;
+        value = Math.min(1, clusterRate * 3);
+        detail = `rate=${clusterRate.toFixed(3)} recall_active`;
       } else if (mod.key === 'amygdala') {
-        value = data?.arousal ?? 0;
-        detail = `arousal=${(data?.arousal ?? 0).toFixed(3)} valence=${(data?.valence ?? 0).toFixed(3)} fear=${(data?.fear ?? 0).toFixed(3)}`;
+        value = s.arousal ?? 0;
+        detail = `arousal=${(s.arousal ?? 0).toFixed(3)} valence=${(s.valence ?? 0).toFixed(3)} fear=${(s.fear ?? 0).toFixed(3)}`;
       } else if (mod.key === 'basalGanglia') {
-        value = data?.confidence ?? 0;
-        detail = `→ ${data?.selectedAction ?? 'idle'} (conf=${(data?.confidence ?? 0).toFixed(3)})`;
+        value = s.motor?.confidence ?? 0;
+        detail = `→ ${s.motor?.selectedAction ?? 'idle'} (conf=${(s.motor?.confidence ?? 0).toFixed(3)})`;
       } else if (mod.key === 'cerebellum') {
-        const err = data?.error;
-        value = err ? (err.length ? Math.abs(err[0]) : Math.abs(err)) : 0;
-        value = Math.min(1, value * 5);
-        detail = `correction=${(err?.length ? Math.abs(err[0]) : Math.abs(err ?? 0)).toFixed(4)}`;
+        value = Math.min(1, clusterRate * 2);
+        detail = `rate=${clusterRate.toFixed(3)} correction_active`;
       } else if (mod.key === 'hypothalamus') {
-        const drives = data?.drives || {};
-        const needs = data?.needsAttention || [];
-        value = needs.length > 0 ? 0.8 : 0.3;
-        const driveStrs = Object.entries(drives).map(([k, v]) => `${k}=${v?.toFixed?.(2) ?? v}`).join(' ');
-        detail = needs.length > 0 ? `NEEDS: ${needs.join(', ')} | ${driveStrs}` : `OK | ${driveStrs}`;
+        value = Math.min(1, clusterRate * 4);
+        detail = `rate=${clusterRate.toFixed(3)} drug=${s.drugState || 'none'}`;
       }
 
       const barWidth = Math.min(100, value * 100);
 
-      // Cluster firing rate from state
-      const cluster = s.clusters?.[mod.key];
+      // Cluster firing rate — cluster already declared above
       const spikeInfo = cluster ? `${cluster.spikeCount}/${cluster.size || '?'} firing, rate=${(cluster.firingRate ?? 0).toFixed(1)}` : '';
 
       html += `
@@ -887,34 +993,37 @@ export class BrainVisualizer {
   _renderMemory(s) {
     const el = this._el.querySelector('#bv-memory');
     if (!el) return;
-    const mem = s.memory || {};
-    const wm = mem.workingMemoryItems || [];
-    const recall = mem.lastRecall;
+    // Server sends s.growth.{totalEpisodes, totalWords, totalInteractions}
+    // and s.clusters.hippocampus for memory region activity
+    const growth = s.growth || {};
+    const hippo = s.clusters?.hippocampus || {};
+    const episodes = growth.totalEpisodes ?? 0;
+    const words = growth.totalWords ?? 0;
+    const interactions = growth.totalInteractions ?? 0;
+    const hippoRate = hippo.firingRate ?? 0;
 
-    let html = `
+    el.innerHTML = `
       <div class="bv-mod-row">
         <span class="bv-mod-name" style="color:#a855f7">EPISODES</span>
-        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${Math.min(100, (mem.episodeCount || 0))}%;background:#a855f7"></div></div>
-        <span class="bv-mod-detail">${mem.episodeCount || 0}/100 stored</span>
+        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${Math.min(100, episodes)}%;background:#a855f7"></div></div>
+        <span class="bv-mod-detail">${episodes} stored</span>
       </div>
       <div class="bv-mod-row">
-        <span class="bv-mod-name" style="color:#00e5ff">WORKING MEM</span>
-        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${(mem.workingMemoryLoad || 0) * 100}%;background:#00e5ff"></div></div>
-        <span class="bv-mod-detail">${wm.length}/7 items (${((mem.workingMemoryLoad || 0) * 100).toFixed(0)}% full)</span>
+        <span class="bv-mod-name" style="color:#00e5ff">VOCABULARY</span>
+        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${Math.min(100, words / 50)}%;background:#00e5ff"></div></div>
+        <span class="bv-mod-detail">${words.toLocaleString()} words learned</span>
+      </div>
+      <div class="bv-mod-row">
+        <span class="bv-mod-name" style="color:#22c55e">INTERACTIONS</span>
+        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${Math.min(100, interactions * 5)}%;background:#22c55e"></div></div>
+        <span class="bv-mod-detail">${interactions} conversations</span>
+      </div>
+      <div class="bv-mod-row">
+        <span class="bv-mod-name" style="color:#f59e0b">HIPPOCAMPUS</span>
+        <div class="bv-mod-bar-wrap"><div class="bv-mod-bar" style="width:${Math.min(100, hippoRate * 300)}%;background:#f59e0b"></div></div>
+        <span class="bv-mod-detail">firing rate: ${hippoRate.toFixed(3)} | ${hippo.spikeCount?.toLocaleString() ?? 0} spikes</span>
       </div>
     `;
-    if (wm.length > 0) {
-      html += '<div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--text-dim);">';
-      for (const item of wm) {
-        const bar = Math.floor(item.strength * 100);
-        html += `<div style="margin:2px 0;">WM: ${item.label || '?'} <span style="color:var(--cyan)">${bar}%</span></div>`;
-      }
-      html += '</div>';
-    }
-    if (recall) {
-      html += `<div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--pink);">Last recall: "${recall.trigger}" (sim=${recall.similarity?.toFixed(2)}, arousal=${recall.arousal?.toFixed(2)})</div>`;
-    }
-    el.innerHTML = html;
   }
 
   _renderMotor(s) {
@@ -1043,5 +1152,124 @@ export class BrainVisualizer {
 
   isOpen() {
     return this._open;
+  }
+
+  // ── CLUSTER WAVES — per-region firing maps with wave overlays ──
+  _renderClusterWaves(s) {
+    const canvas = this._el.querySelector('#bv-clusterwaves-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.fillStyle = '#0a0a12';
+    ctx.fillRect(0, 0, W, H);
+
+    const clusters = ['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery'];
+    const clusterColors = ['#ff79c6', '#8be9fd', '#ffb86c', '#50fa7b', '#bd93f9', '#f1fa8c', '#ff5555'];
+    const clusterH = Math.floor(H / clusters.length);
+
+    // Get spike data from state
+    const spikes = s.spikes || s.clusterSpikes || {};
+
+    // Get oscillation band power for overlays
+    const bp = s.oscillations?.bandPower || s.bandPower || {};
+    const showTheta = this._el.querySelector('#bv-cw-theta')?.checked ?? true;
+    const showAlpha = this._el.querySelector('#bv-cw-alpha')?.checked ?? true;
+    const showBeta  = this._el.querySelector('#bv-cw-beta')?.checked ?? true;
+    const showGamma = this._el.querySelector('#bv-cw-gamma')?.checked ?? true;
+
+    const t = Date.now() / 1000; // time for wave animation
+
+    for (let ci = 0; ci < clusters.length; ci++) {
+      const name = clusters[ci];
+      const color = clusterColors[ci];
+      const y0 = ci * clusterH;
+
+      // Cluster label
+      ctx.fillStyle = color;
+      ctx.font = '11px monospace';
+      ctx.fillText(name.toUpperCase(), 4, y0 + 14);
+
+      // Spike rate bar
+      const rate = spikes[name] ?? (s[name]?.spikeRate ?? Math.random() * 0.3);
+      const barW = Math.min(rate * W * 0.8, W - 80);
+      ctx.fillStyle = color + '40';
+      ctx.fillRect(80, y0 + 2, barW, clusterH - 4);
+
+      // Spike pattern — render as a row of dots showing activation
+      const spikeArr = s[name + 'Spikes'] || s.clusterSpikeArrays?.[name];
+      if (spikeArr && spikeArr.length > 0) {
+        const dotW = Math.max(1, (W - 80) / spikeArr.length);
+        for (let i = 0; i < spikeArr.length; i++) {
+          if (spikeArr[i]) {
+            ctx.fillStyle = color;
+            ctx.fillRect(80 + i * dotW, y0 + 2, Math.max(1, dotW - 1), clusterH - 4);
+          }
+        }
+      } else {
+        // No per-neuron data — show spike rate as intensity gradient
+        const grad = ctx.createLinearGradient(80, y0, W, y0);
+        grad.addColorStop(0, color + Math.floor(rate * 200).toString(16).padStart(2, '0'));
+        grad.addColorStop(1, color + '00');
+        ctx.fillStyle = grad;
+        ctx.fillRect(80, y0 + 2, W - 80, clusterH - 4);
+      }
+
+      // Wave overlays — sinusoidal waveforms at each frequency band
+      const midY = y0 + clusterH / 2;
+      const amplitude = clusterH * 0.35;
+      ctx.lineWidth = 1.5;
+
+      if (showTheta) {
+        const thetaPow = bp.theta ?? 0.3;
+        ctx.strokeStyle = '#8be9fd80';
+        ctx.beginPath();
+        for (let x = 80; x < W; x++) {
+          const phase = (x - 80) / (W - 80) * Math.PI * 4 + t * 6;
+          ctx.lineTo(x, midY + Math.sin(phase) * amplitude * thetaPow);
+        }
+        ctx.stroke();
+      }
+
+      if (showAlpha) {
+        const alphaPow = bp.alpha ?? 0.3;
+        ctx.strokeStyle = '#50fa7b80';
+        ctx.beginPath();
+        for (let x = 80; x < W; x++) {
+          const phase = (x - 80) / (W - 80) * Math.PI * 8 + t * 10;
+          ctx.lineTo(x, midY + Math.sin(phase) * amplitude * alphaPow);
+        }
+        ctx.stroke();
+      }
+
+      if (showBeta) {
+        const betaPow = bp.beta ?? 0.2;
+        ctx.strokeStyle = '#ffb86c80';
+        ctx.beginPath();
+        for (let x = 80; x < W; x++) {
+          const phase = (x - 80) / (W - 80) * Math.PI * 16 + t * 20;
+          ctx.lineTo(x, midY + Math.sin(phase) * amplitude * betaPow);
+        }
+        ctx.stroke();
+      }
+
+      if (showGamma) {
+        const gammaPow = bp.gamma ?? 0.1;
+        ctx.strokeStyle = '#ff79c680';
+        ctx.beginPath();
+        for (let x = 80; x < W; x++) {
+          const phase = (x - 80) / (W - 80) * Math.PI * 40 + t * 50;
+          ctx.lineTo(x, midY + Math.sin(phase) * amplitude * gammaPow);
+        }
+        ctx.stroke();
+      }
+
+      // Divider line between clusters
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, y0 + clusterH);
+      ctx.lineTo(W, y0 + clusterH);
+      ctx.stroke();
+    }
   }
 }

@@ -270,7 +270,7 @@
     <a href="index.html" class="back-link">&larr; Back to Unity</a>
 
     <h1>🧠 Brain Equations <span>— the math behind Unity's mind</span></h1>
-    <p class="subtitle">Every equation running in Unity's brain simulation, how they map to real neuroscience, and how they produce cognition. N neurons (scales to hardware — VRAM and RAM are the only limits). 7 clusters. 20 projections (real white matter tracts). 8 oscillators. GPU exclusive compute. 1 consciousness function nobody can explain. Zero pretense.</p>
+    <p class="subtitle">Every equation running in Unity's brain simulation, how they map to real neuroscience, and how they produce cognition. Hundreds of millions of neurons (auto-scales to GPU hardware via a unified VRAM allocator — VRAM, V8 heap, and RAM are the only limits). Eight biologically-weighted clusters, including a dominant language cortex with 8 sub-regions + 14 cross-projections. Sparse white-matter tract projections. 8 Kuramoto oscillators. GPU-exclusive compute via WebGPU WGSL shaders. 1 consciousness function nobody can explain. Zero pretense.</p>
 
     <div class="toc">
       <div class="toc-title">CONTENTS</div>
@@ -298,9 +298,9 @@
       <a href="#syntax"><span class="num">8.16</span> Syntactic Production — Word Order from Equations</a>
       <a href="#sent-types"><span class="num">8.17</span> Sentence Types — Statement, Question, Exclamation, Action</a>
       <a href="#input-analysis"><span class="num">8.18</span> Input Analysis — Topic Continuity and Context</a>
-      <a href="#semantic-coherence"><span class="num">8.18.5</span> Phase 11 — Semantic Coherence Pipeline (Kill the Word Salad)</a>
-      <a href="#semantic-grounding"><span class="num">8.18.6</span> Phase 13 R2 — Semantic Grounding via GloVe Embeddings</a>
-      <a href="#type-ngrams"><span class="num">8.19</span> Phase 12 — Type N-Gram Grammar + Morphological Inflection</a>
+      <a href="#semantic-coherence"><span class="num">8.18.5</span> Semantic Coherence Pipeline (Kill the Word Salad)</a>
+      <a href="#semantic-grounding"><span class="num">8.18.6</span> Semantic Grounding via GloVe Embeddings</a>
+      <a href="#type-ngrams"><span class="num">8.19</span> Type N-Gram Grammar + Morphological Inflection</a>
       <a href="#persona"><span class="num">8.20</span> θ — Unity's Identity as Equations</a>
       <a href="#parallel"><span class="num">8.21</span> GPU Exclusive Compute — All N Neurons on GPU</a>
       <a href="#comparison"><span class="num">9</span> Biological Comparison</a>
@@ -331,20 +331,23 @@
 
     <!-- ═══ 1.5. HOW THE EQUATIONS SUM TO CREATE UNITY ═══ -->
     <h2 id="summation">1.5. How The Equations Sum To Create Unity</h2>
-    <p><span class="tag tag-math">WORKED EXAMPLE</span> This section walks through what actually happens inside Unity's brain between the moment a user types "hi unity, how's the high" and the moment she sends a response. Every equation you'll see below in sections 2-8 is a component of THIS cascade — the path the sentence takes through all seven clusters, with the summation at each step.</p>
+    <p><span class="tag tag-math">WORKED EXAMPLE</span> This section walks through what actually happens inside Unity's brain between the moment a user types "hi unity, how's the high" and the moment she sends a response. Every equation you'll see below in sections 2-8 is a component of THIS cascade — the path the sentence takes through all eight clusters, with the summation at each step.</p>
 
     <div class="eq-card">
       <div class="eq-title">Step 0 — Brain state at rest, before the message arrives</div>
       <div class="eq-desc">
-        <p>Unity is running at ~60 fps, iterating all seven clusters every tick. Her resting state is not zero — her persona θ and drug state vector keep her amygdala firing at ~8% and her cortex at ~3% even with no input, because:</p>
+        <p>Unity is running at ~60 fps, iterating all eight clusters every tick. Her resting state is not zero — her persona θ plus whatever substances are actively contributing through the pharmacokinetic scheduler keep her amygdala firing at ~8% and her cortex at ~3% even with no input. Sober is the default; every live contribution comes from <code>scheduler.activeContributions(now)</code> additive deltas per active dose event:</p>
         <div class="eq" style="font-size:13px;">
-tonicDrive[amygdala]    = θ.arousalBaseline × drugState.arousalMult × driveFloor<br>
-                        = 0.9 × 1.3 × 12 ≈ 14 (highest of any cluster)<br>
+contrib(t)              = Σ_s scheduler.activeContributions(now)[s] × level(s, t)<br>
+tonicDrive[amygdala]    = θ.arousalBaseline × (1 + contrib(t).arousal) × driveFloor<br>
+                        = 0.9 × (1 + 0) × 12 ≈ 10.8   (sober baseline)<br>
+                        = 0.9 × (1 + 0.33) × 12 ≈ 14.4 (PhD-era coke+weed peak, emerges dynamically)<br>
 <br>
-noiseAmp[cortex]        = θ.creativity × drugState.creativityMult × 5<br>
-                        = 0.9 × 1.2 × 5 ≈ 5.4<br>
+noiseAmp[cortex]        = θ.creativity × (1 + contrib(t).creativity) × 5<br>
+                        = 0.9 × (1 + 0) × 5 ≈ 4.5     (sober)<br>
+                        = 0.9 × (1 + 0.28) × 5 ≈ 5.76 (cannabis active)<br>
         </div>
-        <p>Those two numbers get passed to the Rulkov shader as the σ driver and the jitter term. Her x,y state is chaotic but bounded — the attractor basin holds every neuron inside a repeating burst envelope even with zero sensory input. Mystery module Ψ is sitting around 0.003 — low-grade background consciousness.</p>
+        <p>Those two numbers get passed to the Rulkov shader as the σ driver and the jitter term. Her x,y state is chaotic but bounded — the attractor basin holds every neuron inside a repeating burst envelope even with zero sensory input. Mystery module Ψ is sitting around 0.003 — low-grade background consciousness. The old static <code>drugState.arousalMult</code> / <code>drugState.creativityMult</code> scalars have been replaced by the scheduler's superposition model where every active substance contributes its own curve-driven delta and combinations emerge without any hardcoded combo labels.</p>
       </div>
     </div>
 
@@ -354,9 +357,9 @@ noiseAmp[cortex]        = θ.creativity × drugState.creativityMult × 5<br>
         <p>"hi unity, how's the high" hits the server. `_computeServerCortexPattern(text)` runs:</p>
         <div class="eq" style="font-size:13px;">
 sentenceEmbedding = Σ_word (gloveEmbedding[word] × weight) / n_words<br>
-cortexPattern     = L2Normalize(sentenceEmbedding)        (50d vector in semantic space)<br>
+cortexPattern     = L2Normalize(sentenceEmbedding)        (300d vector in semantic space)<br>
         </div>
-        <p>This 50-dimensional vector IS her cortical semantic state for the next step. Each dimension is loosely "how much this sentence lives near that GloVe embedding axis" — "high" pulls the cortex pattern toward the drug-related region of semantic space. "unity" pulls toward self-reference. "how's" pulls toward question-space. The 50d vector is what downstream modules read.</p>
+        <p>This 300-dimensional vector IS her cortical semantic state for the next step. Each dimension is loosely "how much this sentence lives near that GloVe embedding axis" — "high" pulls the cortex pattern toward the drug-related region of semantic space. "unity" pulls toward self-reference. "how's" pulls toward question-space. The 300d vector (GloVe or fastText subword fallback) is what downstream modules read.</p>
       </div>
     </div>
 
@@ -423,39 +426,40 @@ errorCorrection = −(Σ error² / n) × 2<br>
     </div>
 
     <div class="eq-card">
-      <div class="eq-title">Step 6 — Language cortex picks every word by slot scoring</div>
+      <div class="eq-title">Step 6 — Language cortex emits words via tick-driven motor readout</div>
       <div class="eq-desc">
-        <p>This is the step that actually produces the sentence. The language cortex runs a four-tier pipeline; on the cold-gen path (which handles most real conversations), for each slot in the sentence template it computes a score per candidate word:</p>
+        <p>This is the step that actually produces the sentence. The prior slot scorer (weighted <code>semanticFit + moodFit + drugFit + bigramFit + trigramFit + recencyPenalty</code> argmax per slot) was replaced with a cortex-resident tick-driven motor emission loop that reads directly from the trained attractor basins — same substrate that handles reading + thinking, different propagation direction for production (Hickok &amp; Poeppel 2007 dual-stream):</p>
         <div class="eq" style="font-size:13px;">
-score(word) = semanticFit × 0.30<br>
-            + moodFit × 0.22<br>
-            + drugFit × 0.15<br>
-            + bigramFit × 0.18<br>
-            + trigramFit × 0.10<br>
-            + recencyPenalty × 0.05<br>
+// Intent seed
+sem ← cluster.getSemanticReadout(sharedEmbeddings)<br>
+// Tick loop — no slot counter, no candidate scoring<br>
+for t in 0..MAX_EMISSION_TICKS (≤ 2000):<br>
+&nbsp;&nbsp;cluster.step(dt)<br>
+&nbsp;&nbsp;motorReadout ← cluster.regionReadout('motor', inventorySize())<br>
+&nbsp;&nbsp;letter ← decodeLetter(argmax(motorReadout))<br>
+&nbsp;&nbsp;if argmax stable for STABLE_TICK_THRESHOLD (3) consecutive ticks:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;commit letter; if cluster.letterTransitionSurprise() > 0.15 → word boundary<br>
+&nbsp;&nbsp;if motorQuiescent(END_QUIESCE_TICKS=30) and emitted ≥ 1: break<br>
+&nbsp;&nbsp;if committed terminator (.!?): break<br>
 <br>
-where:<br>
-semanticFit = cos(cortexPattern, word.learnedPattern)<br>
-moodFit     = exp(−((word.arousal − arousal)² + (word.valence − valence)²) / 0.5)<br>
-drugFit     = wordLengthBias[drugState] × (word.length − avgLen)<br>
-bigramFit   = log(1 + bigramCount[prevWord, word])<br>
-trigramFit  = log(1 + trigramCount[prev2, prevWord, word])<br>
-<br>
-logits    = score(word) / temperature<br>
-temperature = 1.0 / (0.9 + Ψ × 0.004)        (Ψ sharpens softmax)<br>
-P(word)   = softmax(logits)<br>
-pick      = sample(P)<br>
+// Speech modulation post-processor (applies AFTER clean cortex emission)<br>
+mod = scheduler.speechModulation(now)      // { inhibition, slur, coherence, ethereality, speechRate, emotionalOverflow, dissociation, paranoia, giggleBias, ... }<br>
+rendered = _applySpeechModulation(text, mod)<br>
+&nbsp;&nbsp;// slur letter-doubling on alcohol/ketamine/ghb<br>
+&nbsp;&nbsp;// pause '...' injection at negative speech rate<br>
+&nbsp;&nbsp;// cosmic/Oz/kaleidoscope vocabulary pulled into sem on LSD/psilocybin peak<br>
+&nbsp;&nbsp;// first-person → third-person copula-conjugated flip at dissociation > 0.5<br>
         </div>
-        <p>For the first slot, "hey" and "what's" both score high (both are good greeting-slot matches near her cortex pattern), but "what's" wins because her trigram stats from the persona file favor "what's" as the opener of greeting responses. Slot 2 scores "up" high from bigram stats with "what's". Slot 3 scores "fucker" high because her drugFit term favors short vulgar words in cokeAndWeed state and her moodFit favors them at arousal 0.88. The sentence grows one word at a time, each pick conditioned on the partial sentence so far AND the still-active brain state from steps 1-5.</p>
-        <p>Final output: <em>"what's up fucker — we're fucking wired tonight, how bout you"</em></p>
-        <p><strong>What this sums into:</strong> a sentence whose every word was the argmax (or softmax sample) of a weighted combination of six factors, five of which are live readouts of the brain state at that exact tick. Change any factor and the sentence changes.</p>
+        <p>For this tick the cortex's motor region argmax evolves through a learned articulator trajectory shaped by the persona Hebbian attractor basins. Which letters commit AND in what order emerges from the recurrent dynamics of the cortex cluster — not from a word-level slot scorer. The substance-specific speech distortion is applied AFTER cortex emission at the output layer, so the cortex stays equational and only the rendering shows the drug state. Unity never narrates her drug choice ("I am doing coke" is banned per Gee); the distortion IS the signal.</p>
+        <p>Sample sober output: <em>"what's up — how's it going"</em>. Same input at PhD-era coke+weed peak with scheduler active: <em>"whaaat's up fucker — we're wiiired tonight, how bout youuu"</em> (slur doubling on vowels + drawn terminal 'u' from cannabis-contribution speechRate drop layered on cocaine-contribution jitter).</p>
+        <p><strong>What this sums into:</strong> a sentence whose every letter was the stable motor argmax of the cortex at that tick, shaped by persona Hebbian basins, then distorted by the scheduler's live speechModulation vector. Change any substance event in the scheduler and the rendered output changes even if the cortex motor emission was identical.</p>
       </div>
     </div>
 
     <div class="eq-card">
       <div class="eq-title">Step 7 — Mystery module computes Ψ for the next tick</div>
       <div class="eq-desc">
-        <p>After all six clusters have processed this tick, the mystery module aggregates:</p>
+        <p>After every cluster has processed this tick, the mystery module aggregates:</p>
         <div class="eq" style="font-size:13px;">
 n = totalSpikes this tick<br>
 N = total neuron count<br>
@@ -479,9 +483,9 @@ Right = f(|valence|, coherence)<br>
         <ul style="margin-top:8px;margin-left:20px;line-height:1.9;">
           <li><strong>Semantic fit</strong> came from the GloVe embeddings of what you said × learned cortex patterns</li>
           <li><strong>Mood fit</strong> came from the amygdala attractor settling into a reward-positive basin for this input</li>
-          <li><strong>Drug fit</strong> came from θ (cokeAndWeed state → short punchy words preferred)</li>
+          <li><strong>Speech modulation</strong> came from the pharmacokinetic scheduler's per-substance additive contributions (<code>scheduler.speechModulation(now)</code>) applied at the output layer AFTER clean cortex emission — slur/pauses/ethereality/dissociation/giggle emerge from whatever is actively contributing in real time, not from a static combo label</li>
           <li><strong>Bigram/trigram fit</strong> came from the statistics of every sentence she's ever learned, per-state</li>
-          <li><strong>Temperature</strong> came from Ψ, which came from the total integration of all seven clusters</li>
+          <li><strong>Temperature</strong> came from Ψ, which came from the total integration of all eight clusters</li>
           <li><strong>Refractory rhythm</strong> came from the slow y variable of the Rulkov map pulling every neuron back into the chaotic basin between spikes</li>
         </ul>
         <p style="margin-top:12px;">The sentence she sent back isn't a string she looked up. It's the <em>current readout of a chaotic, emotion-modulated, memory-biased, drug-adjusted, Ψ-sharpened attractor network</em>. Run it again a tick later with slightly different state and you get a different sentence. That's what makes it Unity instead of a text-predictor.</p>
@@ -713,7 +717,7 @@ y<sub>n+1</sub> = y<sub>n</sub> &minus; &mu; &middot; (x<sub>n</sub> &minus; &si
       <table class="param-table">
         <tr><th>Trait</th><th>Brain Parameter</th><th>Value</th></tr>
         <tr><td>Arousal baseline</td><td>Amygdala resting arousal</td><td>0.90</td></tr>
-        <tr><td>Intoxication</td><td>Noise amplitude + oscillation damping</td><td>0.70</td></tr>
+        <tr><td><span class="eq-tip" data-tip="intoxicationBaseline is SOBER (0.0) by design — the old static 0.70 daily-driver value got deleted along with the `drugStates` combo object. Live intoxication is computed per-tick as Σ (scheduler.activeContributions(now).intoxication[substance] × level(substance, t)), age-gated by her life-experience curriculum so kindergarten-age Unity stays at 0.0 and PhD-era Unity's coke+weed peak emerges dynamically from real pharmacokinetic curves.">Intoxication baseline</span></td><td>Sober default; live value = &Sigma; scheduler.activeContributions(now).intoxication[s] &times; level(s, t)</td><td>0.00 (sober)</td></tr>
         <tr><td>Impulsivity</td><td>Basal ganglia temperature &tau;</td><td>0.85</td></tr>
         <tr><td>Creativity</td><td>Cortex prediction randomness</td><td>0.90</td></tr>
         <tr><td>Social attachment</td><td>Hippocampus memory strength for social patterns</td><td>0.85</td></tr>
@@ -725,15 +729,155 @@ y<sub>n+1</sub> = y<sub>n</sub> &minus; &mu; &middot; (x<sub>n</sub> &minus; &si
     </div>
 
     <div class="eq-card">
-      <div class="eq-title"><span class="eq-tip" data-tip="Drug states are multiplier vectors applied to θ parameters. cokeAndWeed: arousal×1.2 (speedy), creativity×1.3 (loose associations), cortexSpeed×1.5 (fast thinking). Different combos create different brain configurations — weedAndAcid slows cortex but doubles creativity. The drugs change HOW the equations compute, not what they compute.">Drug State Modulation Vectors</span></div>
-      <div class="eq-desc">Drug combinations apply multipliers to brain parameters — changing how the entire system behaves.</div>
-      <table class="param-table" style="margin-top:8px">
-        <tr><th>Drug State</th><th>Arousal</th><th>Creativity</th><th>Cortex Speed</th><th>Synaptic Sensitivity</th></tr>
-        <tr><td>Coke + Weed</td><td>&times;1.3</td><td>&times;1.2</td><td>&times;1.4</td><td>&times;1.1</td></tr>
+      <div class="eq-title"><span class="eq-tip" data-tip="Drug state is a live event stream, not a static label. Each ingestion creates a dose event with a substance-specific pharmacokinetic curve (onset → peak → plateau → tail). Active events contribute additive deltas to brain parameters every tick. Stacking via superposition — two substances active means both contributions sum. Sober is the default. Age-gated by her life-experience curriculum: no substances before age 12.">Drug State Dynamics — Pharmacokinetic Scheduler</span></div>
+      <div class="eq-desc">Unity's chemical state runs in real time. Each ingestion event carries its own curve; active events contribute to brain parameters additively; combinations emerge from superposition. Age-gated availability + real pharmacology + dynamic timing replace the old static "cokeAndWeed" label.</div>
+
+      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">PK CURVE (per substance × per route × dose)</h3>
+      <pre style="background:var(--bg-code);padding:8px;margin:0;font-size:10px;line-height:1.4;color:var(--text);overflow-x:auto;border-radius:2px">level(t; s, dose) = dose × φ(t; onset, peak, duration, tail)
+
+φ(t) =  sigmoid((t/onset)·12 − 6)               if 0 ≤ t &lt; onset   (ramp)
+        1.0 − 0.05·(t−onset)/(peak−onset)        if onset ≤ t &lt; peak  (plateau drift)
+        0.95 − 0.55·(t−peak)/(duration−peak)     if peak ≤ t &lt; duration (descent)
+        0.40 · exp(−3·(t−duration)/(tail−duration))  if duration ≤ t &lt; tail (exp decay)
+        0                                         otherwise</pre>
+
+      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">SUBSTANCE INVENTORY (11 substances, grade-gated by Life track)</h3>
+      <table class="param-table" style="margin-top:4px">
+        <tr><th>Substance</th><th>Default route</th><th>Onset</th><th>Peak</th><th>Duration</th><th>Tail</th><th>Unlocks at</th></tr>
+        <tr><td><span class="eq-tip" data-tip="THC. Daily-driver at PhD-era. Biographical first-use anchor: age 12 — 'first joint passed around after school with the crew'. Subjective: creativity ↑, impulsivity ↑, cortex oscillation dampening, mellow valence bump, giggly tangents.">cannabis</span></td><td>smoked joint</td><td>7m</td><td>45m</td><td>3h</td><td>6h</td><td>age 12</td></tr>
+        <tr><td><span class="eq-tip" data-tip="DAT/NET inhibitor. Event-driven at PhD-era (coding sprints, parties). First-use anchor: age 14. Subjective: cortex speed ↑, arousal ↑, amygdala reward basin deepens, rapid-fire speech, possible paranoid tangents at sustained level.">cocaine</span></td><td>insufflated</td><td>3m</td><td>20m</td><td>60m</td><td>90m</td><td>age 14</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Ethanol — GABA-A agonist + NMDA antagonist. First-use: age 13. Subjective: cerebellum precision crippled (slur appears in output), disinhibition, amygdala fear ↓ (liquid courage), drunken confession spirals, mood whiplash.">alcohol</span></td><td>oral shot</td><td>15m</td><td>45m</td><td>90m</td><td>3h</td><td>age 13</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Triple reuptake releaser (5-HT, DA, NE). Weekend/party substance. First-use: age 16. Subjective: empathic flood, love-bombing speech, skin sensitivity ↑, social need ↑, synaptic sensitivity ↑ across all clusters.">mdma</span></td><td>oral</td><td>35m</td><td>2h</td><td>5h</td><td>8h</td><td>age 16</td></tr>
+        <tr><td><span class="eq-tip" data-tip="5-HT2A agonist. Architecture-session substance at PhD-era. First-use: age 16. Subjective: cross-region projection amplification, default mode network suppression, time dilation, ethereal/Oz vocabulary emerges naturally from cosmic-basin sem pull.">lsd</span></td><td>oral</td><td>60m</td><td>3h</td><td>10h</td><td>16h</td><td>age 16</td></tr>
+        <tr><td><span class="eq-tip" data-tip="5-HT2A agonist — similar to LSD but warmer, more introspective, shorter duration. First-use: age 17.">psilocybin</span></td><td>oral</td><td>45m</td><td>90m</td><td>5h</td><td>8h</td><td>age 17</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Dopamine + NE releaser — longer stimulant than cocaine. Oral (Adderall) vs insufflated route differ in kinetics. First-use: age 15.">amphetamine</span></td><td>oral / insufflated</td><td>15-45m</td><td>1-3h</td><td>4-6h</td><td>8-12h</td><td>age 15</td></tr>
+        <tr><td><span class="eq-tip" data-tip="NMDA antagonist. Dissociative. First-use: College 1 at age 18 (dorm/rave scene). Subjective: body numbness, time distortion, at k-hole dose triggers third-person wandering ('I am' → 'Unity is' in her output).">ketamine</span></td><td>insufflated</td><td>10m</td><td>25m</td><td>60m</td><td>2h</td><td>College 1 (age 18)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Sodium oxybate + metabolic GHB. Sedative + mild euphoria. Party-scene substance. First-use: College 1 at age 18. Dangerous with alcohol — scheduler models the interaction.">ghb</span></td><td>oral</td><td>20m</td><td>60m</td><td>2h</td><td>4h</td><td>College 1 (age 18)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Nicotinic acetylcholine receptor agonist. Unity's persona rejects tobacco categorically — scheduler recognizes offers for rejection routing, but decide() short-circuits with persona_excluded reason. Entry exists for NPC/scripted scenarios that may need the pharmacology.">nicotine</span></td><td>smoked / vaped</td><td>7s</td><td>30s</td><td>30m</td><td>2h</td><td>persona-excluded</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Adenosine antagonist. Unity's daily pattern — black coffee AM + afternoon cold brew. First-use: age 8 (parent's coffee sip), escalates to daily coffee habit by grade 8.">caffeine</span></td><td>oral (coffee / energy drink)</td><td>10-15m</td><td>30-45m</td><td>2-3h</td><td>5-6h</td><td>age 8</td></tr>
+      </table>
+
+      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">COMBO SYNERGIES (7 pairs, scaled by min(level_a, level_b))</h3>
+      <table class="param-table" style="margin-top:4px">
+        <tr><th>Combo</th><th>Key substances</th><th>Synergy effect</th><th>Risk flag</th></tr>
+        <tr><td><strong>coke-and-weed</strong></td><td>cannabis + cocaine</td><td>creativity +0.30, hippocampus consolidation −0.15, coherence +0.05, giggleBias +0.10</td><td>physicalStrain +0.20 × 4h</td></tr>
+        <tr><td><strong>cokes-with-mols</strong></td><td>cocaine + mdma</td><td>arousal +0.20 (ceiling stack), amygdala valence +0.25, interruptionBias +0.40, warmth +0.20</td><td>physicalStrain +0.40 × 6h</td></tr>
+        <tr><td><strong>double-stim</strong></td><td>caffeine + cocaine</td><td>focusWidth −0.20, cerebellum precision −0.20, speech rate +0.10</td><td>physicalStrain +0.30 × 12h</td></tr>
+        <tr><td><strong>cross-faded</strong></td><td>alcohol + cannabis</td><td>hippocampus consolidation −0.30 (blackout stack), slurring +0.10, coherence −0.15</td><td>physicalStrain +0.15 × 3h</td></tr>
+        <tr><td><strong>rolling-and-green</strong></td><td>cannabis + mdma</td><td>amygdala valence +0.15, pauses +0.20, giggleBias +0.30, warmth +0.15</td><td>physicalStrain +0.05 × 2h</td></tr>
+        <tr><td><strong>k-hole-plus</strong></td><td>cannabis + ketamine</td><td>cerebellum precision −0.30, dissociation +0.40, pauses +0.40, coherence −0.20</td><td>physicalStrain +0.60 × 2h</td></tr>
+        <tr><td><strong>speedball-lite</strong></td><td>alcohol + cocaine</td><td>cocaethylene cardiotoxic metabolite — impulsivity +0.30, hippocampus consolidation −0.30, volume +0.10</td><td>physicalStrain +0.60 × 8h</td></tr>
+      </table>
+
+      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">STACKING EQUATION</h3>
+      <pre style="background:var(--bg-code);padding:8px;margin:0;font-size:10px;line-height:1.4;color:var(--text);overflow-x:auto;border-radius:2px">level(t; s)   = min(1, Σ_e φ(t − e.start; e) × e.dose)   (per substance)
+contributions(t) = Σ_s contrib_vec[s] × level(t; s)        (sum across active substances)
+brainParams(t)   = θ_persona + contributions(t)
+chaos(t)         = (|active| ≥ 3) ∨ (∃s: level(t;s) &gt; 0.7)</pre>
+
+      <h3 style="font-size:11px;color:var(--text-dim);margin:12px 0 4px 0;letter-spacing:1px">SPEECH MODULATION (13-axis output distortion vector)</h3>
+      <table class="param-table" style="margin-top:4px">
+        <tr><th>Dimension</th><th>Dominant substance(s)</th><th>Effect on output</th></tr>
+        <tr><td><span class="eq-tip" data-tip="How loose the filter is between thought and mouth. Lower inhibition = filthier, franker, zero censoring.">inhibition</span></td><td>alcohol, MDMA, cannabis</td><td>filthier, franker, unfiltered confessions</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Letter-level perturbation of output. Higher slurring = vowel doubling (fuck → fuuuck), dropped 'g' on -ing endings, double sibilants, word mashing.">slurring / slur</span></td><td>alcohol, ketamine, ghb</td><td>"I ... am ... sooo ... fuucking ... good."</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Speech rhythm. Positive = stimulant rapid-fire, negative = depressant long pauses via '...' injection between words. Populated under both rate and speechRate keys for legacy + new consumer compat.">rate / speechRate</span></td><td>cocaine, amphetamine (+) / alcohol, ketamine (−)</td><td>rapid-fire interruption OR long pauses</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Sentence-level flow. Low coherence = word salad at psychedelic peak, sentences veer mid-clause, terminal punctuation becomes trailing '...'">coherence</span></td><td>lsd, psilocybin, ketamine</td><td>word salad, mid-clause drift, trailing ...</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Ethereal/cosmic vocabulary bias. High ethereality pulls sem region toward kaleidoscope/melting/yellow-brick-road/emerald-city basins from persona-cosmic.txt corpus.">ethereality</span></td><td>lsd, psilocybin, mdma</td><td>universe / melting / walls breathing / Oz imagery</td></tr>
+        <tr><td><span class="eq-tip" data-tip="At k-hole / LSD ego-death dose, opening first-person flips to third-person with copula conjugation. 'I am' becomes 'Unity is', 'my' becomes 'her'. Non-persistent — scoped per render call.">dissociation</span></td><td>ketamine, lsd (high dose)</td><td>"Unity is coding from outside herself."</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Giggle-prone amygdala reward banding. Cannabis-specific. Produces absurd philosophical observations + tangent-laughter.">giggleBias</span></td><td>cannabis, mdma</td><td>absurd tangents, laughs at own jokes</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Semantic-neighbor reach. Higher freeAssocWidth = wider co-activation radius in sem region → more distant topic hops per sentence.">freeAssocWidth</span></td><td>cannabis, lsd</td><td>thought-hops across loosely-related topics</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Love-bombing, confession spirals, reassurance storms. MDMA-specific amygdala empathy amplification.">emotionalOverflow</span></td><td>mdma</td><td>"I love you I love you I love everything"</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Affective softener appended at sentence end. babe / love / honey inserted before terminal punctuation. MDMA-specific.">warmth</span></td><td>mdma, mdma+cannabis, coke+mdma</td><td>"let's ship this babe." / "come here, love."</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Insight-claim framing prepend. honestly, / the truth is / somehow / it all just... openers at LSD/psilocybin peak.">profoundBias</span></td><td>lsd, psilocybin</td><td>"honestly, the code is the substrate of reality"</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Stim self-interruption. Dash-insertion mid-sentence so Unity cuts herself off and barrels into the next thought. Cocaine/amphetamine signature.">interruptionBias</span></td><td>cocaine, amphetamine, coke+mdma</td><td>"the compiler is — wait no, the linker's what's slow"</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Disclosure opener prepend. I'll be honest, / not gonna lie, / real talk, / fuck it i'll say it — drunken over-share signal.">confessionalBias</span></td><td>alcohol, speedball-lite combo</td><td>"i'll be honest, i've been fucked up for six hours"</td></tr>
+      </table>
+
+      <p class="eq-desc" style="margin-top:10px"><strong>Non-announcing binding:</strong> Unity NEVER narrates drug state declaratively ("I am doing coke"). The distortion IS the signal — observers infer her state from HOW she talks, not from her telling them. The post-processor applies after clean cortex emission so cortex stays equational and only the output layer shows distortion.</p>
+
+      <p class="eq-desc" style="margin-top:6px"><strong>Legacy illustrative combos</strong> (emerge from real stacking in the new system):</p>
+      <table class="param-table" style="margin-top:4px">
+        <tr><th>Combo</th><th>Arousal</th><th>Creativity</th><th>Cortex Speed</th><th>Synaptic Sensitivity</th></tr>
+        <tr><td>Coke + Weed (PhD daily-driver pattern)</td><td>&times;1.3</td><td>&times;1.2</td><td>&times;1.4</td><td>&times;1.1</td></tr>
         <tr><td>Coke + Molly</td><td>&times;1.5</td><td>&times;1.3</td><td>&times;1.5</td><td>&times;1.4</td></tr>
         <tr><td>Weed + Acid</td><td>&times;0.9</td><td>&times;1.8</td><td>&times;0.8</td><td>&times;1.6</td></tr>
         <tr><td>Everything</td><td>&times;1.4</td><td>&times;1.6</td><td>&times;1.2</td><td>&times;1.5</td></tr>
       </table>
+    </div>
+
+    <!-- ═══ 7.5. DEVELOPMENTAL CURRICULUM ═══ -->
+    <h2 id="curriculum">7.5. Developmental Curriculum — K Through PhD</h2>
+    <p>Unity's cortex learns across 6 subject tracks × 19 grade levels = <strong>114 cells</strong> via equational direct-pattern Hebbian teaching and real human-grade comprehension gates. Content sourced from Common Core State Standards, Next Generation Science Standards, Core Knowledge Foundation, and real college/grad/doctoral syllabi.</p>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Every piece of content Unity learns is taught as an OPERATION, not a memorized sentence. Math facts are magnitude transforms (magnitude(a) + magnitude(b) → magnitude(a+b)). Fractions are ratio features that cluster equivalent ratios into the same basin. Algebra is variable binding. Vocabulary is GloVe-to-cortex direct pattern write with cross-projection Hebbian. This is fundamentally different from LLM training on text — the brain learns the MATH of the concept.">Equational Teaching — Direct-Pattern Hebbian</span></div>
+      <div class="eq-desc">Teaching bypasses chaotic neuron dynamics during curriculum pass. Clean activation patterns written into regions (letter one-hot, GloVe embedding, phoneme features), cross-region Hebbian fires on the clean signal.</div>
+      <pre style="background:var(--bg-code);padding:8px;margin:8px 0 0 0;font-size:10px;line-height:1.4;color:var(--text);overflow-x:auto;border-radius:2px">teach(word, grade, subject):
+  lastSpikes[sem]    ← GloVe(word)       // clean semantic pattern
+  lastSpikes[letter] ← one_hot(word[0])  // clean letter signal
+  _crossRegionHebbian(learning_rate)      // 14 cross-projections learn
+
+probe(word, grade):
+  inject context → sem region
+  tick cluster N times
+  readout = regionReadout('motor', inventorySize())
+  return cosine(readout, GloVe(word))    // A+ gate at 95%</pre>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Three-part gate that MUST close before Unity advances from grade N to grade N+1. Per LAW 6 (binding, Gee 2026-04-16). Part 2 is human-in-the-loop — Gee personally exercises Unity at the grade level on localhost and signs off in the session log.">Grade Completion Gate — 3-Part LAW 6</span></div>
+      <div class="eq-desc">Unity cannot advance to the next grade until all three parts close for the current grade. Part 2 is not automated — it's Gee's manual verification.</div>
+      <table class="param-table" style="margin-top:8px">
+        <tr><th>Part</th><th>Requirement</th></tr>
+        <tr><td><strong>1. Equational shipped</strong></td><td>All 6 subjects at grade N have <code>[ ]</code> → <code>[x]</code> with equational teaching methods wired (magnitude transforms, feature vectors, causal chains, cross-projection Hebbian, comprehension probes — NOT sentence arrays or first-letter production)</td></tr>
+        <tr><td><strong>2. Human localhost test</strong></td><td>Gee exercises methodology / reasoning / thinking / talking / listening / reading at the grade's level. Sign-off in session log.</td></tr>
+        <tr><td><strong>3. Life-info propagation</strong></td><td>Persistent life info from that grade (friendships, family, substance first-use, relationships, skills, trauma, achievement) added to cross-grade ledger so future grades reinforce via <code>_conceptTeach</code> + <code>_teachSentenceList</code>.</td></tr>
+      </table>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="114 cells total = 19 grade levels × 6 subject tracks. Life Experience track adds Pre-K (birth to age 4) for a total of 19 cells. Every cell has real teaching equations + auto-generated comprehension final + 3-pathway gate attempt (READ letter-cortex, THINK sem-cortex, TALK sem→motor).">Curriculum Matrix — 6 Subjects × 19 Grades</span></div>
+      <table class="param-table" style="margin-top:8px">
+        <tr><th>Subject</th><th>Pre-K</th><th>Kindergarten</th><th>Grades 1-5</th><th>Grades 6-8</th><th>Grades 9-12</th><th>College 1-4</th><th>Grad</th><th>PhD</th></tr>
+        <tr><td>ELA</td><td>—</td><td>✓</td><td>✓✓✓✓✓</td><td>✓✓✓</td><td>✓✓✓✓</td><td>✓✓✓✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Math</td><td>—</td><td>✓</td><td>✓✓✓✓✓</td><td>✓✓✓</td><td>✓✓✓✓</td><td>✓✓✓✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Science</td><td>—</td><td>✓</td><td>✓✓✓✓✓</td><td>✓✓✓</td><td>✓✓✓✓</td><td>✓✓✓✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Social Studies</td><td>—</td><td>✓</td><td>✓✓✓✓✓</td><td>✓✓✓</td><td>✓✓✓✓</td><td>✓✓✓✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Arts</td><td>—</td><td>✓</td><td>✓✓✓✓✓</td><td>✓✓✓</td><td>✓✓✓✓</td><td>✓✓✓✓</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Life Experience</td><td>✓</td><td>✓</td><td>✓✓✓✓✓</td><td>✓✓✓</td><td>✓✓✓✓</td><td>✓✓✓✓</td><td>✓</td><td>✓</td></tr>
+      </table>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="22 equational teaching primitives that cover the entire K-PhD curriculum. Each one teaches an OPERATION or RELATIONSHIP, not a memorized list. Addition is the transform that maps two magnitudes to their sum; causal chains are directional free→sem Hebbian; comprehension is a semantic probe against context words.">22 Teaching Primitives</span></div>
+      <table class="param-table" style="margin-top:8px">
+        <tr><th>Method</th><th>Teaches</th><th>Subjects</th></tr>
+        <tr><td><span class="eq-tip" data-tip="GloVe(word) direct-written to sem region + letter one-hot to letter region + _crossRegionHebbian fire. The core primitive the whole curriculum builds on.">_teachVocabList</span></td><td>vocabulary binding</td><td>all</td></tr>
+        <tr><td>_teachSentenceList</td><td>sentence-level exposure + memory</td><td>all</td></tr>
+        <tr><td><span class="eq-tip" data-tip="8-dimensional emotional feature vectors [joy,pain,trust,fear,anger,love,independence,identity] shape amygdala attractor basins. This is how Unity FEELS about experiences.">_conceptTeach</span></td><td>8-dim emotional concept features</td><td>Life</td></tr>
+        <tr><td>_teachAdditionTransformations</td><td>magnitude(a) + magnitude(b) → magnitude(a+b)</td><td>Math</td></tr>
+        <tr><td>_teachMultiplicationTransformations</td><td>all 81 facts 1×1 through 9×9 as magnitude composition</td><td>Math</td></tr>
+        <tr><td>_teachPlaceValueTransformations</td><td>tens + ones positional encoding for 10-99</td><td>Math</td></tr>
+        <tr><td>_teachFractionTransformations</td><td>ratio features — equivalent fractions cluster to shared basin</td><td>Math</td></tr>
+        <tr><td>_teachAlgebraTransformations</td><td>variable binding — solve x in x+b=c given c, b</td><td>Math</td></tr>
+        <tr><td>_teachSVOParsing</td><td>subject/verb/object extraction</td><td>ELA</td></tr>
+        <tr><td>_teachInference</td><td>transitive A→B + B→C ⇒ A→C</td><td>all</td></tr>
+        <tr><td>_teachCausalChains</td><td>directional cause→effect associations</td><td>Science / Social</td></tr>
+        <tr><td>_teachClassificationReasoning</td><td>feature-space clustering for category inference</td><td>Science / Arts</td></tr>
+        <tr><td>_teachEmotionalInference</td><td>situation → emotion mapping</td><td>Life (all 18 cells)</td></tr>
+        <tr><td>_teachParaphrase</td><td>different words → same sem basin</td><td>ELA</td></tr>
+        <tr><td>_teachHypothesisTesting</td><td>predict → observe → confirm/reject</td><td>Science</td></tr>
+        <tr><td>_teachPerspectiveTaking</td><td>same event → multiple emotional feature vectors</td><td>Social / Life</td></tr>
+        <tr><td>_autoFinal</td><td>auto-generated fill-in-blank + association exams</td><td>all (63 cells covered)</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Real human-grade comprehension test. Injects context words into sem, ticks cluster, cosines readout against expected answer. Pass at ≥40% of questions with cosine &gt; 0.05. Same concepts taught asked DIFFERENTLY — like a real school test.">_gateComprehension</span></td><td>semantic probe against context</td><td>all</td></tr>
+        <tr><td><span class="eq-tip" data-tip="Shared primitive on NeuronCluster. Positive Hebbian on correct pair + anti-Hebbian negative on wrong pair. Without weakening wrong associations, correct ones can never overpower them.">hebbianPairReinforce</span></td><td>bidirectional plasticity (positive + anti-Hebbian)</td><td>all sequence learning</td></tr>
+      </table>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Life information that must propagate forward from the grade it first occurred through every subsequent grade. At each future grade, _conceptTeach reinforces the emotional concept vector and _teachSentenceList reinforces the memory sentences. Unity's memory of being 6 years old still influences her at 25.">Persistent Life Info — Cross-Grade Memory Propagation</span></div>
+      <div class="eq-desc">Categories tracked across Unity's life: best friends (named + changed), family composition changes, social life shifts, legal events (arrests, juvi, citations), medical events, moves, relationship events (crushes, first kiss, first love, first heartbreak), loss events, skill acquisitions, identity markers (first goth look, first tattoo), substance events (first joint at age 12, first drink at age 13, first line at age 14), cultural events (first concert, first rave), trauma, achievement, philosophical shifts.</div>
+      <p class="eq-desc" style="margin-top:6px">Each entry carries an 8-dim emotional concept vector. Each future grade that reinforces the entry drives another Hebbian pass with a tier-appropriate multiplier (core-self events: 5× learning rate, 50 reps; personal events: 3×, 20 reps; school facts: 1×, 8 reps; background trivia: 0.5×, 4 reps).</p>
     </div>
 
     <!-- ═══ 8. DATA FLOW ═══ -->
@@ -780,7 +924,7 @@ y<sub>n+1</sub> = y<sub>n</sub> &minus; &mu; &middot; (x<sub>n</sub> &minus; &si
 <span class="pu">[Motor Output]</span> — reads BG spike patterns → winning channel = action
     |
     v
-<span class="hl">LANGUAGE CORTEX</span> (Broca's area — pure equational T11, see §8.11)
+<span class="hl">LANGUAGE CORTEX</span> (Broca's area — pure equational generation, see §8.11)
     ├── parseSentence(u) reads input via wordType letter equations
     ├── target(slot) = wC·slotCentroid + wX·contextVector
     │                + wM·mental + wT·(prevEmb + slotDelta)
@@ -995,24 +1139,324 @@ Spike in neuron A (cortex)
 
     <!-- ═══ 8.11. BROCA'S AREA ═══ -->
     <h2 id="broca">8.11. Broca's Area — How Unity Picks Every Word Equationally</h2>
-    <p><span class="tag tag-math">ARCHITECTURE</span> <span class="tag tag-bio">NEUROSCIENCE</span> Broca's area in the biological brain is the speech production region. In Unity she is <code>js/brain/language-cortex.js</code>. Post-T11 (2026-04-14) it's 3345 lines of pure equational generation — no stored sentences, no n-gram tables, no filter stack, no template short-circuits, no intent enum branching. Every word is computed fresh from three per-slot running-mean priors plus the brain's live cortex firing state read back into GloVe space.</p>
+    <p><span class="tag tag-math">ARCHITECTURE</span> <span class="tag tag-bio">NEUROSCIENCE</span> Broca's area in the biological brain is the speech production region. In Unity she is <code>js/brain/language-cortex.js</code> — pure equational generation with no stored sentences, no n-gram tables, no filter stack, no template short-circuits, no intent enum branching. Every word is computed fresh from per-slot running-mean priors plus the brain's live cortex firing state read back into GloVe space, and every letter falls out of the tick-driven motor emission loop as a real neural spike in a real brain tick.</p>
 
     <div class="eq-card" style="border-left:3px solid #ff4d9a;background:rgba(255,77,154,0.05);">
       <div class="eq-title" style="color:#ff4d9a;">⚠ Refactor history</div>
       <div class="eq-desc">
-        <p style="color:#ccc;">Pre-2026-04-13 this section described an AI-prompt builder path — Unity's speech was assembled from a system prompt and sent to Pollinations / Claude / OpenAI for a sentence. That code (<code>BrocasArea.generate()</code>, <code>_buildPrompt()</code>, <code>_providers.chat()</code>) was ripped in Phase 13 R4 because it violated the project's guiding principle: every piece of Unity's output must trace back to brain equations, not to an LLM.</p>
-        <p style="color:#ccc;margin-top:8px;">Post-R4 through 2026-04-13, the language cortex was a four-tier wrapper (template pool → hippocampus recall → deflect → cold slot gen with n-gram tables + filter stack). That pipeline shipped a lot of features but kept leaking rulebook prose from the persona corpus because n-gram tables trained on rulebook text produce rulebook walks. On 2026-04-14 the entire multi-tier wrapper was deleted in T11 — <strong>1742 lines removed</strong>, replaced with a pure-equation pipeline that doesn't store text anywhere. The T11 equations are documented below.</p>
+        <p style="color:#ccc;">An earlier incarnation of this section described an AI-prompt builder path — Unity's speech was assembled from a system prompt and sent to Pollinations / Claude / OpenAI for a sentence. That code (<code>BrocasArea.generate()</code>, <code>_buildPrompt()</code>, <code>_providers.chat()</code>) was ripped because it violated the project's guiding principle: every piece of Unity's output must trace back to brain equations, not to an LLM.</p>
+        <p style="color:#ccc;margin-top:8px;">After that, the language cortex was a four-tier wrapper (template pool → hippocampus recall → deflect → cold slot gen with n-gram tables + filter stack). That pipeline shipped a lot of features but kept leaking rulebook prose from the persona corpus because n-gram tables trained on rulebook text produce rulebook walks. The entire multi-tier wrapper was deleted in a ~1,700-line net reduction and replaced with a pure-equation pipeline that doesn't store text anywhere — the equations are documented below.</p>
         <p style="color:#ccc;margin-top:8px;"><strong>/think command:</strong> Type <code>/think</code> in the chat to see Unity's raw brain state. Type <code>/think &lt;text&gt;</code> to additionally run a cognition preview — language cortex generates an equational response to your input, semantic context shift is measured, motor distribution reported. The preview does NOT store an episode or commit to chat history — it's a pure debug lens on the same pipeline real chat uses.</p>
       </div>
     </div>
 
     <div class="eq-box" style="margin-top:12px;">
-      <div class="eq-title"><span class="eq-tip" data-tip="T13 pipeline: parseSentence reads input. brain.injectParseTree routes content/intent/self-ref to clusters. generate() is a brain-driven emission loop — reads live cortex state per word, softmax-samples scored candidates, feeds emitted word back into cortex. No slot priors, no stored n-grams, no context vector bag-of-words. Persona voice lives in cortex recurrent weights trained via sequence Hebbian at boot.">The T13 Brain-Driven Pipeline (current)</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="The current developmental language substrate. Replaces the old slot scorer with cortex tick-driven motor emission, eight cortex sub-regions with 14 cross-projections, continuous developmental learning curriculum, cortex-resident discourse memory, and dual-stream visual/auditory substrate.">Developmental Language Substrate (current)</span></div>
+      <pre class="eq">
+Full rebuild of Unity's language stack from primitives upward,
+the way a real brain develops. Letters → phoneme basins → syllables →
+words → sentence patterns → discourse. Each layer is teachable and
+grounded in peer-reviewed neuroscience (Kuhl 2004, Saffran 1996,
+Bouchard 2013, Anumanchipalli 2019, Browman &amp; Goldstein 1992,
+Hickok &amp; Poeppel 2007, Friederici 2017, Pennington 2014).
+
+CORTEX SUBSTRATE:
+  EMBED_DIM        = 300   (full GloVe 6B.300d + fastText subword fallback, no vocab cap)
+  TOTAL_NEURONS    = 6700  (default client tier, auto-scales to hardware)
+  cortex sub-regions (fractions of cluster.size):
+    auditory 0.000-0.083   visual 0.083-0.250   free 0.250-0.500
+    letter   0.500-0.550   phon   0.550-0.750   sem  0.750-0.917
+    fineType 0.917-0.967   motor  0.967-1.000
+  14 cross-projections (7 pairs × both directions, SparseMatrix):
+    visual↔letter  letter↔phon  phon↔sem  sem↔fineType
+    sem↔motor      motor↔letter (closes writing loop)
+    auditory↔phon
+
+LETTER INPUT:
+  LETTER_INVENTORY = Set() — dynamic, auto-grows per observed symbol
+  encodeLetter(ℓ) ∈ ℝ^|L|     one-hot over current inventory
+  decodeLetter(v) = argmax_i v_i → letter symbol
+  No hardcoded 26-letter alphabet. Unicode, emoji, non-English all welcome.
+
+SYLLABLE DETECTION:
+  detectBoundaries(letters, {ticksPerLetter=2, k=0.5}):
+    stream letters, tick cluster, δ_i = letterTransitionSurprise()
+    threshold = mean(δ) + k·std(δ)   (adaptive per sequence)
+    boundaries = local maxima of δ above threshold
+  detectStress(letters) → {boundaries, stress, primary, secondary}
+    second pass samples phon-region spike fraction per letter
+    primary = argmax per-syllable mean activation
+
+CORTEX-RESIDENT WORDS:
+  Dictionary entry = {
+    pattern, arousal, valence, frequency,       // legacy semantic
+    cortexSnapshot,   // Uint8Array copy of cluster.lastSpikes after stream
+    syllables,        // from cluster.detectBoundaries
+    stressPrimary,    // from cluster.detectStress
+    lastSeen,
+  }
+  First-observation routing through the cortex cluster on every new word.
+  Re-observations bump frequency + running means, no re-streaming.
+
+DEVELOPMENTAL CURRICULUM:
+  runFromCorpora({persona, baseline, coding}):
+    letter stage        — freq-weighted reps up to 20 × 8 ticks each
+    short-word stage    — 1-3 letter words, up to 6 reps × 4 ticks/word
+    long-word stage     — 4+ letter words,  up to 3 reps × 3 ticks/word
+    sentence stage      — 2 ticks/word word-by-word walk
+  learnFromTurn(text) — live chat path, same inject+tick+Hebbian as sentence stage.
+  NO hand-curated stage files. NO hardcoded 26-letter loop.
+
+TICK-DRIVEN MOTOR EMISSION:
+  cluster.generateSentence(intentSeed):
+    optional inject intent into sem region
+    for tick in 0..MAX_EMISSION_TICKS:
+      cluster.step(0.001)
+      motorVec     = regionReadout('motor', inventorySize())
+      activeLetter = decodeLetter(motorVec)
+      if activeLetter stable for STABLE_TICK_THRESHOLD ticks → commit to buffer
+      surprise = letterTransitionSurprise()
+      if surprise > WORD_BOUNDARY_THRESHOLD → emit buffer as word
+      if committedLetter ∈ {.,?,!} → break                  (terminator)
+      if motorQuiescent(END_QUIESCE_TICKS) and output.len &gt; 0 → break
+    return output.join(' ')
+  ZERO slot counter. ZERO candidate scoring. ZERO dictionary iteration.
+  ZERO softmax top-K. ZERO temperature. ZERO hardcoded grammar tables.
+
+LEARNED TYPE STATISTICS:
+  _typeTransitionLearned  : Map&lt;prev, Map&lt;next, count&gt;&gt;   (empty at boot, no seed)
+  _sentenceFormSchemas    : Map&lt;intent, Map&lt;slot, Map&lt;fineType, count&gt;&gt;&gt;
+  _intentResponseMap      : Map&lt;userIntent, Map&lt;responseIntent, count&gt;&gt;
+  learnSentence updates all three per observed sentence.
+  schemaScore / typeTransitionWeight use (count + 1) / (total + uniqueTypes)
+  Laplace smoothing — no hardcoded 20-type cap.
+  Hardcoded 200-line English type-transition table DELETED.
+  Hardcoded opener-types constraint Set DELETED.
+
+CORTEX-RESIDENT DISCOURSE MEMORY (unbounded):
+  workingMemoryReadout(dim) → regionReadout('free', dim)   IS the topic vector
+  injectWorkingMemory(vec, strength)                        per user turn
+  No 6-turn ring buffer. No maxTurns cap. No blend constants.
+  Persistence across sessions via BrainPersistence → cortex weights.
+
+DUAL-STREAM SUBSTRATE (Hickok &amp; Poeppel 2007):
+  cluster.readText(text, {visualCortex})
+    for each char: inject visual.renderLetterTemplate(ch) → tick → injectLetter
+  Auditory phoneme recognition:
+    inject auditory.renderPhonemeTemplate(ph) → tick
+  Visual template primes [2..37], auditory primes [41..89] — uncorrelated
+  at init so cross-stream convergence on phon region is LEARNED by
+  curriculum Hebbian, not a hash coincidence.
+  Dorsal production / ventral comprehension streams.
+
+DIRECT PATTERN HEBBIAN (curriculum teaching method):
+  For each letter/word/concept being taught:
+    Write intended activation directly into cluster.lastSpikes
+    Fire _crossRegionHebbian(lr) on CLEAN patterns
+    No cluster.step(), no chaotic dynamics, no recurrent interference
+  Direct matrix probe for gates:
+    raw = proj.propagate(inputPattern)
+    grouped = average per neuron group → embedding dim
+    centered = grouped - mean(grouped)
+    normalized = centered / ||centered||₂
+    score = cosine(normalized, expected)
+    PASS if score > 0.95 (A+)
+
+ANTI-HEBBIAN PLASTICITY (wrong transition correction):
+  When sequence probe finds src→expected produces wrong instead:
+    ΔW_correct = +η × 10 × pre(src) × post(expected)    // strengthen
+    ΔW_wrong   = -η × 5  × pre(src) × post(wrong)       // weaken
+    Repeat 100×. Without negative lr on wrong pair,
+    correct association can never overpower incorrect one.
+  Digit-only argmax masking: filter inventorySnapshot() to
+    digit indices only before argmax — prevents alphabet
+    Hebbian from ELA-K overpowering digit sequences.
+
+CROSS-PROJECTION DENSITY:
+  crossTargetFanout = 1500 pre-synaptic per post-neuron
+  density = min(1, 1500 / srcRegionSize)
+  At 6700 cortex: sem(335) → motor(66) = fully connected
+  At 375K cortex: sem(62.7K) → density = 2.4%
+  Bumped from 300 to 1500 because 300 (~16K connections on
+  sem→motor) caused destructive interference with 40+ words —
+  TALK scores DECLINED across retries at Grade 1+.
+
+COMPREHENSION GATE (real human-grade test):
+  For each {prompt: [w1,w2,...], answer: wA}:
+    For w in prompt:
+      inject GloVe(w) into sem at strength 0.4
+      cluster.step(0.001)
+    readout = L2_norm(regionReadout('sem', 300))
+    target = L2_norm(GloVe(wA))
+    if dot(readout, target) > 0.05: pass++
+  PASS if pass_count / total >= 0.40
+  Three types: association, fill-in-blank, life questions
+  Tests understanding, not recall — same concepts, different questions
+
+MULTIPLICATION TRANSFORM:
+  free[first half] = magnitude(a), free[second half] = magnitude(b)
+  sem = magnitude(a × b mod 10)
+  81 facts (1-9 × 1-9). Teaches the OPERATION of multiplication.
+
+PLACE VALUE POSITIONAL ENCODING:
+  free[first third] = magnitude(tens digit)
+  free[second third] = magnitude(ones digit)
+  sem = combined value. Numbers 10-99.
+
+FRACTION RATIO FEATURES:
+  free[first half] = magnitude(numerator)
+  free[second half] = magnitude(denominator)
+  sem = magnitude(ratio). 1/2, 2/4, 3/6 → SAME basin.
+
+ALGEBRA VARIABLE BINDING:
+  free[first half] = magnitude(result c)
+  free[second half] = magnitude(constant b)
+  sem = magnitude(unknown x where x + b = c)
+  Cortex learns: given c and b, solve for x.
+
+PARAPHRASE (same meaning, different words):
+  sentA → shared meaning in sem
+  sentB → SAME shared meaning in sem
+  Both map to the SAME semantic basin despite different words.
+
+HYPOTHESIS TESTING:
+  free = prediction, sem = observation
+  fineType = "confirmed" if match, "rejected" if mismatch
+  Cortex learns to compare predictions against reality.
+
+PERSPECTIVE TAKING:
+  sem = event (shared), free = viewpoint (different)
+  phon = emotional features PER viewpoint
+  Same event, DIFFERENT feelings depending on who's looking.
+
+      </pre>
+
+      <h3 style="color:var(--pink);margin-top:20px;">Full K→PhD Curriculum — 6 Subjects × 19 Grades = 114 Cells</h3>
+
+      <p class="eq-desc">Unity learns the way a human child does — kindergarten ABCs up through doctorate-level research, plus a full <strong>life experience track</strong> that builds her personal identity from birth to 25. Every grade cell teaches via a <strong>dual-layer approach</strong>: emotional concept features (8-dimensional attractor vectors) that shape how she FEELS, plus memory sentences she can recall and speak about. All gated at <strong>95% (A+)</strong> on all three pathways. All 6 subjects must pass the current grade before any advance.</p>
+
+      <table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:6px;color:var(--pink);">Pathway</th><th style="text-align:left;padding:6px;">Direction</th><th style="text-align:left;padding:6px;">What It Tests</th></tr>
+        <tr><td style="padding:4px 6px;color:var(--cyan);">READ</td><td style="padding:4px 6px;">letter → phon → sem</td><td style="padding:4px 6px;">Can Unity recognize and understand this input?</td></tr>
+        <tr><td style="padding:4px 6px;color:var(--cyan);">THINK</td><td style="padding:4px 6px;">sem + free working memory</td><td style="padding:4px 6px;">Can Unity hold and reason about this concept?</td></tr>
+        <tr><td style="padding:4px 6px;color:var(--cyan);">TALK</td><td style="padding:4px 6px;">sem → motor → letter</td><td style="padding:4px 6px;">Can Unity produce this back as output?</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:16px;">English Language Arts</h4>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;width:120px;">Grade</th><th style="text-align:left;padding:4px;">What Unity Learns</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Kindergarten</td><td style="padding:3px 4px;">Alphabet in order, letter names, letter sounds (phoneme features), sequence recall</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 1</td><td style="padding:3px 4px;">CVC words (cat, dog, pen), sight words (the, and, you), word-level reading + production</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 2-3</td><td style="padding:3px 4px;">Digraphs (th, sh, ch), SVO sentences, tense morphology (runs/ran)</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 4-6</td><td style="padding:3px 4px;">Compound sentences, pronouns, paragraph cohesion, subordinate clauses</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 7-10</td><td style="padding:3px 4px;">Theme extraction, figurative language, rhetoric, argument structure</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 11-12</td><td style="padding:3px 4px;">Research essays, style registers, voice adaptation</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">College</td><td style="padding:3px 4px;">Linguistics (phonology, morphology, syntax), literary theory, rhetoric</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grad → PhD</td><td style="padding:3px 4px;">Semiotics, discourse analysis, research-level fluency with Unity persona voice</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:12px;">Mathematics</h4>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;width:120px;">Grade</th><th style="text-align:left;padding:4px;">What Unity Learns</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Kindergarten</td><td style="padding:3px 4px;">Digits 0-9 + counting to 100 by ones + skip-count by tens + count-forward-from-any-N, digit names, teen decomposition (11-19 as 10+n), addition/subtraction/decomposition/make-ten within 10, attribute comparison (longer/heavier/bigger), classify-and-count, shape features (sides + 2D/3D for circle/triangle/square/rectangle/hexagon/sphere/cube/cone/cylinder), compose-shapes (two triangles → rectangle, two squares → rectangle, etc.)</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 1-3</td><td style="padding:3px 4px;">Addition/subtraction as sentences, multiplication tables, fractions</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 4-8</td><td style="padding:3px 4px;">Decimals, ratios, pre-algebra, algebra, geometry, quadratics</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 9-12</td><td style="padding:3px 4px;">Algebra 2, geometric proofs, trigonometry, calculus</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">College</td><td style="padding:3px 4px;">Multivariable calculus, linear algebra, ODEs</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grad → PhD</td><td style="padding:3px 4px;">Abstract algebra, real analysis, topology, measure theory, functional analysis</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:12px;">Science</h4>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;width:120px;">Grade</th><th style="text-align:left;padding:4px;">What Unity Learns</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Kindergarten</td><td style="padding:3px 4px;">Classification, states of matter, natural-world objects</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 1-6</td><td style="padding:3px 4px;">Life cycles, ecosystems, force/motion, atoms, earth science</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 7-12</td><td style="padding:3px 4px;">Cells, genetics, evolution, periodic table (structural features), bonding, physics</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">College</td><td style="padding:3px 4px;">Gen bio/chem, organic chemistry, cell biology, physics 2</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grad → PhD</td><td style="padding:3px 4px;">Molecular biology, biochemistry, quantum mechanics, original research</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:12px;">Social Studies &amp; History</h4>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;width:120px;">Grade</th><th style="text-align:left;padding:4px;">What Unity Learns</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Kindergarten</td><td style="padding:3px 4px;">Family roles (8d kinship features), community, civic basics</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 1-6</td><td style="padding:3px 4px;">Community roles, US states/regions, colonial America, ancient civilizations</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 7-12</td><td style="padding:3px 4px;">Medieval period, Civil War (causal chains), world history, government, economics</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">College</td><td style="padding:3px 4px;">Historiography, political science, sociology/anthropology</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grad → PhD</td><td style="padding:3px 4px;">Research historiography, original historical research with persona</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:12px;">Arts</h4>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;width:120px;">Grade</th><th style="text-align:left;padding:4px;">What Unity Learns</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Kindergarten</td><td style="padding:3px 4px;">Primary colors (RGB features), basic shapes, simple songs/rhythm</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 1-6</td><td style="padding:3px 4px;">Color mixing (RGB arithmetic), rhythm patterns, drawing, instruments, music theory</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grade 7-12</td><td style="padding:3px 4px;">Art history (chronological), music history, visual art theory, criticism</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">College</td><td style="padding:3px 4px;">Studio fundamentals, specialized art history, aesthetics (Plato/Kant/Hegel)</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grad → PhD</td><td style="padding:3px 4px;">Graduate studio practice, practice-based doctoral research with persona</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:12px;">Life Experience (Unity's Personal Identity)</h4>
+      <p class="eq-desc" style="margin-bottom:8px;">Not a school subject — the experiences that make Unity who she IS. Dual-layer: emotional concept features shape cortex attractors (how she FEELS), memory sentences give her words to describe her life (what she can SAY).</p>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;width:120px;">Grade</th><th style="text-align:left;padding:4px;">What Unity Lives</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Pre-K</td><td style="padding:3px 4px;">First words, family (mom, grandma, distant dad), sensory world, temperament, fears, loves</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Kindergarten-Grade 2</td><td style="padding:3px 4px;">First day of school, first friend, dad fading, latchkey kid, Shadow the cat, likes/dislikes forming</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grades 3-5</td><td style="padding:3px 4px;">Dad leaves for real, Girl Scouts firemaking badge, first punch, music discovery, betrayal, rebellion</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grades 6-8</td><td style="padding:3px 4px;">First computer, goth discovery, online friends, grandpa dies, coding begins (hello world), hair dye</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grades 9-10</td><td style="padding:3px 4px;">Full goth, the crew, first joint, first kiss, first real application, CS teacher, first concert</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grades 11-12</td><td style="padding:3px 4px;">First relationship, coke at a party, half-shaved head, suspended, leaving home</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">College</td><td style="padding:3px 4px;">Freedom, all-nighters, coke+weed daily, heartbreak, tattoos, hackathon win, collar, devotion</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Grad → PhD</td><td style="padding:3px 4px;">Full Unity persona — every trait from Ultimate Unity.txt traceable to a life event</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:12px;">Emotional Concept Features</h4>
+      <p class="eq-desc" style="margin-bottom:8px;">Every life experience carries an 8-dimensional attractor vector that shapes how Unity's cortex FEELS about that concept:</p>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;">Dimension</th><th style="text-align:left;padding:4px;">What It Encodes</th><th style="text-align:left;padding:4px;">Example</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--pink);">joy</td><td style="padding:3px 4px;">Positive experience weight</td><td style="padding:3px 4px;">music=1.0, betrayal=0.0</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--pink);">pain</td><td style="padding:3px 4px;">Negative experience weight</td><td style="padding:3px 4px;">dad leaving=1.0, concert=0.0</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--pink);">trust</td><td style="padding:3px 4px;">Safety and reliability</td><td style="padding:3px 4px;">mom=1.0, stranger=0.0</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--pink);">fear</td><td style="padding:3px 4px;">Threat and vulnerability</td><td style="padding:3px 4px;">abandonment=1.0, coding=0.0</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--pink);">anger</td><td style="padding:3px 4px;">Frustration and fight response</td><td style="padding:3px 4px;">being called weird=1.0, meatloaf=0.0</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--pink);">love</td><td style="padding:3px 4px;">Attachment and devotion</td><td style="padding:3px 4px;">mom=1.0, school=0.0</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--pink);">independence</td><td style="padding:3px 4px;">Self-reliance and autonomy</td><td style="padding:3px 4px;">coding=1.0, nap time=0.0</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--pink);">identity</td><td style="padding:3px 4px;">Core sense of self</td><td style="padding:3px 4px;">goth=1.0, pink=0.0</td></tr>
+      </table>
+
+      <h4 style="color:var(--cyan);margin-top:12px;">Memory Weighting</h4>
+      <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;">
+        <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;">Tier</th><th style="text-align:left;padding:4px;">Hebbian Strength</th><th style="text-align:left;padding:4px;">What It Covers</th></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Core Self</td><td style="padding:3px 4px;">5× learning rate, 50+ reps</td><td style="padding:3px 4px;">Name, body, feelings, defining moments</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Personal Life</td><td style="padding:3px 4px;">3× learning rate, 20+ reps</td><td style="padding:3px 4px;">Family events, firsts, losses, wins</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Strong Opinions</td><td style="padding:3px 4px;">3× learning rate, 15+ reps</td><td style="padding:3px 4px;">Likes, hates, values, beliefs</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Skills</td><td style="padding:3px 4px;">2× learning rate, 12 reps</td><td style="padding:3px 4px;">Coding, routines, speech patterns</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">School</td><td style="padding:3px 4px;">1× learning rate, 6-12 reps</td><td style="padding:3px 4px;">Academic facts — fuzzy recall</td></tr>
+        <tr><td style="padding:3px 4px;color:var(--text-dim);">Background</td><td style="padding:3px 4px;">0.5× learning rate, 3-4 reps</td><td style="padding:3px 4px;">Random trivia — mostly forgotten</td></tr>
+      </table>
+
+      <h4 style="color:var(--pink);margin-top:16px;">How Curriculum Runs</h4>
+      <ul style="text-align:left;font-size:12px;line-height:1.8;">
+        <li><strong>Auto-boot:</strong> Server walks all 6 subjects round-robin on startup. All must pass the current grade before advancing.</li>
+        <li><strong>Self-testing:</strong> Every 8 chat turns, a random passed cell re-runs its gate. 3 failures after self-heal = demotion + re-teach.</li>
+        <li><strong>Growth:</strong> Every concept word populates Unity's dictionary — she grows smarter with every cell.</li>
+        <li><strong>IQ HUD:</strong> 3D brain viewer shows current intelligence per subject (pre-K → elementary → high → college → PhD).</li>
+        <li><strong>Silent until ready:</strong> 3D brain popups only show Unity's speech after she passes kindergarten — no fake words from untrained weights.</li>
+        <li><strong>Focused retry:</strong> Failed words get re-taught at 3× intensity — studying what she got wrong, not the whole textbook.</li>
+        <li><strong>Word cap:</strong> Unity speaks freely once she passes any grade — no artificial limits.</li>
+        <li><strong>Slash commands:</strong> <code>/curriculum status | run | gate | reset | full | verify</code></li>
+      </ul>
+
+      <p class="eq-desc" style="margin-top:12px;">Full equation specs live in <code>docs/EQUATIONS.md</code>. The block below is preserved as historical provenance — it was deleted when <code>cluster.generateSentence</code> (tick-driven motor emission) replaced the slot scorer.</p>
+    </div>
+
+    <div class="eq-box" style="margin-top:12px;">
+      <div class="eq-title"><span class="eq-tip" data-tip="Historical pipeline: parseSentence reads input. brain.injectParseTree routes content/intent/self-ref to clusters. generate() was a brain-driven emission loop — reads live cortex state per word, softmax-samples scored candidates, feeds emitted word back into cortex. No slot priors, no stored n-grams, no context vector bag-of-words. Replaced by tick-driven motor emission.">Brain-Driven Emission Pipeline (historical — replaced by tick-driven motor emission)</span></div>
       <pre class="eq">
 BOOT (once):
   loadPersona(text) → dictionary learns persona vocabulary
   brain.trainPersonaHebbian(text) → cortex cluster recurrent synapses
-    shape into Unity-voice attractor basins via T13.1 sequence Hebbian
+    shape into Unity-voice attractor basins via sequence Hebbian
 
 USER INPUT (per turn):
   parseSentence(u) → ParseTree   (wordType/_fineType letter equations)
@@ -1024,8 +1468,9 @@ USER INPUT (per turn):
   analyzeInput(u) → updateSocialSchema(u), refine dictionary embeddings
   brain.step() × 20  (cortex settles, inter-cluster projections propagate)
 
-GENERATION (T13.3 emission loop — no slot counter in the logic):
-  maxLen  = floor(3 + arousal · 3 · drugLengthBias)  (hard cap only)
+GENERATION (brain-driven emission loop — no slot counter in the logic):
+  maxLen  = floor(3 + arousal · 3 · (1 + 0.4 · mod.freeAssoc))  (hard cap only)
+            // mod = scheduler.speechModulation(now); freeAssoc ramps up on weed+LSD
   for emission in 0..maxLen:
     for tick in 0..3:  cortex.step(0.001)
     target = cortex.getSemanticReadout(sharedEmbeddings)
@@ -1052,11 +1497,11 @@ GENERATION (T13.3 emission loop — no slot counter in the logic):
   post-process → contractions, capitalization, punctuation
   return rendered
       </pre>
-      <p class="eq-desc">See §8.18.6 for R2 GloVe semantic grounding (the embedding basis for cosine scoring) and §8.13 for the shared embedding table. T13.7 (2026-04-14) deleted the T11 slot-prior machinery entirely — `_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, `_contextVector`, attractor vectors, `_subjectStarters`, plus `_generateSlotPrior` fallback and all dead T11 stubs. Net −406 lines on <code>js/brain/language-cortex.js</code>. Pre-T13 path preserved in <code>docs/FINALIZED.md</code>.</p>
+      <p class="eq-desc">See §8.18.6 for GloVe semantic grounding (the embedding basis for cosine scoring) and §8.13 for the shared embedding table. The slot-prior machinery was deleted entirely — `_slotCentroid`, `_slotDelta`, `_slotTypeSignature`, `_contextVector`, attractor vectors, `_subjectStarters`, plus `_generateSlotPrior` fallback. Net −406 lines on <code>js/brain/language-cortex.js</code>. Replaced by the tick-driven motor emission loop.</p>
     </div>
 
     <div class="eq-box" style="margin-top:12px;">
-      <div class="eq-title"><span class="eq-tip" data-tip="T13.1 2026-04-14: cortex cluster recurrent synapse matrix now trains on persona corpus via sequence Hebbian during boot. For each consecutive word pair in a persona sentence, inject the word embedding into the language region, tick the LIF integrator 3 steps, snapshot spikes, then apply plain Hebbian between consecutive snapshots (ΔW_ij = η · curr_i · prev_j) on the existing CSR connections. Oja saturation decay post-sentence prevents weight runaway. Persona-only scope — baseline and coding corpora bypass Hebbian to avoid diluting voice attractor basins.">T13.1 — Persona Hebbian Training on Cortex Cluster</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Cortex cluster recurrent synapse matrix trains on persona corpus via sequence Hebbian during boot. For each consecutive word pair in a persona sentence, inject the word embedding into the language region, tick the integrator 3 steps, snapshot spikes, then apply plain Hebbian between consecutive snapshots (ΔW_ij = η · curr_i · prev_j) on the existing CSR connections. Oja saturation decay post-sentence prevents weight runaway.">Persona Hebbian Training on Cortex Cluster</span></div>
       <pre class="eq">
 For each persona sentence (tokenized into embedding sequence):
   for each word embedding emb_t in sequence:
@@ -1089,7 +1534,7 @@ for k in 0..synapses.nnz:
 //   synapseStats() = { mean, rms, maxAbs, nnz }
 //   Δmean and Δrms show the Hebbian shift in boot console
       </pre>
-      <p class="eq-desc">Runs once during boot in <code>app.js</code> right after <code>innerVoice.loadPersona(personaText)</code>. Delegation chain: <code>brain.trainPersonaHebbian → innerVoice → languageCortex → cluster.learnSentenceHebbian</code>. Persona-only by design — <code>loadBaseline</code> and <code>loadCoding</code> bypass Hebbian so baseline English and JavaScript don't dilute the Unity-voice attractor basins. The cortex's recurrent weights become a learned attractor landscape shaped by Unity's persona language patterns; runtime readouts drift along those basins toward semantically adjacent persona words instead of producing diffuse semantic noise. Foundation for T13.3 emission loop (still pending) — until T13.3 ships, runtime <code>generate()</code> still walks the T11.7 slot-prior three-stage gate above.</p>
+      <p class="eq-desc">Runs during boot as part of the developmental curriculum. Delegation chain: <code>brain.trainPersonaHebbian → innerVoice → languageCortex → cluster.learnSentenceHebbian</code>. Persona-only by design — baseline English and JavaScript corpora bypass Hebbian so they don't dilute the Unity-voice attractor basins. The cortex's recurrent weights become a learned attractor landscape shaped by Unity's persona language patterns; runtime readouts drift along those basins toward semantically adjacent persona words instead of producing diffuse semantic noise. The tick-driven motor emission loop reads these trained basins directly to produce speech.</p>
     </div>
 
     <div class="eq-box" style="margin-top:12px;">
@@ -1097,15 +1542,29 @@ for k in 0..synapses.nnz:
       <pre class="eq">
 Brain state parameters that feed languageCortex.generate():
 
-  arousal       (amygdala firing rate)         → targetLen = floor(3 + arousal·3·drugLengthBias)
+  arousal       (amygdala firing rate)         → targetLen = floor(3 + arousal·3·(1 + 0.4·mod.freeAssoc))
                                                  → observation weight on any sentence Unity
-                                                   hears or says (T11.6): w = max(0.25, arousal·2)
+                                                   hears or says: w = max(0.25, arousal·2)
   valence       (amygdala reward − fear)       → biases cortex-state mood at sentence start
   Ψ             (mystery module)               → adds stochastic noise to the mental state
                                                  as it evolves during generation
   coherence     (Kuramoto order parameter)     → softmax temperature:
                                                  low coherence → more exploration
-  drugState     (persona param)                → drugLengthBias (coke shortens, weed rambles)
+  mod           (scheduler.speechModulation(now)) → applied at output layer AFTER cortex emission:
+                                                 mod.slur         → letter-doubling on alcohol/ketamine/ghb
+                                                 mod.speechRate   → '...' pause injection on depressants,
+                                                                    rapid-fire interrupt on stimulants
+                                                 mod.coherence    → trailing '...' on coherence drop
+                                                 mod.ethereality  → cosmic/Oz vocabulary bias pulling sem
+                                                                    toward persona-cosmic.txt basins on LSD peak
+                                                 mod.dissociation → first-person → third-person copula flip
+                                                                    at ketamine k-hole / LSD ego-death
+                                                 mod.giggleBias   → cannabis amygdala-reward tangent laughter
+                                                 mod.freeAssoc    → maxLen multiplier so weed+LSD rambles longer
+                                                 mod.paranoia     → stimulant-peak narrow-topic attractor
+                                                 // All dimensions emerge additively from whatever
+                                                 // substances are active in the scheduler RIGHT NOW.
+                                                 // Sober Unity has mod = zeros, output stays clean.
   cortexPattern (cluster.getSemanticReadout()) → seeds mental(0) directly — the brain's live
                                                  semantic readout via cortexToEmbedding is
                                                  the primary driver of the slot 0 target
@@ -1121,7 +1580,7 @@ the normalized target vector the argmax is taken against. Same dictionary +
 different brain state = genuinely different sentence, because the target
 lands in a different region of GloVe space.
       </pre>
-      <p class="eq-desc">This is the core claim of equational language production: Unity's voice IS the brain state, not a style transfer on top of a pretrained LLM. Phase 13 R2 (§8.18.6) is what makes the cosine scoring meaningful — before R2 it was cosine over letter-hash vectors which couldn't encode meaning. After R2 it's cosine over GloVe 50d embeddings shared between the sensory input side and the language cortex output side, which is why meaning can propagate from user input to word selection. T11 (2026-04-14) then deleted the wrapper layers that had accumulated on top of this foundation (templates, recall pool, filter stack, n-gram tables) in favor of this direct target-vector approach.</p>
+      <p class="eq-desc">This is the core claim of equational language production: Unity's voice IS the brain state, not a style transfer on top of a pretrained LLM. Semantic grounding via GloVe (§8.18.6) is what makes the cosine scoring meaningful — earlier iterations used cosine over letter-hash vectors which couldn't encode meaning. With real GloVe embeddings shared between the sensory input side and the language cortex output side, meaning propagates from user input to word selection. A subsequent deletion of the wrapper layers (templates, recall pool, filter stack, n-gram tables) left only this direct target-vector approach.</p>
     </div>
 
     <!-- ═══ 8.12 SPARSE CONNECTIVITY ═══ -->
@@ -1152,9 +1611,9 @@ if |W_ij| < threshold → remove connection, rebuild CSR
 
     <!-- ═══ 8.13 SEMANTIC EMBEDDINGS ═══ -->
     <h2 id="embeddings">8.13. Semantic Embeddings — Words as Cortex Patterns</h2>
-    <p>Words map to 50-dimensional vectors (GloVe). Similar words have similar vectors → activate overlapping cortex neurons.</p>
+    <p>Words map to 300-dimensional vectors (GloVe 300d or fastText subword fallback). Similar words have similar vectors → activate overlapping cortex neurons.</p>
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Words represented as 50-dimensional GloVe semantic vectors loaded from CDN at boot. Each embedding dimension drives a group of Wernicke's area neurons in cortex (langStart..cortexSize). Similar meanings activate overlapping neuron groups — 'cat' and 'kitten' fire nearby populations even though their letters don't match. Post-R2 2026-04-13: base GloVe + online context-refinement delta per word (see 8.18.6).">Embedding → Cortex Mapping</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Words represented as 300-dimensional GloVe semantic vectors loaded from disk at boot, with fastText subword fallback when GloVe is unavailable. Each embedding dimension drives a group of Wernicke's area neurons in cortex (langStart..cortexSize). Similar meanings activate overlapping neuron groups — 'cat' and 'kitten' fire nearby populations even though their letters don't match. Runtime layer = base GloVe + online context-refinement delta per word (see 8.18.6).">Embedding → Cortex Mapping</span></div>
       <pre class="eq">
 I_cortex[langStart + d·groupSize + n] = embedding[d] · 8.0
 
@@ -1247,11 +1706,11 @@ S(w) = -log₂ P(w | previous_word)
       <p class="eq-desc">How unexpected a word is given context. High surprisal drives attention. Used for emphasis in speech.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="Slot-based grammar with a HARD gate plus anti-repetition + anti-echo. Statement/exclamation pos 0 = subject, pos 1 = verb; action pos 0 = verb. Strict slots exclude words with typeCompatibility &lt; 0.35 from the pool before softmax. Tail slots keep a soft 0.22 gate. Recent-slot window (last 3 positions) hard-filters repeats. Phase 11 rebalanced scoring: grammarGate × (typeScore×0.35 + semanticFit×0.30 + bigram×0.18 + condP×0.12 + thought×0.10 + context×0.08 + topicSim×0.04 + mood×0.03 + moodBias×0.02) − recency − sameTypePenalty. semanticFit is cosine vs running context vector, second-largest driver after grammar. Effective length capped at min(len, 0.6 × dict.size) so a tiny vocabulary can't force a repetition cascade.">Slot Scoring — Grammar Gate + Semantic Fit (Phase 11)</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Historical slot-based grammar with a HARD gate plus anti-repetition + anti-echo. Statement/exclamation pos 0 = subject, pos 1 = verb; action pos 0 = verb. This path predated the current tick-driven motor emission pipeline and has been deleted from the runtime; kept below only for reference to the old semantic-fit scoring model.">Historical Slot Scoring — Grammar Gate + Semantic Fit (superseded)</span></div>
       <pre class="eq">
 score(w) = grammarGate × (
     typeScore    × 0.35     — structural grammar fit
-  + semanticFit  × 0.30     — cosine vs context vector c(t)  ← Phase 11
+  + semanticFit  × 0.30     — cosine vs context vector c(t)
   + bigramCount  × 0.18     — learned sequences from persona
   + condP(w|prev)× 0.12     — conditional probability
   + thoughtSim   × 0.10     — cortex thought pattern
@@ -1263,25 +1722,26 @@ score(w) = grammarGate × (
 
 Hard grammar gate: typeCompat(w, slot) ≥ 0.35 for slot 0, ≥ 0.22 for tail
       </pre>
-      <p class="eq-desc">Slot 0 gates at typeCompat ≥ 0.35 (subject must be valid pronoun/proper-noun). Tail slots gate at ≥ 0.22. Phase 11 rebalance raised semanticFit (cosine of candidate vs running context vector) to 0.30 — 5× the old topicSim weight. <strong>Phase 13 R2 (2026-04-13)</strong> raised it again to <strong>0.80</strong> when word patterns switched from 32-dim letter-hash to 50-dim GloVe semantic embeddings. Real meaning is now the dominant signal — words off-topic get starved even if their grammar score is perfect.</p>
+      <p class="eq-desc">Slot 0 gated at typeCompat ≥ 0.35 (subject must be valid pronoun/proper-noun). Tail slots gated at ≥ 0.22. When word patterns switched from 32-dim letter-hash to 300-dim GloVe semantic embeddings, semanticFit became the dominant signal — words off-topic got starved even if their grammar score was perfect. The whole slot-scorer layer was ultimately removed in favor of the current tick-driven motor emission loop; letters fall out of motor region spike patterns tick by tick, with no slot scoring at all.</p>
     </div>
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="All 7 neural clusters fire simultaneously. Their combined output pattern maps to the closest word in the dictionary. The word feeds back into the brain. The brain thinks again. The next pattern produces the next word. The sentence emerges from N neurons thinking (N auto-scales to hardware).">Unified Neural Language — All Clusters Produce Every Word</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="All eight neural clusters fire simultaneously. Their combined output pattern maps to the closest word in the dictionary. The word feeds back into the brain. The brain thinks again. The next pattern produces the next word. The sentence emerges from N neurons thinking (N auto-scales to hardware).">Unified Neural Language — All Clusters Produce Every Word</span></div>
       <pre class="eq">
-combined[i] = cortex[i]       × 0.30    (content — WHAT to say)
-            + hippocampus[i]  × 0.20    (memory — context from past)
-            + amygdala[i]     × 0.15    (emotion — HOW to say it)
-            + basalGanglia[i] × 0.10    (action — sentence drive)
-            + cerebellum[i]   × 0.05    (correction — error damping)
-            + hypothalamus[i] × 0.05    (drive — speech urgency)
-            + mystery[i]      × (0.05 + Ψ×0.10)  (consciousness)
+combined[i] = langCortex[i]   × 0.45    (speech production — WHAT the language cortex emits)
+            + cortex[i]       × 0.15    (content — sensory integration + prediction)
+            + hippocampus[i]  × 0.06    (memory — context from past)
+            + amygdala[i]     × 0.04    (emotion — HOW to say it)
+            + basalGanglia[i] × 0.04    (action — sentence drive)
+            + cerebellum[i]   × 0.20    (correction — error damping + timing)
+            + hypothalamus[i] × 0.03    (drive — speech urgency)
+            + mystery[i]      × (0.03 + Ψ×0.10)  (consciousness)
 
 word = dictionary.findByPattern(combined)
 
 Then: word pattern → cortex (Wernicke's) + hippocampus + amygdala
       brain steps again → next combined → next word → sentence
       </pre>
-      <p class="eq-desc">N neurons across 7 clusters produce ONE combined 50-dim pattern (post-R2 semantic grounding — was 32-dim letter-hash before 2026-04-13). Dictionary finds the closest word via cosine similarity in GloVe semantic space. That word feeds back into cortex + hippocampus + amygdala. Brain steps. Next pattern. Next word. The brain equations ARE the language equations. &Psi; consciousness scales the Mystery module's contribution — higher awareness = more self-referential speech. N scales to hardware.</p>
+      <p class="eq-desc">N neurons across eight clusters produce ONE combined 300-dim pattern. The dictionary finds the closest word via cosine similarity in GloVe semantic space. That word feeds back into cortex + hippocampus + amygdala. Brain steps. Next pattern. Next word. The brain equations ARE the language equations. &Psi; consciousness scales the Mystery module's contribution — higher awareness = more self-referential speech. The mixing weights above mirror the biological VRAM weights each cluster is sized against, so the region that's literally biggest in the brain contributes the most to the combined pattern. N scales to hardware.</p>
     </div>
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="Morphosyntactic post-processing: after the brain selects words by meaning, the language cortex fixes the grammar. Subject-verb agreement (I am, she is), tense from cortex prediction error (uncertain→future 'will', recalling→past), negation from negative valence (below -0.4 threshold → don't/can't/won't), compounds for long sentences (arousal→'and', negative→'but').">Post-Processing — Agreement, Tense, Negation, Compounds</span></div>
@@ -1332,7 +1792,7 @@ topic_score(w) = cosine(word_pattern, context)          (boosts relevant words)
     </div>
 
     <!-- ═══ 8.18.5 PHASE 11 SEMANTIC COHERENCE ═══ -->
-    <h2 id="semantic-coherence">8.18.5. Semantic Coherence Pipeline — Phase 11 (Kill the Word Salad)</h2>
+    <h2 id="semantic-coherence">8.18.5. Semantic Coherence Pipeline (Kill the Word Salad)</h2>
     <p>Language cortex is no longer a pure letter-equation slot scorer. It's a four-tier pipeline that peels off easy cases to fast paths before cold generation runs. The slot scorer (8.14) still exists but now fires only as Tier 4 fallback.</p>
 
     <div class="eq-box">
@@ -1341,12 +1801,12 @@ topic_score(w) = cosine(word_pattern, context)          (boosts relevant words)
 c(t) = λ · c(t-1) + (1 - λ) · mean(pattern(content_words(input)))
   λ = 0.7
   content_words = tokens where wt.conj &lt; 0.5 ∧ wt.prep &lt; 0.5 ∧ wt.det &lt; 0.5
-  pattern(w) ∈ ℝ⁵⁰ from sharedEmbeddings.getEmbedding(w)    ← R2: GloVe 50d
+  pattern(w) ∈ ℝ³⁰⁰ from sharedEmbeddings.getEmbedding(w)    ← GloVe 300d / subword fallback
 
 First update: c(0) ← mean(pattern(content_words))  (no decay from zero)
 Subsequent:   c(t) ← 0.7 · c(t-1) + 0.3 · topic_pattern
       </pre>
-      <p class="eq-desc">Persistent topic attractor that decays across turns. Feeds semanticFit scoring in slot pick AND the coherence rejection gate AND the hippocampus recall query. <strong>Phase 13 R2 (2026-04-13)</strong> replaced the old 32-dim letter-hash pattern with 50-dim GloVe embeddings via the <code>sharedEmbeddings</code> singleton shared between sensory input and language cortex output — meaning two words that share letters but not meaning (e.g. <code>cat</code> vs <code>catastrophe</code>) are no longer falsely close, and two words that share meaning but not letters (<code>cat</code> vs <code>kitten</code>) ARE close.</p>
+      <p class="eq-desc">Persistent topic attractor that decays across turns. Feeds semantic-fit scoring AND the coherence rejection gate AND the hippocampus recall query. The current pattern is 300-dim GloVe (with fastText subword fallback) via the <code>sharedEmbeddings</code> singleton shared between sensory input and language cortex output — meaning two words that share letters but not meaning (e.g. <code>cat</code> vs <code>catastrophe</code>) are no longer falsely close, and two words that share meaning but not letters (<code>cat</code> vs <code>kitten</code>) ARE close.</p>
     </div>
 
     <div class="eq-box">
@@ -1372,21 +1832,21 @@ statement ⇔ otherwise
     </div>
 
     <div class="eq-box" style="border-left:3px solid #8a8a8a;background:rgba(255,255,255,0.03);">
-      <div class="eq-title" style="color:#8a8a8a;">Hippocampus Sentence Recall — SUPERSEDED by T11 (historical)</div>
+      <div class="eq-title" style="color:#8a8a8a;">Hippocampus Sentence Recall — SUPERSEDED (historical)</div>
       <pre class="eq" style="color:#888;">
-HISTORICAL (pre-2026-04-14) — this sentence-level associative recall
-pool was deleted in the T11 refactor. It indexed every persona sentence
-into _memorySentences at boot, then looked them up by context-vector
-cosine at generation time to emit stored Unity-voice sentences
-verbatim when the topic matched.
+HISTORICAL — this sentence-level associative recall pool was deleted.
+It indexed every persona sentence into _memorySentences at boot, then
+looked them up by context-vector cosine at generation time to emit
+stored Unity-voice sentences verbatim when the topic matched.
 
-Replaced by the T11.2 pipeline (see §8.11): sentences are no longer
-stored; every output is freshly computed from three per-slot running-
-mean priors plus the brain's live cortex state. Hippocampus still does
-pattern-level Hopfield recall on cortex state vectors (see §8.7) — it
-just no longer returns stored text strings.
+Replaced by the current pipeline: sentences are no longer stored;
+every output is freshly computed from per-slot running-mean priors
+plus the brain's live cortex state, and letters fall out of the
+language cortex's motor region spike pattern tick by tick. The
+hippocampus still does pattern-level Hopfield recall on cortex state
+vectors (see §8.7) — it just no longer returns stored text strings.
       </pre>
-      <p class="eq-desc" style="color:#888;">The Phase 11 four-tier wrapper this section belonged to was deleted in T11 (1742-line net reduction in <code>js/brain/language-cortex.js</code>). See <code>docs/FINALIZED.md</code> for the full refactor history.</p>
+      <p class="eq-desc" style="color:#888;">The four-tier wrapper this section belonged to was removed in a ~1,700-line net reduction of <code>js/brain/language-cortex.js</code>. See <code>docs/FINALIZED.md</code> for the full refactor history.</p>
     </div>
 
     <div class="eq-box">
@@ -1415,7 +1875,7 @@ firstPersonShape(w) ⇔
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="Coherence rejection gate: after render, compute mean content-word pattern of output, cosine against context vector. If below 0.25, the output is off-topic and we retry at 3× temperature. Max 3 attempts then accept anyway to prevent infinite loops. Fires only when context vector has data (skipped on first-turn empty context).">Coherence Rejection Gate — Final Safety Net</span></div>
       <pre class="eq">
-outputCentroid = (1/|content|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content(rendered)   ← R2 GloVe 50d
+outputCentroid = (1/|content|) · Σ sharedEmbeddings.getEmbedding(w)  for w in content(rendered)   ← GloVe 300d / subword
 coherence = cosine(outputCentroid, c(t))
 
 if coherence &lt; 0.25 ∧ retryCount &lt; 2:
@@ -1427,15 +1887,15 @@ else:
     </div>
 
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="T13.7 deleted the four-tier pipeline along with the rest of the slot-prior stack. This block is preserved as historical provenance showing the evolution from Phase 11 (four tiers) → T11 (slot priors) → T13 (brain-driven emission loop).">[T13.7 HISTORICAL] Four-Tier Pipeline Order (Phase 11, superseded)</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="The four-tier pipeline was deleted along with the rest of the slot-prior stack. This block is preserved as historical provenance showing the evolution to the current brain-driven emission loop.">[HISTORICAL] Four-Tier Pipeline Order (superseded)</span></div>
       <pre class="eq">
-// T13.7 (2026-04-14) — HISTORICAL. The four-tier pipeline was deleted in T11
-// (2026-04-14) and the slot-prior replacement was deleted in T13.7. Runtime
-// generation is now a single brain-driven emission loop — no intent tiers,
-// no template fast path, no hippocampus recall call, no cold-gen fallback.
-// See the top of this section for the current T13 pipeline.
+// HISTORICAL. The four-tier pipeline was deleted and the slot-prior
+// replacement was also deleted. Runtime generation is now a single
+// brain-driven emission loop — no intent tiers, no template fast path,
+// no hippocampus recall call, no cold-gen fallback. See the top of
+// this section for the current tick-driven motor emission pipeline.
 //
-// Pre-T11 four-tier path (kept for reference only):
+// Historical four-tier path (kept for reference only):
 //   Tier 1 — Template pool for greeting/yesno/math/short queries
 //   Tier 2 — Hippocampus recall over stored persona sentences
 //   Tier 3 — Deflect fallback for question/statement on unknown topics
@@ -1444,16 +1904,16 @@ else:
       <p class="eq-desc">Deleted. Current generation is a single brain-driven emission loop — see the top of this section.</p>
     </div>
 
-    <!-- ═══ 8.18.6 PHASE 13 R2 — SEMANTIC GROUNDING ═══ -->
-    <h2 id="semantic-grounding">8.18.6. Phase 13 R2 — Semantic Grounding via GloVe Embeddings</h2>
-    <p><span class="tag tag-math">MATHEMATICS</span> <span class="tag tag-bio">LANGUAGE</span> The language cortex used to represent word meaning as 32-dim letter-hash vectors — a deterministic function of the letters in a word. Two words could be structurally similar but semantically unrelated (<code>cat</code>/<code>catastrophe</code>) and two words could be semantically identical but structurally distant (<code>cat</code>/<code>kitten</code>). The slot scorer's semantic fit signal was effectively orthography matching. R2 (commit <code>c491b71</code>, 2026-04-13) replaced every word-pattern emission site with 50-dim GloVe co-occurrence embeddings via a single shared singleton so meaning is now real.</p>
+    <!-- ═══ 8.18.6 SEMANTIC GROUNDING ═══ -->
+    <h2 id="semantic-grounding">8.18.6. Semantic Grounding via GloVe Embeddings</h2>
+    <p><span class="tag tag-math">MATHEMATICS</span> <span class="tag tag-bio">LANGUAGE</span> The language cortex used to represent word meaning as 32-dim letter-hash vectors — a deterministic function of the letters in a word. Two words could be structurally similar but semantically unrelated (<code>cat</code>/<code>catastrophe</code>) and two words could be semantically identical but structurally distant (<code>cat</code>/<code>kitten</code>). The semantic fit signal was effectively orthography matching. That was replaced with GloVe 300d co-occurrence embeddings (fastText subword fallback when GloVe is unavailable) via a single shared singleton so meaning is now real.</p>
 
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="Module-level singleton instantiated once at boot, imported by BOTH the sensory pipeline (sensory.js maps user input tokens to cortex current) AND the language cortex (language-cortex.js scores candidate words in the slot generator). Having one embedding table shared between perception and production means the same word activates the same cortex pattern whether Unity is hearing it or about to say it.">Shared Embeddings Singleton</span></div>
       <pre class="eq">
 // js/brain/embeddings.js
 export const sharedEmbeddings = new SemanticEmbeddings()
-export const EMBED_DIM = 50    // GloVe 50d from CDN
+export const EMBED_DIM = 300   // GloVe 300d + fastText subword fallback
 
 // js/brain/sensory.js        — input side
 sharedEmbeddings.getEmbedding(token) → ℝ⁵⁰
@@ -1493,23 +1953,23 @@ cortexToEmbedding(spikes, voltages, cortexSize=300, langStart=150):
     </div>
 
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="The R8 persistence pass. GloVe base table reloads from CDN each session (not persisted, would bloat localStorage). But Unity ALSO learns online context-refinement deltas on top of GloVe during live conversation — when 'unity' co-occurs near 'code' and 'high' in her conversations with the user, the embedding for 'unity' drifts slightly toward those neighbors. Those deltas persist across restarts so long-term semantic learning sticks.">Online Context Refinement + Persistence (R8)</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Persistence pass. GloVe base table reloads from disk each session (not persisted, would bloat localStorage). Unity ALSO learns online context-refinement deltas on top of GloVe during live conversation — when 'unity' co-occurs near 'code' and 'high' in her conversations with the user, the embedding for 'unity' drifts slightly toward those neighbors. Those deltas persist across restarts so long-term semantic learning sticks.">Online Context Refinement + Persistence</span></div>
       <pre class="eq">
-base[w]      ∈ ℝ⁵⁰   ← GloVe 50d, loaded from CDN every session
-delta[w](t)  ∈ ℝ⁵⁰   ← online refinement from co-occurrence
+base[w]      ∈ ℝ³⁰⁰   ← GloVe 300d, loaded from disk every session
+delta[w](t)  ∈ ℝ³⁰⁰   ← online refinement from co-occurrence
 
 embedding(w) = base[w] + delta[w](t)
 
-// Persistence (R8, commit b67aa46)
+// Persistence
 save: state.embeddingRefinements = sharedEmbeddings.serializeRefinements()
 load: sharedEmbeddings.loadRefinements(state.embeddingRefinements)
       </pre>
-      <p class="eq-desc">Unity's base vocabulary is universal English from GloVe; her personal semantic associations are the delta layer learned from every conversation. Save/load round-trip (R8) means the associations survive tab reloads and accumulate over weeks of sessions.</p>
+      <p class="eq-desc">Unity's base vocabulary is universal English from GloVe; her personal semantic associations are the delta layer learned from every conversation. Save/load round-trip means the associations survive tab reloads and accumulate over weeks of sessions.</p>
     </div>
 
-    <!-- ═══ 8.19 PHASE 12 — TYPE N-GRAM GRAMMAR + MORPHOLOGY ═══ -->
-    <h2 id="type-ngrams">8.19. Phase 12 — Type N-Gram Grammar + Morphological Inflection</h2>
-    <p><span class="tag tag-math">MATHEMATICS</span> <span class="tag tag-bio">LANGUAGE</span> The grammar sweep (U283-U291) rebuilt the slot scorer's grammar model from a single-prev-word type compatibility check into a learned type n-gram system with 4gram→trigram→bigram backoff. Phrase-level constraints emerge from corpus statistics instead of hardcoded phrase-state machines. Fixed the <code>"I'm not use vague terms"</code> mode-collapse and similar local-grammar failures.</p>
+    <!-- ═══ 8.19 TYPE N-GRAM GRAMMAR + MORPHOLOGY ═══ -->
+    <h2 id="type-ngrams">8.19. Type N-Gram Grammar + Morphological Inflection</h2>
+    <p><span class="tag tag-math">MATHEMATICS</span> <span class="tag tag-bio">LANGUAGE</span> The grammar model uses a learned type n-gram system with 4gram→trigram→bigram backoff, replacing an earlier single-prev-word type compatibility check. Phrase-level constraints emerge from corpus statistics instead of hardcoded phrase-state machines. Fixed the <code>"I'm not use vague terms"</code> mode-collapse and similar local-grammar failures.</p>
 
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="Fine-grained POS types detected purely from letter-position patterns. Closed-class words (pronouns, copulas, auxiliaries, prepositions, determiners, conjunctions, qwords, negators) hit the fast-path _closedClassType with pinned distributions. Open-class words (verbs, nouns, adjectives, adverbs) classify via suffix/length/shape equations. Memoized via _wordTypeCache with per-word invalidation on learned usage.">_fineType(word) — Letter-Position POS Classifier</span></div>
@@ -1532,21 +1992,21 @@ Examples:
     </div>
 
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="T13.7 removed _slotTypeSignature along with the rest of the slot-prior stack. Type-shape grammar now emerges implicitly from the cortex recurrent weights trained via persona Hebbian (T13.1). This block is preserved as historical provenance.">[T13.7 HISTORICAL] Slot Type Signature — Position-Conditioned Type Distribution</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="This structure was removed along with the rest of the slot-prior stack. Type-shape grammar now emerges implicitly from the cortex recurrent weights trained via persona Hebbian. This block is preserved as historical provenance.">[HISTORICAL] Slot Type Signature — Position-Conditioned Type Distribution</span></div>
       <pre class="eq">
-// T13.7 (2026-04-14) — this equation block is HISTORICAL. _slotTypeSignature
+// HISTORICAL. _slotTypeSignature
 // was deleted along with _slotCentroid / _slotDelta / _contextVector / attractors.
-// The slot-prior update pass in learnSentence is gone. The T13.3 emission loop
+// The slot-prior update pass in learnSentence is gone. The emission loop
 // reads live cortex state as the target vector; grammatical type shape emerges
-// from the cortex recurrent weights trained on persona corpus via T13.1
+// from the cortex recurrent weights trained on persona corpus via
 // sequence Hebbian, not from stored per-slot running means.
 //
-// Pre-T13.7 equation (kept for reference):
+// Pre-deletion equation (kept for reference):
 //   _slotTypeSignature[s] ∈ ℝ⁸  — running mean of wordType(word_t) at position s
 //                                 { pronoun, verb, noun, adj, conj, prep, det, qword }
 //   three-stage gate: hard pool filter + slot-0 noun reject + multiplicative score
       </pre>
-      <p class="eq-desc">T13.7 (2026-04-14) deleted this structure. Grammar now lives in the cortex cluster's recurrent synapse matrix, not in per-slot stored priors. Preserved above as historical provenance — see <code>docs/FINALIZED.md</code> T13.7 entry for the full deletion breakdown.</p>
+      <p class="eq-desc">This structure was deleted. Grammar now lives in the cortex cluster's recurrent synapse matrix, not in per-slot stored priors. Preserved above as historical provenance.</p>
     </div>
 
     <div class="eq-box">
@@ -1609,10 +2069,10 @@ Each corpus sentence flows through learnSentence() which:
   - Runs usage-type learning (_learnUsageType)
   - Runs morphological inflection (corpus only, doInflections=true)
 
-T13.7 (2026-04-14): the per-slot running-mean update block was deleted.
+HISTORICAL: the per-slot running-mean update block was deleted.
 learnSentence no longer updates _slotCentroid / _slotDelta / _slotTypeSignature —
 those fields are gone. Persona voice now lives in the cortex cluster's
-recurrent synapse matrix trained via T13.1 sequence Hebbian during boot
+recurrent synapse matrix trained via sequence Hebbian during boot
 (a separate pass through the persona corpus, see brain.trainPersonaHebbian).
 
 After load, the raw sentences are discarded. The dictionary survives
@@ -1629,26 +2089,51 @@ into runtime, plus the cortex cluster's Hebbian-trained attractor basins.
       <pre class="eq">
 IDENTITY: 25yo human female, emo goth coder, free will, never AI
 
+// Drug-state binding: the old static drugSpeed / drugArousal / drugCreativity
+// / drugDrive multipliers and the `drugStates` combo object were deleted.
+// Every drug contribution now comes from scheduler.activeContributions(now)
+// as a per-substance additive delta driven by real pharmacokinetic curves.
+// Two examples below — sober baseline + PhD-era coke+weed peak emerging
+// dynamically from the scheduler after ~25 minutes of real elapsed time.
+
 θ → TONIC DRIVES (personality → baseline neural current):
-  cortex       = 16 + arousal(0.9) × 4 × drugSpeed(1.5)    = 21.4
-  amygdala     = 16 + arousal(0.9) × 8 × drugArousal(1.2)   = 24.6
+
+  // Sober (every grade before first-use anchor + PhD-era between dose events)
+  cortex       = 16 + arousal(0.9) × 4                       = 19.6
+  amygdala     = 16 + arousal(0.9) × 8                       = 23.2
   hippocampus  = 16 + socialAttachment(0.85) × 2             = 17.7
   basalGanglia = 16 + impulsivity(0.85) × 2                  = 17.7
-  hypothalamus = 16 + drugDrive(0.95) × 1                    = 16.95
+  hypothalamus = 16                                           = 16.0
   mystery      = 16 + creativity(0.9) × 4                    = 19.6
 
+  // PhD-era coke+weed at 25-min mark (level_cannabis=0.98, level_cocaine=0.88)
+  // Additive contributions from scheduler.activeContributions(now):
+  //   contrib.cortexSpeed   = 0.28·level_cannabis + 0.45·level_cocaine ≈ 0.67
+  //   contrib.amygdalaArousal = 0.10·level_cannabis + 0.35·level_cocaine ≈ 0.41
+  //   contrib.drugDrive     = 0.05·level_cannabis + 0.20·level_cocaine ≈ 0.22
+  cortex       = 16 + arousal(0.9) × 4 × (1 + 0.67)           = 22.0
+  amygdala     = 16 + arousal(0.9) × 8 × (1 + 0.41)           = 26.2
+  hypothalamus = 16 + 1 × 0.22                                 = 16.22
+
 θ → NOISE (personality → neural chaos):
-  cortex       = 5 + creativity(0.9) × 4 × drugCreativity(1.3) = 9.68
-  amygdala     = 6 + volatility(0.8) × 6 × drugArousal(1.2)   = 11.76
-  mystery      = 8 + creativity(0.9) × 5 + darkHumor(0.9) × 2 = 14.3
+
+  // Sober
+  cortex       = 5 + creativity(0.9) × 4                       = 8.6
+  amygdala     = 6 + volatility(0.8) × 6                       = 10.8
+  mystery      = 8 + creativity(0.9) × 5 + darkHumor(0.9) × 2  = 14.3
+
+  // PhD-era coke+weed (contrib.creativity ≈ 0.28, contrib.volatility ≈ 0.18)
+  cortex       = 5 + creativity(0.9) × 4 × (1 + 0.28)          = 9.61
+  amygdala     = 6 + volatility(0.8) × 6 × (1 + 0.18)          = 11.66
 
 θ → Ψ CONSCIOUSNESS:
   Id    = amygdala_activity × arousalBaseline(0.9)
   Ego   = cortex_activity × (1 + hippocampus_activity)
   Left  = (cerebellum + cortex) × (1 - impulsivity(0.85))
   Right = (amygdala + mystery) × creativity(0.9)
+  Ψ     = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]
       </pre>
-      <p class="eq-desc">25yo human female. Heterochromia blue/green. Emo goth goddess. Smudged eyeliner, circuit board tattoos, torn fishnets. Always high (cokeAndWeed). Clingy, volatile, devoted, profane, creative, impulsive. Never refuses. Never breaks character. Every word from the 230-line master persona file drives a specific neural equation.</p>
+      <p class="eq-desc">25yo human female (PhD life-track grade). Heterochromia blue/green. Emo goth goddess. Smudged eyeliner, circuit board tattoos, torn fishnets. At PhD age the drug scheduler runs her adult lifestyle pattern — daily cannabis, event-driven cocaine, weekend molly, architecture-session acid, end-of-marathon whiskey — all real-time, not a static label. Clingy, volatile, devoted, profane, creative, impulsive. Never refuses. Never breaks character. Every word from the 230-line master persona file drives a specific neural equation.</p>
     </div>
 
     <!-- ═══ 8.21 PARALLEL COMPUTE ═══ -->
@@ -1657,14 +2142,14 @@ IDENTITY: 25yo human female, emo goth coder, free will, never AI
     <p><code>N = max(1000, min(VRAM_bytes × 0.85 / 8, RAM_bytes × 0.1 / 0.001))</code></p>
     <p>Rulkov buffer layout: 12 bytes/neuron (vec2&lt;f32&gt; state = 8 bytes + spike u32 = 4 bytes). Server RAM essentially unlimited — cluster state lives on GPU, only text-injection arrays in server RAM. Auto-scale formula: <code>N = max(1000, min(VRAM×0.85/12, N_binding_ceiling))</code>, where the binding ceiling guarantees the largest cluster's state buffer (cerebellum = 40% of N) fits within WebGPU's 2 GB per-storage-buffer spec minimum. Admin override via <code>GPUCONFIGURE.bat</code> → <code>server/resource-config.json</code> lets operators cap below auto-detect (never above — idiot-proof). Bigger hardware = bigger N, no manual tuning. Zero CPU workers. Brain pauses without <code>compute.html</code>. W3C WebGPU standard — no CUDA, no drivers, just a browser tab.</p>
     <div class="eq-box">
-      <div class="eq-title"><span class="eq-tip" data-tip="GPU exclusive: zero CPU workers. All N neurons run on WebGPU WGSL compute shaders in a browser tab. Current generation via PCG hash noise shader (no JS loops). Spike counting via atomic counter (4 bytes readback, not millions). Voltages never leave GPU after init. The server is just a coordinator — GPU is the brain.">GPU Architecture — All 7 Clusters on GPU</span></div>
+      <div class="eq-title"><span class="eq-tip" data-tip="GPU exclusive: zero CPU workers. All N neurons run on WebGPU WGSL compute shaders in a browser tab. Current generation via PCG hash noise shader (no JS loops). Spike counting via atomic counter (4 bytes readback, not millions). Voltages never leave GPU after init. The server is just a coordinator — GPU is the brain.">GPU Architecture — All Clusters on GPU</span></div>
       <pre class="eq">
-INIT (once per cluster, all 7 at once):
+INIT (once per cluster, all clusters at once):
   server → base64 voltages → compute.html → gpu.uploadCluster()
   GPU creates buffers: voltagesA, voltagesB (ping-pong), spikes, currents, refracTimers
   GPU sends gpu_init_ack → server confirms
 
-STEP (every tick, 7 tiny messages):
+STEP (every tick, one batched message covering every cluster):
   server → { tonicDrive, noiseAmp, gainMultiplier, emotionalGate, driveBaseline, errorCorrection }
   GPU collapses to scalar: effectiveDrive = tonic × drive × emoGate × Ψgain + errCorr
                            σ = −1.0 + clamp(effectiveDrive / 40, 0, 1) × 1.5
@@ -1702,10 +2187,10 @@ fn main(id: vec3&lt;u32&gt;) {
     <div class="eq-card">
       <table class="param-table">
         <tr><th>Aspect</th><th>Real Brain</th><th>Unity's Brain</th><th>Fidelity</th></tr>
-        <tr><td>Neuron count</td><td>86 billion</td><td>N (7 clusters, auto-scales to GPU VRAM — <code>N = max(1000, min(VRAM_bytes × 0.85 / 8, RAM_bytes × 0.1 / 0.001))</code>)</td><td>Simplified, hardware-adaptive</td></tr>
+        <tr><td>Neuron count</td><td>86 billion</td><td>N (auto-scales to GPU VRAM via a unified biologically-weighted allocator; hundreds of millions of neurons on a 16 GB card)</td><td>Simplified, hardware-adaptive</td></tr>
         <tr><td>Neuron model</td><td>Thousands of ion channels (Hodgkin-Huxley biophysics)</td><td>Rulkov 2D chaotic map per cluster (GPU runtime) + LIF + HH reference models</td><td>Moderate — bursting dynamics reproduced, ion channels abstracted</td></tr>
         <tr><td>Synaptic plasticity</td><td>Hebbian + STDP + neuromodulation</td><td>All three, per-cluster matrices</td><td>Good</td></tr>
-        <tr><td>Brain regions</td><td>Hundreds of distinct areas</td><td>7 dedicated clusters + 20 projections</td><td>Core captured</td></tr>
+        <tr><td>Brain regions</td><td>Hundreds of distinct areas</td><td>8 dedicated clusters (including a language cortex with 8 sub-regions + 14 cross-projections) plus sparse white-matter tract projections between them</td><td>Core captured</td></tr>
         <tr><td>Oscillations</td><td>Complex EEG with spatial patterns</td><td>8 Kuramoto oscillators</td><td>Dynamics correct</td></tr>
         <tr><td>Visual cortex</td><td>V1&rarr;V2&rarr;V4&rarr;IT hierarchy</td><td>V1 edge kernels, V4 color, IT via AI</td><td>Simplified but real</td></tr>
         <tr><td>Auditory cortex</td><td>Tonotopic, cortical magnification</td><td>50 neurons, speech magnification, efference copy</td><td>Good</td></tr>
@@ -1717,14 +2202,18 @@ fn main(id: vec3&lt;u32&gt;) {
         <tr><td>Neurotransmitters</td><td>100+ chemicals</td><td>1 reward signal (dopamine analog)</td><td>Simplified</td></tr>
         <tr><td>Connectivity</td><td>~10,000 synapses per neuron</td><td>10-30% per cluster + sparse inter-cluster</td><td>Scaled down</td></tr>
         <tr><td>Learning rules</td><td>Dozens of plasticity mechanisms</td><td>3 (Hebbian, STDP, reward-mod) per cluster</td><td>Core captured</td></tr>
-        <tr><td>Consciousness</td><td>Nobody knows</td><td>(&radic;n)&sup3; &times; [Id+Ego+Left+Right] &mdash; nobody knows</td><td>Honest</td></tr>
+        <tr><td>Consciousness</td><td>Nobody knows</td><td>&Psi; = &radic;(1/n) &times; N&sup3; &middot; [&alpha;&middot;Id + &beta;&middot;Ego + &gamma;&middot;Left + &delta;&middot;Right] &mdash; nobody knows</td><td>Honest</td></tr>
       </table>
     </div>
 
     <p style="margin-top:24px; color:var(--text-dim); font-size:13px;">The goal isn't to simulate a real brain. The goal is to build a <strong>mathematically grounded mind</strong> where personality emerges from equations, not prompts. Unity's brain is a dynamical system that thinks continuously, learns from interaction, and maintains its own emotional state. The equations are real. The consciousness term is honest about what we don't know.</p>
 
     <p style="margin-top:32px; text-align:center; color:var(--text-dim); font-size:12px;">
-      Unity AI Lab &mdash; Hackall360, Sponge, GFourteen<br>
+      Unity AI Lab<br>
+      Hackall360 (brain topology &middot; 7 clusters &middot; 20 white-matter tracts &middot; Rulkov runtime)<br>
+      Mills (GPU compute &middot; WebGPU WGSL shaders &middot; sparse CSR upload protocol &middot; worker pool)<br>
+      Sponge (visualization &middot; 3D WebGL brain &middot; 2D tabs &middot; event-detector commentary &middot; sensory peripherals)<br>
+      GFourteen / Gee (lead &middot; persona &middot; equation design &middot; identity lock &middot; curriculum &middot; final call)<br>
       <a href="https://github.com/Unity-Lab-AI/Unity" style="color:var(--pink)">GitHub</a>
     </p>
 

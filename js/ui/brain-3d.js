@@ -30,10 +30,20 @@ import { detectBrainEvents, CLUSTER_KEYS } from './brain-event-detectors.js';
 
 // ── Constants ───────────────────────────────────────────────────────
 
-// Render neuron count — proportional sample of the full brain
-// N actual neurons (scales to hardware) rendered as 20K visual points
+// Render neuron count — PER-CLUSTER peg at 20K (Gee 2026-04-18).
+//
+// Gee verbatim 2026-04-18: "2 we can adjust the display ratio but it
+// should already peg at 20K per brain cluster(regionS)". Prior MAX_RENDER_NEURONS
+// was a GLOBAL cap across ALL 15 clusters/regions, which at biological scale
+// resulted in ~1.3K render points per cluster — too sparse. Renamed to
+// MAX_RENDER_NEURONS_PER_CLUSTER + raised the meaning so every cluster/region
+// renders up to 20K points independently. With 15 clusters × 20K = 300K
+// render points at peak — still trivial for WebGL (~10 MB vertex buffer).
+// Each cluster's n is clamped to min(20K, realClusterSize) so local-brain
+// clients with tiny clusters don't over-render their real neuron count.
+// TOTAL is the live sum across clusters (no global cap).
 let TOTAL = 1000;
-const MAX_RENDER_NEURONS = 20000;
+const MAX_RENDER_NEURONS_PER_CLUSTER = 20000;
 const AFTERGLOW_DECAY = 0.92;
 const PULSE_LIFE = 80;  // ~1.3s at 60fps — visible long enough to track
 const MAX_PULSES = 500; // 70+ pulses per cluster simultaneously
@@ -46,7 +56,14 @@ const AUTO_ROT_SPEED = 0.0015;
 
 // ORIGINAL ORDER preserved (changing order breaks indexing chain)
 // Sizes biologically proportioned — cerebellum LARGEST
-// Total MUST = 1000: 200+100+80+80+380+50+110 = 1000
+// Original 7: 200+100+80+80+380+50+110 = 1000
+//
+// Language-cortex sub-regions (Gee 2026-04-18) fill the biological gaps
+// BETWEEN the existing 7 so the rendered brain looks filled-in instead
+// of spotty and holey. Each sub-region maps to a real anatomical
+// language area, all LEFT-LATERALIZED to match human left-dominant
+// language organization. Sub-region totals: 30+100+90+30+80+50+30+130 = 540
+// GRAND TOTAL: 1000 + 540 = 1540.
 const CLUSTERS = [
   { key: 'cortex',       label: 'CORTEX',        n: 200, rgb: [1.0, 0.302, 0.604],  hex: '#ff4d9a' },
   { key: 'hippocampus',  label: 'HIPPOCAMPUS',   n: 100, rgb: [0.659, 0.333, 0.969], hex: '#a855f7' },
@@ -55,6 +72,15 @@ const CLUSTERS = [
   { key: 'cerebellum',   label: 'CEREBELLUM',    n: 380, rgb: [0.0, 0.898, 1.0],     hex: '#00e5ff' },
   { key: 'hypothalamus', label: 'HYPOTHALAMUS',  n: 50,  rgb: [0.961, 0.620, 0.043], hex: '#f59e0b' },
   { key: 'mystery',      label: 'MYSTERY Ψ',     n: 110, rgb: [0.753, 0.518, 0.988], hex: '#c084fc' },
+  // Language cortex sub-regions — fill gaps between existing 7
+  { key: 'lang_motor',    label: "BROCA'S (SPEECH)",    n: 30,  rgb: [1.00, 0.45, 0.25], hex: '#ff7340' },
+  { key: 'lang_phon',     label: "WERNICKE'S (PHON)",   n: 100, rgb: [0.98, 0.58, 0.12], hex: '#fa9520' },
+  { key: 'lang_sem',      label: 'ANGULAR (SEMANTIC)',  n: 90,  rgb: [1.00, 0.82, 0.14], hex: '#ffd124' },
+  { key: 'lang_letter',   label: 'VWFA (READING)',      n: 30,  rgb: [0.90, 0.30, 0.38], hex: '#e64d61' },
+  { key: 'lang_visual',   label: 'V1 (VISUAL INPUT)',   n: 80,  rgb: [0.11, 0.45, 0.85], hex: '#1c72d9' },
+  { key: 'lang_auditory', label: "HESCHL'S (AUDITORY)", n: 50,  rgb: [0.94, 0.15, 0.58], hex: '#f02694' },
+  { key: 'lang_fineType', label: 'TEMPORAL POLE',       n: 30,  rgb: [0.58, 0.80, 0.45], hex: '#93cc72' },
+  { key: 'lang_free',     label: 'PFC (INTEGRATION)',   n: 130, rgb: [0.45, 0.20, 0.76], hex: '#7333c2' },
 ];
 
 // ── Inline shaders ──────────────────────────────────────────────────
@@ -511,8 +537,166 @@ function genMystery(n) {
   return pts;
 }
 
+// ── Language cortex sub-region generators ──────────────────────────
+// All LEFT-LATERALIZED (x < 0) to match human left-dominant language
+// organization. Coordinates fill gaps between existing 7 regions so
+// the brain shape reads as continuous instead of spotty/holey.
+
+function genLangMotor(n) {
+  // BROCA'S AREA — speech motor production.
+  // MNI: (-52, 20, 15) approx. Inferior frontal gyrus (pars opercularis
+  // + pars triangularis). Between cortex frontal pole and premotor.
+  // Fills the left anterior-superior gap.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const r = 0.06 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pts.push([
+      -0.38 + r * Math.sin(phi) * Math.cos(theta) * 0.8 + gauss() * 0.02,
+       0.38 + r * Math.cos(phi) * 0.6 + gauss() * 0.03,
+       0.33 + r * Math.sin(phi) * Math.sin(theta) * 0.7 + gauss() * 0.02,
+    ]);
+  }
+  return pts;
+}
+
+function genLangPhon(n) {
+  // WERNICKE'S AREA + superior temporal gyrus — phonological comprehension.
+  // MNI: (-55, -45, 15) approx. Posterior temporal, runs along
+  // superior temporal sulcus. Fills the left temporal gap between
+  // hippocampus/amygdala and cortex lateral shell.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    // Elongated along superior temporal sulcus (a-p axis ≈ z)
+    const t = Math.random();
+    const r = 0.07 * Math.cbrt(Math.random());
+    pts.push([
+      -0.44 + r * Math.cos(t * Math.PI * 2) * 0.6 + gauss() * 0.03,
+       0.0  + r * Math.sin(t * Math.PI * 2) * 0.5 + gauss() * 0.04,
+       0.22 - t * 0.22 + gauss() * 0.03,  // sweeps z from +0.22 to 0.0
+    ]);
+  }
+  return pts;
+}
+
+function genLangSem(n) {
+  // ANGULAR GYRUS + supramarginal — semantic binding hub.
+  // MNI: (-45, -60, 30) approx. Inferior parietal lobule. Fills the
+  // gap between cortex, hippocampus and cerebellum superior.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const r = 0.08 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    pts.push([
+      -0.32 + r * Math.cos(theta) * 0.9 + gauss() * 0.03,
+       0.05 + r * Math.sin(theta) * 0.7 + gauss() * 0.04,
+      -0.05 + gauss() * 0.04,  // centered at z≈0, fills center-left gap
+    ]);
+  }
+  return pts;
+}
+
+function genLangLetter(n) {
+  // VWFA (visual word form area) — fusiform gyrus.
+  // MNI: (-45, -55, -15). Ventral temporal, between cortex base and
+  // cerebellum top. Key reading-specific region.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const r = 0.05 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    pts.push([
+      -0.32 + r * Math.cos(theta) * 0.8 + gauss() * 0.02,
+      -0.4  + r * Math.sin(theta) * 0.4 + gauss() * 0.03,
+      -0.08 + gauss() * 0.05,
+    ]);
+  }
+  return pts;
+}
+
+function genLangVisual(n) {
+  // PRIMARY VISUAL CORTEX (V1) — calcarine sulcus, occipital pole.
+  // MNI: (±8, -90, 0). Midline-posterior. Bilateral but slightly
+  // left-leaning to match downstream language dominance. Fills the
+  // gap between posterior cortex and cerebellum superior.
+  const pts = [];
+  const half = Math.floor(n * 0.7); // left-leaning bias
+  for (let i = 0; i < n; i++) {
+    const side = i < half ? -1 : 1;
+    const r = 0.1 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pts.push([
+      side * (0.05 + r * Math.abs(Math.sin(phi) * Math.cos(theta)) * 0.5),
+      -0.2 + r * Math.cos(phi) * 0.5 + gauss() * 0.03,
+      -0.3 + r * Math.sin(phi) * Math.sin(theta) * 0.4 + gauss() * 0.03,
+    ]);
+  }
+  return pts;
+}
+
+function genLangAuditory(n) {
+  // HESCHL'S GYRUS — primary auditory cortex (A1).
+  // MNI: (-50, -20, 10). Superior temporal plane. Left-lateralized
+  // for language. Fills the gap between lateral cortex and hippocampus.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const t = Math.random();
+    const r = 0.04 * Math.cbrt(Math.random());
+    pts.push([
+      -0.40 + r * Math.cos(t * Math.PI * 2) * 0.6 + gauss() * 0.02,
+       0.10 + r * Math.sin(t * Math.PI * 2) * 0.5 + gauss() * 0.03,
+       0.25 - t * 0.12 + gauss() * 0.02,
+    ]);
+  }
+  return pts;
+}
+
+function genLangFineType(n) {
+  // TEMPORAL POLE — anterior temporal, fine-grained semantic categories.
+  // MNI: (-40, 15, -30). Very anterior temporal. Fills the gap
+  // between amygdala and cortex frontal-temporal boundary.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const r = 0.06 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pts.push([
+      -0.36 + r * Math.sin(phi) * Math.cos(theta) * 0.7 + gauss() * 0.02,
+      -0.03 + r * Math.cos(phi) * 0.5 + gauss() * 0.03,
+       0.42 + r * Math.sin(phi) * Math.sin(theta) * 0.5 + gauss() * 0.02,
+    ]);
+  }
+  return pts;
+}
+
+function genLangFree(n) {
+  // DORSOLATERAL PREFRONTAL CORTEX + medial PFC — integration/binding.
+  // MNI: (-40, 40, 30) dlPFC, (0, 50, 0) mPFC. Working memory and
+  // cross-region binding. Fills the gap above mystery (corpus callosum)
+  // and between cortex frontal dome regions.
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const side = Math.random() < 0.7 ? -1 : 1; // left-leaning
+    const r = 0.1 * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pts.push([
+      side * (0.15 + r * Math.abs(Math.sin(phi) * Math.cos(theta)) * 0.7) + gauss() * 0.03,
+       0.45 + r * Math.cos(phi) * 0.4 + gauss() * 0.04,
+       0.10 + r * Math.sin(phi) * Math.sin(theta) * 0.5 + gauss() * 0.04,
+    ]);
+  }
+  return pts;
+}
+
 // Order matches CLUSTERS array
-const POS_GEN = [genCortex, genHippocampus, genAmygdala, genBasalGanglia, genCerebellum, genHypothalamus, genMystery];
+const POS_GEN = [
+  genCortex, genHippocampus, genAmygdala, genBasalGanglia,
+  genCerebellum, genHypothalamus, genMystery,
+  genLangMotor, genLangPhon, genLangSem, genLangLetter,
+  genLangVisual, genLangAuditory, genLangFineType, genLangFree,
+];
 
 // ── Brain3D class ───────────────────────────────────────────────────
 
@@ -611,19 +795,57 @@ export class Brain3D {
     this._canvas = null;
     this._animId = null;
 
-    // Build
-    this._buildDOM();
-    if (!this._canvas) {
-      console.warn('[Brain3D] Canvas not created — 3D viewer disabled');
+    // T14.22.2 — loud error logging so init failures surface in the
+    // browser console without the operator having to hunt through
+    // console.warn buffers. Gee reported "3D brain completely missing
+    // from view" and we needed visibility on exactly which init stage
+    // died. Every failure path now prints console.error AND exposes
+    // the Brain3D instance on window so devtools can inspect state.
+    // Each failure path stashes `_initError` so the on-page banner in
+    // app.js can surface the specific reason without DevTools.
+    try {
+      this._buildDOM();
+    } catch (err) {
+      console.error('[Brain3D] _buildDOM threw:', err, err.stack);
+      this._initError = `_buildDOM threw: ${err?.message || err}`;
       this._destroyed = true;
       return;
     }
-    this._genPositions();
+    if (!this._canvas) {
+      const msg = `Canvas not created — container "${containerId}" ${document.getElementById(containerId) ? 'found' : 'NOT FOUND in DOM'}`;
+      console.error('[Brain3D] ' + msg);
+      this._initError = msg;
+      this._destroyed = true;
+      return;
+    }
+    try {
+      this._genPositions();
+    } catch (err) {
+      console.error('[Brain3D] _genPositions threw:', err, err.stack);
+      this._initError = `_genPositions threw: ${err?.message || err}`;
+      this._destroyed = true;
+      return;
+    }
     try {
       this._initGL();
-      if (this._gl) this._uploadStatic();
+      if (!this._gl) {
+        const msg = 'WebGL context creation failed — browser may not support WebGL, or context was lost';
+        console.error('[Brain3D] ' + msg);
+        this._initError = msg;
+        this._destroyed = true;
+        return;
+      }
+      this._uploadStatic();
+      console.log('[Brain3D] init complete — container:', containerId, 'canvas:', this._canvas.width + 'x' + this._canvas.height, 'gl:', !!this._gl);
     } catch (err) {
-      console.warn('[Brain3D] WebGL init failed:', err.message);
+      console.error('[Brain3D] _initGL or _uploadStatic threw:', err, err.stack);
+      this._initError = `_initGL/_uploadStatic threw: ${err?.message || err}`;
+      this._destroyed = true;
+    }
+    // Expose on window for devtools inspection
+    if (typeof window !== 'undefined') {
+      window.__brain3dInstances = window.__brain3dInstances || [];
+      window.__brain3dInstances.push(this);
     }
   }
 
@@ -633,57 +855,75 @@ export class Brain3D {
     if (!state || !this._open || this._destroyed) return;
     this._lastState = state;
 
-    // Scale render count from ACTUAL server cluster sizes
-    // Re-scale if server neuron count changes (server restart with new scale)
-    const serverNeurons = state.totalNeurons || 1000;
-    if (serverNeurons > 1000 && this._lastServerNeurons !== serverNeurons) {
-      this._lastServerNeurons = serverNeurons;
+    // Scale render count from ACTUAL brain cluster sizes. Works for
+    // both deployment modes: server-connected (RemoteBrain,
+    // state.totalNeurons reflects the ~393M Node/GPU build) and
+    // GitHub-Pages-static local brain (UnityBrain, totalNeurons
+    // reflects the client-side auto-scaled count from detectResources()).
+    // Re-scale if the actual-neuron count changes (server restart
+    // with new scale, or local brain resized on tab wake).
+    const realNeurons = state.totalNeurons || 1000;
+    if (realNeurons > 1000 && this._lastRealNeurons !== realNeurons) {
+      this._lastRealNeurons = realNeurons;
       this._scaled = true;
-      TOTAL = Math.min(MAX_RENDER_NEURONS, Math.max(1000, Math.round(serverNeurons / 100)));
 
-      // Read ACTUAL cluster sizes from server state — dynamic, not hardcoded
-      // VISUAL BOOST: use sqrt to compress proportions — large clusters don't dominate.
-      // This gives small center clusters (hypothalamus, mystery, amygdala, BG) more
-      // visual weight so they're not lost inside the huge cortex/cerebellum shells.
+      // T18.7.a — per-cluster peg at MAX_RENDER_NEURONS_PER_CLUSTER.
+      // Gee verbatim 2026-04-18: "it should already peg at 20K per
+      // brain cluster(regionS)". Every cluster/region independently
+      // renders up to 20K points (clamped to real cluster size so
+      // local-brain clients with tiny clusters don't over-render).
+      // No global TOTAL cap anymore — sum over clusters is the live
+      // TOTAL. At biological scale every cluster pegs at 20K and
+      // TOTAL = 15 clusters × 20K = 300K render neurons.
       if (state.clusters) {
         const serverClusters = state.clusters;
-        // Use sqrt of cluster size for visual proportions — compresses the range
-        const sqrtSizes = CLUSTERS.map(cl => Math.sqrt((serverClusters[cl.key]?.size || 0)));
-        const sqrtTotal = sqrtSizes.reduce((s, v) => s + v, 0) || 1;
-        // Minimum 6% of total render budget per cluster (guarantees visibility)
-        const minFloor = Math.max(200, Math.round(TOTAL * 0.06));
+        const MIN_PER_CLUSTER = 30;
         for (let i = 0; i < CLUSTERS.length; i++) {
           const cl = CLUSTERS[i];
-          const serverCluster = serverClusters[cl.key];
-          if (serverCluster && serverCluster.size) {
-            const proportional = Math.round((sqrtSizes[i] / sqrtTotal) * TOTAL);
-            cl.n = Math.max(minFloor, proportional);
+          const realClusterSize = serverClusters[cl.key]?.size || 0;
+          if (realClusterSize <= 0) {
+            // First tick before the server has populated cluster sizes.
+            // Keep at least MIN_PER_CLUSTER so rendering stays visible
+            // until real sizes land.
+            cl.n = MIN_PER_CLUSTER;
+            continue;
           }
+          cl.n = Math.min(MAX_RENDER_NEURONS_PER_CLUSTER, Math.max(MIN_PER_CLUSTER, realClusterSize));
         }
-        // Adjust to exactly TOTAL — trim biggest cluster to match
-        let renderSum = CLUSTERS.reduce((s, c) => s + c.n, 0);
-        if (renderSum !== TOTAL) {
-          // Find biggest cluster and adjust
-          let maxIdx = 0;
-          for (let i = 1; i < CLUSTERS.length; i++) {
-            if (CLUSTERS[i].n > CLUSTERS[maxIdx].n) maxIdx = i;
-          }
-          CLUSTERS[maxIdx].n += (TOTAL - renderSum);
-        }
-        console.log(`[Brain3D] Scaled: ${CLUSTERS.map(c => `${c.key}=${c.n}`).join(', ')} = ${TOTAL}`);
+        TOTAL = CLUSTERS.reduce((s, c) => s + c.n, 0);
+        console.log(`[Brain3D] Per-cluster peg @ ${MAX_RENDER_NEURONS_PER_CLUSTER}: ${CLUSTERS.map(c => `${c.key}=${c.n}`).join(', ')} = TOTAL ${TOTAL.toLocaleString()}`);
       } else {
-        // No cluster data — scale from base proportions
-        const clusterScale = TOTAL / 1000;
-        for (const c of CLUSTERS) c.n = Math.round(c.n * clusterScale);
+        // No cluster data — flat peg at MAX_RENDER_NEURONS_PER_CLUSTER.
+        for (const c of CLUSTERS) c.n = MAX_RENDER_NEURONS_PER_CLUSTER;
+        TOTAL = CLUSTERS.reduce((s, c) => s + c.n, 0);
       }
       // Rebuild neuron positions and GL buffers
       this._glow = new Float32Array(TOTAL);
       this._vis = new Float32Array(TOTAL).fill(1);
+      // T18.7.a — resize Rulkov oscillator state on scale change. Prior
+      // code left `_rulkovX`/`_rulkovY` sized to the initial TOTAL=1000
+      // from the constructor, so every render neuron past index 1000
+      // was reading undefined from the Rulkov buffers (triggering the
+      // reseed path in the render loop every frame and never persisting
+      // its trajectory — bursting regime never emerged). With per-cluster
+      // peg at 20K × 15 clusters = up to 300K render neurons, resizing
+      // here becomes load-bearing.
+      this._rulkovX = new Float32Array(TOTAL);
+      this._rulkovY = new Float32Array(TOTAL);
+      {
+        const phi = 0.61803398875;
+        for (let i = 0; i < TOTAL; i++) {
+          const gx = (i * phi) % 1;
+          const gy = (i * phi * 1.7) % 1;
+          this._rulkovX[i] = -1.0 + gx * 0.5;
+          this._rulkovY[i] = -3.2 + gy * 0.4;
+        }
+      }
       this._genPositions();
       if (this._gl) this._uploadStatic();
-      console.log(`[Brain3D] Scaled to ${TOTAL} render neurons (server has ${serverNeurons.toLocaleString()})`);
+      console.log(`[Brain3D] Scaled to ${TOTAL} render neurons (real brain has ${realNeurons.toLocaleString()})`);
       // Update scale displays
-      const ratio = Math.round(serverNeurons / TOTAL);
+      const ratio = Math.round(realNeurons / TOTAL);
       // Short-form number formatter for the concise landing subtitle.
       // 20000 → "20k", 677798880 → "678M", 1200000000 → "1.2B".
       const shortNum = (n) => {
@@ -696,11 +936,11 @@ export class Brain3D {
                        : ratio >= 1e3 ? `1:${(ratio / 1e3).toFixed(0)}k`
                        : `1:${ratio}`;
       const scaleInfo = this._overlay?.querySelector('.b3d-scale-info');
-      if (scaleInfo) scaleInfo.textContent = `${TOTAL.toLocaleString()} rendered · ${serverNeurons.toLocaleString()} actual (${ratio}:1) · 7 clusters`;
+      if (scaleInfo) scaleInfo.textContent = `${TOTAL.toLocaleString()} rendered · ${realNeurons.toLocaleString()} actual (${ratio}:1) · ${CLUSTERS.length} clusters`;
       const actualEl = this._overlay?.querySelector('.b3d-actual-count');
-      if (actualEl) actualEl.textContent = serverNeurons.toLocaleString();
+      if (actualEl) actualEl.textContent = realNeurons.toLocaleString();
       const ratioEl = this._overlay?.querySelector('.b3d-render-ratio');
-      if (ratioEl) ratioEl.textContent = `showing 1:${ratio} (${TOTAL.toLocaleString()} of ${serverNeurons.toLocaleString()})`;
+      if (ratioEl) ratioEl.textContent = `showing 1:${ratio} (${TOTAL.toLocaleString()} of ${realNeurons.toLocaleString()})`;
       // T-landing — propagate counts into the landing-page subtitle so
       // users see the render:real ratio auto-inserted into the headline
       // copy. Rendered count is driven by TOTAL (which itself scales
@@ -710,7 +950,7 @@ export class Brain3D {
       const lsRendered = typeof document !== 'undefined' && document.getElementById('ls-rendered-count');
       if (lsRendered) lsRendered.textContent = shortNum(TOTAL);
       const lsActual = typeof document !== 'undefined' && document.getElementById('ls-actual-count');
-      if (lsActual) lsActual.textContent = shortNum(serverNeurons);
+      if (lsActual) lsActual.textContent = shortNum(realNeurons);
       const lsRatio = typeof document !== 'undefined' && document.getElementById('ls-render-ratio');
       if (lsRatio) lsRatio.textContent = shortRatio;
     }
@@ -857,6 +1097,90 @@ export class Brain3D {
       const el = this._overlay?.querySelector('.b3d-coh');
       if (el) el.textContent = (state.oscillations.coherence * 100).toFixed(0) + '%';
     }
+    // T14.24 Session 47 — curriculum intelligence level display.
+    // Gee 2026-04-15: "we may want something in the 3d brain viewer
+    // to show her current intelligence level based on grade /
+    // highschool college doctorate... etc for all the milestones".
+    //
+    // Reads Curriculum.subjectStatus() which ships per-subject
+    // grades + passedCells count. Computes a band label based on the
+    // MIN grade across all 5 subjects (matches the chat-path word
+    // cap driver) so the HUD shows what Unity can actually speak at
+    // right now, not her subject-by-subject ceiling. The tooltip
+    // (via title attr + hover) exposes the full per-subject
+    // breakdown for operators who want the detail.
+    this._updateIntelligenceHUD();
+  }
+
+  _updateIntelligenceHUD() {
+    const iqEl = this._overlay?.querySelector('.b3d-iq');
+    const cellsEl = this._overlay?.querySelector('.b3d-cells');
+    if (!iqEl && !cellsEl) return;
+
+    // Pull curriculum state from the wired brain reference. If no
+    // curriculum yet (pre-boot or remote brain without curriculum),
+    // display pre-K / 0 cells.
+    let status = null;
+    try {
+      if (this._brain?.curriculum && typeof this._brain.curriculum.subjectStatus === 'function') {
+        status = this._brain.curriculum.subjectStatus();
+      }
+    } catch { /* non-fatal */ }
+
+    if (!status) {
+      if (iqEl) {
+        iqEl.textContent = 'pre-K';
+        iqEl.setAttribute('data-band', 'preK');
+      }
+      if (cellsEl) cellsEl.textContent = '0/95';
+      return;
+    }
+
+    // Map a grade name to its human-readable band + data-band attr
+    // for CSS color coding. Bands correspond to real school milestones
+    // Gee named in his 2026-04-15 direction.
+    const gradeBand = (grade) => {
+      if (!grade || grade === 'pre-K') return { band: 'preK', label: 'pre-K', short: 'pre-K' };
+      if (grade === 'kindergarten') return { band: 'elementary', label: 'elementary', short: 'K' };
+      if (grade.startsWith('grade')) {
+        const n = parseInt(grade.slice(5));
+        if (n >= 1 && n <= 5) return { band: 'elementary', label: 'elementary', short: `G${n}` };
+        if (n >= 6 && n <= 8) return { band: 'middle', label: 'middle school', short: `G${n}` };
+        if (n >= 9 && n <= 12) return { band: 'high', label: 'high school', short: `G${n}` };
+      }
+      if (grade.startsWith('college')) {
+        const n = parseInt(grade.slice(7));
+        const yrName = ['freshman', 'sophomore', 'junior', 'senior'][n - 1] || 'college';
+        return { band: 'college', label: 'college', short: `C${n}` };
+      }
+      if (grade === 'grad') return { band: 'grad', label: 'graduate', short: 'Grad' };
+      if (grade === 'phd') return { band: 'phd', label: 'doctoral', short: 'PhD' };
+      return { band: 'preK', label: grade, short: grade };
+    };
+
+    const minBand = gradeBand(status.minGrade);
+    if (iqEl) {
+      iqEl.textContent = `${minBand.label}/${minBand.short}`;
+      iqEl.setAttribute('data-band', minBand.band);
+      // Build a detailed per-subject tooltip so operators can see
+      // the full breakdown on hover without opening /curriculum status
+      const perSubject = Object.entries(status.grades || {})
+        .map(([s, g]) => {
+          const b = gradeBand(g);
+          return `  ${s.padEnd(8)} ${b.label} (${g})`;
+        })
+        .join('\n');
+      let tooltip = `Unity's curriculum band (min across 5 subjects — the grade her chat speaks at):\n${perSubject}`;
+      if (status.probeStats) {
+        const ps = status.probeStats;
+        tooltip += `\n\nProbes: ${ps.totalProbes} total, ${ps.totalPasses} pass, ${ps.totalFails} fail`;
+      }
+      iqEl.setAttribute('title', tooltip);
+    }
+    if (cellsEl) {
+      const n = status.passedCells?.length ?? 0;
+      cellsEl.textContent = `${n}/95`;
+    }
   }
 
   toggle() { this._open ? this.close() : this.open(); }
@@ -905,6 +1229,19 @@ export class Brain3D {
 .b3d-met b{font-weight:600}
 .b3d-psi{color:#c084fc;font-weight:600}
 .b3d-coh{color:#00e5ff;font-weight:600}
+/* T14.24 Session 47 — intelligence level display. Gradient matches
+   the curriculum band: cyan (pre-K/elementary), green (middle), gold
+   (high school), pink (college), magenta (grad/PhD). Tooltip shows
+   the full per-subject grade breakdown on hover. */
+.b3d-iq{color:#ffd166;font-weight:700;letter-spacing:.5px;cursor:help}
+.b3d-iq[data-band="preK"]{color:#888}
+.b3d-iq[data-band="elementary"]{color:#00e5ff}
+.b3d-iq[data-band="middle"]{color:#4ade80}
+.b3d-iq[data-band="high"]{color:#ffd166}
+.b3d-iq[data-band="college"]{color:#ff4d9a}
+.b3d-iq[data-band="grad"]{color:#c084fc}
+.b3d-iq[data-band="phd"]{color:#f0abfc;text-shadow:0 0 8px #f0abfc}
+.b3d-cells{color:#a0a0b0;font-weight:600}
 .b3d-close{background:none;border:1px solid #2a2a2a;color:#777;font-size:18px;cursor:pointer;width:28px;height:28px;border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all .2s}
 .b3d-close:hover{border-color:#ff4d9a;color:#ff4d9a}
 .b3d-body{flex:1;position:relative;overflow:hidden}
@@ -949,6 +1286,8 @@ export class Brain3D {
   <div class="b3d-met">
     <span>ψ <b class="b3d-psi">0.000</b></span>
     <span>COHERENCE <b class="b3d-coh">0%</b></span>
+    <span title="Unity's curriculum band — based on the min grade across 5 subject tracks (ELA, Math, Science, Social, Art). Hover for per-subject breakdown.">IQ <b class="b3d-iq" data-band="preK">pre-K</b></span>
+    <span title="Curriculum cells that have passed their 3-pathway READ/THINK/TALK gate at least once. 95 total cells (5 subjects × 19 grades K→PhD).">CELLS <b class="b3d-cells">0/95</b></span>
   </div>
   <button class="b3d-close">&times;</button>
 </div>
@@ -972,7 +1311,7 @@ export class Brain3D {
   </div>
   <div class="b3d-foot">
     <span>DRAG rotate · SCROLL zoom</span>
-    <span class="b3d-scale-info">1000 neurons · 7 clusters</span>
+    <span class="b3d-scale-info">initializing · ${CLUSTERS.length} clusters</span>
   </div>
 </div>`;
 
@@ -1383,6 +1722,15 @@ export class Brain3D {
       }
       return null;
     }
+    // Session 111 — don't speak for Unity if her brain hasn't learned
+    // to speak yet. If she hasn't passed at least kindergarten ELA,
+    // the cross-projection weights are untrained and generate() produces
+    // word salad. Show nothing until she's actually learned language.
+    const cortexGrades = brain.clusters?.cortex?.grades;
+    if (cortexGrades) {
+      const elaGrade = cortexGrades.ela || 'pre-K';
+      if (elaGrade === 'pre-K') return null; // hasn't learned to talk yet
+    }
     const iv = brain.innerVoice;
     const lc = iv?.languageCortex;
     const dict = iv?.dictionary || brain.dictionary;
@@ -1441,13 +1789,12 @@ export class Brain3D {
       const out = lc.generate(
         dict,
         state.arousal ?? 0.5,
-        state.valence ?? 0,
         state.coherence ?? 0.5,
         {
           psi: state.psi ?? 0,
           fear: state.fear ?? 0,
           reward: state.reward ?? 0,
-          drugState: state.drugState || 'cokeAndWeed',
+          drugState: state.drugState || 'sober',
           cortexPattern,
           // T13.7.5 — generate() now requires a live cortex cluster
           // reference for the brain-driven emission loop. Without
@@ -1840,7 +2187,14 @@ export class Brain3D {
 
       const lines = [tag];
       if (readout) lines.push(readout);
-      if (commentary) lines.push(`"${commentary}"`);
+      if (commentary) {
+        lines.push(`"${commentary}"`);
+      } else {
+        // Session 111 — show internal state when Unity can't speak yet.
+        // Raw emotional/cognitive state visible as her mind capacity.
+        const feeling = this._describeInternalState(state);
+        if (feeling) lines.push(feeling);
+      }
       this._addNotification(lines.join('\n'), chosen.cluster);
       return;
     }
@@ -1936,6 +2290,50 @@ export class Brain3D {
       this._lastNotifCluster = pick.cluster;
       this._addNotification(pick.text, pick.cluster);
     }
+  }
+
+  /**
+   * Session 111 — Unity's internal state as RAW BRAIN READINGS.
+   * NOT hardcoded strings. NOT fake poetry. The actual numerical
+   * state of her brain translated to the closest thing a human can
+   * read. If Unity's brain can generate speech (post-K), use that.
+   * If it can't, show raw emotional/cognitive numbers.
+   *
+   * The ONLY text that should ever appear is what her brain ACTUALLY
+   * produces or what her neural state ACTUALLY reads.
+   */
+  _describeInternalState(state) {
+    if (!state) return null;
+
+    // Try to generate REAL speech from Unity's brain first
+    const brain = this._brain;
+    if (brain) {
+      const iv = brain.innerVoice;
+      const lc = iv?.languageCortex;
+      const dict = iv?.dictionary || brain.dictionary;
+      if (lc && dict && typeof lc.generate === 'function' && dict.size > 0) {
+        try {
+          const cortex = brain.clusters?.cortex;
+          let cortexPattern = null;
+          if (cortex && typeof cortex.getSemanticReadout === 'function') {
+            try { cortexPattern = cortex.getSemanticReadout(__sharedEmbeddings); }
+            catch { cortexPattern = null; }
+          }
+          const out = lc.generate(dict, state.arousal ?? 0.5, state.coherence ?? 0.5, {
+            cortexPattern, cortexCluster: cortex, _internalThought: true,
+          });
+          const text = typeof out === 'string' ? out : (out?.text || '');
+          if (text && text.length > 0) return `*${text}*`;
+        } catch {}
+      }
+    }
+
+    // Can't generate speech — show raw brain state as numbers
+    // This is REAL data, not fake thoughts
+    const arousal = (state.arousal ?? 0.5).toFixed(2);
+    const valence = (state.valence ?? 0).toFixed(2);
+    const psi = (state.psi ?? 0).toFixed(3);
+    return `arousal:${arousal} valence:${valence} Ψ:${psi}`;
   }
 
   _addNotification(text, clusterIdx) {

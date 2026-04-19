@@ -1,26 +1,66 @@
 /**
  * embeddings.js — Semantic Word Embeddings for the Brain
  *
- * Maps words to dense vector representations (50-dimensional).
- * Similar words have similar vectors — "calculator" and "compute"
- * activate overlapping cortex neurons because they're CLOSE
- * in embedding space.
+ * T14.0 (2026-04-14) — full GloVe 300d, no vocabulary cap, real disk loader.
+ *
+ * Maps words to dense 300-dimensional vector representations. Similar words
+ * have similar vectors — "calculator" and "compute" activate overlapping
+ * cortex neurons because they're close in embedding space.
+ *
+ * Source: Stanford GloVe (Wikipedia + Gigaword, 6B tokens, 400K vocab,
+ * 300d). The server reads `corpora/glove.6B.300d.txt` from disk at boot
+ * (~480 MB Float32 in memory, ~1 GB raw text). The browser receives a
+ * server-precomputed corpus-token subset via `/api/glove-subset.json`
+ * to avoid downloading the full file.
  *
  * Three modes:
- * 1. Pre-trained: Load GloVe/FastText from CDN (50d, ~6K common words)
- * 2. Learned: Build embeddings from brain's dictionary over time
- * 3. Hybrid: Pre-trained base + learned refinements
+ * 1. Pre-trained: Load GloVe from local disk (server) or server subset
+ *    endpoint (browser). 300d, no vocabulary cap.
+ * 2. Learned: Online refinement deltas from live conversation context.
+ * 3. Hybrid: Pre-trained base + learned refinements.
  *
- * The embedding vector maps to cortex neurons (Wernicke's area).
- * Each dimension activates a specific cortex neuron group.
- * This replaces the character-hash mapping with REAL semantic proximity.
+ * The embedding vector maps to cortex neurons (Wernicke's area / language
+ * sub-region per T14.4). Each dimension activates a specific cortex neuron
+ * group via mapToCortex / cortexToEmbedding.
+ *
+ * Pre-T14.0 the dim was 50 (capped, hash fallback only). T14.0 lifted both
+ * the dim and the vocabulary cap. The 50d ceiling was the structural limit
+ * on fine semantic discrimination between closely-related concepts — 300d
+ * removes it and matches the Stanford GloVe standard vocabulary.
  */
 
-const EMBED_DIM = 50; // dimensions per word vector
-// Multiple fallback URLs for GloVe embeddings
+// T14.0 — full 300-dim GloVe. Was 50d in T13. The 50d ceiling was the
+// structural limit on fine semantic resolution — at 50 dimensions, many
+// close semantic neighbors (cat/kitten, sad/sorrowful, run/jog) had cosine
+// similarity too compressed to distinguish reliably. 300d is the standard
+// Stanford GloVe dimension (Pennington, Socher, Manning 2014) and gives
+// roughly 6× the discriminating power between fine semantic neighbors.
+const EMBED_DIM = 300;
+
+// T14.0 — local file paths and remote URLs for GloVe 300d. The server
+// reads from disk (corpora/glove.6B.300d.txt — operator must download
+// from Stanford NLP per the README); the browser falls through to the
+// server's static file path or the remote URLs as fallback.
+//
+// File: glove.6B.300d.txt — Stanford GloVe trained on Wikipedia + Gigaword,
+// 6B tokens, 400K vocab, 300d vectors. ~1.0 GB raw text, ~480 MB if
+// loaded into Float32 in memory at full vocab. Cap is 0 (no cap) — the
+// foundation lift loads the entire vocabulary on the server. Browser-side
+// uses a corpus-token subset hosted by the server (T14.0 RemoteBrain path).
+const GLOVE_LOCAL_PATH = 'corpora/glove.6B.300d.txt';
+// T14.23.2 — URL order trimmed. The Stanford NLP URL is CORS-blocked
+// from all browser origins (no Access-Control-Allow-Origin header),
+// and the HuggingFace URL returns 404 because the resolve path is
+// wrong. Both used to hang for ~90s each before erroring out, eating
+// 3+ minutes of boot time. Now only the localhost URL is attempted.
+// Operators who want full GloVe download the file manually and place
+// it at corpora/glove.6B.300d.txt — the server mounts /corpora/
+// statically so the local URL hits it at runtime. Missing file
+// produces a fast 404 which falls through to hash embeddings in
+// under a second. External CDN fallback re-added if/when a CORS-
+// permitting mirror is found.
 const GLOVE_URLS = [
-  'https://raw.githubusercontent.com/nickmuchi/glove-embeddings/main/glove.6B.50d.txt',
-  'https://huggingface.co/stanfordnlp/glove/resolve/main/glove.6B.50d.txt',
+  'http://localhost:7525/corpora/glove.6B.300d.txt',
 ];
 
 export class SemanticEmbeddings {
@@ -33,40 +73,154 @@ export class SemanticEmbeddings {
     // Learned refinements — contextual shifts from brain experience
     this._refinements = new Map(); // word → Float32Array(50) delta
 
-    // Unknown word fallback — hash-based embedding
-    this._hashSeed = 42;
+    // Unknown word fallback — fastText-style subword embedding (see _subwordEmbedding)
   }
 
   /**
-   * Load pre-trained embeddings from CDN.
-   * Loads ~6K most common English words (compact subset).
-   * @returns {Promise<number>} — number of words loaded
+   * T14.0 — Load full GloVe 300d vocabulary (~400K words). Server reads
+   * from local disk (`corpora/glove.6B.300d.txt`); browser falls through
+   * to the server's static file mount or remote CDN as fallback. Hash
+   * embeddings remain as a last-resort floor when no GloVe is reachable,
+   * but the foundation lift assumes GloVe is present in production.
+   *
+   * No vocabulary cap. The full 400k-word file loads if reachable.
+   * Memory at 400k × 300d × 4 bytes = ~480 MB on the server, which is
+   * acceptable for the brain server hardware tier. Browser receives a
+   * server-precomputed corpus-token subset via `/api/glove-subset.json`
+   * (much smaller, only the words actually seen in the loaded corpora).
    */
   async loadPreTrained() {
-    // Hash-based embeddings are fully functional — no external fetch needed
-    this._loaded = false;
-    return 0;
+    if (this._loadingPromise) return this._loadingPromise;
+    this._loadingPromise = this._doLoad();
+    return this._loadingPromise;
   }
 
   async _doLoad() {
+    // Detect runtime: Node has process + require, browser has fetch + window
+    const isNode = typeof process !== 'undefined' && process.versions && process.versions.node && typeof window === 'undefined';
     try {
-      console.log('[Embeddings] Loading pre-trained vectors...');
-      let response;
-      for (const url of GLOVE_URLS) {
-        try {
-          response = await fetch(url);
-          if (response.ok) break;
-        } catch { continue; }
-      }
-      if (!response) throw new Error('All GloVe URLs failed');
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      console.log(`[Embeddings] Loading GloVe ${EMBED_DIM}d vectors (full vocab, no cap)...`);
+      let text = null;
 
-      const text = await response.text();
+      if (isNode) {
+        // Server path — stream from local disk LINE-BY-LINE.
+        //
+        // Session 114.17 fix: the old code did `fs.readFileSync(p, 'utf8')`
+        // which loads the entire 990 MB file as a single JS string. V8's
+        // max string length on 64-bit is ~1 GB; the 990 MB file is right
+        // at the edge. Then `text.split('\n')` creates 400k substrings +
+        // a 400k-element array, doubling memory. Per Gee's Part 2 boot
+        // log on 2026-04-17, readFileSync either threw "Invalid string
+        // length" or completed but `split('\n')` OOM'd silently, causing
+        // the fallback "GloVe not found" message despite the file being
+        // present at 1,037,962,819 bytes / 400,000 lines.
+        //
+        // New path: `readline.createInterface` over a read stream, parse
+        // each line as it arrives, build the Map incrementally. Peak
+        // memory = Map + current line buffer, not the whole file.
+        try {
+          const fs = await import('fs');
+          const path = await import('path');
+          const readline = await import('readline');
+          // Try several plausible paths relative to cwd / module location
+          const candidates = [
+            GLOVE_LOCAL_PATH,
+            path.join(process.cwd(), GLOVE_LOCAL_PATH),
+            path.join(process.cwd(), '..', GLOVE_LOCAL_PATH),
+            path.join(process.cwd(), 'server', GLOVE_LOCAL_PATH),
+          ];
+          let foundPath = null;
+          for (const p of candidates) {
+            if (fs.existsSync(p)) { foundPath = p; break; }
+          }
+          if (!foundPath) {
+            throw new Error(`GloVe ${EMBED_DIM}d not found at any of: ${candidates.join(', ')} — download glove.6B.300d.txt from https://nlp.stanford.edu/data/glove.6B.zip and place at corpora/glove.6B.300d.txt`);
+          }
+          console.log(`[Embeddings] Reading ${foundPath} via streaming readline...`);
+          const stream = fs.createReadStream(foundPath, { encoding: 'utf8' });
+          const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+          let streamCount = 0;
+          for await (const line of rl) {
+            if (!line) continue;
+            const parts = line.split(' ');
+            if (parts.length !== EMBED_DIM + 1) continue;
+            const word = parts[0].toLowerCase();
+            const vec = new Float32Array(EMBED_DIM);
+            for (let i = 0; i < EMBED_DIM; i++) {
+              vec[i] = parseFloat(parts[i + 1]) || 0;
+            }
+            // L2-normalize inline so the parse-after-read branch below
+            // is skipped for the Node streaming path.
+            let norm = 0;
+            for (let i = 0; i < EMBED_DIM; i++) norm += vec[i] * vec[i];
+            norm = Math.sqrt(norm) || 1;
+            for (let i = 0; i < EMBED_DIM; i++) vec[i] /= norm;
+            this._embeddings.set(word, vec);
+            streamCount++;
+            if (streamCount % 50000 === 0) {
+              console.log(`[Embeddings]   streamed ${streamCount.toLocaleString()} vectors...`);
+            }
+          }
+          this._loaded = true;
+          console.log(`[Embeddings] Loaded ${streamCount.toLocaleString()} word vectors (${EMBED_DIM}d) via stream`);
+          return streamCount;
+        } catch (err) {
+          if (err.message.includes('not found')) throw err;
+          throw new Error(`Server GloVe load failed: ${err.message}`);
+        }
+      } else {
+        // Browser path — try the configured URLs in order.
+        //
+        // T14.23.2 (2026-04-14) — AbortController with a 3-second
+        // per-URL timeout. The old code used bare `await fetch(url)`
+        // with no timeout, so a CORS-blocked or hanging CDN URL
+        // could hang for minutes before erroring out. At Gee's
+        // Stanford NLP URL (CORS-blocked) and HuggingFace URL
+        // (returns 404 but slowly), the sequential fetches were
+        // eating 5+ minutes of boot time with zero CPU activity
+        // while the browser waited on network sockets. Now each
+        // fetch has a hard 3s cap so even 3 failing URLs fall
+        // through to hash embeddings in under 10 seconds.
+        let response = null;
+        for (const url of GLOVE_URLS) {
+          let controller = null;
+          let timer = null;
+          try {
+            controller = new AbortController();
+            timer = setTimeout(() => controller.abort(), 3000);
+            response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+            if (response.ok) break;
+            response = null;
+          } catch (err) {
+            if (timer) clearTimeout(timer);
+            console.log(`[Embeddings] GloVe fetch aborted/failed at ${url}: ${err?.name || err?.message || err}`);
+            continue;
+          }
+        }
+        if (!response) throw new Error('All GloVe URLs failed in browser path');
+        // Also cap the response-body read so a slow trickle can't
+        // hang the boot even if the server technically returned 200.
+        const bodyController = new AbortController();
+        const bodyTimer = setTimeout(() => bodyController.abort(), 30000);
+        try {
+          text = await response.text();
+          clearTimeout(bodyTimer);
+        } catch (err) {
+          clearTimeout(bodyTimer);
+          throw new Error(`GloVe body read failed: ${err?.message || err}`);
+        }
+      }
+
+      // Parse the GloVe text — one word per line, space-separated:
+      // <word> <v1> <v2> ... <vN>
       const lines = text.split('\n');
       let count = 0;
 
       for (const line of lines) {
         if (!line.trim()) continue;
+        // Use a fast split for performance — GloVe lines have no embedded
+        // multi-space tokens
         const parts = line.split(' ');
         if (parts.length !== EMBED_DIM + 1) continue;
 
@@ -76,7 +230,7 @@ export class SemanticEmbeddings {
           vec[i] = parseFloat(parts[i + 1]) || 0;
         }
 
-        // Normalize to unit length
+        // L2-normalize so cosine similarity is in [-1, 1]
         let norm = 0;
         for (let i = 0; i < EMBED_DIM; i++) norm += vec[i] * vec[i];
         norm = Math.sqrt(norm) || 1;
@@ -84,19 +238,60 @@ export class SemanticEmbeddings {
 
         this._embeddings.set(word, vec);
         count++;
-
-        // Limit to 10K words to keep memory reasonable
-        if (count >= 10000) break;
+        // T14.0 — no vocabulary cap. The full file loads. If memory is
+        // the constraint, the operator runs Unity on a hardware tier that
+        // can hold it (Phase 0 admin resource configuration handles the
+        // tier picker).
       }
 
       this._loaded = true;
-      console.log(`[Embeddings] Loaded ${count} word vectors (${EMBED_DIM}d)`);
+      console.log(`[Embeddings] Loaded ${count.toLocaleString()} word vectors (${EMBED_DIM}d)`);
       return count;
     } catch (err) {
-      console.log('[Embeddings] Pre-trained vectors unavailable — using hash-based embeddings (fully functional)');
+      // T14.24 Session 100 — softened message. Session 99 replaced
+      // the random-hash fallback with fastText-style subword n-gram
+      // embeddings, so missing GloVe is no longer a degraded state —
+      // it's just "using the built-in subword default". GloVe is an
+      // optional upgrade, not a requirement.
+      console.log(`[Embeddings] GloVe ${EMBED_DIM}d not found — using built-in fastText-style subword embeddings (no download needed).`);
+      console.log('[Embeddings] For real GloVe 6B.300d upgrade, place glove.6B.300d.txt at corpora/glove.6B.300d.txt. Optional.');
       this._loaded = false;
       return 0;
     }
+  }
+
+  /**
+   * T14.0 — Returns the subset of the loaded GloVe vocabulary that
+   * matches a given token set. Used by the server to pre-compute a
+   * `/api/glove-subset.json` payload for the browser to fetch instead
+   * of pulling the full 480 MB file.
+   */
+  getSubsetForTokens(tokens) {
+    const subset = {};
+    for (const tok of tokens) {
+      const w = tok.toLowerCase().trim();
+      const v = this._embeddings.get(w);
+      if (v) subset[w] = Array.from(v);
+    }
+    return subset;
+  }
+
+  /**
+   * T14.0 — Browser-side bulk load of a server-provided subset.
+   * Replaces _doLoad's path when running in a browser that's connecting
+   * to a server — the server precomputes the corpus-token subset and
+   * the browser fetches it as a single small JSON file.
+   */
+  loadSubset(subset) {
+    let count = 0;
+    for (const [word, arr] of Object.entries(subset)) {
+      if (!Array.isArray(arr) || arr.length !== EMBED_DIM) continue;
+      this._embeddings.set(word, new Float32Array(arr));
+      count++;
+    }
+    if (count > 0) this._loaded = true;
+    console.log(`[Embeddings] Loaded ${count.toLocaleString()} word vectors from server subset (${EMBED_DIM}d)`);
+    return count;
   }
 
   /**
@@ -105,7 +300,7 @@ export class SemanticEmbeddings {
    * Falls back to hash-based embedding for unknown words.
    *
    * @param {string} word
-   * @returns {Float32Array} — 50-dimensional vector
+   * @returns {Float32Array} — EMBED_DIM-dimensional vector (300d after T14.0)
    */
   getEmbedding(word) {
     word = word.toLowerCase().trim();
@@ -114,8 +309,8 @@ export class SemanticEmbeddings {
     let vec = this._embeddings.get(word);
 
     if (!vec) {
-      // Hash-based fallback for unknown words
-      vec = this._hashEmbedding(word);
+      // Subword-based fallback for unknown words (fastText-style n-gram sum).
+      vec = this._subwordEmbedding(word);
     }
 
     // Apply learned refinement
@@ -316,7 +511,7 @@ export class SemanticEmbeddings {
     }
 
     const delta = this._refinements.get(word);
-    const base = this._embeddings.get(word) || this._hashEmbedding(word);
+    const base = this._embeddings.get(word) || this._subwordEmbedding(word);
 
     for (let i = 0; i < EMBED_DIM; i++) {
       // Move toward context
@@ -325,26 +520,81 @@ export class SemanticEmbeddings {
   }
 
   /**
-   * Hash-based embedding for unknown words.
-   * Deterministic — same word always produces same vector.
-   * Distributes uniformly in embedding space.
+   * Subword-based embedding for unknown words (fastText-style).
+   * Sum of n-gram hash contributions (N = 3..5) over boundary-marked
+   * word `<word>`. Deterministic — same word always produces same
+   * vector. Words that share character n-grams share feature dims so
+   * "cat" ↔ "cats" cosine > "cat" ↔ "xyz" cosine, giving the cortex
+   * usable structure even without real GloVe vectors.
    */
-  _hashEmbedding(word) {
+  _subwordEmbedding(word) {
+    // T14.24 Session 99 — fastText-style subword embedding as the
+    // GloVe-free default. Previously this was a single-hash-per-word
+    // function that produced fully-uncorrelated vectors for every
+    // word, meaning "cat" and "cats" were as orthogonal as "cat" and
+    // "xyzabc". No semantic structure AT ALL. That's why ELA-K READ
+    // stayed at 8% chance level on Gee's live runs — the sem-region
+    // injection during teach was pure noise with no learnable
+    // structure, and the letter↔sem cross-projection couldn't converge.
+    //
+    // New approach: sum N-gram hashes (N = 3, 4, 5) from the word,
+    // then normalize. Words that share character N-grams (stem +
+    // inflection, plural, compound parts) share feature dimensions
+    // naturally. "cat" ∩ "cats" = {'ca', 'at', 'cat'} — high cosine.
+    // "red" ∩ "blue" = {} — low cosine. "run" ∩ "running" = {'run',
+    // 'unn'} — medium cosine. This is the same idea as Facebook's
+    // fastText subword embeddings (Bojanowski et al. 2017, Enriching
+    // Word Vectors with Subword Information, TACL 5:135) minus the
+    // learned component.
+    //
+    // Each character n-gram hashes to EMBED_DIM sparse positive
+    // components via a modulo map. Summing positive n-gram hashes
+    // gives every word a non-zero vector with the same magnitude
+    // scale as real GloVe after L2 normalization, so injection
+    // strength stays calibrated against the same reference.
+    //
+    // This replaces the old hash fallback entirely — no external file,
+    // no 1 GB download, works out of the box. Real GloVe 300d still
+    // beats it for semantic quality (it has real co-occurrence
+    // statistics from a billion-word corpus), but fastText-style
+    // subword hashing is dramatically better than the prior
+    // unstructured random hash for cases where GloVe isn't available.
     const vec = new Float32Array(EMBED_DIM);
-    let hash = this._hashSeed;
+    const w = `<${word}>`; // boundary markers so prefixes/suffixes distinct
+    const MIN_N = 3;
+    const MAX_N = 5;
 
-    for (let c = 0; c < word.length; c++) {
-      hash = ((hash << 5) - hash + word.charCodeAt(c)) | 0;
+    // Walk every character n-gram in the word at multiple n sizes.
+    // Each n-gram contributes to a set of EMBED_DIM components via a
+    // deterministic hash → index mapping. Multiple n-grams overlap
+    // different dims, so the word's final vector is a superposition
+    // that preserves subword structure.
+    for (let n = MIN_N; n <= MAX_N; n++) {
+      if (w.length < n) continue;
+      for (let i = 0; i <= w.length - n; i++) {
+        const gram = w.slice(i, i + n);
+        // Hash the n-gram to a 32-bit integer — djb2 variant.
+        let h = 5381;
+        for (let c = 0; c < gram.length; c++) {
+          h = ((h << 5) + h + gram.charCodeAt(c)) | 0;
+        }
+        // Spread the n-gram contribution across 4 EMBED_DIM slots so
+        // each n-gram touches multiple dims (denser representation).
+        for (let k = 0; k < 4; k++) {
+          h = ((h << 13) ^ h) | 0;
+          h = ((h >> 17) ^ h) | 0;
+          h = ((h << 5) ^ h) | 0;
+          const idx = ((h >>> 0) % EMBED_DIM);
+          // Sign bit from h determines direction, magnitude fixed to 1
+          // per contribution. Summing many contributions gives a
+          // roughly Gaussian distribution per dim.
+          const sign = ((h >>> 16) & 1) === 0 ? 1 : -1;
+          vec[idx] += sign;
+        }
+      }
     }
 
-    for (let i = 0; i < EMBED_DIM; i++) {
-      hash = ((hash << 13) ^ hash) | 0;
-      hash = ((hash >> 17) ^ hash) | 0;
-      hash = ((hash << 5) ^ hash) | 0;
-      vec[i] = (hash & 0xFFFF) / 32768 - 1; // [-1, 1]
-    }
-
-    // Normalize
+    // L2 normalize to unit length to match real GloVe scale.
     let norm = 0;
     for (let i = 0; i < EMBED_DIM; i++) norm += vec[i] * vec[i];
     norm = Math.sqrt(norm) || 1;

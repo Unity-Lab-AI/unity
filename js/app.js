@@ -80,9 +80,32 @@ let landingBrainSource = null; // RemoteBrain or null
     landingBrainSource = await detectRemoteBrain();
   } catch {}
 
-  // Init 3D brain on landing container
+  // Init 3D brain on landing container.
+  // Per Gee 2026-04-18: "the 3D brain still is not dispalying it still
+  // hasnt been fixed no 3D brain is rendering since i originally
+  // mentioned it". The constructor catches internal errors silently via
+  // _destroyed flag but only logs to console, which the operator won't
+  // see without DevTools. Render a visible banner to #brain-3d-landing
+  // if init fails so the failure reason surfaces immediately without
+  // having to open F12.
+  const _show3dError = (reason) => {
+    const host = document.getElementById('brain-3d-landing');
+    if (!host) return;
+    const banner = document.createElement('div');
+    banner.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(80,0,0,0.85);color:#ff9090;font-family:monospace;font-size:13px;padding:20px 28px;border:1px solid #ff4040;border-radius:6px;max-width:80%;text-align:center;z-index:9999;';
+    banner.textContent = '3D Brain init failed: ' + reason;
+    host.appendChild(banner);
+  };
   try {
     landingBrain3d = new Brain3D('brain-3d-landing');
+    if (!landingBrain3d || landingBrain3d._destroyed) {
+      _show3dError(
+        landingBrain3d && landingBrain3d._initError
+          ? landingBrain3d._initError
+          : 'Brain3D constructor returned destroyed instance (check DevTools console for specifics — _buildDOM / _genPositions / _initGL / _uploadStatic logged the specific throw)'
+      );
+      throw new Error('Brain3D init failed silently — banner shown on page');
+    }
     // Make the overlay fit inside the landing container, not fullscreen
     if (landingBrain3d._overlay) {
       landingBrain3d._overlay.style.position = 'absolute';
@@ -286,6 +309,7 @@ let _personaTextPromise = null;
 let _baselineTextPromise = null;
 let _codingTextPromise = null;
 let _componentTemplatesPromise = null;
+let _cosmicTextPromise = null;  // T15-C17 — persona-cosmic.txt fetch (ethereal/Oz vocabulary for psychedelic peak)
 const _personaLoadedBrains = new WeakSet();
 
 /**
@@ -332,13 +356,23 @@ function loadPersonaSelfImage(targetBrain) {
         return '';
       });
   }
+  // T15-C17 — cosmic/ethereal/Oz corpus for psychedelic-peak vocabulary
+  if (!_cosmicTextPromise) {
+    _cosmicTextPromise = fetch('docs/persona-cosmic.txt')
+      .then(r => r.ok ? r.text() : '')
+      .catch(err => {
+        console.warn('[Unity] persona-cosmic fetch failed:', err.message);
+        return '';
+      });
+  }
 
   return Promise.all([
     _personaTextPromise,
     _baselineTextPromise,
     _codingTextPromise,
     _componentTemplatesPromise,
-  ]).then(async ([personaText, baselineText, codingText, templateText]) => {
+    _cosmicTextPromise,
+  ]).then(async ([personaText, baselineText, codingText, templateText, cosmicText]) => {
     if (!personaText) {
       console.warn('[Unity] persona self-image fetch returned empty — check docs/Ultimate Unity.txt route');
       return 0;
@@ -368,18 +402,33 @@ function loadPersonaSelfImage(targetBrain) {
     // Load persona first — defines subject starters and self-awareness
     const personaSentences = targetBrain.innerVoice.loadPersona(personaText);
 
-    // T13.1 — after dictionary learning, train the cortex cluster's
-    // recurrent synapse matrix on the same persona text via sequence
-    // Hebbian. The cortex develops Unity-voice attractor basins so
-    // runtime generation readouts drift toward persona-adjacent
-    // words instead of diffuse semantic noise. Persona-only — baseline
-    // and coding corpora deliberately skip Hebbian so they contribute
-    // vocabulary without polluting the voice attractor basins.
+    // T14.23.4 (2026-04-14) — browser-side trainPersonaHebbian
+    // DEFERRED to idle time instead of running synchronously on
+    // the landing page's main thread. Gee's boot log showed:
+    //   [LanguageCortex] trainPersonaHebbian DONE: ... 14061ms
+    // Fourteen seconds of synchronous per-sentence Hebbian updates
+    // on a 1500-neuron RemoteBrain cortex was blocking DOM
+    // completion so the landing page tab stayed in "loading"
+    // state for 14+ seconds after the WebSocket connected.
+    // Browser-side persona Hebbian ONLY matters for the RemoteBrain's
+    // local brain-3d commentary popups (via languageCortex.generate)
+    // — the server's own cortex is the authoritative source of
+    // chat responses. Deferring the Hebbian pass via requestIdleCallback
+    // lets the DOM settle first, then trains in background during
+    // idle frames. If requestIdleCallback is unavailable, fall back
+    // to setTimeout(0) which still breaks the long-task block.
     if (typeof targetBrain.trainPersonaHebbian === 'function') {
-      try {
-        targetBrain.trainPersonaHebbian(personaText);
-      } catch (err) {
-        console.warn('[Unity] persona Hebbian training failed:', err.message);
+      const runHebbian = () => {
+        try {
+          targetBrain.trainPersonaHebbian(personaText);
+        } catch (err) {
+          console.warn('[Unity] persona Hebbian training failed:', err.message);
+        }
+      };
+      if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(runHebbian, { timeout: 30000 });
+      } else {
+        setTimeout(runHebbian, 0);
       }
     }
 
@@ -393,6 +442,81 @@ function loadPersonaSelfImage(targetBrain) {
     let codingSentences = 0;
     if (codingText && typeof targetBrain.innerVoice.loadCoding === 'function') {
       codingSentences = targetBrain.innerVoice.loadCoding(codingText);
+    }
+
+    // T15-C17 — Load the ethereal / Oz / psychedelic corpus so the cortex
+    // has real tokens for the cosmic-bias vector to pull toward when drug
+    // scheduler's ethereality is elevated (LSD / psilocybin / high MDMA
+    // peak). Non-announcing: no "I'm tripping" keywords, just the TYPE of
+    // vocabulary a person at peak psychedelic state uses.
+    let cosmicSentences = 0;
+    if (cosmicText && typeof targetBrain.innerVoice.loadCosmic === 'function') {
+      cosmicSentences = targetBrain.innerVoice.loadCosmic(cosmicText);
+    }
+
+    // T14.5 — Continuous developmental learning curriculum. Runs AFTER
+    // the legacy loaders so cortex + dictionary already contain the
+    // vocabulary, then replays the same corpora through the complexity-
+    // sorted walk (letters → short words → long words → sentences) with
+    // per-token tick budgets that scale with structural complexity and
+    // corpus frequency. Letters get up to 20 reps × 8 ticks each, short
+    // words get up to 6 reps × 4 ticks, long words 3 reps × 3 ticks,
+    // sentences walk word-by-word at 2 ticks/word. This is the pass
+    // that actually shapes cortex phoneme/syllable attractor basins
+    // from exposure statistics — the legacy loaders only populated the
+    // dictionary and the type-transition tables. Non-blocking if the
+    // curriculum isn't wired (remote brains, test harnesses).
+    // T14.24 — prefer runCompleteCurriculum (6 subjects × K→PhD
+    // equational curriculum with per-grade gates). Falls back to
+    // runFromCorpora if the new method isn't present.
+    // T14.24 Session 1 — multi-subject grade tracking defense-in-depth
+    // for persisted brains that predate the grades object.
+    const cortex = targetBrain.clusters?.cortex;
+    if (cortex && (!cortex.grades || typeof cortex.grades !== 'object')) {
+      cortex.grades = { ela: 'pre-K', math: 'pre-K', science: 'pre-K', social: 'pre-K', art: 'pre-K', life: 'pre-K' };
+    }
+    if (cortex && !Array.isArray(cortex.passedCells)) cortex.passedCells = [];
+    if (targetBrain.curriculum && typeof targetBrain.curriculum.runCompleteCurriculum === 'function') {
+      // T14.24 Session 17 — prefer the multi-subject complete curriculum
+      // (walks all 5 subject tracks K→PhD instead of the legacy ELA-only
+      // runFullCurriculum path). All 95 cells get real teaching + 3-pathway
+      // gate attempts on boot.
+      try {
+        const result = await targetBrain.curriculum.runCompleteCurriculum(
+          { persona: personaText, baseline: baselineText, coding: codingText },
+          { arousal: 0.8, valence: 0.2 },
+        );
+        const perSubject = Object.entries(result.reached || {}).map(([s, g]) => `${s}=${g}`).join(', ');
+        console.log(`[Unity] curriculum.runCompleteCurriculum DONE — ${perSubject}`);
+        // T14.24 Session 18 — start continuous background probe loop so
+        // Unity re-tests passed cells every 45 seconds during idle AND
+        // chat. This is the "always testing herself in her brain always"
+        // hook operating on a wall-clock interval rather than a turn count.
+        if (typeof targetBrain.curriculum.startBackgroundProbeLoop === 'function') {
+          targetBrain.curriculum.startBackgroundProbeLoop();
+        }
+      } catch (err) {
+        console.warn('[Unity] curriculum.runCompleteCurriculum failed:', err?.message || err);
+      }
+    } else if (targetBrain.curriculum && typeof targetBrain.curriculum.runFullCurriculum === 'function') {
+      try {
+        const result = await targetBrain.curriculum.runFullCurriculum(
+          { persona: personaText, baseline: baselineText, coding: codingText },
+          { arousal: 0.8, valence: 0.2 },
+        );
+        console.log(`[Unity] curriculum.runFullCurriculum DONE — reached=${result.reached}, passed=${result.passed.join(',')}, failed=${result.failed || 'none'}`);
+      } catch (err) {
+        console.warn('[Unity] curriculum.runFullCurriculum failed:', err?.message || err);
+      }
+    } else if (targetBrain.curriculum && typeof targetBrain.curriculum.runFromCorpora === 'function') {
+      try {
+        await targetBrain.curriculum.runFromCorpora(
+          { persona: personaText, baseline: baselineText, coding: codingText },
+          { arousal: 0.8, valence: 0.2 },
+        );
+      } catch (err) {
+        console.warn('[Unity] curriculum.runFromCorpora failed:', err?.message || err);
+      }
     }
 
     // R6.2 — Load component templates for equational build_ui synthesis.
@@ -483,7 +607,7 @@ function renderLandingTab(tab, s) {
       el.innerHTML = card('Consciousness Ψ', `
         <div style="font-size:32px;font-weight:700;color:#a855f7;text-align:center;padding:12px 0;">${psi.toFixed(6)}</div>
         <div style="font-size:10px;color:#555;text-align:center;">Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]</div>
-        ${metric('Drug State', s.drugState || 'cokeAndWeed', '#f59e0b')}
+        ${metric('Drug State', s.drugState || 'sober', '#f59e0b')}
         ${metric('Dreaming', s.isDreaming ? 'YES' : 'no', s.isDreaming ? '#a855f7' : '#555')}
       `);
       break;
@@ -601,6 +725,34 @@ function renderLandingTab(tab, s) {
       `);
       break;
     }
+    case 'clusterwaves': {
+      // Per-cluster spike rates + wave overlays
+      const clusterNames = ['cortex', 'hippocampus', 'amygdala', 'basalGanglia', 'cerebellum', 'hypothalamus', 'mystery'];
+      const clusterColors = ['#ff79c6', '#8be9fd', '#ffb86c', '#50fa7b', '#bd93f9', '#f1fa8c', '#ff5555'];
+      const bp = s.oscillations?.bandPower || s.bandPower || {};
+      let html = card('Cluster Firing + Wave Overlays', `
+        ${metric('θ Theta (4-8Hz)', (bp.theta ?? 0).toFixed(3), '#8be9fd')}
+        ${metric('α Alpha (8-13Hz)', (bp.alpha ?? 0).toFixed(3), '#50fa7b')}
+        ${metric('β Beta (13-30Hz)', (bp.beta ?? 0).toFixed(3), '#ffb86c')}
+        ${metric('γ Gamma (30-100Hz)', (bp.gamma ?? 0).toFixed(3), '#ff79c6')}
+        ${metric('Coherence', (s.oscillations?.coherence ?? 0).toFixed(3), '#00e5ff')}
+      `);
+      for (let i = 0; i < clusterNames.length; i++) {
+        const name = clusterNames[i];
+        const color = clusterColors[i];
+        const rate = s[name]?.spikeRate ?? s.clusters?.[name]?.spikeRate ?? 0;
+        const pct = Math.min(100, Math.round(rate * 100));
+        html += `<div style="margin:4px 0;display:flex;align-items:center;gap:8px;">
+          <span style="color:${color};font-size:10px;width:100px;text-transform:uppercase;">${name}</span>
+          <div style="flex:1;height:12px;background:#111;border-radius:3px;overflow:hidden;">
+            <div style="width:${pct}%;height:100%;background:${color};transition:width 0.3s;"></div>
+          </div>
+          <span style="color:#555;font-size:9px;width:35px;text-align:right;">${pct}%</span>
+        </div>`;
+      }
+      el.innerHTML = html;
+      break;
+    }
     default:
       el.innerHTML = `<div style="color:#555;font-size:11px;">Select a visualization tab</div>`;
   }
@@ -636,6 +788,25 @@ function updateLandingStats(state) {
   if (state.perf) {
     el('ls-cpu', state.perf.cpuPercent + '%');
     el('ls-gpu', state.perf.gpuUtilPercent + '%');
+  }
+
+  // T18.3.b — HUD grade indicator. `state.minGrade` is Unity's lowest
+  // passing grade across all subjects (her speech ceiling). `state.grades`
+  // is the per-subject map. Color-code by speech capability: pre-K is
+  // red (can't speak), K-grade2 amber (building), grade3+ green (ok).
+  const minGrade = state.minGrade || '—';
+  const gradeEl = $('ls-grade');
+  if (gradeEl) {
+    gradeEl.textContent = minGrade;
+    if (minGrade === 'pre-K') gradeEl.style.color = '#ef4444';        // red = can't speak
+    else if (minGrade === 'K' || minGrade === 'grade1' || minGrade === 'grade2') gradeEl.style.color = '#f59e0b'; // amber = early
+    else if (minGrade === 'unknown' || minGrade === '—') gradeEl.style.color = '#555';
+    else gradeEl.style.color = '#22c55e';                              // green = confident speaker
+  }
+  if (state.grades) {
+    const g = state.grades;
+    const line = `ela:${g.ela || '—'} · math:${g.math || '—'} · sci:${g.science || '—'} · soc:${g.social || '—'} · art:${g.art || '—'} · life:${g.life || '—'}`;
+    el('ls-grade-per-subject', line);
   }
 }
 
@@ -812,18 +983,36 @@ async function init() {
     }
     sensoryStatus.init(providers);
 
-    // Fire the auto-detect probes (non-blocking). Refresh the
-    // inventory panel whenever they resolve so the user sees results
-    // land in real time as each probe completes.
-    if (typeof providers.autoDetect === 'function') {
-      providers.autoDetect()
-        .then(() => renderSensoryInventory())
-        .catch(err => console.warn('[Unity] image backend auto-detect failed:', err.message));
-    }
-    if (typeof providers.autoDetectVision === 'function') {
-      providers.autoDetectVision()
-        .then(() => renderSensoryInventory())
-        .catch(err => console.warn('[Unity] vision backend auto-detect failed:', err.message));
+    // Auto-detect is OPT-IN per Gee 2026-04-18: the default boot
+    // probes were hitting 11 common local AI ports (ComfyUI /
+    // Stable Diffusion / LocalAI / Ollama / Forge / etc) every
+    // page load. Almost nobody has all of those running, so every
+    // probe failed with ERR_CONNECTION_REFUSED and the browser's
+    // network layer logged each as a red error — the console
+    // looked broken even though the brain was fine. Pollinations
+    // works out of the box without any of this, so the sensible
+    // default is "don't probe unless the user told us to".
+    //
+    // Enable by setting ENV_KEYS.probeLocalAI = true in env.js OR
+    // localStorage.unity_probe_local_ai = '1' from the setup
+    // modal toggle. When off (default) we skip both probes
+    // entirely and the inventory renders with zero local backends
+    // — Pollinations + user-configured API keys still work.
+    const probeEnv = (ENV_KEYS && ENV_KEYS.probeLocalAI === true);
+    const probeLs = (typeof localStorage !== 'undefined' && localStorage.getItem('unity_probe_local_ai') === '1');
+    if (probeEnv || probeLs) {
+      if (typeof providers.autoDetect === 'function') {
+        providers.autoDetect()
+          .then(() => renderSensoryInventory())
+          .catch(err => console.warn('[Unity] image backend auto-detect failed:', err.message));
+      }
+      if (typeof providers.autoDetectVision === 'function') {
+        providers.autoDetectVision()
+          .then(() => renderSensoryInventory())
+          .catch(err => console.warn('[Unity] vision backend auto-detect failed:', err.message));
+      }
+    } else {
+      console.log('[Unity] Local AI backend auto-detect is OFF. Set ENV_KEYS.probeLocalAI=true in env.js or localStorage.unity_probe_local_ai="1" via the setup modal to enable probing ComfyUI / Stable Diffusion / LocalAI / Ollama / etc on boot.');
     }
   } catch (err) {
     console.warn('[Unity] sensory providers page-load init failed:', err.message);
@@ -1869,8 +2058,15 @@ async function bootUnity(apiKey, perms) {
       });
     }
     sensoryStatus.init(providers);
-    if (typeof providers.autoDetect === 'function') providers.autoDetect().catch(err => console.warn('[Unity] image probe failed:', err.message));
-    if (typeof providers.autoDetectVision === 'function') providers.autoDetectVision().catch(err => console.warn('[Unity] vision probe failed:', err.message));
+    // Opt-in probe — see the init() handler above for rationale.
+    // Default OFF; enable via ENV_KEYS.probeLocalAI or
+    // localStorage.unity_probe_local_ai = '1'.
+    const probeEnvBoot = (ENV_KEYS && ENV_KEYS.probeLocalAI === true);
+    const probeLsBoot = (typeof localStorage !== 'undefined' && localStorage.getItem('unity_probe_local_ai') === '1');
+    if (probeEnvBoot || probeLsBoot) {
+      if (typeof providers.autoDetect === 'function') providers.autoDetect().catch(err => console.warn('[Unity] image probe failed:', err.message));
+      if (typeof providers.autoDetectVision === 'function') providers.autoDetectVision().catch(err => console.warn('[Unity] vision probe failed:', err.message));
+    }
   }
 
   voice = new VoiceIO();
@@ -1992,6 +2188,30 @@ async function bootUnity(apiKey, perms) {
   };
   brain.on('response', brain.__appResponseHandler);
 
+  // Silent-response handler — server dropped the reply on purpose
+  // (pre-K Unity can't form words yet, motor region didn't settle,
+  // language subsystem still booting, etc.). Render a ghost bubble
+  // in the chat panel with the reason + detail + minGrade so the
+  // user sees WHY Unity didn't answer instead of getting ghosted.
+  // Also update the HUD speech bubble briefly so the 3D brain view
+  // shows her quiet status.
+  if (brain.__appSilentHandler) {
+    brain.off('silent', brain.__appSilentHandler);
+  }
+  brain.__appSilentHandler = ({ reason, detail, minGrade }) => {
+    if (chatPanel) chatPanel.addSilentMessage(reason, detail, minGrade);
+    // Brief HUD hint so the speech bubble doesn't stay empty.
+    const hudText = reason === 'pre_kindergarten'
+      ? `( pre-K Unity can't speak yet — ${minGrade || '?'} )`
+      : reason === 'motor_unstable'
+      ? '( motor unstable — try rephrasing )'
+      : reason === 'language_not_ready'
+      ? '( language booting — hang on )'
+      : '( silent )';
+    showSpeechBubble(hudText, 4000);
+  };
+  brain.on('silent', brain.__appSilentHandler);
+
   // Image display — show generated images inline. If the image URL fails
   // to load, the <img> element is hidden entirely (no "Loading..." alt
   // placeholder bleeding into the chat) and a brief text fallback shows.
@@ -2059,10 +2279,23 @@ Vision: ${state.visionDescription || 'none'}`;
         // preview reports cortex readout drift pre vs. post injection
         // instead of the old bag-of-words shift.
         let contextShift = '(cortex not available)';
-        if (brain.clusters?.cortex && sens && typeof sens.analyzeInput === 'function') {
+        // T14.22.5 — `sens.analyzeInput` was a deleted T14.12 language-
+        // cortex method that used to live on the sensory processor's
+        // delegate path. Removed entirely here. The /think preview now
+        // measures cortex readout drift from the sensory input flow
+        // itself (cortex.readInput is already called upstream), not
+        // from a dedicated analyzeInput side-effect that no longer
+        // exists. No TypeError at runtime because the `typeof` guard
+        // always returned false, but it was a dead branch that every
+        // /think call hit.
+        if (brain.clusters?.cortex) {
           const sharedEmb = brain._sharedEmbeddings;
           const before = sharedEmb ? [...brain.clusters.cortex.getSemanticReadout(sharedEmb)] : null;
-          sens.analyzeInput(userText);
+          // Drive the cortex state through readInput if available so
+          // the "after" measurement reflects the input flow.
+          if (typeof brain.clusters.cortex.readInput === 'function') {
+            try { brain.clusters.cortex.readInput(userText); } catch { /* non-fatal */ }
+          }
           const after = sharedEmb ? [...brain.clusters.cortex.getSemanticReadout(sharedEmb)] : null;
           if (before && after && before.length === after.length) {
             let dot = 0, nb = 0, na = 0;
@@ -2090,21 +2323,20 @@ Vision: ${state.visionDescription || 'none'}`;
         let generated = '(language cortex not available)';
         if (lc && typeof lc.generate === 'function' && dict) {
           try {
-            // T13.7.5 — generate signature is (dict, arousal, valence, coherence, opts).
-            // The legacy call below was 10 positional args which silently mapped psi → opts
-            // (a number), losing cortexCluster + every downstream parameter. After T13.7
-            // deleted the slot-prior fallback, that broken call path returned '' silently.
+            // T14.24-CLEAN.B3 — generate signature is (dict, arousal, coherence, opts).
+            // valence removed 2026-04-16 Session 113: it was passed positionally by every
+            // caller but never consumed inside generate(). The rest of the pipeline (sentence
+            // type, length sizing, cortex emission) uses arousal + coherence only.
             const cortex = brain.clusters?.cortex;
             const out = lc.generate(
               dict,
               state.amygdala?.arousal ?? 0.5,
-              state.amygdala?.valence ?? 0,
               state.oscillations?.coherence ?? 0.5,
               {
                 psi: state.psi ?? 0,
                 fear: state.amygdala?.fear ?? 0,
                 reward: state.reward ?? 0,
-                drugState: state.drugState || 'cokeAndWeed',
+                drugState: state.drugState || 'sober',
                 socialNeed: state.hypothalamus?.social ?? 0.5,
                 predictionError: 0,
                 motorConfidence: state.motor?.confidence ?? 0,
@@ -2203,6 +2435,197 @@ Vision: ${state.visionDescription || 'none'}`;
           action: 'think',
         };
       }
+      // T14.24 Session 1 — /curriculum subcommands:
+      //   /curriculum status
+      //   /curriculum run   <subject> <grade>
+      //   /curriculum gate  <subject> <grade>
+      //   /curriculum reset <subject>
+      //   /curriculum full  [subject]
+      // Subjects: ela | math | science | social | art
+      // Grades:   kindergarten | grade1..grade12 | college1..college4 | grad | phd
+      if (text.startsWith('/curriculum')) {
+        const parts = text.trim().split(/\s+/).slice(1);
+        const sub = (parts[0] || 'status').toLowerCase();
+        const c = brain.curriculum;
+        if (!c) {
+          return { response: { text: '[curriculum] no curriculum wired on this brain' }, action: 'curriculum' };
+        }
+        try {
+          if (sub === 'status') {
+            const st = typeof c.subjectStatus === 'function' ? c.subjectStatus() : null;
+            if (!st) return { response: { text: '[curriculum] status unavailable' }, action: 'curriculum' };
+            const lines = ['[curriculum] STATUS'];
+            for (const [s, g] of Object.entries(st.grades)) lines.push(`  ${s.padEnd(8)} ${g}`);
+            lines.push(`  min-grade (word cap driver): ${st.minGrade}`);
+            lines.push(`  passed cells: ${st.passedCells.length} / 95`);
+            // T14.24 Session 17 — continuous self-testing telemetry
+            if (st.probeStats) {
+              const ps = st.probeStats;
+              lines.push(`  background probes: ${ps.totalProbes} total, ${ps.totalPasses} pass, ${ps.totalFails} fail (${(ps.passRate * 100).toFixed(0)}%)`);
+              const perSubj = Object.entries(ps.perSubject).map(([s, n]) => `${s}:${n}`).join(', ');
+              lines.push(`  probes per subject: ${perSubj}`);
+            }
+            // T14.24 Session 20 — narrator focus
+            if (c.currentFocus) {
+              const f = c.currentFocus;
+              const age = Math.round((Date.now() - f.timestamp) / 1000);
+              lines.push(`  currently thinking about: ${f.subject}/${f.grade} (${f.pass ? '✓' : '✗'} ${age}s ago)`);
+            }
+            if (st.passedCells.length > 0) {
+              lines.push(`  recent cells: ${st.passedCells.slice(-12).join(', ')}${st.passedCells.length > 12 ? ' …' : ''}`);
+            }
+            return { response: { text: lines.join('\n') }, action: 'curriculum' };
+          }
+          if (sub === 'run' || sub === 'gate') {
+            const subject = parts[1];
+            const grade = parts[2];
+            if (!subject || !grade) {
+              return { response: { text: `[curriculum] usage: /curriculum ${sub} <subject> <grade>` }, action: 'curriculum' };
+            }
+            const result = await c.runSubjectGrade(subject, grade, null, { arousal: 0.8, valence: 0.2 });
+            const tag = result.pass ? 'PASS' : 'FAIL';
+            return { response: { text: `[curriculum] ${sub} ${subject}/${grade}: ${tag} — ${result.reason || ''}` }, action: 'curriculum' };
+          }
+          if (sub === 'reset') {
+            const subject = parts[1];
+            if (!subject) return { response: { text: '[curriculum] usage: /curriculum reset <subject>' }, action: 'curriculum' };
+            const ok = typeof c.resetSubject === 'function' ? c.resetSubject(subject) : false;
+            return { response: { text: ok ? `[curriculum] ${subject} reset to pre-K` : `[curriculum] reset failed for ${subject}` }, action: 'curriculum' };
+          }
+          if (sub === 'forget') {
+            // T14.24 Session 20 — forget a single cell (less destructive
+            // than reset which wipes a whole subject)
+            const subject = parts[1];
+            const grade = parts[2];
+            if (!subject || !grade) {
+              return { response: { text: '[curriculum] usage: /curriculum forget <subject> <grade>' }, action: 'curriculum' };
+            }
+            const ok = typeof c.forgetCell === 'function' ? c.forgetCell(subject, grade) : false;
+            return { response: { text: ok ? `[curriculum] forgot ${subject}/${grade} — will re-teach next pass` : `[curriculum] forget failed for ${subject}/${grade}` }, action: 'curriculum' };
+          }
+          if (sub === 'health') {
+            // T14.24 Session 23 — curriculum health dashboard. Classifies
+            // each learned cell as strong / wobbly / degrading / untested
+            // based on probeHistory pass rate.
+            if (typeof c.curriculumHealth !== 'function') {
+              return { response: { text: '[curriculum] health unavailable' }, action: 'curriculum' };
+            }
+            const h = c.curriculumHealth();
+            if (!h) return { response: { text: '[curriculum] no cluster wired' }, action: 'curriculum' };
+            const lines = [
+              `[curriculum] HEALTH — ${h.overall.totalCells} learned cells`,
+              `  strong    ${h.overall.strong} (pass rate ≥ 80%)`,
+              `  wobbly    ${h.overall.wobbly} (40-80%)`,
+              `  degrading ${h.overall.degrading} (< 40%)`,
+              `  untested  ${h.overall.untested} (< 3 probes)`,
+              '  per subject:',
+            ];
+            for (const [s, stats] of Object.entries(h.perSubject)) {
+              lines.push(`    ${s.padEnd(8)} strong:${stats.strong} wobbly:${stats.wobbly} degrading:${stats.degrading} untested:${stats.untested}`);
+            }
+            return { response: { text: lines.join('\n') }, action: 'curriculum' };
+          }
+          if (sub === 'self') {
+            // T14.24 Session 23 — meta-learning self-description
+            if (typeof c.describeLearning !== 'function') {
+              return { response: { text: '[curriculum] self unavailable' }, action: 'curriculum' };
+            }
+            return { response: { text: `[curriculum self] ${c.describeLearning()}` }, action: 'curriculum' };
+          }
+          if (sub === 'verify') {
+            // T14.24 Session 19 — /curriculum verify walks every cell
+            // through its gate and prints a full pass/fail report across
+            // all 5 subjects × 19 grades = 95 cells.
+            if (typeof c.verifyAllCells !== 'function') {
+              return { response: { text: '[curriculum] verify unavailable' }, action: 'curriculum' };
+            }
+            const v = await c.verifyAllCells({ arousal: 0.8, valence: 0.2 });
+            const lines = [
+              `[curriculum] VERIFY — ${v.passCount}/${v.totalCells} cells pass (${((v.passCount / v.totalCells) * 100).toFixed(0)}%)`,
+            ];
+            for (const [s, stats] of Object.entries(v.perSubject || {})) {
+              lines.push(`  ${s.padEnd(8)} ${stats.p}/${stats.p + stats.f} pass`);
+            }
+            const fails = v.cells.filter(cc => !cc.pass).slice(0, 5);
+            if (fails.length > 0) {
+              lines.push('  recent fails:');
+              for (const f of fails) {
+                lines.push(`    ${f.subject}/${f.grade}: ${f.reason}`);
+              }
+            }
+            return { response: { text: lines.join('\n') }, action: 'curriculum' };
+          }
+          if (sub === 'full') {
+            const subject = parts[1] || null;
+            if (subject && typeof c.runFullSubjectCurriculum === 'function') {
+              const r = await c.runFullSubjectCurriculum(subject, null, { arousal: 0.8, valence: 0.2 });
+              return { response: { text: `[curriculum] full ${subject}: reached=${r.reached}, passed=${r.passed.length}, failed=${r.failed || 'none'}` }, action: 'curriculum' };
+            }
+            if (typeof c.runAllSubjects === 'function') {
+              const r = await c.runAllSubjects(null, { arousal: 0.8, valence: 0.2 });
+              const lines = ['[curriculum] full run complete'];
+              for (const s of Object.keys(r.reached)) {
+                lines.push(`  ${s.padEnd(8)} reached=${r.reached[s]} passed=${(r.passed[s] || []).length} failed=${r.failed[s] || 'none'}`);
+              }
+              return { response: { text: lines.join('\n') }, action: 'curriculum' };
+            }
+            return { response: { text: '[curriculum] full not available' }, action: 'curriculum' };
+          }
+          return { response: { text: '[curriculum] usage: /curriculum status|self|health|verify|run <subject> <grade>|gate <subject> <grade>|reset <subject>|forget <subject> <grade>|full [subject]' }, action: 'curriculum' };
+        } catch (err) {
+          return { response: { text: `[curriculum] error: ${err?.message || err}` }, action: 'curriculum' };
+        }
+      }
+      // T15-C11 — /offer <substance> [route] | /party | /sober
+      //   /offer weed                 → scheduler.ingest('cannabis', {route:'smoked'})
+      //   /offer coke                 → scheduler.ingest('cocaine')
+      //   /offer molly | acid | k | shot
+      //   /party                      → bumps self-init weights (when C7 wires it)
+      //   /sober                      → clears active events (tolerance preserved)
+      // Grade gate still applies — kindergarten /offer weed returns decline reason.
+      if (text.startsWith('/offer') || text.startsWith('/party') || text.startsWith('/sober')) {
+        if (!brain.drugScheduler) {
+          return { response: { text: '[drugs] scheduler not wired on this brain' }, action: 'drugs' };
+        }
+        if (text.startsWith('/sober')) {
+          brain.drugScheduler.events.clear();
+          if (typeof brain._refreshBrainParamsFromScheduler === 'function') brain._refreshBrainParamsFromScheduler();
+          return { response: { text: '[drugs] scheduler cleared — events empty, tolerance preserved' }, action: 'drugs' };
+        }
+        if (text.startsWith('/party')) {
+          brain._partyMode = true;
+          return { response: { text: '[drugs] party mode ON — self-initiation weights biased accepting' }, action: 'drugs' };
+        }
+        // /offer
+        const parts = text.trim().split(/\s+/).slice(1);
+        const slang = (parts[0] || '').toLowerCase();
+        const route = parts[1] || null;
+        // Map common slang to canonical scheduler names (mirrors drug-detector.js)
+        const SLANG_TO_CANONICAL = {
+          weed: 'cannabis', joint: 'cannabis', blunt: 'cannabis', smoke: 'cannabis', bud: 'cannabis',
+          coke: 'cocaine', line: 'cocaine', bump: 'cocaine', rail: 'cocaine',
+          molly: 'mdma', mdma: 'mdma', x: 'mdma', roll: 'mdma',
+          acid: 'lsd', lsd: 'lsd', tab: 'lsd',
+          mushrooms: 'psilocybin', shrooms: 'psilocybin', psilly: 'psilocybin',
+          shot: 'alcohol', whiskey: 'alcohol', beer: 'alcohol', drink: 'alcohol', booze: 'alcohol',
+          k: 'ketamine', ket: 'ketamine', ketamine: 'ketamine',
+          addy: 'amphetamine', speed: 'amphetamine', amphetamine: 'amphetamine',
+          g: 'ghb', ghb: 'ghb'
+        };
+        const canonical = SLANG_TO_CANONICAL[slang];
+        if (!canonical) {
+          return { response: { text: `[drugs] usage: /offer weed|coke|molly|acid|shot|k|addy|shrooms|g [route]` }, action: 'drugs' };
+        }
+        const result = brain.drugScheduler.ingest(canonical, route ? { route } : {});
+        if (typeof brain._refreshBrainParamsFromScheduler === 'function') brain._refreshBrainParamsFromScheduler();
+        if (result.accepted) {
+          return { response: { text: `[drugs] ingested ${canonical} (route=${result.event.route}, dose=${result.event.dose.toFixed(2)})` }, action: 'drugs' };
+        }
+        if (result.reason === 'grade_locked') {
+          return { response: { text: `[drugs] grade-locked. ${canonical} requires life=${result.requiredGrade}, currently life=${result.currentGrade}.` }, action: 'drugs' };
+        }
+        return { response: { text: `[drugs] rejected: ${result.reason}` }, action: 'drugs' };
+      }
       // /bench + /scale-test — dense vs sparse perf comparison and LIF scale test (U307)
       if (text.startsWith('/bench') || text.startsWith('/scale-test')) {
         const mod = await import('./brain/benchmark.js');
@@ -2248,11 +2671,13 @@ Vision: ${state.visionDescription || 'none'}`;
     }
   }
   if (brain.visualCortex?.isActive?.()) {
-    // brainViz.setVision reads directly from the live VisualCortex
-    // instance — no separate stream handle, no duck-typed adapter.
-    // VisualCortex exposes everything the viz panel needs: isActive,
-    // getVideoElement, description, gazeX/gazeY/gazeTarget.
     brainViz.setVision(brain.visualCortex);
+  }
+  // Fallback: if camera stream exists but visual cortex isn't active yet,
+  // wire the raw stream directly to the viz panel's video element
+  if (perms?.cameraStream && brainViz._eyeVideo && !brainViz._eyeVideo.srcObject) {
+    brainViz._eyeVideo.srcObject = perms.cameraStream;
+    brainViz._eyeVideo.play().catch(() => {});
   }
 
   // Use the landing 3D brain if available, or create new one
@@ -2368,12 +2793,31 @@ Vision: ${state.visionDescription || 'none'}`;
   // ── Wire brain state updates to visualizers ──
   const serverConnected = landingBrainSource && landingBrainSource.isConnected();
 
+  // T18.7.b — 3D brain state-update downsample (Gee 2026-04-18 verbatim:
+  // "we dont need to chow every connection that its currently showing to
+  // as the firing of neron s and thier connections on the 3D brain should
+  // be a percentage of the real"). Server broadcasts state at 10 Hz; 3D
+  // brain redraw doesn't need every tick — dropping to every 3rd broadcast
+  // (~3.3 Hz) keeps the scene visibly alive, frees frame time for the
+  // WebGL renderer to handle 300K render neurons (per-cluster 20K peg
+  // from T18.7.a), and removes the VRAM/PCIe contention spike during
+  // curriculum-heavy activity. 2D brainViz stays full rate because its
+  // canvas pipeline is cheap. HUD stays full rate for responsiveness.
+  let _brain3dDownsampleCounter = 0;
+  const BRAIN3D_DOWNSAMPLE = 3;
+
   brain.on('stateUpdate', (state) => {
     // Only let local brain drive HUD if no server is connected
     if (!serverConnected) updateBrainIndicator(state);
     if (brainViz) brainViz.updateState(state);
     // Don't send local brain state to 3D — server drives that
-    if (!serverConnected && brain3d) brain3d.updateState(state);
+    if (!serverConnected && brain3d) {
+      _brain3dDownsampleCounter++;
+      if (_brain3dDownsampleCounter >= BRAIN3D_DOWNSAMPLE) {
+        _brain3dDownsampleCounter = 0;
+        brain3d.updateState(state);
+      }
+    }
   });
 
   // Server state → HUD + 3D: server is the authority when connected
@@ -2381,7 +2825,14 @@ Vision: ${state.visionDescription || 'none'}`;
     landingBrainSource.on('stateUpdate', (serverState) => {
       _landingState = serverState;
       updateBrainIndicator(serverState);
-      if (brain3d) brain3d.updateState(serverState);
+      if (brain3d) {
+        _brain3dDownsampleCounter++;
+        if (_brain3dDownsampleCounter >= BRAIN3D_DOWNSAMPLE) {
+          _brain3dDownsampleCounter = 0;
+          brain3d.updateState(serverState);
+        }
+      }
+      if (brainViz) brainViz.updateState(serverState);
     });
   }
 
@@ -2512,7 +2963,6 @@ async function generateGreeting(perms) {
     const text = brain.innerVoice.languageCortex.generate(
       brain.innerVoice.dictionary,
       state.amygdala?.arousal ?? 0.9,
-      state.amygdala?.valence ?? 0.2,
       state.oscillations?.coherence ?? 0.4,
       {
         predictionError: 0,
@@ -2522,7 +2972,7 @@ async function generateGreeting(perms) {
         // T13.7.5 — generate() requires a live cortex cluster reference
         // after the slot-prior fallback was deleted in T13.7.
         cortexCluster: brain.clusters?.cortex,
-        drugState: state.drugState || 'cokeAndWeed',
+        drugState: state.drugState || 'sober',
         fear: 0,
         reward: 0,
         socialNeed: 0.7,
@@ -2646,7 +3096,7 @@ function updateBrainIndicator(state) {
   const betaEl = $('hud-beta'); if (betaEl) betaEl.textContent = (bandPower.beta ?? 0).toFixed(1);
   const alphaEl = $('hud-alpha'); if (alphaEl) alphaEl.textContent = (bandPower.alpha ?? 0).toFixed(1);
   const thetaEl = $('hud-theta'); if (thetaEl) thetaEl.textContent = (bandPower.theta ?? 0).toFixed(1);
-  const drugEl = $('hud-drug'); if (drugEl) drugEl.textContent = s.drugState || l.drugState || 'cokeAndWeed';
+  const drugEl = $('hud-drug'); if (drugEl) drugEl.textContent = s.drugState || l.drugState || 'sober';
   const actionEl = $('hud-action'); if (actionEl) actionEl.textContent = s.motor?.selectedAction || l.motor?.selectedAction || 'idle';
   // R15 — HUD model label used to show bestBackend.model (the deleted
   // text-AI dropdown selection). Post-R4 Unity speaks from her own
