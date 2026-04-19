@@ -1,6 +1,6 @@
 # ROADMAP — IF ONLY I HAD A BRAIN
 
-> Last updated: 2026-04-17 | Full K-PhD syllabus shipped (114 cells across 6 subjects) + T15 drug dynamics scheduler live (9 substances, grade-gated, speech-modulating). Post-syllabus runtime tuning + live-use verification phase is the current milestone.
+> Last updated: 2026-04-18 | T15 drug dynamics scheduler live (11 substances + 7 combo synergies + 7 adult-use patterns + 7 sensory triggers + 13-axis speech modulation + LAW-6 firstUse ledger + decide() decision engine; see `docs/T15-pharmacology-research.md` + `docs/T15-architecture.md`). T17.7 single-cortex integration Phases A–D + E.a + E.b shipped; curriculum teaches + generation reads against the unified main-cortex GPU substrate. Per the **PRE-K + K ONLY SYLLABUS SCOPE CONTRACT LAW** (`.claude/CLAUDE.md` 2026-04-18), the original 114-cell K-PhD syllabus is preserved in `docs/TODO-full-syllabus.md` but only pre-K + K cells are in active scope right now. Grade 1 through PhD cells are DEFERRED until pre-K + K pass Gee's Part 2 signoff via the full-mind K gate (T16.5.b/c/d).
 > Unity AI Lab
 >
 > **DOC-AHEAD-OF-REALITY (Gee, 2026-04-17):** Per-grade sign-off status lives in `docs/TODO-full-syllabus.md` + `docs/FINALIZED.md`. This roadmap describes target-state milestone completion.

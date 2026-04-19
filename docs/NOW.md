@@ -1,6 +1,6 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 (Session 114.19ac — T15.C CLOSED (12 of 12 deliverables across 7 atomic commits). Prior this session: T17.7 Phase C + Phase D shipped; T15.A research + T15.B architecture docs shipped. Remaining block list: T17.7 Phase E (multi-commit), T17.7 Phase F (doc sweep), T17.7 Phase C follow-up divergence telemetry, T16.5.b/c/d (Gee design-review blocked), T16 Part 2 (Gee localhost blocked), T15.D (deferred past K-only gate). T18.5.b/c push gate.)
+> Saved: 2026-04-18 (Session 114.19ac extended — T15.C closed (12/12) + T17.7 Phase E.a + E.b + Phase C follow-up + partial Phase F doc sweep + NEW LAW: PRE-K + K ONLY SYLLABUS SCOPE CONTRACT (`.claude/CLAUDE.md` 2026-04-18 per Gee 'T16.5s should be a law built into the syllabus ... only trying to get pre-k and k learning down first'). T15.D REMOVED from backlog per Gee 2026-04-18 'T15D is NOT going to be done and can be removed'. Remaining: T17.7 Phase E.c/E.d (cortexCluster deletion), T17.7 Phase F continuation, T16.5.b/d (Gee design-review), T16 Part 2 (Gee localhost), T18.5.b/c push gate.)
 
 ## Current state of `syllabus-k-phd`
 

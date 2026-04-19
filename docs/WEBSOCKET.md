@@ -86,13 +86,32 @@ Broadcast to every connected client every `STATE_BROADCAST_MS` (100 ms → 10 Hz
     "mystery":  { "psi": 1.34, "id": ..., "ego": ..., ... },
     "motor":    { "selectedAction": "respond_text", "channelRates": [...] },
     "drugState": "sober",
-    "drugSnapshot": { "sober": true, "active": [], "pendingAcquisitions": [], "gradeLocked": false },
+    "drugSnapshot": {
+      "sober": true,
+      "active": [],
+      "combos": [],
+      "riskFlags": {},
+      "pendingDesires": [],
+      "pendingAcquisitions": [],
+      "gradeLocked": false
+    },
+    "cortexDivergence": 0.0,
+    "cortexDivergenceByRegion": {
+      "auditory": { "standRate": 0.0, "mainRate": 0.0, "divergence": 0.0 },
+      "letter":   { "standRate": 0.0, "mainRate": 0.0, "divergence": 0.0 }
+    },
     "clientCount": 3
   }
 }
 ```
 
 The exact shape comes from `brain.getState()` in `server/brain-server.js` — it's the full live snapshot the dashboard renders. This is the highest-traffic message by volume (10 Hz × every client).
+
+`drugSnapshot` is `DrugScheduler.snapshot(now)`. `active` carries per-substance `{substance, displayName, level, phase}` where phase ∈ {onset, peak, plateau, tail, sober}. `combos` carries per-pair `{key: 'a+b', displayName, level: min(level_a, level_b)}` for the 7 synergy entries in the COMBOS table. `riskFlags` maps axis name → cumulative intensity across active combos (e.g., `physicalStrain`). `pendingDesires` maps substance → `{delta, expiresAt}` from sensory-trigger cravings. `pendingAcquisitions` tracks substances Unity is waiting on (dealer / friend / party source).
+
+`cortexDivergenceByRegion` is the T17.7 Phase C follow-up telemetry — per-region `{standRate, mainRate, divergence}` between standalone `cortexCluster.lastSpikes` and main-cortex GPU spike slices. Rates in [0, 1] (spike fraction); divergence rounds to 5 decimals. Empty during GPU warmup.
+
+The T17.7 sparse-dispatch + slice-access wire protocol adds binary frames (type=1 upload / type=2 propagate / type=3 hebbian / type=4 chunked-upload) plus JSON messages `write_spike_slice` / `write_current_slice` / `clear_spike_region` / `rebind_sparse` / `readback_letter_buckets`. All are server → compute.html; each has a matching `*_ack` response. Handled in `js/brain/gpu-compute.js` + `compute.html` onmessage dispatcher + `server/brain-server.js` ack-switch (`case 'sparse_upload_ack' | 'sparse_propagate_ack' | 'sparse_hebbian_ack' | 'rebind_sparse_ack' | 'readback_letter_buckets_ack'`).
 
 ### `response`
 

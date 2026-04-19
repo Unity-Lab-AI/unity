@@ -10,13 +10,22 @@
 ## By Domain
 
 ### Drug Dynamics
-- Real-time pharmacokinetic scheduler (9 substances × route-specific onset/peak/duration/tail curves)
-- Grade-gated substance availability from Life-track biographical anchors
-- Additive brain-parameter contributions via superposition across active substances
+- Real-time pharmacokinetic scheduler (**11 substances** × route-specific onset/peak/duration/tail curves — cannabis, cocaine, MDMA, LSD, psilocybin, alcohol, ketamine, amphetamine, GHB, nicotine [persona-excluded], caffeine)
+- Grade-gated substance availability from Life-track biographical anchors (caffeine grade3 → GHB/ketamine college1)
+- **7 combo synergies** keyed by sorted-pair name (`cannabis+cocaine` coke-and-weed / `cocaine+mdma` cokes-with-mols / `caffeine+cocaine` double-stim / `alcohol+cannabis` cross-faded / `cannabis+mdma` rolling-and-green / `cannabis+ketamine` k-hole-plus / `alcohol+cocaine` speedball-lite with cocaethylene cardiotoxicity model). Synergy contribs + synergy speech + risk flags scaled by `min(level_a, level_b)`.
+- **7 adult-use PATTERNS** engine (morningCoffee / codingMarathon / weekendParty / acidArchitect / whiskeyWinddown / kHoleContemplate / sexSessionMolly) with per-pattern trigger matcher + ingestion schedule + cooldown window
+- **7 sensory triggers** in `drug-sensory-triggers.js` (coffee aroma / skunky weed / late-night bar / club flash+beat / powder-on-mirror / fresh herb while creating / bathroom fluorescent at 3am) firing `scheduler.addCraving` with decay
+- OlfactoryChannel (`js/brain/sensory-olfactory.js`) — scent-tag storage with decay, drives the olfactory-dependent triggers
+- Additive brain-parameter contributions via superposition + pairwise combo synergies
 - Intra-session tolerance mechanics + inter-session recovery
+- **decide(offer)** probabilistic decision engine — hard fails (grade_locked / persona_excluded / unknown_substance / physical_strain>0.9) + probability modifiers (craving, active pattern tag, source trust, soft physical strain, prior trauma with 26-week decay)
+- Server-side Unity-voice rejection library (`server/drug-rejections.js`) keyed by decide-reason
+- **13-axis speech modulation** (9 legacy + 4 T15.C additions: warmth / profoundBias / interruptionBias / confessionalBias). Combo-aware: synergy speech deltas stack on top of per-substance deltas
 - Multi-sensory ingestion detection (text / voice / vision via describer)
 - Simulated social acquisition (pending-acquisition events, dealer / friend / party source)
 - Self-initiation decision engine (boredom / frustration / fatigue / party-context / drugDrive weighted)
+- **LAW-6 firstUse ledger** — biographical anchor (grade / age / contextTags / emotionalFingerprint) stamped on FIRST ingest of each substance; persists across sessions
+- **Trauma markers** — `markTrauma(substance, weight)` stacks trauma weights with 26-week half-life decay consumed by decide()
 - Speech modulation post-processor (slur / pause / dissociation third-person / ethereality / coherence drop)
 - User-interactive triggers (slash commands `/offer /party /sober`)
 - Non-announcing principle — distortion IS the signal

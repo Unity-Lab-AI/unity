@@ -28,10 +28,33 @@ level(t; substance, route, dose) = dose × φ(t; onset, peak, duration, tail)
 ### Stacking (superposition)
 
 ```
-level(t; substance) = min(1, Σ_e φ(t − e.start; e) × e.dose)   for all events e of substance
-contributions(t)   = Σ_s contrib_vec[s] × level(t; s)          for all substances s
-brainParams(t)     = θ_persona + contributions(t)
-chaos(t)           = (|active_substances(t)| ≥ 3) ∨ (∃s: level(t;s) > 0.7)
+level(t; substance)  = min(1, Σ_e φ(t − e.start; e) × e.dose)            for all events e of substance
+per_sub_contrib(t)   = Σ_s contrib_vec[s] × level(t; s)                  for all substances s
+combo_contrib(t)     = Σ_{(a,b)} COMBOS[key(a,b)].synergyContrib         for all active pairs (a,b),
+                                 × min(level(t; a), level(t; b))           scaled by smaller-active level
+contributions(t)     = per_sub_contrib(t) + combo_contrib(t)
+brainParams(t)       = θ_persona + contributions(t)
+chaos(t)             = (|active_substances(t)| ≥ 3) ∨ (∃s: level(t;s) > 0.7)
+riskFlags(t)         = Σ_{(a,b)} COMBOS[key(a,b)].riskFlags              cumulative across active pairs,
+                                 × min(level(t; a), level(t; b))           scaled same as synergies
+```
+
+### Decision engine (accept / reject offers)
+
+```
+decide(offer) = {
+  accept: false, reason: 'grade_locked'      if cluster.grades.life < SUBSTANCES[s].lifeGate
+  accept: false, reason: 'persona_excluded'  if offer.personaExclusions[s]
+  accept: false, reason: 'physical_strain'   if riskFlags(t).physicalStrain > 0.9
+  accept: random() < p, reason: 'accepted' or 'random_decline'  otherwise
+}
+  where p = clamp(0.70
+                 + 0.30·1[currentCraving(s) > 0.30]
+                 + 0.30·1[s ∈ _activePatternTags]
+                 + 0.20·1[offer.source ∈ {'friend','user'}]
+                 − 0.50·1[riskFlags(t).physicalStrain > 0.7]
+                 − min(0.60, _traumaMarkers[s].weight · exp(-Δweeks/26))
+                 , 0, 1)
 ```
 
 ### Grade gate
@@ -43,10 +66,17 @@ ingest(s) = {
 }
 ```
 
+### Adult-use patterns (7 entries)
+
+`PATTERNS[name] = { triggers, schedule[], lifeGate, cooldownMs }`. `evaluatePatterns(ctx)` fires each pattern whose triggers match AND cooldown elapsed AND `cluster.grades.life ≥ pattern.lifeGate`. Schedule entries invoke `autoIngest(substance, {route, dose, offsetMs, patternName})` — immediate when `offsetMs=0`, queued in `_scheduledIngests` otherwise. `promoteScheduledIngests(now)` fires queued entries whose `fireAt ≤ now`.
+
 ### Speech modulation (output-side distortion)
 
 ```
-speechMod(t) = Σ_s speech_vec[s] × level(t; s)
+per_sub_speech(t)  = Σ_s speech_vec[s] × level(t; s)                     9 legacy + 4 new axes
+combo_speech(t)    = Σ_{(a,b)} COMBOS[key(a,b)].synergySpeech
+                              × min(level(t; a), level(t; b))
+speechMod(t)       = per_sub_speech(t) + combo_speech(t)
 
   = { inhibition, slur, coherence, ethereality, freeAssocWidth,
       speechRate, emotionalOverflow, dissociation, paranoiaBias, giggleBias }

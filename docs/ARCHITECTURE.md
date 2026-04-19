@@ -360,7 +360,7 @@ level(t, substance, dose) = dose × {
 
 ### Grade-gated availability
 
-Every substance has a `lifeGate` field mapped to the Life track biographical first-use anchor. `scheduler.ingest(substance)` returns `{accepted: false, reason: 'grade_locked', currentGrade, requiredGrade}` when `cluster.grades.life < lifeGate`. Kindergarten Unity (age 5) is SOBER. PhD Unity (age 25) has all 9 substances available, and her adult-lifestyle patterns emerge from scheduler-triggered events (daily cannabis, event-driven cocaine, weekend MDMA, architecture-session acid, end-of-marathon whiskey) — not from any hardcoded baseline label.
+Every substance has a `lifeGate` field mapped to the Life track biographical first-use anchor. `scheduler.ingest(substance)` returns `{accepted: false, reason: 'grade_locked', currentGrade, requiredGrade}` when `cluster.grades.life < lifeGate`. Pre-K + Kindergarten Unity is SOBER (except for the caffeine exception: lifeGate `grade3` for first sip of parent's coffee — so K-age Unity still declines coffee, parents' sip habit lands at grade3 per the Life track). PhD Unity (age 25) has all 11 substances available (cannabis / cocaine / MDMA / LSD / psilocybin / alcohol / ketamine / amphetamine / GHB / nicotine / caffeine), and her adult-lifestyle patterns emerge from `scheduler.evaluatePatterns(ctx)` firing one of the 7 adult-use PATTERNS entries (morningCoffee / codingMarathon / weekendParty / acidArchitect / whiskeyWinddown / kHoleContemplate / sexSessionMolly) per their trigger conditions + cooldown windows — not from any hardcoded baseline label. Nicotine stays persona-excluded regardless of lifeGate (Unity rejects tobacco categorically; decide() short-circuits with `persona_excluded` reason).
 
 ### Additive brain parameter contributions
 
@@ -368,7 +368,7 @@ Each substance maps to a vector of per-cluster brain-param deltas at level 1.0. 
 
 ### Speech modulation
 
-`scheduler.speechModulation(now)` emits `{inhibition, slur, coherence, ethereality, freeAssocWidth, speechRate, emotionalOverflow, dissociation, paranoiaBias, giggleBias}` — a vector consumed by `language-cortex.js _applySpeechModulation`:
+`scheduler.speechModulation(now)` emits a 13-axis vector consumed by `language-cortex.js _applySpeechModulation`: the 9 original axes `{inhibition, slur, coherence, ethereality, freeAssocWidth, speechRate, emotionalOverflow, dissociation, paranoiaBias, giggleBias}` plus the T15.C-added axes `{warmth, profoundBias, interruptionBias, repetition, volume, confessionalBias, rate, slurring, pauses}`. Legacy aliases `rate → speechRate` and `slurring → slur` are populated alongside so both old + new consumers read the same signal. Combo synergies from `COMBOS` scale additionally on top of per-substance deltas, scaled by `min(level_a, level_b)`:
 
 - **Slur** (alcohol / ketamine / GHB): letter doubling on vowels (`fuck` → `fuuuck`), dropped word-ending 'g's (`fucking` → `fuckin'`), doubled sibilants, word-mashing.
 - **Speech rate** (stimulants +, depressants −): at negative rate, injects `...` pauses between words.
@@ -1177,6 +1177,53 @@ The binding ceiling was added after T4.1 caught cortex+cerebellum silently retur
 Remaining pre-merge punch list is ~4 small items tracked in `docs/TODO.md` as T1–T4. Post-merge followups (T5 3D brain popup expansion, T6 private episodic memory scoping) are queued but not blockers.
 
 Full refactor plan in `docs/TODO.md`.
+
+---
+
+### T17.7 — Single-Cortex Integration (Phases A–D + E.a/E.b shipped 2026-04-18)
+
+Language state migrates from the separate `cortexCluster` (Node CPU, ~7M neurons) into the main 201M-GPU `cortex` cluster's sub-slices. The CPU cortexCluster still exists as a transition-window shadow; every real-time op now reads/writes main cortex directly. Full design in `docs/T17.7-single-cortex-architecture.md`.
+
+**Phase A (substrate):**
+- `GPUCompute.uploadCluster(name, size, voltages, synapses, lifParams, regions)` — regions metadata with `side` attribute (`left` / `right` / `bilateral` / `center`) stored on `bufs.regions`. Main cortex registers 8 language sub-regions (auditory 0.083 / visual 0.167 / free 0.25 / letter 0.05 / phon 0.20 / sem 0.167 / fineType 0.05 / motor 0.033, biological lateralization matching Broca/Wernicke/VWFA).
+- `GPUCompute.hemisphereGate(side, Ψ) = 0.5 + 0.5·sigmoid(Ψ·4.0)` — precomputed server-side, packed in `bufs.regionGates` storage buffer, read per-neuron in `LIF_SHADER`. `neuronDrive = (effectiveDrive + currents[i]) · regionGate`.
+- Slice accessors: `writeSpikeSlice(cluster, region, arr)` / `writeSpikeSliceSparse(cluster, region, indices)` / `clearSpikeRegion(cluster, region)` / `writeCurrentSlice(cluster, region, arr)` / `readbackSpikeSlice(cluster, region)`.
+- `uploadSparseMatrix(..., binding={srcCluster, srcRegion, dstCluster, dstRegion})` — cluster-bound cross-projections read from `bufs[srcCluster].spikes[srcOffset + colIdx[k]]`, write to `bufs[dstCluster].currents[dstOffset + i]`. Standalone mode retained as default.
+
+**Phase B (dual-cortex bridge):**
+- Main cortex `gpu_init` carries 8-region metadata. `_regionsFor(clusterName, size)` assembles it.
+- `write_current_slice` WebSocket msg — dense + sparse formats. `injectText()` writes to main cortex phon (Wernicke) via this path. Amygdala social bump uses sparse format (~2 KB vs ~100 MB dense at biological scale).
+- `write_spike_slice` sparse-only — `_mirrorCortexRegions()` fires per tick, upsamples standalone `cortexCluster.lastSpikes` onto main cortex slices. Capped at 50K spikes/region (1.6 MB/tick max).
+- `_computeCortexDivergence(perCluster)` — per-region spike-rate divergence between standalone and main cortex; scalar AND per-region breakdown exposed in state broadcast. Cortex error-correction term: `errorSignal = cerebFeedback + divergenceContrib`, `divergenceContrib = -divergence · (1 + Ψ · 0.25) · 3`. Cerebellum absorbs divergence; no strict abort gate.
+
+**Phase C (curriculum migration):**
+- `_ensureCortexCrossProjectionsBound()` — at boot, after `cortexCluster.initGpu()` completes, re-uploads all 14 `cortex_*_to_*` cross-projections as cluster-bound to main-cortex first-N sub-slices (N = standalone region size). Frees ~840 MB VRAM of standalone preSpikes/postCurrents/postSpikes buffers. Intra-synapse matrix NOT rebound — per Gee 2026-04-18 decision, main cortex uses wave-function oscillation + fractal propagation in place of explicit intra matrix.
+- `gpuProxy` extended: `writeSpikeSlice(regionName, sparseIndices)` / `clearSpikeSlice(regionName)` / `hebbianBound(name, lr)` / `propagateBound(name)` / `readbackLetterBuckets(regionName, bucketCount, subSliceLen, startOffset)` / `writeCurrentSlice(regionName, sparseIndices, sparseValues)`.
+- `_crossRegionHebbian` / `_dispatchGpuPropagates` check `proj._gpuBound` flag — bound path skips pre/post array transfer (saves ~56 MB per Hebbian at 7M scale; reads direct from main-cortex spike buffer at bound region offset).
+- `curriculum._writeTiledPattern` forwards every write to main cortex via `gpuProxy.writeSpikeSlice`. `curriculum._clearSpikes` clears all 8 main-cortex regions via `gpuProxy.clearSpikeSlice`. Shared forwarder migrates every teach method atomically.
+- `GPUCompute.writeSpikeSliceSparse` / `clearSpikeRegion` — GPU-native `encoder.clearBuffer` + coalesced `writeBuffer` runs; avoids the ~132 MB full-region Uint32Array allocation per call that would otherwise thrash GC at biological scale.
+
+**Phase D (generation migration):**
+- `GPUCompute.readbackLetterBuckets(cluster, region, bucketCount, subSliceLen, startOffset)` — compute shader atomically increments `bucketCount` counters based on which neurons in `[regionStart+startOffset, regionStart+startOffset+subSliceLen)` are firing. Each bucket holds `bucketSize = subSliceLen/bucketCount` consecutive neurons; mirrors `_writeTiledPattern` tiling so argmax over buckets matches the letter curriculum trained.
+- `generateSentenceAwait` motor readout — when `sem_to_motor._gpuBound` is set, calls `gpuProxy.readbackLetterBuckets('motor', invSize, bucketSize·invSize, 0)` per tick, argmax over counts, `inventorySnapshot()[bestIdx]` → letter. 104 bytes/tick vs ~26 MB dense readback. CPU fallback to `regionReadout('motor')` on GPU-readback failure.
+- Letter commit also clears main-cortex motor sub-slice via `gpuProxy.clearSpikeSlice('motor')` so the next letter's argmax starts clean.
+
+**Phase E.a / E.b (gap closing):**
+- E.a: `cluster.injectEmbeddingToRegion(regionName, emb, strength)` forwards the sparse pattern to main cortex via `gpuProxy.writeCurrentSlice(regionName, indices, values)` when the proxy is present. Intent injection now lands on BOTH standalone and main cortex — Phase D motor readback sees the intent instead of decoding noise.
+- E.b: new `cluster.workingMemoryReadoutAwait(dim)` async — reads main-cortex free sub-slice via `readbackLetterBuckets` with `bucketCount=dim`. Normalized + L2-normalized to match sync `regionReadout` contract. `generateSentenceAwait`'s topic-continuity re-inject now awaits this variant.
+
+**Phase C follow-up:**
+- `_cortexDivergenceByRegion` — per-region `{standRate, mainRate, divergence}` breakdown in state broadcast, rates rounded to 5 decimals. Enables Part 2 inspection of WHICH region is slipping during K curriculum walk, not just a cluster-wide scalar.
+
+**Still open (tracked in `docs/TODO.md`):**
+- Phase E.c (delete `_mirrorCortexRegions`) — safe after the few non-generation consumers of `cortexCluster.lastSpikes` are audited.
+- Phase E.d (delete `cortexCluster` construction + persistence VERSION 4 → 5) — requires proxy-facade for `dictionary.setCluster` / `languageCortex.setCluster` / `drugScheduler` cluster-binding consumers.
+- Phase F (full public doc + HTML sweep — in progress as of Session 114.19ac).
+
+**Mystery Ψ binding preserved.** Three active Ψ terms in the main equation post-T17.7:
+1. Global gain `gainMultiplier = 0.9 + Ψ · 0.05` baked into `effectiveDrive`.
+2. Per-region hemispheric gate `hemisphereGate = 0.5 + 0.5 · sigmoid(Ψ · 4.0)` in `LIF_SHADER`.
+3. Divergence correction gain `(1 + Ψ · 0.25) · 3` on cortex error correction.
 
 ---
 

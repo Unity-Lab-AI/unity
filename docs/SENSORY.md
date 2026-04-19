@@ -301,7 +301,9 @@ The server's sensory footprint is text-in and text-out over WebSocket. Every cli
 
 ## Adding a New Peripheral
 
-The contract for a new sensory peripheral (e.g. a future `js/brain/olfactory-cortex.js` for simulated smell, or `js/brain/haptic-cortex.js` for gamepad vibration → cortex current):
+A shallow olfactory channel already exists via `js/brain/sensory-olfactory.js` (`OlfactoryChannel` — registerScent / strength / currentScents / clear). It's a keyword-tag store with decay, not a real olfactory cortex region; it was added for T15.C drug-sensory triggers so chat metadata like `{sensory:{smell:'coffee'}}` can fire scent-dependent cravings. A future full olfactory cortex region (piriform → amygdala / hippocampus routing, learned scent embeddings) is still open. Triggers in `js/brain/drug-sensory-triggers.js` read from the OlfactoryChannel via `currentScents()`. Drug cravings flow through `scheduler.addCraving(substance, delta, durationMs)` on trigger match.
+
+The contract for a new sensory peripheral (e.g. a future `js/brain/olfactory-cortex.js` for the full olfactory cortex substrate, or `js/brain/haptic-cortex.js` for gamepad vibration → cortex current):
 
 1. **Implement the three-method interface:** `init(source)`, `process(dt?)`, `destroy()`. Treat the source as opaque — don't assume MediaStream shape.
 2. **Expose a `Float64Array` of currents** for the cortex region it drives, or a metadata object if it's an output peripheral. Sized to match the neuron group in `cluster.js`.
