@@ -4531,6 +4531,23 @@ function _spawnGpuClient(port) {
     console.log(`[Server] DREAM_NO_AUTO_GPU=1 — skipping browser auto-launch. Open http://localhost:${port}/compute.html manually to start GPU compute.`);
     return;
   }
+  // T18.11 — skip auto-launch when a GPU client is already connected.
+  // The scenario: operator restarts the server without closing the
+  // prior compute.html tab. That tab's ws.onclose auto-reconnect
+  // (exponential-backoff post-T18.11, starting at 3 s) picks up the
+  // new server within our spawn-delay window. If we also launch a
+  // fresh tab, two compute.html instances hold biological-scale GPU
+  // buffers simultaneously (~8 GB each on a 16 GB 4070 Ti SUPER) and
+  // the second init pass OOMs the device on upload. That OOM fires
+  // WebGPU device.lost, Windows TDR, and on certain Windows + NVIDIA
+  // driver combos the cascade reaches NDIS/WinSock kernel paths →
+  // whole PC loses internet → hard reset. Spawn-delay at the call
+  // site (3.5 s post-T18.11) gives the pre-existing tab time to
+  // reconnect before this check runs.
+  if (brain && brain._gpuClient && brain._gpuClient.readyState === 1) {
+    console.log(`[Server] GPU compute client already connected from prior session — skipping auto-launch. Open ${port}/compute.html manually if needed.`);
+    return;
+  }
   const url = `http://localhost:${port}/compute.html`;
   const { exec } = require('child_process');
   const cmd = process.platform === 'win32' ? `start "" "${url}"`
@@ -4572,10 +4589,14 @@ httpServer.listen(PORT, () => {
 
   Brain is thinking. Launching GPU compute client...
   `);
-  // Delay slightly so the browser tab doesn't race the WebSocket
-  // registration (gives the WSS.on('connection') handler time to
-  // settle before compute.html fires its first init message).
-  setTimeout(() => _spawnGpuClient(PORT), 500);
+  // T18.11 — 3.5 s delay (was 500 ms). Matches the compute.html
+  // exponential-backoff reconnect's first retry window (3 s) with
+  // 500 ms of scheduling margin. Any pre-existing compute.html tab
+  // from a prior server run will reconnect within this window, so the
+  // spawn-guard inside `_spawnGpuClient` can see it and skip the
+  // fresh-tab launch — preventing the two-tab VRAM-contention cascade
+  // that takes the PC off the network.
+  setTimeout(() => _spawnGpuClient(PORT), 3500);
 });
 
 // Graceful shutdown

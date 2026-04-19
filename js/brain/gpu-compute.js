@@ -1222,6 +1222,31 @@ export class GPUCompute {
   }
 
   /**
+   * T18.11 — destroy every GPU buffer hanging off a sparse-matrix entry.
+   * Called before overwriting `_sparseMatrices[name]` so re-uploads
+   * don't orphan the prior allocation. Safe on undefined entry (no-op)
+   * and safe on a device-lost state (each destroy wrapped in try/catch
+   * so a double-free on a dead device is non-fatal).
+   *
+   * Covers every buffer type an entry can hold:
+   *   - Cluster-bound: values + colIdx + rowPtr (3 buffers)
+   *   - Standalone:    values + colIdx + rowPtr + preSpikes + postCurrents + postSpikes (6 buffers)
+   *
+   * Completes T18.10's partial fix — that commit only destroyed on the
+   * validation-FAILURE branch. This helper handles the success-path
+   * leak that stacks across any future re-upload trigger.
+   */
+  _destroySparseEntryBuffers(entry) {
+    if (!entry) return;
+    try { entry.values?.destroy(); } catch { /* already gone */ }
+    try { entry.colIdx?.destroy(); } catch { /* already gone */ }
+    try { entry.rowPtr?.destroy(); } catch { /* already gone */ }
+    try { entry.preSpikes?.destroy(); } catch { /* already gone */ }
+    try { entry.postCurrents?.destroy(); } catch { /* already gone */ }
+    try { entry.postSpikes?.destroy(); } catch { /* already gone */ }
+  }
+
+  /**
    * Upload a standalone sparse CSR matrix to GPU — not bound to any
    * cluster. Used for T14.4 cross-region projections where the matrix
    * connects one region's spikes to another region's currents
@@ -1256,6 +1281,16 @@ export class GPUCompute {
   uploadSparseMatrix(name, rows, cols, values, colIdx, rowPtr, binding) {
     if (!this._available) return false;
     const device = this._device;
+    // T18.11 — completes T18.10. If a matrix with this name is already
+    // on GPU, destroy its buffers BEFORE allocating new ones. Without
+    // this, any re-upload path (reconnect-triggered re-init, rebind
+    // fallback on persisted-without-binding matrices, future
+    // auto-rescale retry loop) orphans 3 buffers (cluster-bound) or 6
+    // buffers (standalone: +preSpikes/postCurrents/postSpikes) at
+    // 100-600 MB each. Stacked leaks guarantee VRAM exhaustion on a
+    // 16 GB card during biological-scale init — the PC-reset / network
+    // stack collapse cascade T18.10 half-fixed.
+    this._destroySparseEntryBuffers(this._sparseMatrices[name]);
     const vals32 = values instanceof Float32Array ? values : new Float32Array(values);
     const cols32 = colIdx instanceof Uint32Array ? colIdx : new Uint32Array(colIdx);
     const rows32 = rowPtr instanceof Uint32Array ? rowPtr : new Uint32Array(rowPtr);
@@ -1358,6 +1393,11 @@ export class GPUCompute {
   _beginSparseUpload(name, rows, cols, nnz, rowPtr, binding) {
     if (!this._available) return false;
     const device = this._device;
+    // T18.11 — destroy any prior entry's buffers before re-upload. Same
+    // leak pattern as uploadSparseMatrix — chunked path also orphaned
+    // values/colIdx/rowPtr (+ optional pre/post/currents buffers in
+    // standalone mode) on re-upload.
+    this._destroySparseEntryBuffers(this._sparseMatrices[name]);
     const rowPtr32 = rowPtr instanceof Uint32Array ? rowPtr : new Uint32Array(rowPtr);
     const makeStorage = (sizeBytes) => device.createBuffer({
       size: sizeBytes,

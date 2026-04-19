@@ -105,6 +105,19 @@ let totalComputeMs = 0;
 
 const clusterState = {}; // persists across reconnects
 
+// T18.11 — exponential-backoff reconnect state. Resets to 0 on every
+// successful ws.onopen, increments on every ws.onclose. Delay at
+// attempt N is `min(60, 3 * 2^N) * 1000` ms → 3 s, 6 s, 12 s, 24 s,
+// 48 s, 60 s (cap), 60 s, ...  Pre-T18.11 this was a flat 3 s retry
+// with no cap. During heavy ELA-K teach any transient WebSocket
+// hiccup (Chrome throttling a backgrounded tab, GPU dispatch stall,
+// server event-loop saturation) caused the tab to spam reconnects
+// every 3 s indefinitely. Each reconnect triggered the server's
+// ws.on('close') branch which reset `_gpuInitialized = {}`, prompting
+// main-brain LIF re-init uploads — stacking VRAM pressure while the
+// curriculum teach was already pushing the device.
+let _reconnectAttempt = 0;
+
 // Concurrent fullStep calls across clusters run in parallel via
 // Promise.all. The readback path uses a per-call 4-byte disposable
 // buffer so mapAsync lifecycles cannot race, and the old compute-
@@ -121,6 +134,10 @@ function connectToServer() {
 
   ws.onopen = () => {
     statusEl.textContent = 'GPU + Server connected — registering as compute client...';
+    // T18.11 — reset backoff counter on successful connect so the next
+    // disconnect starts over at 3 s instead of carrying forward a
+    // stale exponent from an earlier transient hiccup.
+    _reconnectAttempt = 0;
     ws.send(JSON.stringify({ type: 'gpu_register' }));
   };
 
@@ -649,9 +666,15 @@ function connectToServer() {
 };
 
   ws.onclose = () => {
-    statusEl.textContent = 'Disconnected — reconnecting in 3s...';
+    // T18.11 — exponential backoff: 3s, 6s, 12s, 24s, 48s, 60s cap.
+    // Prevents the tight 3 s-flat reconnect storm that compounded VRAM
+    // pressure during ELA-K teach stress. Cap at 60 s so a legitimately-
+    // restarted server still gets picked up within a minute.
+    const delaySec = Math.min(60, 3 * Math.pow(2, _reconnectAttempt));
+    _reconnectAttempt++;
+    statusEl.textContent = `Disconnected — reconnecting in ${delaySec}s... (attempt ${_reconnectAttempt})`;
     statusEl.style.color = '#f59e0b';
-    setTimeout(() => connectToServer(), 3000);
+    setTimeout(() => connectToServer(), delaySec * 1000);
   };
 } // end connectToServer
 

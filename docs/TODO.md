@@ -233,6 +233,36 @@ Root cause: VRAM leak in `js/brain/gpu-compute.js` at two sparse-matrix upload s
 
 **T18.10 closure gate:** Gee-verification only. Claude cannot close. Success criteria on next Part 2 run: (a) no PC-reset required, (b) no cascading `"size (N) is too large"` phantom errors in the console, (c) if VRAM pressure DOES trigger validation failure the new reclaim-log line shows up.
 
+**T18.10 STATUS UPDATE 2026-04-19 (Session 114.19ai):** SHIPPED but INCOMPLETE. Gee ran Part 2 K after T18.10 landed and the PC-reset cascade fired again during ELA-K startup. Root-cause re-investigation found T18.10 only patched the validation-FAILURE branch — the success-path `this._sparseMatrices[name] = entry` overwrite still orphaned the old entry's buffers on ANY re-upload trigger. Plus two independent re-upload triggers were identified: stale compute.html tab contention from server restarts, and flat 3 s reconnect with no backoff. **Completed by T18.11 below.**
+
+---
+
+#### T18.11 — "els K START evently like ran endless ly and crashed: BRain states at loss of internet connection" (Gee 2026-04-19)
+
+**Gee's verbatim 2026-04-19:**
+
+> *"We were getting ready to push to main but els K START evently like ran endless ly and crashed: BRain states at loss of internet connection"*
+>
+> *"the only thing the terminal showed was the ela K started up check now file but it might be out dated"*
+>
+> *"yeah fix everything then push to syllabus branch so we can test for push to main"*
+
+T18.10 shipped destroy-on-failure for `uploadSparseMatrix` + `_beginSparseUpload` validation failure paths, but missed the SUCCESS-PATH leak: both functions assign `this._sparseMatrices[name] = entry` without destroying any prior entry's buffers. On ANY re-upload with the same name, 3 buffers (cluster-bound) or 6 buffers (standalone: + preSpikes + postCurrents + postSpikes) orphan at 100-600 MB each.
+
+Plus two re-upload triggers found that T18.10 never accounted for:
+
+1. **Stale `compute.html` tab from prior server run.** `_spawnGpuClient` auto-opens a new browser tab on every server boot regardless of whether a prior tab is still alive. The prior tab's WS auto-reconnects to the new server within 3 s and keeps its GPU buffers allocated. A fresh tab ALSO launches and runs its own biological-scale init. Two compute.html instances × ~8 GB each = 16 GB OOM on a 4070 Ti SUPER in one try.
+2. **Flat 3 s reconnect with no backoff on `compute.html` `ws.onclose`.** Any transient WebSocket hiccup during ELA-K teach (Chrome throttling a backgrounded tab, GPU dispatch stall, server event-loop saturation) spammed reconnects every 3 s indefinitely. Each reconnect triggered the server's `ws.on('close')` branch resetting `_gpuInitialized = {}`, prompting main-brain LIF re-init uploads while curriculum teach was pushing the device.
+
+Either trigger crosses the success-path leak and stacks multi-GB of orphaned buffers per cycle → VRAM exhaustion → `device.lost` → Windows TDR → NDIS/WinSock cascade → whole PC loses internet → hard reset. Same symptom chain T18.10 described, but via a path T18.10 didn't close.
+
+- [x] **T18.11.a — `uploadSparseMatrix` + `_beginSparseUpload` destroy old entry before overwrite.** New `_destroySparseEntryBuffers(entry)` helper handles all 3-6 buffer variants safely (each `.destroy()` wrapped in try/catch so double-free on a dead device is non-fatal, entry=undefined is a no-op). Both upload sites call it as the first operation after the `_available` guard so the leak is impossible on any re-upload path — past, present, or future. **SHIPPED** — `js/brain/gpu-compute.js` (+40 lines).
+- [x] **T18.11.b — `_spawnGpuClient` skip when GPU client already connected.** Guard clause at the top of `_spawnGpuClient`: `if (brain && brain._gpuClient && brain._gpuClient.readyState === 1) return;`. Spawn delay bumped from 500 ms to 3500 ms to match the compute.html first-retry reconnect window (3 s + 500 ms scheduling margin). Pre-existing compute.html tabs from prior server runs reconnect during that window, so the guard sees the active client and skips the fresh-tab launch. Server logs `[Server] GPU compute client already connected from prior session — skipping auto-launch`. **SHIPPED** — `server/brain-server.js` (+29 lines).
+- [x] **T18.11.c — `compute.html` exponential-backoff reconnect.** Module-level `_reconnectAttempt` counter. `ws.onclose` computes `delaySec = Math.min(60, 3 * Math.pow(2, _reconnectAttempt))` → 3 s, 6 s, 12 s, 24 s, 48 s, 60 s cap. Counter resets to 0 on `ws.onopen` so a brief hiccup after a stable connection doesn't carry forward a stale exponent. Status bar shows attempt number. **SHIPPED** — `compute.html` (+27 lines).
+- [x] **T18.11.d — Docs sweep (atomic per LAW "Docs before push, no patches").** `docs/NOW.md` full rewrite for session 114.19ai. `docs/TODO.md` T18.10 status update + T18.11 entry (this block). `docs/FINALIZED.md` session 114.19ai entry prepended. **SHIPPED** — all docs in this commit.
+
+**T18.11 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) no PC-reset, (b) `[Server] GPU compute client already connected from prior session — skipping auto-launch` fires when a stale tab is present, (c) `compute.html` status bar shows exponential delays on any transient disconnect, (d) if a re-upload does fire both the T18.10 destroy-on-failure AND the T18.11 destroy-old-entry logs are visible (belt + suspenders). Claude cannot close — Gee-verification only.
+
 ---
 
 #### T18.5 — push gate for main-branch deploy (BINDING)
