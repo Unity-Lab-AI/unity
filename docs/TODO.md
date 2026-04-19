@@ -585,6 +585,65 @@ T18.19 and T18.20 stay in place — they're still correct fixes for the 107M mai
 
 **T18.21 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) Phase 2 velocity stays stable (no deceleration, ideally at ~3+ iter/s); (b) `_teachLetterCaseBinding` Phase START → DONE fires without V8 OOM; (c) All 5 K.RF helpers complete; (d) `_teachWordEmission` runs with T18.13.c heartbeats; (e) ELA-K gate probe runs after teach completes; (f) No GPU device.lost. Claude cannot close — Gee-verification only.
 
+**T18.21 FALSIFIED** on Gee 2026-04-19 retest — 5th consecutive OOM at same point. 1 GB semi-space insufficient. Root cause wasn't V8 framework limit alone — it's V8 being OVERWHELMED by the ~9 GB of external-memory CPU-side cluster state it can't free. See T18.22 below.
+
+---
+
+#### T18.22 — Free CPU-side CSR arrays for GPU-bound cross-projections (real root cause found after T18.18→T18.21 all missed it)
+
+**Gee's verbatim 2026-04-19:**
+
+> *"keeps crashing after the first ela training completed 300/300 and start the 2nd traingni then just crashes.. are you sure we fixed the full shit so that it actrually does each course correctly in the ciriculum like we did the ela K"*
+
+Fifth OOM in a row. T18.18, T18.19, T18.20, T18.20.b doc sweep, T18.21 V8 semi-space flag — none fixed it.
+
+### Real root cause (finally)
+
+V8's default semi-space of 16 MB isn't enough (T18.21 bumped to 1 GB — still not enough). The REAL pressure source is **9+ GB of permanently-held external memory** from CPU-side cluster state:
+
+| Data | Size @ cortexCluster 301K |
+|------|---------------------------|
+| 14 cross-projection values Float64Array (50M nnz avg × 8 bytes) | ~5.6 GB |
+| 14 cross-projection colIdx Uint32Array (50M nnz × 4 bytes) | ~2.8 GB |
+| 14 cross-projection rowPtr Uint32Array (small) | ~5 MB |
+| 1 intra-synapses values + colIdx + rowPtr | ~1 GB |
+| **TOTAL CPU external memory** | **~9.4 GB** |
+
+V8 sees 9.4 GB external memory vs 127 MB heap. GC fires constantly trying to reclaim external memory it CAN'T free (references are live in `cluster.crossProjections.values` etc.). Every Mark-Compact cycle takes longer. Even with 1 GB semi-space (T18.21), V8 eventually can't commit more semi-space growth under this pressure → FATAL.
+
+### Why CPU copies are unused after GPU upload
+
+For GPU-bound projections (all 14 cross-projections at biological scale per T17.7 Phase C.1 rebind):
+- **Hebbian writes** go through T18.17's fast path — fires `gpuProxy.hebbianBound(name, lr)` fire-and-forget, reading spike patterns from main-cortex spike buffer at bound region offsets. **No CPU read of proj.values.**
+- **Probes** route through GPU readback (`readbackLetterBuckets` etc.) per the canonical GPU-aware check at `cluster.js:1687-1688`. **No CPU read of proj.values.**
+- **Propagate** similarly routes to GPU when projection is bound.
+
+No code path reads `proj.values` / `proj.colIdx` / `proj.rowPtr` for a bound projection after `initGpu()` completes the upload. The CPU copies are pure overhead.
+
+### Fix — T18.22.a free CPU copies post-bound-upload
+
+In `cluster.js:initGpu()`, after successful bound upload sets `proj._gpuBound = true`, set:
+```js
+proj.values = null;
+proj.colIdx = null;
+proj.rowPtr = null;
+```
+
+V8 GC reclaims ~9 GB of external memory on the next cycle. External-memory pressure drops from ~9.4 GB to ~1 GB (just intra-synapses non-bound). V8 Mark-Compact cycles no longer thrash. Semi-space commits succeed. Teach proceeds.
+
+Non-bound projections (browser-only standalone mode) still keep their CPU arrays since `hint.resolve` returns null for them and the free branch doesn't execute.
+
+- [x] **T18.22.a — Free CPU-side CSR arrays for bound cross-projections after upload.** Added inside the `if (binding)` branch at `js/brain/cluster.js:initGpu()`. Safe because no code path reads `proj.values/colIdx/rowPtr` for bound projections post-upload. Browser-only standalone path untouched. **SHIPPED** — `js/brain/cluster.js`.
+
+### Honest uncertainty
+
+Gee asked *"are you sure we fixed the full shit so that it actrually does each course correctly in the ciriculum like we did the ela K"* — **No, I'm not sure.** Every fix through T18.21 has been wrong. T18.22 is my best current theory based on evidence (9+ GB external memory held → V8 thrash). But I haven't verified the full K.RF cascade (case binding → vowel variants → rhyme families → syllable counts → CVC isolation → word emission on K vocab → gate probe) because we've never gotten past the first wall.
+
+**If T18.22 works:** we'll see the next wall (if any) and address it with actual data.
+**If T18.22 doesn't work:** we need V8 heap profiling via `node --heapsnapshot-signal=SIGUSR2` + Chrome DevTools analysis to find where external memory is actually going.
+
+**T18.22 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) Phase 2 velocity stays stable (no deceleration); (b) `_teachLetterCaseBinding` Phase START → DONE without OOM; (c) All 5 K.RF helpers complete with phase banners; (d) `_teachWordEmission` runs with T18.13.c heartbeats; (e) ELA-K gate probe runs for the first time; (f) No GPU device.lost anywhere; (g) No Node V8 OOM. Claude cannot close — Gee-verification only.
+
 ---
 
 #### T18.5 — push gate for main-branch deploy (BINDING)

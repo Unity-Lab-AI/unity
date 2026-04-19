@@ -5,6 +5,115 @@
 
 ---
 
+## 2026-04-19 — Session 114.19au: T18.22 SHIPPED — Free CPU-side CSR arrays for GPU-bound cross-projections (real root cause of ELA-K OOM cascade after four wrong diagnoses)
+
+### Gee verbatim challenge (drove this session)
+
+> *"keeps crashing after the first ela training completed 300/300 and start the 2nd traingni then just crashes.. are you sure we fixed the full shit so that it actrually does each course correctly in the ciriculum like we did the ela K"*
+
+Fifth OOM in a row at same point — `_teachLetterCaseBinding` START after Phase 2 DONE. Four prior T18.x fixes (T18.18 GPU shadow, T18.19 worker pool sync bypass, T18.20 Phase 2 Float64Array hoist, T18.21 V8 `--max-semi-space-size=1024` flag) all FALSIFIED by consecutive OOM-at-same-point cycles. Gee's challenge forced a real re-examination.
+
+### Four wrong diagnoses in sequence — retrospective
+
+| # | Task | Diagnosis | Why wrong |
+|---|------|-----------|-----------|
+| T18.18 | GPU shadow Buffer.concat in server/gpuSparseHebbian | "1.7 GB transient Buffer per call" — assumed 107M cortex | cortexCluster is 301K, not 107M. GPU shadow at 301K is ~50 bytes per op via bound mode (not 1.7 GB) |
+| T18.19 | Worker pool SharedArrayBuffer in hebbianUpdate | "1.7 GB SAB alloc per call — bypass at >10M neurons" | Same wrong scale assumption. At 301K threshold never fires. Bypass sat dormant |
+| T18.20 | Curriculum.js Phase 2 `new Float64Array(cluster.size)` per iter | "1.7 GB allocation per iter, hoist outside loop" | At 301K each Float64Array is 2.4 MB (not 858 MB). Hoisting saved 1.4 GB over Phase 2 — still not enough |
+| T18.21 | V8 `--max-semi-space-size=16` default | "Semi-space hard cap blocks Mark-Compact growth under pressure" | Correct framework-level observation but root cause wasn't framework limit — it was external memory held being so large V8 thrashed regardless of semi-space size |
+
+Every diagnosis was CORRECT arithmetic given the wrong scale assumption. At 107M cortex, each would have been the right fix. But cortexCluster is 301K, so none mattered.
+
+### Real root cause — 9.4 GB of permanently-held external memory
+
+cortexCluster holds in CPU memory:
+- 14 cross-projections × avg ~50M nnz each × (Float64Array values = 8 bytes + Uint32Array colIdx = 4 bytes + Uint32Array rowPtr = negligible) = ~8.4 GB
+- Intra-synapses CSR arrays = ~1 GB
+- **Total: ~9.4 GB of V8 external memory held PERMANENTLY**
+
+V8 tracks this as external memory. The ratio of external (9.4 GB) vs heap (127 MB) is extreme — ~74:1. V8's GC heuristic fires Mark-Compact constantly trying to reclaim external memory. The references are LIVE (held by `cluster.crossProjections.values` etc.) so GC CAN'T free anything. Each GC cycle wastes time on unreclaimable memory. Over Phase 2's 200+ seconds of sustained pressure, GC cycles take progressively longer. Semi-space commits fail during a Mark-Compact cycle because OS refuses to commit more virtual memory for a process already at 9+ GB. FATAL.
+
+### Why CPU CSR arrays are unused after GPU upload
+
+All 14 cross-projections at biological scale are GPU-BOUND per T17.7 Phase C.1 rebind. For bound projections:
+- **Hebbian writes** — T18.17's fast path fires `gpuProxy.hebbianBound(name, lr)` fire-and-forget. GPU shader reads spike patterns directly from main-cortex spike buffer at bound region offsets. **Zero CPU reads of proj.values/colIdx/rowPtr.**
+- **Probes** — canonical GPU-aware check at `cluster.js:1687-1688` (`sem_to_motor._gpuBound`) routes to GPU readback via `readbackLetterBuckets`. **Zero CPU reads.**
+- **Propagate** — T17.7 bound-mode dispatch reads/writes GPU buffers directly. **Zero CPU reads.**
+
+The CPU CSR arrays exist only because `SparseMatrix` constructor allocates them, initGpu() uploads them to GPU, and nothing ever touches them again. Pure overhead at biological scale.
+
+### Fix — T18.22.a free CPU arrays after bound upload
+
+Single block added to `js/brain/cluster.js:initGpu()` inside the `if (binding)` branch:
+
+```js
+if (binding) {
+  boundCount++;
+  proj._gpuBound = true;
+  // T18.22 — free CPU-side CSR arrays
+  proj.values = null;
+  proj.colIdx = null;
+  proj.rowPtr = null;
+}
+```
+
+V8 GC reclaims ~9 GB of external memory on the next cycle. External-memory pressure drops from ~9.4 GB to ~1 GB (just the intra-synapses which is non-bound). V8 Mark-Compact cycles stop thrashing. Semi-space commits succeed. Teach proceeds through `_teachLetterCaseBinding` and beyond.
+
+Non-bound projections (browser-only standalone mode where hint.resolve returns null) keep their CPU arrays intact — the free branch doesn't execute.
+
+### Lesson learned (second time this session)
+
+Before prescribing OOM fixes:
+1. **Verify actual cluster scale** — cortexCluster auto-scales to ~300K (not 107M main cortex)
+2. **Size allocations AT that scale** — at 300K, per-iter allocations are MB not GB
+3. **Distinguish allocator problem from pressure problem** — semi-space commit failure can mean framework limit OR excessive external memory held from legitimate state
+4. **Check what's HELD vs what churns** — 9 GB held + 5 MB/sec churn is much worse than 0 GB held + 5 GB/sec churn because V8 can GC churn but can't free held
+
+The same lesson from T18.21 retrospective, re-learned harder. Five wrong diagnoses in a row is a pattern.
+
+### Honest uncertainty going forward
+
+Gee asked *"are you sure we fixed the full shit so that it actrually does each course correctly in the ciriculum like we did the ela K"* — the honest answer is **no, not certain**. We've NEVER gotten past `_teachLetterCaseBinding` START in any Part 2 run. Everything beyond that wall is unverified:
+- `_teachVowelSoundVariants`
+- `_teachRhymeFamilies`
+- `_teachSyllableCounts`
+- `_teachCVCSoundIsolation`
+- `_teachWordEmission` on 180-word K vocab × 12 reps = 2160 iters
+- `_teachPhonemeBlending`
+- ELA-K gate probe
+
+Each could hold its own bottleneck. T18.22 only unblocks the first wall. If it works, we see the next wall.
+
+### Files touched (atomic commit)
+
+- `js/brain/cluster.js` — T18.22.a CPU CSR free block in initGpu() (+~30 lines including comment block explaining four-diagnosis retrospective)
+- `docs/NOW.md` — session 114.19au addendum
+- `docs/TODO.md` — T18.22 entry + T18.21 FALSIFIED status
+- `docs/FINALIZED.md` — this entry
+
+cluster.js IS in T18.12.a code-hash list → T18.22 boot triggers auto-clear → pre-K re-teach (~2 min cost).
+
+`node --check js/brain/cluster.js` clean.
+
+### Closure gate — open
+
+Gee-verification on next Part 2 run. Success criteria:
+- (a) Phase 2 velocity stays stable at ~3+ iter/s (NO deceleration from GC thrash — external memory held is now ~1 GB not ~9 GB)
+- (b) `_teachLetterCaseBinding` Phase START → DONE fires without V8 OOM
+- (c) All 5 K.RF helpers complete with phase banners
+- (d) `_teachWordEmission` runs with T18.13.c heartbeats at healthy rate
+- (e) ELA-K gate probe runs for the first time
+- (f) No GPU device.lost anywhere
+- (g) No Node V8 OOM
+
+Claude cannot close — Gee-verification only.
+
+### If T18.22 still doesn't work
+
+Next debug step is V8 heap profiling: `node --heapsnapshot-signal=SIGUSR2 --max-old-space-size=65536 --max-semi-space-size=1024 brain-server.js`. Send SIGUSR2 to Node mid-Phase 2 to dump a heap snapshot. Load the snapshot in Chrome DevTools Memory tab. Look for the top external-memory retainers and their retention paths.
+
+---
+
 ## 2026-04-19 — Session 114.19at: T18.21 SHIPPED — V8 `--max-semi-space-size=1024` flag (T18.19+T18.20 falsified against real cortexCluster scale of 301K; real bottleneck was V8's 16 MB default semi-space ceiling)
 
 ### Gee verbatim telemetry (drove this session)

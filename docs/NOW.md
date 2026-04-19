@@ -1,7 +1,37 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19at · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `1ebd7f5` (T18.20.b doc sweep) · **BUILD:** `0.1.0+8094a32f-1b7f` (pre-stamp; T18.21 pending)
+> **Session:** 114.19au · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD (pre-push):** `9fde0a2` (T18.21) · **BUILD:** `0.1.0+1ebd7f58-4853` (pre-stamp; T18.22 pending)
 
+---
+
+## T18.22 addendum — real root cause (after T18.18-T18.21 all missed): 9+ GB of CPU-side cluster state V8 can't free
+
+**Gee verbatim 2026-04-19 challenge:** *"keeps crashing after the first ela training completed 300/300 and start the 2nd traingni then just crashes.. are you sure we fixed the full shit so that it actrually does each course correctly in the ciriculum like we did the ela K"*
+
+Fifth OOM in a row. T18.18, T18.19, T18.20, T18.20.b doc sweep, T18.21 V8 semi-space flag — none fixed it.
+
+**Root cause (finally):** V8 is overwhelmed by ~9.4 GB of permanently-held CPU-side cluster state:
+
+| Data | Size @ 301K cortexCluster |
+|------|----------------------------|
+| 14 cross-projection values Float64Array (50M nnz avg × 8 bytes) | ~5.6 GB |
+| 14 cross-projection colIdx Uint32Array | ~2.8 GB |
+| 1 intra-synapses CSR arrays | ~1 GB |
+| **Total external memory held** | **~9.4 GB** |
+
+V8 sees 9.4 GB external vs 127 MB heap. GC fires constantly trying to reclaim. Can't free (references are live). Even with 1 GB semi-space (T18.21), thrash eventually blocks semi-space commit growth → FATAL.
+
+**T18.22.a fix:** In `cluster.js:initGpu()`, after successful bound upload (when `proj._gpuBound = true` is set), free `proj.values = null; proj.colIdx = null; proj.rowPtr = null;`. GPU is authoritative for bound projections — no code path reads CPU copies after upload (Hebbian via T18.17's hebbianBound fast path reads main-cortex spike buffer; probes via GPU readback; propagate via GPU shader). Non-bound projections (browser-only) keep their CPU arrays untouched.
+
+Expected: V8 external memory drops from ~9.4 GB to ~1 GB (just intra-synapses). V8 GC stops thrashing. Semi-space commits succeed. `_teachLetterCaseBinding` runs through all 624 iters. All 5 K.RF helpers run. Word emission fires heartbeats. ELA-K gate probe runs for the first time.
+
+**Honest uncertainty:** This is my BEST current theory after five wrong diagnoses. If T18.22 works, we'll see whatever wall is next. If it doesn't, we need V8 heap profiling (`node --heapsnapshot-signal=SIGUSR2`) to find where external memory actually goes.
+
+See `docs/FINALIZED.md` session 114.19au entry for full diagnosis + lesson-learned retrospective (4 wrong diagnoses before finding the real cause).
+
+---
+
+## Original session entry (T18.21) below
 ---
 
 ## T18.21 addendum — V8 semi-space cap was the real OOM bottleneck, not code allocators

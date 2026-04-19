@@ -2038,6 +2038,42 @@ export class NeuronCluster {
             // pre/post array transfer) — same semantics as the Phase
             // C.1 rebind leaves them in.
             proj._gpuBound = true;
+
+            // T18.22 — FREE CPU-side CSR arrays after bound upload.
+            // For bound projections, GPU is authoritative: T18.17's
+            // fast path in _crossRegionHebbian dispatches hebbianBound
+            // fire-and-forget (reading spike patterns directly from
+            // main-cortex spike buffer at bound region offsets, no
+            // CPU reads of proj.values). Probes at biological scale
+            // route through GPU readback (readbackLetterBuckets etc.)
+            // per the canonical sem_to_motor._gpuBound check at
+            // cluster.js:1687-1688. No code path reads proj.values /
+            // proj.colIdx / proj.rowPtr for a bound projection after
+            // this point.
+            //
+            // At cortexCluster scale (14 cross-projections × ~50M nnz
+            // avg × 12 bytes/nnz CSR = ~8 GB of CPU-side external
+            // memory), freeing these arrays drops V8 external-memory
+            // pressure from ~9.5 GB to ~1 GB (just intra-synapses
+            // which is non-bound + cluster.lastSpikes). V8 GC stops
+            // thrashing; semi-space commits succeed; teach runs.
+            //
+            // Gee 2026-04-19 — 5th consecutive OOM at
+            // `_teachLetterCaseBinding` START even after T18.21's
+            // 1 GB semi-space bump. V8 was under external-memory
+            // pressure from 9+ GB of permanently-held cluster state;
+            // Mark-Compact cycles couldn't reduce external count
+            // regardless of semi-space size because references were
+            // live. Freeing the unused CPU copies eliminates the
+            // pressure at the source.
+            //
+            // Safety: non-bound fallback path in _crossRegionHebbian
+            // (browser-only standalone mode) still runs with its own
+            // CPU arrays because hint.resolve returns null for those
+            // and the freeing branch doesn't execute.
+            proj.values = null;
+            proj.colIdx = null;
+            proj.rowPtr = null;
           }
         } else {
           console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);
