@@ -2768,8 +2768,26 @@ class ServerBrain {
                     console.warn('[Brain] _ensureCortexCrossProjectionsBound failed:', err && err.message);
                   }
                 }
+                // T17.7 Gee 2026-04-18 fix — signal to the curriculum's
+                // _waitForGpuReady gate that language-cortex GPU state
+                // is FULLY ready (sparse upload complete + rebind done
+                // or skipped if rebind had nothing to bind). Before this
+                // flag existed the curriculum was gating on
+                // `cluster._gpuReady` alone, which flipped when main
+                // brain warmed up — long before language sparse was up.
+                // Curriculum proceeded, fired GPU hebbian dispatches
+                // into missing matrices, every call fell to CPU worker
+                // pool, WebSocket jammed, brain appeared to hang at
+                // '0 sparse matrices uploaded' and 8% GPU.
+                if (this.cortexCluster) {
+                  this.cortexCluster._cortexFullyReady = true;
+                  console.log('[Brain] cortexCluster._cortexFullyReady = true — curriculum can proceed with GPU-hebbian teach path.');
+                }
               }).catch((err) => {
                 console.warn('[Brain] cortexCluster.initGpu() failed:', err && err.message);
+                // Still flip the flag so curriculum doesn't hang
+                // forever on _waitForGpuReady; fallback path kicks in.
+                if (this.cortexCluster) this.cortexCluster._cortexFullyReady = false;
               });
             }
             // T14.23 — BATCHED COMPUTE PATH.

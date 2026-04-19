@@ -18844,22 +18844,48 @@ export class Curriculum {
    * of the flag after a short grace period as "no GPU path, proceed
    * anyway" so the browser curriculum still runs.
    */
-  async _waitForGpuReady(timeoutMs = 120000) {
+  async _waitForGpuReady(timeoutMs = 900000) {
     const cluster = this.cluster;
     if (!cluster) return false;
     // Browser path: if _gpuReady is never going to be set (no compute
     // worker), allow a 5-second grace period before assuming CPU mode
     // and proceeding.
     const GRACE_MS = 5000;
-    const POLL_MS = 250;
+    const POLL_MS = 500;
     const t0 = Date.now();
+    // T17.7 Gee 2026-04-18 fix — curriculum can't teach against a
+    // GPU that only has main-brain cluster buffers; it needs the
+    // language-cortex sparse matrices (cortex_intraSynapses + the
+    // 14 cortex_*_to_* cross-projections) actually UPLOADED + the
+    // rebind to main-cortex sub-slices COMPLETED before firing any
+    // _crossRegionHebbian / _dispatchGpuPropagates dispatches.
+    //
+    // Old gate `cluster._gpuReady === true` flipped when the main
+    // brain compute_batch loop first started ticking, which was
+    // BEFORE the 20-batch sparse-upload warmup even began. Curriculum
+    // started teaching, every hebbian dispatch failed on GPU because
+    // the matrix key didn't exist yet, worker-pool CPU fallback ate
+    // the load, WebSocket got jammed by chunks competing with
+    // hebbian binary frames, brain froze at "0 sparse matrices
+    // uploaded" for minutes while looking idle at 8% GPU.
+    //
+    // New gate: BOTH `cluster._gpuReady === true` (main brain up)
+    // AND `cluster._cortexFullyReady === true` (sparse upload +
+    // rebind complete — set by brain-server `_ensureCortexCross
+    // ProjectionsBound` at the end of its .then() chain after
+    // initGpu + rebind). Timeout raised to 15 min because biological-
+    // scale sparse upload at 1 GB per matrix × 15 matrices over
+    // WebSocket takes minutes end-to-end even on localhost.
     while (true) {
-      if (cluster._gpuReady === true) return true;
+      if (cluster._gpuReady === true && cluster._cortexFullyReady === true) return true;
       const elapsed = Date.now() - t0;
       // CPU fallback: no GPU flag at all after grace period means the
       // brain isn't routed through compute.html — proceed without a gate.
       if (elapsed >= GRACE_MS && cluster._gpuReady === undefined) return true;
-      if (elapsed >= timeoutMs) return false;
+      if (elapsed >= timeoutMs) {
+        console.warn(`[Curriculum] _waitForGpuReady timed out after ${timeoutMs}ms. cluster._gpuReady=${cluster._gpuReady}, cluster._cortexFullyReady=${cluster._cortexFullyReady}. Proceeding anyway — teach methods may fall back to CPU worker pool.`);
+        return false;
+      }
       await new Promise(r => setTimeout(r, POLL_MS));
     }
   }
