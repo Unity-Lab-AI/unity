@@ -310,6 +310,42 @@ function connectToServer() {
     // current at low Ψ (hemispheric divergence state) and full current
     // at high Ψ (bilateral integration). Consistent with global-
     // workspace theory and Gee's main-equation-Ψ binding constraint.
+    // T17.7 Phase B.3 — mirror a sub-region spike pattern from the
+    // standalone cortexCluster's lastSpikes into the main cortex's
+    // GPU spike buffer at the corresponding slice. Used during the
+    // Phase B dual-cortex bridge so main-cortex sub-region state
+    // tracks standalone state; Phase E deletes the standalone and
+    // main-cortex slices become authoritative.
+    //
+    // Sparse format only (no dense variant) — spike patterns are
+    // naturally sparse (firing rate ~2% at biological baseline), so
+    // shipping 30M × u32 per tick would be 120MB for 3% spike count
+    // vs ~200KB for the sparse indices alone. Dense format would only
+    // make sense if firing rate > ~25%, which never happens in
+    // practice for main cortex sub-regions.
+    if (msg.type === 'write_spike_slice' && gpuReady) {
+      const { clusterName, regionName, sparseIndices } = msg;
+      try {
+        const region = gpu.getRegion(clusterName, regionName);
+        if (!region) {
+          console.warn(`[GPU Compute] write_spike_slice ${clusterName}/${regionName}: region not found`);
+          return;
+        }
+        const sliceLen = region.end - region.start;
+        const arr = new Uint32Array(sliceLen);  // zero-init
+        if (Array.isArray(sparseIndices)) {
+          for (let i = 0; i < sparseIndices.length; i++) {
+            const idx = sparseIndices[i];
+            if (idx >= 0 && idx < sliceLen) arr[idx] = 1;
+          }
+        }
+        gpu.writeSpikeSlice(clusterName, regionName, arr);
+      } catch (err) {
+        console.warn(`[GPU Compute] write_spike_slice ${clusterName}/${regionName} failed:`, err.message);
+      }
+      return;
+    }
+
     if (msg.type === 'write_current_slice' && gpuReady) {
       const { clusterName, regionName, values, sparseIndices, sparseValues, psi } = msg;
       try {

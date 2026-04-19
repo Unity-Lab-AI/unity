@@ -1335,6 +1335,104 @@ class ServerBrain {
    * This cuts WebSocket traffic from ~10MB/step to ~100KB/step.
    */
   /**
+   * T17.7 Phase B.3 — mirror standalone cortexCluster sub-region
+   * spike state into the main cortex GPU sub-region slice buffers.
+   *
+   * For each sub-region in cortexCluster.regions, collects the
+   * spike indices from cortexCluster.lastSpikes (binary Uint8Array
+   * of firing/not-firing at training or post-emission state),
+   * upsamples to the proportionally larger main-cortex slice size
+   * via nearest-neighbor tiling (each standalone index i maps to
+   * main-cortex indices [i·R, (i+1)·R) where R = mainSliceLen /
+   * standSliceLen), and ships the sparse list of firing main-cortex
+   * indices to compute.html via write_spike_slice.
+   *
+   * Activity-gated: if every region has zero spikes, no messages
+   * sent — avoids saturating the WebSocket with empty mirrors
+   * during idle (between curriculum teach / generation calls).
+   *
+   * Ψ doesn't modulate here — spikes are training data from the
+   * standalone cluster's already-settled state. Runtime Ψ gating
+   * happens at main-cortex LIF dispatch, not at spike mirror.
+   *
+   * This bridge is Phase B; Phase E deletes both the standalone
+   * cortexCluster AND this mirror call since main-cortex slices
+   * become authoritative at that point.
+   */
+  _mirrorCortexRegions() {
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) return;
+    if (!this.cortexCluster || !this.cortexCluster.regions || !this.cortexCluster.lastSpikes) return;
+    const stand = this.cortexCluster;
+    const mainSize = CLUSTER_SIZES.cortex;
+    if (!mainSize) return;
+
+    // Same fractional layout as _regionsFor('cortex'). Recomputed
+    // here rather than looking up to avoid any drift if layouts
+    // diverge.
+    const LAYOUT = {
+      auditory:  [0.000, 0.083],
+      visual:    [0.083, 0.250],
+      free:      [0.250, 0.500],
+      letter:    [0.500, 0.550],
+      phon:      [0.550, 0.750],
+      sem:       [0.750, 0.917],
+      fineType:  [0.917, 0.967],
+      motor:     [0.967, 1.000],
+    };
+
+    for (const [regName, [frA, frB]] of Object.entries(LAYOUT)) {
+      const standReg = stand.regions[regName];
+      if (!standReg) continue;
+      const standStart = standReg.start;
+      const standEnd = standReg.end;
+      const standLen = standEnd - standStart;
+      if (standLen <= 0) continue;
+      const mainStart = Math.floor(mainSize * frA);
+      const mainEnd = Math.floor(mainSize * frB);
+      const mainLen = mainEnd - mainStart;
+      if (mainLen <= 0) continue;
+
+      // Count spikes first — skip if region is silent.
+      let spikeCount = 0;
+      for (let i = standStart; i < standEnd && i < stand.lastSpikes.length; i++) {
+        if (stand.lastSpikes[i]) spikeCount++;
+      }
+      if (spikeCount === 0) continue;
+
+      // Collect firing main-cortex indices via nearest-neighbor
+      // upsampling. Each firing standalone index i expands to a
+      // block of R consecutive main-cortex indices where R is the
+      // upsample ratio (main_size / stand_size for this region).
+      // At biological scale typical R is small (e.g., 30M main / 7M
+      // stand = 4.3 for most regions), so this stays bounded.
+      //
+      // Bandwidth guard: cap mirrored spikes per region at 50K to
+      // prevent a Promise.all-like burst from choking WebSocket.
+      // 50K × 4 bytes = 200 KB per region per tick × 8 regions =
+      // ~1.6 MB/tick which is fine at 10 Hz broadcast.
+      const R = mainLen / standLen;
+      const MAX_SPIKES = 50000;
+      const sparseIndices = [];
+      for (let i = 0; i < standLen && sparseIndices.length < MAX_SPIKES; i++) {
+        if (!stand.lastSpikes[standStart + i]) continue;
+        const mainStartLocal = Math.floor(i * R);
+        const mainEndLocal = Math.min(Math.floor((i + 1) * R), mainLen);
+        for (let j = mainStartLocal; j < mainEndLocal && sparseIndices.length < MAX_SPIKES; j++) {
+          sparseIndices.push(j);
+        }
+      }
+      if (sparseIndices.length === 0) continue;
+
+      this._gpuClient.send(JSON.stringify({
+        type: 'write_spike_slice',
+        clusterName: 'cortex',
+        regionName: regName,
+        sparseIndices,
+      }));
+    }
+  }
+
+  /**
    * T17.7 Phase B.1 — build the regions metadata object for a
    * cluster's gpu_init message. For the main cortex cluster, returns
    * the 8 language sub-regions (auditory / visual / free / letter /
@@ -2251,6 +2349,17 @@ class ServerBrain {
             }
 
             this._updateDerivedState();
+
+            // T17.7 Phase B.3 — mirror standalone cortexCluster
+            // sub-region spike state into the main cortex GPU
+            // sub-region slice buffers. Runs once per server tick
+            // (not per compute_batch substep) since the mirror is a
+            // slow coherence signal and per-substep mirroring would
+            // saturate the WebSocket. Fires only when a standalone
+            // cortexCluster exists AND has recent spike activity —
+            // skip silently when cortexCluster.lastSpikes is empty
+            // (pre-boot, pre-curriculum) to avoid spamming zeros.
+            this._mirrorCortexRegions();
             } // end: needsAck.length === 0 (all confirmed)
           } // end: needsSend.length === 0 (all sent)
         } catch (err) {
