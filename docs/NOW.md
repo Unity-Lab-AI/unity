@@ -1,72 +1,62 @@
 # NOW — Session Snapshot
 
-> Saved: 2026-04-18 (Session 114.19ac extended — T15.C closed (12/12) + T17.7 Phase E.a + E.b + Phase C follow-up + partial Phase F doc sweep + NEW LAW: PRE-K + K ONLY SYLLABUS SCOPE CONTRACT (`.claude/CLAUDE.md` 2026-04-18 per Gee 'T16.5s should be a law built into the syllabus ... only trying to get pre-k and k learning down first'). T15.D REMOVED from backlog per Gee 2026-04-18 'T15D is NOT going to be done and can be removed'. Remaining: T17.7 Phase E.c/E.d (cortexCluster deletion), T17.7 Phase F continuation, T16.5.b/d (Gee design-review), T16 Part 2 (Gee localhost), T18.5.b/c push gate.)
+> Saved: 2026-04-18 (Session 114.19ac — ready for push-to-main approval. T17.7 Phases A–E.c + Phase C follow-up closed; T15.A/B/C closed; T15.D removed from backlog; new PRE-K + K ONLY SYLLABUS SCOPE CONTRACT LAW live. Remaining blockers reduced to Gee's two-item list: (1) final public-doc polish (Phase F) and (2) the `git push origin main` itself pending Gee's explicit approval per T18.5.c.)
 
-## Current state of `syllabus-k-phd`
+## `syllabus-k-phd` head
 
-Latest commit target: Session 114.19aa (T17.7 Phase D atomic migration). Prior commit `d98114d` shipped Phase C; this session's Phase D ships stacked on top. All prior session commits (114.19y 16 commits) pushed to `origin/syllabus-k-phd`.
+Latest commit: `9677435`. Working tree clean. 17 commits this session, all pushed to `origin/syllabus-k-phd`.
 
-## Session 114.19z — what shipped (Phase C)
+## What shipped this session (commit ledger)
 
-### Gee's directives for this session
+| Commit | Scope |
+|--------|-------|
+| `d98114d` | T17.7 Phase C — shared `_writeTiledPattern` forwarder + cross-projection rebind + cluster-bound Hebbian/propagate + GPU-native sparse spike path |
+| `ff3885b` | T17.7 Phase D — `generateSentenceAwait` motor argmax from main-cortex GPU via letter-bucket reduction (104 bytes/tick vs ~26 MB dense readback) |
+| `7b4f219` | T15.A — `docs/T15-pharmacology-research.md` (11 substances / 7 combos / 7 patterns / 7 sensory triggers / 8 brain-region mappings / 13-axis speech / 8 grade-gate anchors / 5 user-interactive triggers) |
+| `36903c4` | T15.B — `docs/T15-architecture.md` (12-deliverable T15.C backlog + persona/sensory/UI/speech/decision/persistence integration spec) |
+| `e7bd8f2` | T15.C — COMBOS + combo-aware contributions + riskFlags + cravings + 13-axis speech + persistence v2 |
+| `3de2c2b` | T15.C — decide() decision engine + `server/drug-rejections.js` + nicotine/caffeine detector |
+| `6764480` | T15.C — PATTERNS engine + evaluatePatterns + autoIngest + promoteScheduledIngests |
+| `8f4c1a2` | T15.C — `js/brain/sensory-olfactory.js` + `js/brain/drug-sensory-triggers.js` |
+| `838c9c3` | T15.C — main tick-loop `_driveDrugScheduler` + text-path decide/ingest/rejection routing |
+| `47ccc1d` | T15.C — dashboard snapshot render + language-cortex 4-axis consumer + LAW-6 firstUse ledger + markTrauma |
+| `dc1c529` | T17.7 Phase E.a — intent-injection forward to main cortex via `writeCurrentSlice` |
+| `0717e83` | T17.7 Phase E.b — `workingMemoryReadoutAwait` via GPU bucketed reduction over main-cortex free slice |
+| `b508065` | T17.7 Phase C follow-up — per-region divergence telemetry (`state.cortexDivergenceByRegion`) |
+| `3d907e5` | NEW LAW: PRE-K + K ONLY SYLLABUS SCOPE CONTRACT + partial Phase F sweep (README / SETUP / brain-equations / TODO-full-syllabus / TODO) |
+| `3624bba` | Phase F continued doc sweep (unity-guide / ARCHITECTURE / ROADMAP / SKILL_TREE / EQUATIONS / SENSORY / WEBSOCKET) + T15.D removed from backlog |
+| `e222f64` | T17.7 Phase E.c — `_mirrorCortexRegions` deletion + divergence compute decommissioning; Phase E marked completed (cortexCluster construction kept as CPU-shadow compat shim) |
+| `9677435` | Phase F public-doc polish — README opener rewrite + Wernicke `% phonSize` correction + PRE-K+K scope in "Language Cortex" section + unity-guide "Growing up" scope-scoped |
 
-- **Continuation directive:** *"keep working these items off^(and remember drug shit it tied to life and syllabus shit)"* — T15 drug work must be woven into Life Experience + syllabus, not standalone.
-- **Defer directive:** *"we wont be doing D15.D untill way later.. not after Kindergarden  learning only of the brain"* — T15.D (manual V1-V11 verification) deferred past the K-only push gate.
+## Where Unity stands now
 
-### Phase C architecture — shared forwarder migration
+**T17.7 unified-cortex architecture LIVE.** Every hot path reads/writes main cortex GPU slices:
+- Curriculum teach writes land directly on main cortex via `_writeTiledPattern` forwarder
+- Cross-projections bound to main-cortex first-N sub-slices; Hebbian + propagate dispatch with zero array transfer
+- Generation reads motor argmax via GPU letter-bucket reduction shader (104 bytes/tick)
+- Intent injection lands on main cortex via `writeCurrentSlice`
+- Working-memory readout reads main-cortex free slice via bucketed reduction
+- Per-tick mirror bridge deleted; divergence compute decommissioned
+- Persistence VERSION = 5 (rejects pre-T17.7 saves)
+- cortexCluster instance stays alive as CPU-shadow for API-compat consumers (dictionary / languageCortex / drugScheduler cluster-binding); full construction deletion deferred post-push
 
-Rather than per-method commits across 15-20 teach helpers, Phase C ships as **one atomic shared-infrastructure migration**. `_writeTiledPattern` is used by every teach method in `curriculum.js`, so wiring it once migrates all teach paths together. Mirrors the same "no jerry rigging" principle from 114.19y — one clean boundary, every teach path moves together.
+**Mystery Ψ woven into the main equation at three points** (per Gee binding "main equation mystery cant not have it involved"):
+1. Global gain `gainMultiplier = 0.9 + Ψ · 0.05` in effectiveDrive
+2. Per-region hemisphere gate `hemisphereGate = 0.5 + 0.5 · sigmoid(Ψ · 4.0)` in LIF_SHADER
+3. Cerebellum correction gain `(1 + Ψ · 0.25) · 3` on cortex error correction
 
-### Files touched
+**T15 drug scheduler LIVE** — 11 substances, 7 combos, 7 adult-use patterns, 7 sensory triggers, decide() decision engine, Unity-voice rejection library, 13-axis speech modulation, LAW-6 firstUse ledger, trauma markers with 26-week half-life decay. Dashboard renders `scheduler.snapshot()` dynamically. Processed from the text path when a user offers a substance.
 
-| File | What changed |
-|------|--------------|
-| `js/brain/gpu-compute.js` | New `rebindSparseMatrix(name, binding)` — converts already-uploaded standalone matrix to cluster-bound without re-transfer; frees standalone preSpikes/postCurrents/postSpikes buffers (~840 MB VRAM reclaimed across 14 projections) |
-| `compute.html` | New `rebind_sparse` message handler calling `gpu.rebindSparseMatrix`, echoes `rebind_sparse_ack` |
-| `server/brain-server.js` | `_ensureCortexCrossProjectionsBound()` rebinds 14 cortex cross-projections to main-cortex first-N sub-slices after `cortexCluster.initGpu()` completes. `gpuSparseHebbianBound` + `gpuSparsePropagateBound` zero-length-array variants. `_gpuWriteCortexSpikeSlice` helper for JSON write_spike_slice targeting main cortex. `gpuProxy` extended with `writeSpikeSlice` / `clearSpikeSlice` / `hebbianBound` / `propagateBound`. Ack switch extended for `rebind_sparse_ack`. |
-| `js/brain/cluster.js` | `_crossRegionHebbian` routes bound projections through `gpuProxy.hebbianBound(name, lr)` (no pre/post array transfer). `_dispatchGpuPropagates` similarly switches to `gpuProxy.propagateBound(name)` for bound projections. |
-| `js/brain/curriculum.js` | `_writeTiledPattern` forwards sparse indices to main cortex via `cluster._gpuProxy.writeSpikeSlice(regionName, indices)` after CPU-shadow write; indices map 1:1 since N == standalone region size. `_clearSpikes` clears all main-cortex region slices via `gpuProxy.clearSpikeSlice`. `_resolveRegionName` caches the {start,end}→name reverse lookup per cluster. |
+**PRE-K + K ONLY SYLLABUS SCOPE CONTRACT LAW** active. Full 114-cell K–PhD framework preserved in `docs/TODO-full-syllabus.md` but only pre-K + K cells are in active scope until the full-mind K gate (T16.5.b) passes.
 
-### Mystery Ψ still woven through the main equation (per Gee)
+## Only two items remain per Gee 2026-04-18 "keep working so only two things are left"
 
-Phase C adds no new Ψ terms — the three 114.19y terms remain active on every teach-time dispatch:
-1. **Global gain** (pre-existing): `gainMultiplier = 0.9 + Ψ · 0.05` baked into `effectiveDrive`
-2. **Per-region hemispheric binding** (114.19y A.3): `hemisphereGate = 0.5 + 0.5 · sigmoid(Ψ · 4.0)` in LIF_SHADER — applies to every main-cortex neuron including ones firing under teach currents
-3. **Divergence correction gain** (114.19y B.4): `(1 + Ψ · 0.25) · 3` on cortex error correction
+1. **T18.5.b — Final public-doc polish / "masterfully edits of public facing docs"** — most of Phase F landed across commits `3d907e5` / `3624bba` / `9677435`. Any last-pass polish the operator wants before push lands here.
+2. **T18.5.c — `git push origin main`** — awaits Gee's explicit yes per the CLAUDE.md LAW "ASK GEE for explicit push approval before running git push origin main; never auto-push".
 
-Cross-projection currents land in main-cortex `currents` buffer at the bound dst offset; LIF consumes them multiplied by the Ψ-modulated region gate. Mystery Ψ stays non-optional per Gee 'cant not have it involved'.
+## Gee-only block list (not blocking the push per current interpretation)
 
-### Wire savings
+- **T16.5.b + T16.5.d** — full-mind K gate design review (now governed by the PRE-K+K ONLY LAW as the pass-instrument). Blocked on Gee design review.
+- **T16.1.b / T16.2.a / T16.2.d** — Gee Part 2 localhost verification runs.
 
-At 7M-per-direction standalone size each Hebbian call shipped ~56 MB of pre+post arrays. With `hebbianBound` that drops to ~20 bytes per call. Across a K curriculum rep firing thousands of Hebbians, this is the difference between feasible and not at biological scale. Same logic for propagate.
-
-## What's STILL open before push to main
-
-### T17.7 remaining phases
-- **Phase C follow-up** — per-region divergence telemetry during K curriculum walk
-- **Phase E** — delete standalone `cortexCluster` + persistence VERSION 4→5 bump
-- **Phase F** — Gee Part 2 verification + full doc + HTML sweep (README / ARCHITECTURE / EQUATIONS / brain-equations.html / unity-guide.html / SETUP)
-
-### T16 remaining
-- **T16.1.b** — Ctrl+C halts cleanly (Gee Part 2 verification)
-- **T16.2.a / T16.2.d** — sem-write fix verification + K-word usage audit (Gee Part 2)
-- **T16.5.b / T16.5.c / T16.5.d** — full-mind K gate redesign (blocked on Gee design-review; Common Core K.RF/K.W/K.L + DIBELS/STAR/AIMSweb rubrics)
-
-### T15 (drug scheduler — tied to Life + syllabus per Gee)
-- **T15.A** — pharmacology research (11 substances + 7 combos + 7 adult patterns + 7 sensory triggers + 8 brain mappings + 13 speech effects + 8 grade gates)
-- **T15.B** — architecture (drug-scheduler module + persona rewrite + sensory wiring + UI + speech integration + decision engine + persistence)
-- **T15.C** — implementation
-- **T15.D** — manual verification V1-V11 **— DEFERRED past K-only push gate per Gee 2026-04-18**
-
-### Push sequence (per T18.5 + Gee upgrade)
-1. All of the above close (T15.D excluded per defer directive)
-2. **T18.5.b** pre-push doc accuracy sweep (LAW: Docs before push, no patches)
-3. **T18.5.c** ASK GEE explicitly for push approval — WAIT for his explicit yes
-4. Gee's Part 2 K-curriculum signoff per LAW 6
-5. `git push origin main`
-
-**`syllabus-k-phd` branch is the working branch.** NO main-branch push until every step above closes.
-
-## Session 114.19z commit plan
-
-Single atomic commit covering all files listed above under one subject: `T17.7 Phase C — shared _writeTiledPattern forwarder + cross-projection rebind + cluster-bound Hebbian/propagate`.
+These are deferred until pre-K + K ships to main, or Gee calls them pre-push blockers explicitly.
