@@ -4,14 +4,57 @@
 <body style="background:#0a0a0a;color:#22c55e;font-family:monospace;padding:20px;">
 <h3>Unity GPU Compute Worker</h3>
 <div id="status">Connecting to brain server...</div>
+<div id="hierarchy" style="margin-top:12px;font-size:11px;color:#666;line-height:1.6;"></div>
 <div id="stats" style="margin-top:10px;font-size:12px;color:#555;"></div>
 <div id="perf" style="margin-top:10px;font-size:11px;color:#444;"></div>
 <script type="module">
 import { GPUCompute } from './js/brain/gpu-compute.js';
 
 const statusEl = document.getElementById('status');
+const hierarchyEl = document.getElementById('hierarchy');
 const statsEl = document.getElementById('stats');
 const perfEl = document.getElementById('perf');
+
+// Render the T17.7 system hierarchy — 7 main-brain clusters, their
+// registered sub-regions, language cross-projections, the intra-
+// cluster synapse matrix. Called after each gpu_init, sparse upload,
+// and rebind so the display reflects live GPU state.
+function renderHierarchy() {
+  if (!hierarchyEl) return;
+  const clusterNames = Object.keys(clusterState);
+  const clusterLines = clusterNames.map((name) => {
+    const s = clusterState[name];
+    const regionCount = s.regions ? Object.keys(s.regions).length : 0;
+    const regionNames = s.regions ? Object.keys(s.regions) : [];
+    const regionText = regionNames.length > 0
+      ? regionNames.map((r) => `${r}(${s.regions[r].side})`).join(', ')
+      : '(homogeneous)';
+    return `<div>  <b>${name}</b> — ${s.size.toLocaleString()} neurons, ${regionCount} region${regionCount === 1 ? '' : 's'}: <span style="color:#888">${regionText}</span></div>`;
+  }).join('');
+
+  // Count sparse matrices on GPU. Cross-projections follow the
+  // `<cluster>_<src>_to_<dst>` naming convention; the intra matrix
+  // is `<cluster>_intraSynapses`. Anything else falls into "other".
+  let crossCount = 0;
+  let intraCount = 0;
+  let otherCount = 0;
+  let boundCount = 0;
+  const matrixNames = (gpu && gpu._sparseMatrices) ? Object.keys(gpu._sparseMatrices) : [];
+  for (const n of matrixNames) {
+    const entry = gpu._sparseMatrices[n];
+    if (entry && entry.binding) boundCount++;
+    if (/_to_/.test(n)) crossCount++;
+    else if (/intraSynapses$/.test(n)) intraCount++;
+    else otherCount++;
+  }
+
+  hierarchyEl.innerHTML = `
+    <div style="color:#888;font-weight:bold;margin-bottom:4px;">GPU system hierarchy (T17.7 single-cortex):</div>
+    <div><b>${clusterNames.length}</b>/7 top-level clusters initialized (LIF neuron buffers):</div>
+    ${clusterLines}
+    <div style="margin-top:4px;"><b>${matrixNames.length}</b> sparse matrices uploaded — <b>${crossCount}</b> cross-projections, <b>${intraCount}</b> intra-cluster synapse matri${intraCount === 1 ? 'x' : 'ces'}${otherCount > 0 ? `, ${otherCount} other` : ''}${boundCount > 0 ? ` (<span style="color:#a855f7">${boundCount} cluster-bound to main-cortex slices</span>)` : ''}.</div>
+  `;
+}
 
 let gpu = null;
 let gpuReady = false;
@@ -31,6 +74,9 @@ let totalComputeMs = 0;
   }
   statusEl.textContent = 'GPU ready — connecting to brain server...';
   statusEl.style.color = '#22c55e';
+  // Seed an empty hierarchy pane so the layout reserves the space
+  // even before the first cluster upload / sparse matrix arrives.
+  renderHierarchy();
 
   // NOW connect WebSocket — GPU is ready
   connectToServer();
@@ -109,6 +155,7 @@ function connectToServer() {
             av.setUint8(4, 1);
             av.setUint32(5, reqId, true);
             ws.send(ack);
+            renderHierarchy();
           } catch (err) {
             console.warn('[GPU Compute] sparse_upload binary failed:', err.message);
           }
@@ -148,6 +195,7 @@ function connectToServer() {
             gpu._appendSparseUpload(name, valuesOffset, valuesChunk, colIdxOffset, colIdxChunk);
             if (chunkSeq === totalChunks - 1) {
               gpu._finishSparseUpload(name);
+              renderHierarchy();
               const ack = new ArrayBuffer(9);
               const av = new DataView(ack);
               av.setUint8(0,'S'.charCodeAt(0)); av.setUint8(1,'P'.charCodeAt(0));
@@ -242,6 +290,7 @@ function connectToServer() {
       // cluster. Display was hardcoded to "/8" pre-T17.7; now correct.
       statusEl.textContent = `GPU initialized: ${totalInit}/7 clusters — ${clusterName} (${size.toLocaleString()} neurons)`;
       console.log(`[GPU] Initialized ${clusterName}: ${size.toLocaleString()} neurons (${totalInit}/7)`);
+      renderHierarchy();
       return;
     }
 
@@ -431,6 +480,7 @@ function connectToServer() {
           new Uint32Array(rowPtr),
         );
         ws.send(JSON.stringify({ type: 'sparse_upload_ack', reqId, name, ok, nnz: values.length }));
+        if (ok) renderHierarchy();
       } catch (err) {
         ws.send(JSON.stringify({ type: 'sparse_upload_ack', reqId, name, ok: false, error: err.message }));
       }
@@ -486,6 +536,7 @@ function connectToServer() {
       try {
         const ok = gpu.rebindSparseMatrix(name, binding);
         ws.send(JSON.stringify({ type: 'rebind_sparse_ack', reqId, name, ok }));
+        if (ok) renderHierarchy();
       } catch (err) {
         ws.send(JSON.stringify({ type: 'rebind_sparse_ack', reqId, name, ok: false, error: err.message }));
       }
