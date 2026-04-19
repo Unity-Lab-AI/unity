@@ -468,6 +468,17 @@ export class NeuronCluster {
     const regionSize = region.end - region.start;
     if (regionSize <= 0 || !emb || emb.length === 0) return;
     const groupSize = Math.max(1, Math.floor(regionSize / emb.length));
+    // T17.7 Phase E.a — when cortexCluster has a GPU proxy wired to
+    // main cortex slices, also forward the intent-current pattern so
+    // Phase D's motor argmax readback sees the sem/phon/etc signal
+    // that drove this injection. Before E.a the main-cortex current
+    // slice never received intent; generation's bound path would
+    // decode noise. After E.a, intent lands on BOTH the standalone
+    // CPU externalCurrent (kept for equivalence during E→F window)
+    // AND the main-cortex GPU currents buffer at the first-N sub-slice.
+    const haveProxy = !!(this._gpuProxy && this._gpuProxy.writeCurrentSlice);
+    const fwdIndices = haveProxy ? [] : null;
+    const fwdValues  = haveProxy ? [] : null;
     for (let d = 0; d < emb.length; d++) {
       const value = emb[d] * 8 * strength;  // same * 8 scale as legacy mapToCortex
       const startNeuron = region.start + d * groupSize;
@@ -475,7 +486,17 @@ export class NeuronCluster {
         const idx = startNeuron + n;
         if (idx >= region.end) break;
         this.externalCurrent[idx] += value;
+        if (fwdIndices && value !== 0) {
+          // Index relative to region start — matches main-cortex
+          // first-N sub-slice where Phase C pattern writes land.
+          fwdIndices.push(idx - region.start);
+          fwdValues.push(value);
+        }
       }
+    }
+    if (haveProxy && fwdIndices.length > 0) {
+      try { this._gpuProxy.writeCurrentSlice(regionName, fwdIndices, fwdValues); }
+      catch { /* non-fatal — CPU path already updated */ }
     }
   }
 

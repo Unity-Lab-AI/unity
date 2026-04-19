@@ -900,6 +900,17 @@ class ServerBrain {
         // for a dense motor-slice readback at biological scale.
         readbackLetterBuckets: (regionName, bucketCount, subSliceLen, startOffset) =>
           this.gpuReadbackCortexLetterBuckets(regionName, bucketCount, subSliceLen, startOffset || 0),
+        // T17.7 Phase E.a — current-slice write forwarder so
+        // cluster.injectEmbeddingToRegion can push intent currents
+        // onto main-cortex sem/phon/etc sub-slices (not just the
+        // standalone cortexCluster.externalCurrent CPU buffer).
+        // Without this, Phase D's motor argmax readback reads main
+        // cortex whose sem slice never received the generation intent
+        // — motor emission would decode noise instead of the intended
+        // topic. The _mirrorCortexRegions bridge was masking this gap;
+        // Phase E.a removes the masking dependence.
+        writeCurrentSlice: (regionName, sparseIndices, sparseValues) =>
+          this._gpuWriteCortexCurrentSlice(regionName, sparseIndices, sparseValues),
       };
       this.cortexCluster = new clusterMod.NeuronCluster('cortex', langCortexSize, {
         tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
@@ -2067,6 +2078,37 @@ class ServerBrain {
       clusterName: 'cortex',
       regionName,
       sparseIndices: arr,
+    }));
+  }
+
+  /**
+   * T17.7 Phase E.a — sparse current-slice write to main cortex. Used
+   * by cluster.injectEmbeddingToRegion's forward path when cortexCluster's
+   * gpuProxy is wired. Writes the intent embedding's current-drive
+   * values into the main-cortex sub-slice at region.start+idx offsets,
+   * so the next LIF tick's driveDrive = (effectiveDrive + currents) ·
+   * regionGate picks up the injected intent.
+   *
+   * Sparse-indices format — typical injection touches ~regionSize/8
+   * indices (groupSize per embedding dim × number of non-zero dims),
+   * far cheaper than shipping a dense region-sized Float32Array.
+   *
+   * @param {string} regionName
+   * @param {number[]} sparseIndices - indices relative to region start
+   * @param {number[]} sparseValues  - matching current values
+   */
+  _gpuWriteCortexCurrentSlice(regionName, sparseIndices, sparseValues) {
+    if (!this._gpuClient || this._gpuClient.readyState !== 1) return;
+    const idx = Array.isArray(sparseIndices) ? sparseIndices : Array.from(sparseIndices || []);
+    const val = Array.isArray(sparseValues)  ? sparseValues  : Array.from(sparseValues || []);
+    if (idx.length === 0 || idx.length !== val.length) return;
+    this._gpuClient.send(JSON.stringify({
+      type: 'write_current_slice',
+      clusterName: 'cortex',
+      regionName,
+      sparseIndices: idx,
+      sparseValues: val,
+      psi: this.psi ?? 0,
     }));
   }
 
