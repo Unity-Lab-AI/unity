@@ -5,6 +5,48 @@
 
 ---
 
+## 2026-04-18 — Session 114.19ac (continued): T15.C CLOSED — all 12 deliverables SHIPPED
+
+Two additional commits closed T15.C after the earlier 8-of-12 checkpoint:
+
+- `838c9c3` — main tick-loop `_driveDrugScheduler(arousal)` method + text-path drug-offer routing. _updateDerivedState calls it per tick (1 Hz throttle); runs promoteScheduledIngests + clearExpired + refreshes _activePatternTags + assembles ctx (localHour / dayOfWeek / arousal / cortexDemand / demandDurationMs / activityTag / locationTag / social / consent / olfactory / visualTags / audioTags) + evaluateTriggers + evaluatePatterns. processAndRespond text-path runs drug-detector.detectOffer → scheduler.decide → ingest OR pickRejection-routed Unity-voice reply. `personaExclusions: {nicotine: true}` gate enforces Unity's tobacco rejection regardless of offer source. Olfactory scent registration via chat meta hook (dormant until a sensory-capable client sends metadata).
+- `<this commit>` — (1) dashboard.html renderDrugPanel renders the dynamic scheduler.snapshot() with sober-badge / active-substances (phase-colored level bars) / combo-badges (purple chips) / risk-flags (red/amber warning chips) / cravings / pending acquisitions, replacing the static "drug state: cokeAndWeed" label; (2) language-cortex _applySpeechModulation extended to consume 4 new speech axes — warmth (MDMA affective softener "babe/love/honey"), profoundBias (LSD/psilocybin insight-framing "honestly, / the truth is"), interruptionBias (cocaine/amphetamine dash-insertion self-interruption), confessionalBias (alcohol/coke-and-alcohol disclosure opener "I'll be honest, / not gonna lie"). All deterministic seeded post-processors, never mutate learned state, scoped to render call; (3) LAW-6 persistent life info wiring — _firstUse Map stamps biographical anchor on first ingest (grade / age / atMs / contextTags / emotionalFingerprint). markTrauma(substance, weight) method stacks trauma weights that decide() already consumes via 26-week half-life decay. lifeInfoLedger() accessor exports the Map for UI + persistent-life-info-ledger sync into docs/TODO-full-syllabus.md Life cells. Persistence v2 serializes firstUse + traumaMarkers alongside the other v2 fields; v1 loads promote cleanly (empty maps = correct "pre-T15.C biographical state" upgrade).
+
+### T15.C closure state (12-of-12 shipped)
+
+| # | Deliverable | Commit |
+|---|-------------|--------|
+| 1 | COMBOS table + comboKey() | `e7bd8f2` |
+| 2 | Combo-aware activeContributions + speechModulation | `e7bd8f2` |
+| 3 | riskFlags(now) aggregator | `e7bd8f2` |
+| 4 | pendingDesires + addCraving + currentCraving | `e7bd8f2` |
+| 5 | PATTERNS + evaluatePatterns + autoIngest + promoteScheduledIngests | `6764480` |
+| 6 | decide(offer) + drug-rejections.js + nicotine/caffeine detector | `3de2c2b` |
+| 7 | 13-axis speech scheduler-side | `e7bd8f2` |
+| 8 | Olfactory module + visual-tag sensory stubs | `8f4c1a2` |
+| 9 | drug-sensory-triggers.js (7 environmental triggers) | `8f4c1a2` |
+| 10 | UI snapshot refresh + kill static label | `<this commit>` |
+| 11 | Persistence v1→v2 | `e7bd8f2` + `<this commit>` |
+| 12 | Life-info ledger + trauma-marker wiring | `<this commit>` |
+
+Plus integration glue: main tick-loop _driveDrugScheduler invocation + text-path decide/ingest/rejection routing (`838c9c3`) + language-cortex 4-new-axis consumer (`<this commit>`).
+
+### Mystery Ψ footprint
+
+T15.C adds no new Ψ term. Scheduler deltas flow into persona-baseline brain params via the existing _updateDerivedState cycle, where they land in the same effectiveDrive calculation that already consumes the three 114.19y Ψ terms (global gain, hemisphere gate, divergence correction). Ψ binding preserved end-to-end.
+
+### What's STILL open before push to main
+
+- **T17.7 Phase E** — multi-commit cortexCluster deletion (needs intent-injection + workingMemoryReadout migration first)
+- **T17.7 Phase F** — doc + public HTML sweep
+- **T17.7 Phase C follow-up** — divergence telemetry during K curriculum walk
+- **T16.5.b/c/d** — full-mind K gate redesign (blocked on Gee design review)
+- **T16.1.b / T16.2.a / T16.2.d** — Gee Part 2 localhost verification
+- **T15.D** — manual V1-V11 verification (deferred past K-only gate per Gee)
+- **T18.5.b / T18.5.c** — push gate (pre-push doc sweep + Gee push approval)
+
+---
+
 ## 2026-04-18 — Session 114.19ac: T15.C implementation block — 8 of 12 deliverables SHIPPED on `syllabus-k-phd`
 
 Gee 2026-04-18 directive driving this block: *"keep at it"* — continue pushing through the push-gate block list.

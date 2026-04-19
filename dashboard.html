@@ -93,6 +93,18 @@
     </div>
 
     <div class="card" style="margin-top:12px;">
+      <div class="card-title">Drug State (T15 scheduler — real-time pharmacology)</div>
+      <div id="d-drug-panel" style="padding:8px 12px;font-family:monospace;font-size:12px;color:#aaa;line-height:1.8;">
+        <div id="d-drug-status" style="color:#22c55e;">sober</div>
+        <div id="d-drug-active" style="margin-top:6px;"></div>
+        <div id="d-drug-combos" style="margin-top:6px;"></div>
+        <div id="d-drug-risks" style="margin-top:6px;"></div>
+        <div id="d-drug-desires" style="margin-top:6px;color:#888;font-size:10px;"></div>
+        <div id="d-drug-pending" style="margin-top:6px;color:#888;font-size:10px;"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
       <div class="card-title">Emotional History</div>
       <canvas id="d-emotion-chart" width="800" height="200" style="width:100%;height:200px;background:#0a0a0a;border-radius:4px;"></canvas>
       <div style="display:flex;gap:16px;margin-top:6px;font-size:10px;color:#555;">
@@ -194,6 +206,13 @@
       $('d-drug').textContent = s.drugState ?? '—';
       $('d-uptime').textContent = (s.time ?? 0).toFixed(1) + 's';
       $('d-scale').textContent = s.scale ?? '—';
+
+      // T15.C — dynamic drug-state panel. Renders scheduler.snapshot()
+      // (active substances with phase + level + combo badges + risk
+      // flags + pending cravings/acquisitions). Replaces the old
+      // static 'cokeAndWeed' label per Gee 2026-04-18 TODO spec
+      // ('kill permanent weed+coke display').
+      renderDrugPanel(s.drugSnapshot);
 
       // Emotional state — rendered from raw equation values, no lookups
       if (s.sharedMood) {
@@ -312,6 +331,81 @@
         }
       }
       if (activeEl) activeEl.textContent = active;
+    }
+
+    // T15.C — drug-state panel renderer. Consumes scheduler.snapshot()
+    // (broadcast as state.drugSnapshot). Writes into the d-drug-panel
+    // section created above.
+    function renderDrugPanel(snap) {
+      if (!snap) return;
+      const status = document.getElementById('d-drug-status');
+      const activeEl = document.getElementById('d-drug-active');
+      const combosEl = document.getElementById('d-drug-combos');
+      const risksEl = document.getElementById('d-drug-risks');
+      const desiresEl = document.getElementById('d-drug-desires');
+      const pendingEl = document.getElementById('d-drug-pending');
+      if (!status || !activeEl) return;
+
+      if (snap.sober) {
+        status.textContent = 'sober';
+        status.style.color = '#22c55e';
+      } else {
+        status.textContent = `active (${snap.active.length} substance${snap.active.length === 1 ? '' : 's'})`;
+        status.style.color = '#ff4d9a';
+      }
+
+      // Active substances list — name, phase, level bar.
+      const substanceRows = (snap.active || []).map(a => {
+        const pct = Math.round(100 * (a.level || 0));
+        const phaseColor = ({
+          onset: '#f59e0b',
+          peak: '#ff4d9a',
+          plateau: '#a855f7',
+          tail: '#6b7280',
+          pending: '#6b7280',
+          sober: '#22c55e',
+        })[a.phase] || '#aaa';
+        return `
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+            <span style="width:90px;">${a.displayName || a.substance}</span>
+            <span style="width:60px;color:${phaseColor};font-size:10px;">${a.phase}</span>
+            <div style="flex:1;background:#222;border-radius:3px;height:6px;overflow:hidden;">
+              <div style="background:${phaseColor};height:100%;width:${pct}%;transition:width 0.5s;"></div>
+            </div>
+            <span style="width:36px;text-align:right;font-size:10px;">${pct}%</span>
+          </div>
+        `;
+      }).join('') || '<span style="color:#555;font-size:10px;">no active substances</span>';
+      activeEl.innerHTML = substanceRows;
+
+      // Combo badges — displayName + level.
+      const comboRows = (snap.combos || []).map(c => {
+        const pct = Math.round(100 * (c.level || 0));
+        return `<span style="display:inline-block;background:#3b0764;color:#a855f7;padding:2px 8px;border-radius:10px;font-size:10px;margin-right:6px;">${c.displayName} ${pct}%</span>`;
+      }).join('');
+      combosEl.innerHTML = comboRows ? `<div>combos: ${comboRows}</div>` : '';
+
+      // Risk flags — physicalStrain etc. as warning badges.
+      const riskEntries = Object.entries(snap.riskFlags || {}).filter(([, v]) => v > 0.1);
+      const riskRows = riskEntries.map(([k, v]) => {
+        const pct = Math.round(100 * Math.min(1, v));
+        const col = v > 0.7 ? '#dc2626' : v > 0.4 ? '#f59e0b' : '#fbbf24';
+        return `<span style="display:inline-block;background:#4a1e04;color:${col};padding:2px 8px;border-radius:10px;font-size:10px;margin-right:6px;">⚠ ${k} ${pct}%</span>`;
+      }).join('');
+      risksEl.innerHTML = riskRows ? `<div>risks: ${riskRows}</div>` : '';
+
+      // Pending desires (sensory cravings).
+      const desireRows = (snap.pendingDesires || [])
+        .filter(d => d.delta > 0.05)
+        .map(d => `${d.substance} (${Math.round(100 * d.delta)}%)`)
+        .join(', ');
+      desiresEl.textContent = desireRows ? `cravings: ${desireRows}` : '';
+
+      // Pending acquisitions (waiting on dealer / etc).
+      const pendRows = (snap.pendingAcquisitions || [])
+        .map(p => `${p.substance} (${p.status || '...'})`)
+        .join(', ');
+      pendingEl.textContent = pendRows ? `waiting on: ${pendRows}` : '';
     }
 
     // ── Emotion history chart ──

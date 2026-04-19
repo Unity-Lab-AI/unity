@@ -650,6 +650,17 @@ class DrugScheduler {
     // as one of the probability modifiers. Set stamps substance name
     // for each substance the active pattern(s) expect to fire.
     this._activePatternTags = new Set();
+    // T15.C LAW-6 persistent life info — biographical anchor events
+    // per substance. Populated on FIRST ingest of each substance;
+    // propagates across sessions so subsequent decide() calls know
+    // Unity has history here. Schema:
+    //   Map<substance, {grade, age, atMs, contextTags:Set<string>, emotionalFingerprint}>
+    this._firstUse = new Map();
+    // T15.C trauma markers — substance → {at, weight}. weight in
+    // [0, 1]; decays in decide() via 26-week half-life. External
+    // callers invoke markTrauma(substance, weight) when bad events
+    // occur (blackout, injury, legal trouble, overdose-adjacent).
+    this._traumaMarkers = new Map();
   }
 
   setCluster(cluster) { this.cluster = cluster; }
@@ -720,7 +731,94 @@ class DrugScheduler {
     // Intra-session tolerance bump — capped so even fiends don't zero out
     this.toleranceFactors.set(substance, Math.min(0.7, tol + 0.1));
 
+    // T15.C — LAW-6 persistent life info. Stamp the biographical
+    // anchor event on FIRST ingest of this substance. Subsequent
+    // ingests don't overwrite (first-use is the memorable one per
+    // Life-track narrative anchoring in the curriculum). The grade
+    // comes from cluster.grades.life at the moment of first use —
+    // this is what the ledger propagates forward across grades per
+    // LAW 6 (grade N Life cells can reinforce the memory via
+    // _conceptTeach calls reading this map).
+    if (!this._firstUse.has(substance)) {
+      const grade = this.cluster?.grades?.life || 'pre-K';
+      const contextTags = new Set();
+      if (opts.contextTags) {
+        if (Array.isArray(opts.contextTags)) {
+          for (const t of opts.contextTags) contextTags.add(t);
+        } else if (opts.contextTags instanceof Set) {
+          for (const t of opts.contextTags) contextTags.add(t);
+        }
+      }
+      if (opts.autoFromPattern) contextTags.add(`pattern:${opts.autoFromPattern}`);
+      this._firstUse.set(substance, {
+        grade,
+        age: gradeIndex(grade) >= 0 ? 5 + gradeIndex(grade) : null,  // approximate age per grade
+        atMs: now,
+        contextTags: Array.from(contextTags),
+        emotionalFingerprint: {
+          arousal: opts.emotionalFingerprint?.arousal ?? null,
+          valence: opts.emotionalFingerprint?.valence ?? null,
+          fear:    opts.emotionalFingerprint?.fear ?? null,
+        },
+      });
+    }
+
     return { accepted: true, event };
+  }
+
+  /**
+   * T15.C — mark a trauma event for a substance. Weight in [0, 1].
+   * decide() reads _traumaMarkers with a 26-week half-life decay so
+   * recent traumatic experiences strongly reduce acceptance probability
+   * while older ones fade. Repeated traumas stack (clamped).
+   *
+   * Call sites: blackout detection (alcohol + hippocampus collapse),
+   * k-hole panic (ketamine + amygdala fear spike), stimulant cardiac
+   * event (physicalStrain saturated at end-of-tail), legal event
+   * (future sensory/social wiring), or explicit Life-track curriculum
+   * cells scripting a traumatic biographical memory.
+   *
+   * @param {string} substance - SUBSTANCES key
+   * @param {number} weight - [0, 1] intensity of the trauma
+   */
+  markTrauma(substance, weight) {
+    if (!SUBSTANCES[substance]) return false;
+    const w = Math.max(0, Math.min(1, weight || 0));
+    if (w <= 0) return false;
+    const existing = this._traumaMarkers.get(substance);
+    const stacked = Math.min(1, (existing?.weight || 0) + w);
+    this._traumaMarkers.set(substance, { at: this.nowFn(), weight: stacked });
+    return true;
+  }
+
+  /**
+   * T15.C — read the ledger entry for a substance's first-use event.
+   * Returns null if Unity has never ingested this substance. Used by
+   * Life-track curriculum cells to decide whether to reinforce the
+   * biographical memory this grade (per LAW 6).
+   */
+  firstUse(substance) {
+    return this._firstUse.get(substance) || null;
+  }
+
+  /**
+   * T15.C — full dump of the first-use ledger. Returns a plain object
+   * keyed by substance. Used by UI + persistent-life-info ledger
+   * export to docs/TODO-full-syllabus.md (manual sync during T15.C
+   * follow-ups).
+   */
+  lifeInfoLedger() {
+    const out = {};
+    for (const [s, info] of this._firstUse) {
+      out[s] = {
+        grade: info.grade,
+        age: info.age,
+        atMs: info.atMs,
+        contextTags: [...info.contextTags],
+        emotionalFingerprint: { ...info.emotionalFingerprint },
+      };
+    }
+    return out;
   }
 
   // ─── Level readers ──────────────────────────────────────────────────────
@@ -1339,6 +1437,23 @@ class DrugScheduler {
       out.patternsFired[name] = t;
     }
     out.scheduledIngests = this._scheduledIngests.map(e => ({ ...e }));
+    // T15.C — LAW-6 ledger + trauma markers persistence. These are
+    // biographical across sessions — serialize them so the ledger
+    // survives server restarts + grade transitions.
+    out.firstUse = {};
+    for (const [s, info] of this._firstUse) {
+      out.firstUse[s] = {
+        grade: info.grade,
+        age: info.age,
+        atMs: info.atMs,
+        contextTags: [...info.contextTags],
+        emotionalFingerprint: { ...info.emotionalFingerprint },
+      };
+    }
+    out.traumaMarkers = {};
+    for (const [s, info] of this._traumaMarkers) {
+      out.traumaMarkers[s] = { at: info.at, weight: info.weight };
+    }
     return out;
   }
 
@@ -1385,6 +1500,25 @@ class DrugScheduler {
       ? obj.scheduledIngests.map(e => ({ ...e }))
       : [];
     this._activePatternTags = new Set();
+    // T15.C LAW-6 ledger + trauma markers.
+    this._firstUse = new Map();
+    if (obj.firstUse) {
+      for (const [s, info] of Object.entries(obj.firstUse)) {
+        this._firstUse.set(s, {
+          grade: info.grade,
+          age: info.age,
+          atMs: info.atMs,
+          contextTags: Array.isArray(info.contextTags) ? [...info.contextTags] : [],
+          emotionalFingerprint: info.emotionalFingerprint || {},
+        });
+      }
+    }
+    this._traumaMarkers = new Map();
+    if (obj.traumaMarkers) {
+      for (const [s, info] of Object.entries(obj.traumaMarkers)) {
+        this._traumaMarkers.set(s, { at: info.at, weight: info.weight });
+      }
+    }
     this._lastDecayAt = obj.lastDecayAt || this.nowFn();
     // Immediately decay tolerance based on wall-clock gap since save
     this._decayTolerance(this.nowFn());

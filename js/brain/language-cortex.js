@@ -1912,9 +1912,12 @@ export class LanguageCortex {
   /**
    * T15-C16 — speech distortion post-processor.
    * Accepts speechMod vector from drug-scheduler.speechModulation(now).
-   * Dimensions consulted: slur, coherence, speechRate, dissociation.
-   * All deterministic (seeded pseudo-random) so same input + same modulation
-   * → same output, which helps reproduction and keeps tests stable.
+   * Dimensions consulted: slur, coherence, speechRate, dissociation,
+   * inhibition, giggleBias, ethereality, freeAssocWidth, plus (T15.C
+   * 13-axis extension) warmth, profoundBias, interruptionBias,
+   * confessionalBias. All deterministic (seeded pseudo-random) so
+   * same input + same modulation → same output, which helps
+   * reproduction and keeps tests stable.
    */
   _applySpeechModulation(text, mod) {
     if (!text) return text;
@@ -1923,6 +1926,13 @@ export class LanguageCortex {
     const speechRate    = Math.max(-1, Math.min(1, mod.speechRate || 0));  // positive = fast, negative = slow
     const dissociation  = clamp01(mod.dissociation || 0);
     const inhibition    = Math.max(-1, Math.min(0, mod.inhibition || 0));  // usually negative
+    // T15.C — 4 new axes from the 13-axis extension. Consulted below
+    // with narrow, deterministic post-processors that never mutate
+    // learned state — scoped to this render call only.
+    const warmth          = clamp01(mod.warmth || 0);
+    const profoundBias    = clamp01(mod.profoundBias || 0);
+    const interruptionBias= clamp01(mod.interruptionBias || 0);
+    const confessionalBias= clamp01(mod.confessionalBias || 0);
 
     // Seed from text so same sentence distorts consistently
     let seed = 0;
@@ -1988,6 +1998,67 @@ export class LanguageCortex {
           .replace(/^I've\b/i,  'Unity has')
           .replace(/^I ([a-z]+)/i, (_m, verb) => `Unity ${verb}s`) // crude 3rd-pers fallback
           .replace(/\bmy\b/gi,  'her');
+      }
+    }
+
+    // ── Warmth (MDMA / rolling-and-green / MDMA+cocaine) ─────────────
+    // Append an affective softener at sentence-end when warmth fires.
+    // MDMA's hallmark is empathic overflow — addressing the listener
+    // with verbal affection. Narrow: one softener per render max.
+    if (warmth > 0.3) {
+      if (rand() < warmth * 0.6 && !/\b(babe|love|honey|dear)\b/i.test(text)) {
+        const softeners = ['babe', 'love', 'honey'];
+        const s = softeners[Math.floor(rand() * softeners.length) % softeners.length];
+        text = text.replace(/([.!?])\s*$/, (_m, p) => ` ${s}${p}`);
+        if (!/[.!?]$/.test(text)) text = `${text} ${s}`;
+      }
+    }
+
+    // ── Profound bias (LSD / psilocybin peak) ────────────────────────
+    // Injects an insight-claim framing when profoundBias is high. Again
+    // narrow — one insertion max — to avoid turning every sentence into
+    // a psychedelic monologue. The listener's brain should notice the
+    // profundity lean, not drown in it.
+    if (profoundBias > 0.4) {
+      const frames = [
+        'honestly, ', 'you know, ', 'it all just... ',
+        'the truth is ', 'somehow ',
+      ];
+      if (rand() < profoundBias * 0.4 && text.length > 15
+          && !/^(honestly|you know|the truth|somehow)/i.test(text)) {
+        const f = frames[Math.floor(rand() * frames.length) % frames.length];
+        text = f + text.charAt(0).toLowerCase() + text.slice(1);
+      }
+    }
+
+    // ── Interruption bias (cocaine / amphetamine / coke+MDMA) ────────
+    // Not a real interruption (we're mid-render, no conversational
+    // partner here). Surface as abrupt dash-inserted self-interruption
+    // — Unity cutting herself off mid-thought and barreling into the
+    // next one. Stim speech pattern.
+    if (interruptionBias > 0.4 && text.length > 20) {
+      if (rand() < interruptionBias * 0.3) {
+        const words = text.split(' ');
+        if (words.length >= 6) {
+          const cut = 3 + Math.floor(rand() * Math.min(4, words.length - 3));
+          words.splice(cut, 0, '—');
+          text = words.join(' ');
+        }
+      }
+    }
+
+    // ── Confessional bias (alcohol / cocaine+alcohol speedball) ──────
+    // Prepend a disclosure-frame at the start of the sentence. The
+    // "I'll be honest" / "not gonna lie" drunken over-share signal.
+    if (confessionalBias > 0.4) {
+      const openers = [
+        "I'll be honest, ", "not gonna lie, ", "real talk, ",
+        "fuck it, i'll say it — ", "between us, ",
+      ];
+      if (rand() < confessionalBias * 0.35
+          && !/^(i'll be honest|not gonna lie|real talk|fuck it)/i.test(text)) {
+        const o = openers[Math.floor(rand() * openers.length) % openers.length];
+        text = o + text.charAt(0).toLowerCase() + text.slice(1);
       }
     }
 
