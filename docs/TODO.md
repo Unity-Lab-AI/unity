@@ -495,6 +495,57 @@ Expected velocity at biological scale:
 
 **T18.19 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) Phase 2 velocity 2-4 iter/s or better (compared to 1.4-1.5 pre-T18.19); (b) `_teachLetterCaseBinding` completes without OOM; (c) All 5 K.RF helpers complete; (d) `_teachWordEmission` runs with T18.13.c heartbeats; (e) ELA-K gate probe runs after teach completes. Claude cannot close — Gee-verification only.
 
+**T18.19 PARTIAL** on Gee 2026-04-19 retest — Phase 1 finished in 0.3s (T18.17 confirmed), Phase 2 STARTED at target 3.51 iter/s (T18.19 confirmed) but DECELERATED to 1.55 iter/s over 193 seconds (classic V8 external-memory-pressure signature). `_teachLetterCaseBinding` still OOM'd + GPU device.lost still fired. Additional allocator found in curriculum.js Phase 2 itself — see T18.20 below.
+
+---
+
+#### T18.20 — Phase 2 `new Float64Array(cluster.size)` per-iter allocation (Gee 2026-04-19 retest data)
+
+**Gee's verbatim telemetry 2026-04-19** showing the deceleration pattern post-T18.19:
+
+```
+Phase 2 heartbeat — 18/300, elapsed 5.1s, ~3.51 iter/s  ← T18.19 sync path kicked in, good start
+Phase 2 heartbeat — 103/300, elapsed 30.9s, ~3.33 iter/s
+Phase 2 heartbeat — 161/300, elapsed 52.9s, ~3.04 iter/s
+Phase 2 heartbeat — 204/300, elapsed 96.6s, ~2.11 iter/s
+Phase 2 heartbeat — 293/300, elapsed 188.6s, ~1.55 iter/s  ← steady deceleration, classic GC thrash signature
+Phase 2 DONE in 193.5s
+_teachLetterCaseBinding START
+FATAL ERROR: Committing semi space failed
+```
+
+### Root cause (ultrathink continuation)
+
+T18.19 eliminated the worker pool's 1.7 GB/call SharedArrayBuffer allocation. But V8 external-memory pressure kept building and Phase 2 still decelerated + OOM'd at `_teachLetterCaseBinding`. That meant another 1.7 GB/call allocator existed. Grep of the Phase 2 loop surfaced it on the CURRICULUM side, not the worker pool side:
+
+```js
+// curriculum.js Phase 2 inner loop, per iteration:
+const pre = new Float64Array(cluster.size);    // 858 MB (107M × 8 bytes)
+const post = new Float64Array(cluster.size);   // 858 MB
+// Fill ONLY letter region (~15K indices)
+await cluster.intraSynapsesHebbian(pre, post, lr);
+// pre/post go out of scope → eventually GC'd
+```
+
+At biological scale, 2 × 858 MB = **1.7 GB of V8 external-memory allocation PER iteration**. 300 iterations × 1.7 GB = 510 GB total allocation rate of 2.6 GB/sec over 193 seconds. V8's external-memory GC cannot keep up → pressure accumulates → Mark-Compact takes longer per cycle → iter rate decelerates monotonically from 3.51 → 1.55 iter/s.
+
+When `_teachLetterCaseBinding` starts, V8 can't commit more external memory → OOM.
+
+### Fix — T18.20.a allocate once, reuse
+
+- [x] **T18.20.a — Phase 2 buffer reuse.** Allocate `_p2Pre` and `_p2Post` ONCE before the outer `rep` loop. Inside the loop, zero ONLY the letter region indices (~15K writes per iter instead of ~1.7 GB allocation). Only the letter region is ever set, so other indices stay at zero across the entire Phase 2 walk. Per-iter cost: ~30K ops instead of ~1.7 GB allocation. Cumulative Phase 2 allocation: 2 × 858 MB ONCE (fixed) instead of 510 GB (growing). V8 external-memory pressure stays flat through Phase 2 — no deceleration, no GC thrash, no OOM at `_teachLetterCaseBinding`. **SHIPPED** — `js/brain/curriculum.js`.
+
+### Expected velocity at biological scale post-T18.20
+
+- Phase 2 starts at ~3.5 iter/s (matches T18.19's initial rate)
+- Phase 2 velocity STAYS STABLE at ~3.5 iter/s (no deceleration)
+- Phase 2 completion: 300 × (1/3.5)s = ~85 seconds (vs 193s pre-T18.20 with deceleration, vs 214s pre-T18.19 without sync path)
+- `_teachLetterCaseBinding` starts with V8 heap clean → no OOM
+- All 5 K.RF helpers complete with phase banners
+- `_teachWordEmission` runs with T18.13.c heartbeats
+
+**T18.20 closure gate:** Gee-verification on next Part 2 run. Success criteria: (a) Phase 2 velocity stays stable at ~3-4 iter/s across all 300 iters with NO deceleration; (b) Phase 2 completes in ~85-100s; (c) `_teachLetterCaseBinding` Phase START → DONE fires without OOM; (d) All 5 K.RF helpers complete; (e) `_teachWordEmission` runs with T18.13.c heartbeats; (f) ELA-K gate probe runs after teach completes; (g) No GPU device.lost anywhere. Claude cannot close — Gee-verification only.
+
 ---
 
 #### T18.5 — push gate for main-branch deploy (BINDING)

@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "881aaa44-a424";
+var BUILD = "d97d7895-7ef5";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -10989,12 +10989,18 @@ var Curriculum = class _Curriculum {
     const _p2Start = Date.now();
     let _p2LastBeat = _p2Start;
     let _p2Done = 0;
+    const _p2Pre = new Float64Array(cluster.size);
+    const _p2Post = new Float64Array(cluster.size);
     for (let rep = 0; rep < REPS; rep++) {
       for (let i = 0; i < ALPHABET.length - 1; i++) {
         const currOneHot = encodeLetter(ALPHABET[i]);
         const nextOneHot = encodeLetter(ALPHABET[i + 1]);
-        const pre = new Float64Array(cluster.size);
-        const post = new Float64Array(cluster.size);
+        for (let j = letterRegion.start; j < letterRegion.end; j++) {
+          _p2Pre[j] = 0;
+          _p2Post[j] = 0;
+        }
+        const pre = _p2Pre;
+        const post = _p2Post;
         const lGSize = Math.max(1, Math.floor(letterSize / currOneHot.length));
         for (let d = 0; d < currOneHot.length; d++) {
           if (currOneHot[d] <= 0) continue;

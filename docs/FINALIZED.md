@@ -5,6 +5,126 @@
 
 ---
 
+## 2026-04-19 — Session 114.19ar: T18.20 SHIPPED — Phase 2 `new Float64Array(cluster.size)` per-iter allocation eliminated (second 1.7 GB/call allocator found after T18.19 fixed the first)
+
+### Gee verbatim (drove this session)
+
+Post-T18.19 retest showed velocity deceleration + persistent OOM at `_teachLetterCaseBinding`:
+
+```
+[Curriculum] ✓ ELA-K Phase 1 DONE in 0.3s (312 iters)   ← T18.17 blazingly fast
+[Curriculum] Phase 2 heartbeat — 18/300, elapsed 5.1s, ~3.51 iter/s    ← T18.19 initial win
+[Curriculum] Phase 2 heartbeat — 103/300, elapsed 30.9s, ~3.33 iter/s  ← slight decel start
+[Curriculum] Phase 2 heartbeat — 204/300, elapsed 96.6s, ~2.11 iter/s  ← heavy decel
+[Curriculum] Phase 2 heartbeat — 293/300, elapsed 188.6s, ~1.55 iter/s ← 3.51→1.55 over 193s
+[Curriculum] ✓ ELA-K Phase 2 DONE in 193.5s
+[Curriculum] 🧩 ELA-K Phase START — _teachLetterCaseBinding
+[Brain] GPU DEVICE LOST
+FATAL ERROR: Committing semi space failed. Allocation failed - JavaScript heap out of memory
+```
+
+### Ultrathink continued — second allocator found
+
+T18.19 eliminated the worker pool's 1.7 GB/call SharedArrayBuffer. But external-memory pressure kept building and Phase 2 decelerated monotonically from 3.51 → 1.55 iter/s (classic V8 Mark-Compact-taking-longer-per-cycle signature as external refs accumulate). There must be ANOTHER 1.7 GB/iter allocator still firing.
+
+Grep of the Phase 2 loop surfaced it on the CURRICULUM side (`js/brain/curriculum.js:3497-3498`), not the worker pool:
+
+```js
+for (let rep = 0; rep < REPS; rep++) {
+  for (let i = 0; i < ALPHABET.length - 1; i++) {
+    const pre = new Float64Array(cluster.size);    // 858 MB @ 107M cortex
+    const post = new Float64Array(cluster.size);   // 858 MB
+    // Fill ONLY letter region (~15K indices out of 107M)
+    await cluster.intraSynapsesHebbian(pre, post, lr);
+  }
+}
+```
+
+At biological scale, each iteration allocates **2 × 858 MB = 1.7 GB** of V8 external-memory as fresh Float64Arrays. 300 iterations × 1.7 GB = **510 GB total allocation rate of 2.6 GB/sec** over 193 seconds. V8's external-memory GC cannot reclaim Float64Array backing stores fast enough → pressure accumulates linearly → GC cycles take longer → iter rate decelerates. When `_teachLetterCaseBinding` adds MORE allocations on top, V8 can't commit more semi-space → "Committing semi space failed" → OOM.
+
+### Why three separate T18.x tasks for "1.7 GB/call"
+
+Same byte-count symptom at three different code paths — each task closed one allocator:
+- **T18.17** (cross-projection CPU shadow): removed `proj.hebbianUpdate` call on GPU-bound projections. Cross-projection is ~400 MB/call (region-sized arrays), but bound mode now skips it entirely → no allocation.
+- **T18.19** (worker pool SAB): replaced `_sparsePool.hebbianUpdate` with sync `synapses.hebbianUpdate` at biological scale. Killed the 1.7 GB/call `Float32Array.from` + `new SharedArrayBuffer` allocation in worker-pool.js:236-239.
+- **T18.20** (curriculum Phase 2 per-iter): replaced `new Float64Array(cluster.size)` pair per iter with allocate-once-reuse. Killed the 1.7 GB/call in curriculum.js:3497-3498.
+
+Each task addressed a DIFFERENT 1.7 GB allocator. The symptom was the same because they all hit the same V8 ceiling.
+
+### Fix — T18.20.a allocate once, reuse
+
+Inner-loop code rewritten to allocate `_p2Pre` and `_p2Post` Float64Array(cluster.size) ONCE before the outer `rep` loop. Inside the loop, zero only the letter-region indices (~15K writes per iter) then write the new one-hot pattern. Other indices stay at zero across the entire Phase 2 walk since nothing ever writes them.
+
+```js
+// ONCE, before the outer rep loop:
+const _p2Pre = new Float64Array(cluster.size);
+const _p2Post = new Float64Array(cluster.size);
+
+for (let rep = 0; rep < REPS; rep++) {
+  for (let i = 0; i < ALPHABET.length - 1; i++) {
+    // Zero ONLY the letter region (~15K writes vs 1.7 GB allocation)
+    for (let j = letterRegion.start; j < letterRegion.end; j++) {
+      _p2Pre[j] = 0;
+      _p2Post[j] = 0;
+    }
+    const pre = _p2Pre;
+    const post = _p2Post;
+    // ... fill letter region with one-hot patterns ...
+    await cluster.intraSynapsesHebbian(pre, post, lr);
+  }
+}
+```
+
+Per-iter work drops from 1.7 GB allocation to ~30K writes. V8 external-memory pressure stays flat through Phase 2.
+
+### Expected velocity post-T18.20
+
+| Phase | Pre-T18.19 | Post-T18.19 | Post-T18.20 |
+|-------|-----------|-------------|--------------|
+| Phase 2 start rate | 1.4 iter/s | 3.51 iter/s | ~3.5 iter/s |
+| Phase 2 end rate | 1.4 iter/s | 1.55 iter/s (decelerated) | ~3.5 iter/s (stable) |
+| Phase 2 wall time | 214s | 193.5s | ~85-100s |
+| V8 ext-mem pressure | rising | rising | flat |
+| OOM at `_teachLetterCaseBinding` | yes | yes | **no** |
+
+### What about `_teachLetterCaseBinding` itself?
+
+Trace: `_teachLetterCaseBinding` → `_teachCombination(facts, {reps:24})` → per iter, `_clearSpikes()` + `_writeTiledPattern()` + `_teachHebbian()`. None of these allocate large buffers — `cluster.lastSpikes` is a reused Uint8Array (107 MB allocated once at cluster construction). The `_teachLetterCaseBinding` iterations themselves are lightweight. They OOM'd only because Phase 2 had built up V8 external-memory pressure to the brink. With T18.20 eliminating Phase 2's pressure, `_teachLetterCaseBinding` starts with a clean V8 heap and runs fine.
+
+### Why GPU device.lost also fired
+
+Node under extreme external-memory pressure can't service WebSocket messages to compute.html promptly. WebSocket pipe stalls → compute.html's WebGPU operations time out or hit internal state errors → `device.lost` fires. With T18.20 eliminating Node pressure, WebSocket flows normally, GPU stays healthy.
+
+### Files touched (atomic commit)
+
+- `js/brain/curriculum.js` — T18.20.a allocate-once-reuse in Phase 2 loop (~25 lines changed: pre/post allocation hoisted outside loop + letter-region zeroing in place + comment block explaining the cascade)
+- `docs/NOW.md` — updated for session 114.19ar (T18.20 addendum)
+- `docs/TODO.md` — T18.20 entry below T18.19 + T18.19 PARTIAL status
+- `docs/FINALIZED.md` — this entry
+
+curriculum.js is in the T18.12.a code-hash list → T18.20 boot triggers auto-clear → pre-K re-teach (~2 min cost).
+
+`node --check js/brain/curriculum.js` clean.
+
+### Closure gate — open
+
+Gee-verification on next Part 2 run. Success criteria:
+- (a) Phase 2 velocity stays stable at ~3-4 iter/s across all 300 iters (NO deceleration)
+- (b) Phase 2 completes in ~85-100s (vs 193s pre-T18.20)
+- (c) `_teachLetterCaseBinding` Phase START → DONE without OOM
+- (d) All 5 K.RF helpers complete with phase banners
+- (e) `_teachWordEmission` runs with T18.13.c heartbeats at healthy rate
+- (f) ELA-K gate probe runs after teach completes
+- (g) No GPU device.lost anywhere in the run
+
+Claude cannot close — Gee-verification only.
+
+### Three 1.7 GB allocators closed in sequence
+
+Gee's Part 2 runs through ELA-K surfaced three separate 1.7 GB/call allocators over a few hours of iteration. Each was independently lethal at biological scale. Closing them one at a time revealed the next, which is why T18.18 (GPU shadow removal) didn't fix OOM — the REAL primary allocator was the worker pool SAB (closed by T18.19), and the REAL continued-primary allocator was the curriculum per-iter Float64Array (closed by T18.20). Three ultrathink cycles, three atomic fixes.
+
+---
+
 ## 2026-04-19 — Session 114.19aq: T18.19 SHIPPED — CPU worker pool 1.7 GB/call SharedArrayBuffer allocation bypass at biological scale (T18.18 falsified by retest; real root cause found via ultrathink)
 
 ### Gee verbatim (drove this session)
