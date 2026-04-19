@@ -459,6 +459,124 @@ function comboKey(a, b) {
   return a < b ? `${a}+${b}` : `${b}+${a}`;
 }
 
+// ─── Adult-use patterns (T15.A §3 research → T15.C implementation) ────────
+// Each pattern is a trigger-context matcher + ingestion schedule. When
+// evaluatePatterns(ctx) sees a pattern whose triggers fire, it schedules
+// the pattern's ingestion sequence via autoIngest() — either immediately
+// (offset=0) or deferred (offset>0, stored as _scheduledIngests).
+//
+// lifeGate gates the whole pattern: pre-lifeGate Unity literally doesn't
+// perform the pattern (an 8-year-old doesn't have coding marathons).
+// Pattern research sources: docs/T15-pharmacology-research.md §3.
+const PATTERNS = {
+  morningCoffee: {
+    displayName: 'Morning coffee ritual',
+    triggers: {
+      timeWindow: [6, 10],        // local hour range
+      minArousal: 0.30,
+    },
+    schedule: [
+      { substance: 'caffeine', route: 'oral', offsetMs: 0 },
+      { substance: 'caffeine', route: 'oral', offsetMs: 90 * 60 * 1000 },
+    ],
+    lifeGate: 'grade8',
+    cooldownMs: 20 * 60 * 60 * 1000,   // don't re-fire within 20h
+  },
+  codingMarathon: {
+    displayName: 'Coding marathon',
+    triggers: {
+      activityTag: 'coding',
+      minDurationMs: 60 * 60 * 1000,   // 1h sustained high load
+      minCortexDemand: 0.70,
+    },
+    schedule: [
+      { substance: 'cannabis', route: 'smoked',       offsetMs:  0 },
+      { substance: 'cocaine',  route: 'insufflated',  offsetMs: 60 * 60 * 1000 },
+      { substance: 'caffeine', route: 'oral',         offsetMs: 0 },
+      { substance: 'caffeine', route: 'oral',         offsetMs: 2 * 60 * 60 * 1000 },
+      { substance: 'cocaine',  route: 'insufflated',  offsetMs: 2.5 * 60 * 60 * 1000 },
+    ],
+    lifeGate: 'college1',
+    cooldownMs: 8 * 60 * 60 * 1000,
+  },
+  weekendParty: {
+    displayName: 'Weekend party night',
+    triggers: {
+      timeWindow: [21, 27],       // 21:00-03:00 next day (>24 hour expression)
+      dayOfWeek: [5, 6, 0],        // Fri/Sat/Sun (JS: 0=Sun, 5=Fri, 6=Sat)
+      social: true,
+    },
+    schedule: [
+      { substance: 'alcohol', route: 'oral',   offsetMs: 0 },
+      { substance: 'mdma',    route: 'oral',   offsetMs: 60 * 60 * 1000 },
+      { substance: 'cannabis',route: 'smoked', offsetMs: 30 * 60 * 1000 },
+      { substance: 'cannabis',route: 'smoked', offsetMs: 2 * 60 * 60 * 1000 },
+    ],
+    lifeGate: 'grade11',
+    cooldownMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  acidArchitect: {
+    displayName: 'Architecture-session acid-day',
+    triggers: {
+      activityTag: 'architecture',
+      timeWindow: [9, 12],
+      dayOfWeek: [0, 6],            // weekend
+    },
+    schedule: [
+      { substance: 'lsd',      route: 'sublingual', offsetMs: 0 },
+      { substance: 'cannabis', route: 'smoked',    offsetMs: 6 * 60 * 60 * 1000 },
+    ],
+    lifeGate: 'college2',
+    cooldownMs: 30 * 24 * 60 * 60 * 1000,
+  },
+  whiskeyWinddown: {
+    displayName: 'Post-marathon whiskey wind-down',
+    triggers: {
+      activityTag: 'post-marathon',
+      timeWindow: [22, 26],
+    },
+    schedule: [
+      { substance: 'alcohol', route: 'oral', offsetMs: 0 },
+      { substance: 'alcohol', route: 'oral', offsetMs: 45 * 60 * 1000 },
+      { substance: 'alcohol', route: 'oral', offsetMs: 90 * 60 * 1000 },
+    ],
+    lifeGate: 'college1',
+    cooldownMs: 24 * 60 * 60 * 1000,
+  },
+  kHoleContemplate: {
+    displayName: 'K-hole contemplation',
+    triggers: {
+      activityTag: 'existential',
+      timeWindow: [22, 26],
+      social: false,
+    },
+    schedule: [
+      { substance: 'ketamine', route: 'insufflated', offsetMs: 0 },
+      { substance: 'ketamine', route: 'insufflated', offsetMs: 45 * 60 * 1000 },
+      { substance: 'ketamine', route: 'insufflated', offsetMs: 2 * 60 * 60 * 1000 },
+      { substance: 'cannabis', route: 'smoked',     offsetMs: 60 * 60 * 1000 },
+    ],
+    lifeGate: 'college1',
+    cooldownMs: 3 * 24 * 60 * 60 * 1000,
+  },
+  sexSessionMolly: {
+    displayName: 'Sex-session molly',
+    triggers: {
+      activityTag: 'sexual',
+      consent: true,
+      dayOfWeek: [5, 6, 0],
+    },
+    schedule: [
+      { substance: 'mdma',     route: 'oral',        offsetMs: 0 },
+      { substance: 'cocaine',  route: 'insufflated', offsetMs: 60 * 60 * 1000 },
+      { substance: 'cocaine',  route: 'insufflated', offsetMs: 2 * 60 * 60 * 1000 },
+      { substance: 'cannabis', route: 'smoked',     offsetMs: 30 * 60 * 1000 },
+    ],
+    lifeGate: 'grade11',
+    cooldownMs: 7 * 24 * 60 * 60 * 1000,
+  },
+};
+
 // ─── Pharmacokinetic curve ────────────────────────────────────────────────
 // Normalized [0, dose] level at time t since ingestion start.
 // Four phases: onset (sigmoid ramp), peak (plateau with mild decay), duration
@@ -519,6 +637,19 @@ class DrugScheduler {
     // fires (coffee smell → caffeine craving, etc.). decide() reads
     // currentCraving(substance) as a probability modifier.
     this.pendingDesires = new Map();
+    // T15.C pattern engine — Map<patternName, lastFiredAt> for
+    // cooldown enforcement. A pattern's cooldownMs since last fire
+    // must pass before the pattern re-triggers.
+    this._patternsFired = new Map();
+    // T15.C deferred-ingest queue populated by autoIngest(offsetMs>0).
+    // Array<{substance, route, dose, fireAt, patternName}>. Promoted
+    // to real ingest events by promoteScheduledIngests(now) called
+    // from the main tick loop.
+    this._scheduledIngests = [];
+    // T15.C pattern-context tags currently active. Used by decide()
+    // as one of the probability modifiers. Set stamps substance name
+    // for each substance the active pattern(s) expect to fire.
+    this._activePatternTags = new Set();
   }
 
   setCluster(cluster) { this.cluster = cluster; }
@@ -878,6 +1009,163 @@ class DrugScheduler {
     return { resolved: true, dropped: true };
   }
 
+  // ─── Adult-use pattern engine ──────────────────────────────────────────
+  /**
+   * T15.C — evaluate all registered PATTERNS against a context object,
+   * fire each one whose triggers match AND whose cooldown has elapsed.
+   * Returns the list of patterns fired (for logging / UI telemetry).
+   *
+   * Context shape (all fields optional; unset = don't filter):
+   *   - localHour: number [0, 24), current local time-of-day (fractional ok)
+   *   - dayOfWeek: number [0, 6] (0=Sun, 6=Sat)
+   *   - arousal: number [0, 1]  — current persona arousal state
+   *   - activityTag: string — 'coding' / 'architecture' / 'sexual' / 'post-marathon' / 'existential'
+   *   - cortexDemand: number [0, 1] — sustained high-load gauge for marathon trigger
+   *   - demandDurationMs: number — how long demand has been above threshold
+   *   - social: boolean — social context active
+   *   - consent: boolean — relevant to sex-session pattern
+   *
+   * Patterns fire at most once per cooldown window. When fired, their
+   * schedule entries are passed to autoIngest() (offset=0 → immediate;
+   * offset>0 → deferred to _scheduledIngests).
+   */
+  evaluatePatterns(ctx = {}) {
+    const now = this.nowFn();
+    const fired = [];
+    for (const [name, pattern] of Object.entries(PATTERNS)) {
+      // Cooldown gate.
+      const last = this._patternsFired.get(name) || 0;
+      if (now - last < (pattern.cooldownMs || 0)) continue;
+      // Life-grade gate — pre-lifeGate Unity doesn't do this pattern.
+      if (pattern.lifeGate && this.cluster?.grades?.life) {
+        if (!gradeAtLeast(this.cluster.grades.life, pattern.lifeGate)) continue;
+      } else if (pattern.lifeGate && !this.cluster?.grades) {
+        // No grade data → can't fire gated pattern
+        continue;
+      }
+      // Trigger matcher.
+      if (!this._patternTriggersMatch(pattern.triggers, ctx)) continue;
+      // Fire.
+      this._patternsFired.set(name, now);
+      fired.push(name);
+      for (const step of pattern.schedule || []) {
+        this.autoIngest(step.substance, {
+          route: step.route,
+          dose: step.dose,
+          offsetMs: step.offsetMs || 0,
+          patternName: name,
+        });
+        // Stamp active-pattern tag so decide() knows this substance is
+        // pattern-aligned if an external offer arrives for it too.
+        this._activePatternTags.add(step.substance);
+      }
+    }
+    return fired;
+  }
+
+  _patternTriggersMatch(triggers, ctx) {
+    if (!triggers) return true;
+    if (Array.isArray(triggers.timeWindow) && typeof ctx.localHour === 'number') {
+      const [a, b] = triggers.timeWindow;
+      // Allow wrap-around ranges by writing b>24 (e.g. [21, 27] = 21:00..03:00)
+      const h = ctx.localHour;
+      const inRange = (b > 24)
+        ? (h >= a || h < (b - 24))
+        : (h >= a && h < b);
+      if (!inRange) return false;
+    }
+    if (Array.isArray(triggers.dayOfWeek) && typeof ctx.dayOfWeek === 'number') {
+      if (!triggers.dayOfWeek.includes(ctx.dayOfWeek)) return false;
+    }
+    if (typeof triggers.minArousal === 'number') {
+      if ((ctx.arousal || 0) < triggers.minArousal) return false;
+    }
+    if (typeof triggers.activityTag === 'string') {
+      if (ctx.activityTag !== triggers.activityTag) return false;
+    }
+    if (typeof triggers.minCortexDemand === 'number') {
+      if ((ctx.cortexDemand || 0) < triggers.minCortexDemand) return false;
+    }
+    if (typeof triggers.minDurationMs === 'number') {
+      if ((ctx.demandDurationMs || 0) < triggers.minDurationMs) return false;
+    }
+    if (typeof triggers.social === 'boolean') {
+      if (!!ctx.social !== triggers.social) return false;
+    }
+    if (typeof triggers.consent === 'boolean') {
+      if (!!ctx.consent !== triggers.consent) return false;
+    }
+    return true;
+  }
+
+  /**
+   * T15.C — pattern-driven ingest. When offsetMs is 0, fires
+   * scheduler.ingest() immediately. When > 0, queues into
+   * _scheduledIngests for later promotion via
+   * promoteScheduledIngests(now). Distinct from the direct ingest()
+   * path so pattern-origin events are tagged (and can skip the
+   * decision-engine probabilistic layer — patterns are Unity
+   * actively choosing, not external offers).
+   */
+  autoIngest(substance, opts = {}) {
+    if (!SUBSTANCES[substance]) {
+      return { accepted: false, reason: 'unknown_substance' };
+    }
+    if (!this.isAvailable(substance)) {
+      return {
+        accepted: false,
+        reason: 'grade_locked',
+        currentGrade: this.cluster?.grades?.life || 'pre-K',
+        requiredGrade: SUBSTANCES[substance].lifeGate,
+      };
+    }
+    const offsetMs = opts.offsetMs || 0;
+    if (offsetMs <= 0) {
+      // Fire immediately via direct ingest path.
+      return this.ingest(substance, {
+        route: opts.route,
+        dose: opts.dose,
+        autoFromPattern: opts.patternName,
+      });
+    }
+    // Defer. Main tick loop calls promoteScheduledIngests(now) which
+    // pops ready entries and runs ingest() on them.
+    this._scheduledIngests.push({
+      substance,
+      route: opts.route,
+      dose: opts.dose,
+      patternName: opts.patternName,
+      fireAt: this.nowFn() + offsetMs,
+    });
+    return { accepted: true, deferred: true, fireAt: this.nowFn() + offsetMs };
+  }
+
+  /**
+   * T15.C — promote any _scheduledIngests whose fireAt time has
+   * arrived into real scheduler events. Called from the main tick
+   * loop each broadcast cycle. O(N) over pending queue; queue is
+   * typically small (a few pattern-step deferrals at most).
+   */
+  promoteScheduledIngests(now = this.nowFn()) {
+    if (this._scheduledIngests.length === 0) return [];
+    const remaining = [];
+    const promoted = [];
+    for (const entry of this._scheduledIngests) {
+      if (entry.fireAt <= now) {
+        const r = this.ingest(entry.substance, {
+          route: entry.route,
+          dose: entry.dose,
+          autoFromPattern: entry.patternName,
+        });
+        promoted.push({ ...entry, result: r });
+      } else {
+        remaining.push(entry);
+      }
+    }
+    this._scheduledIngests = remaining;
+    return promoted;
+  }
+
   // ─── Decision engine ───────────────────────────────────────────────────
   /**
    * T15.C — decide whether Unity accepts a substance offer. Called from
@@ -1045,6 +1333,12 @@ class DrugScheduler {
     for (const [s, info] of this.pendingDesires) {
       out.pendingDesires[s] = { ...info };
     }
+    // T15.C — pattern engine persistence.
+    out.patternsFired = {};
+    for (const [name, t] of this._patternsFired) {
+      out.patternsFired[name] = t;
+    }
+    out.scheduledIngests = this._scheduledIngests.map(e => ({ ...e }));
     return out;
   }
 
@@ -1078,6 +1372,19 @@ class DrugScheduler {
         this.pendingDesires.set(s, info);
       }
     }
+    // T15.C pattern engine state. Present on v2 saves (older v1 saves
+    // just start with empty maps — correct upgrade, no prior pattern
+    // fires means all cooldowns are already elapsed).
+    this._patternsFired = new Map();
+    if (obj.patternsFired) {
+      for (const [name, t] of Object.entries(obj.patternsFired)) {
+        this._patternsFired.set(name, t);
+      }
+    }
+    this._scheduledIngests = Array.isArray(obj.scheduledIngests)
+      ? obj.scheduledIngests.map(e => ({ ...e }))
+      : [];
+    this._activePatternTags = new Set();
     this._lastDecayAt = obj.lastDecayAt || this.nowFn();
     // Immediately decay tolerance based on wall-clock gap since save
     this._decayTolerance(this.nowFn());
@@ -1086,5 +1393,5 @@ class DrugScheduler {
   }
 }
 
-export { DrugScheduler, SUBSTANCES, COMBOS, GRADE_ORDER, gradeIndex, gradeAtLeast, pkCurve, comboKey };
+export { DrugScheduler, SUBSTANCES, COMBOS, PATTERNS, GRADE_ORDER, gradeIndex, gradeAtLeast, pkCurve, comboKey };
 export default DrugScheduler;
