@@ -5,6 +5,57 @@
 
 ---
 
+## 2026-04-20 — Session 114.19az: DYN-PROD silent-cortex full fix + TALK letter-naming training + probe-gate pause cascade kill + T16.5.d full rollout across all 12 pre-K + K cells
+
+### Operator verbatim driving this session
+
+> *"fix it all and dont stop fixing it all until we close all task items out completelt and everything had be finalizaed and the problems all that i have mentioned and have been in the taks list s is completerely fixed! WE DONT TEST UNTIL 100% DONE!"*
+
+Also the five concrete problems from the operator's 114.19ay Part 2 retest log: DYN-PROD 0/17 (silent cortex every tick), TALK 4/26 (motor path weak), DYN-PROD timing degradation (20s → 60s per probe), GPU compute disconnect mid-probe, final compute.html + landing page freeze (verbatim: *"it forze at that last item in the log and both the compute worker and unity brain html froze and went inoperable"*).
+
+### Diagnosis — single cascade, five visible symptoms
+
+The five problems are one cascade:
+
+1. **Silent cortex = LIF math forbids firing in 6 ticks at biological scale.** LIF params: tau=20 ms, Vrest=-65 mV, Vthresh=-50 mV, R=1.0, dt_ms=1. Voltage climb to threshold needs 15 mV. With strength-1 injection (8 current/neuron) + tonicDrive (~19.4), net I ≈ 27, dV/ms = I/tau ≈ 1.37 → minimum 11 ticks to reach threshold. Prior code gave 6. Neurons physically could not spike in the window.
+2. Once neurons never fire, motor argmax ties all 26 slots at 0.000 → 'a' wins by index — hence every probe decoded 'a'.
+3. TALK 4/26 is a separate bug but same family: `_teachWordEmission` trains `letter(N) → motor(N+1)` via word spelling cascades (c→a→t). The TALK probe tests `letter(X) → motor(X)` — that identity binding is NEVER trained.
+4. While DYN-PROD grinds synchronously through pointless ticks, compute.html's message pump still serves main-brain compute_batch in parallel → saturation → 15 s compute_batch timeout → device-lost → cortex GPU path dies → CPU fallback at 90 M nnz × 15 projections → 60 s per probe.
+5. Post-probe, the GPU queue holds lingering promises that race resumed compute_batch → device-lost cascade → browser tab freeze.
+
+### Fixes shipped (single atomic session)
+
+- **DYN-PROD silent cortex (`js/brain/curriculum.js`).** Tick budget raised 6 → 15 at biological scale. Injection strength boosted 1.0 → 3.0. Re-injection timing shifted to t=5/10. New math: I ≈ 43 per sem neuron, dV/ms ≈ 2.17 → threshold at tick ~7, sustained firing through tick 15. Per-tick firing log retained for operator visibility.
+- **TALK weakness via `_teachLetterNaming` (`js/brain/curriculum.js`).** New curriculum phase wired between `_teachLetterCaseBinding` and `_teachVowelSoundVariants`. For each of 26 letters × 18 reps: writes letter(X) + motor(X) + phon(X-feature) simultaneously, fires `_teachHebbianAsymmetric` against both `letter_to_motor` and `letter_to_phon`. Trains the missing `letter(X) → motor(X)` identity binding. Total cost: 26 × 18 × 2 = 936 Hebbian ops, ~5 s at curriculum scale.
+- **Probe-gate pause (`js/brain/curriculum.js` + `server/brain-server.js`).** `cortexCluster._probeGateActive = true` before DYN-PROD, `false` after. Main brain tick loop checks the flag and short-circuits `_gpuBatch` dispatch when set — yields next tick at 4× cadence with a one-time log banner. compute.html's message pump serves ONLY cortex propagates during the probe window — no cross-competition, no 15 s compute_batch timeout, no device-lost cascade, no browser freeze.
+- **Post-probe GPU drain-wait.** After DYN-PROD closes, explicit `drainWait()` flushes any lingering propagate promises before clearing the flag, so main brain's first resumed compute_batch sees a clean queue.
+- **T16.5.d full rollout.** New `_studentQuestionBank(subject, grade)` method with grade-appropriate questions for all 12 pre-K + K cells. New `_runStudentBattery(questions, label)` helper reused across all gates. `_runCell` now always runs the battery after the substrate gate returns, appending methodology/logic/retention/understanding scores to `result.reason`. ELA-K's inline block refactored to use the helper.
+- **Student question bank** — 60+ questions across 12 cells:
+  - ELA pre-K / K: letter recognition, sounds, sequences, word starts, rhymes, spelling
+  - Math pre-K / K: counting, ordering, addition, comparison, shape identification
+  - Science pre-K / K: animal sounds, colors, plants, states of matter, physics, biology
+  - Social pre-K / K: family, emotions, greetings, manners, helpfulness, school, safety
+  - Art pre-K / K: colors, shapes, tools, color mixing, pattern matching
+  - Life pre-K / K: name, gender, age, grade level, preferences
+
+### T18.34.b closed without further code change
+
+Feared 3 w/s `_teachPhonemeBlending` velocity was a stale measurement. The operator's 114.19ay Part 2 retest actually showed `_teachWordEmission heartbeat — ~19.6 words/s` at end of phase — 6-7× higher than the scare number. Two prior worker-pool routing attempts both regressed (first: 20× Phase 1 regression + 190 GB arrayBuffer; second: reverted before ship). Accepting sync path baseline of 19-25 w/s. Full ELA-K teach completes in ~10-15 min — acceptable.
+
+### Files touched (session 114.19az)
+
+- `js/brain/curriculum.js` — DYN-PROD tick + strength boost, `_teachLetterNaming` method, probe-gate flag wiring, post-probe drain-wait, `_studentQuestionBank` per-cell bank, `_runStudentBattery` helper, `_runCell` battery wiring, ELA-K inline block refactored to use helper
+- `server/brain-server.js` — Probe-gate pause in main tick loop (skip compute_batch when `cortexCluster._probeGateActive`)
+- `docs/TODO.md` — T18.34.b closed
+- `docs/FINALIZED.md` — this entry
+- `docs/NOW.md` — session 114.19az rewrite
+
+### Closure gate
+
+Operator's next Part 2 K run should show: per-tick firing counts non-zero in DYN-PROD log; READ 26/26 maintained; TALK climbs significantly above 4/26; DYN-PROD decodes actual letters (not all 'a'); per-probe wall-clock holds steady (no 20s → 60s degradation); no GPU disconnect; no browser freeze; K-STUDENT + MATH-K-STUDENT + SCI-K-STUDENT + SOC-K-STUDENT + ART-K-STUDENT + LIFE-K-STUDENT batteries all fire and score; save system persists grades + passedCells + weights across restart. Operator-verification only — Claude cannot close.
+
+---
+
 ## 2026-04-20 — Session 114.19ay: MEGA SHIP — T18.38 UTF-8 fix + T16.2.d verbatim correction + T18.35.b-f full save/resume system + LAW #0 expanded scope (code comments + launchers + user name banned)
 
 ### Scope summary

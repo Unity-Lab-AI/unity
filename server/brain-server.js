@@ -3479,6 +3479,29 @@ class ServerBrain {
               };
             });
 
+            // Pause compute_batch while curriculum is running its gate
+            // probe. cortexCluster.stepAwait floods compute.html's
+            // onmessage pump with 15 propagates per tick × 20 ticks ×
+            // 17 probes during DYN-PROD; concurrent compute_batch hits
+            // 15s timeout → device-lost cascade → browser tab disconnect.
+            // cortexCluster sets _probeGateActive=true before the probe
+            // window and clears it on exit. When set, the main brain
+            // tick loop idles this pass; it picks back up next tick
+            // once the probe clears the flag.
+            if (this.cortexCluster && this.cortexCluster._probeGateActive) {
+              if (!this._probeGatePauseLogged) {
+                console.log('[Brain] Main tick paused while curriculum runs gate probe (cortex owns GPU exclusively for the probe window).');
+                this._probeGatePauseLogged = true;
+              }
+              this._updateDerivedState();
+              if (this.running) setTimeout(tick, Math.max(200, BRAIN_TICK_MS * 4));
+              return;
+            }
+            if (this._probeGatePauseLogged && !this.cortexCluster?._probeGateActive) {
+              console.log('[Brain] Main tick resumed — gate probe complete.');
+              this._probeGatePauseLogged = false;
+            }
+
             const batchResult = await this._gpuBatch(SUBSTEPS, clusterParams);
 
             // T18.4.f — capture per-phase GPU timing from compute.html's
