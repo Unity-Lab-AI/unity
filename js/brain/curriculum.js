@@ -4266,6 +4266,8 @@ export class Curriculum {
       }
     }
     console.log(`[Curriculum][K-DIAG] gate letter loop DONE in ${Date.now() - _gateLetterStart}ms — readPass=${readPass}/26, talkPass=${talkPass}/26`);
+    console.log(`[Curriculum][K-DIAG] starting SEQ probe (25 × cluster.synapses.propagate — ~90M nnz each at biological scale, ~7-10s total expected)...`);
+    const _seqStart = Date.now();
 
     // THINK: always passes (Session 101 mean-center confirmed 100%)
     const thinkPass = ALPHABET.length;
@@ -4302,6 +4304,7 @@ export class Curriculum {
       const decoded = decodeLetter(letterOut);
       if (decoded === expectedNext) seqPass++;
     }
+    console.log(`[Curriculum][K-DIAG] SEQ probe DONE in ${Date.now() - _seqStart}ms — seqPass=${seqPass}/${ALPHABET.length - 1}`);
 
     const N = ALPHABET.length;
     const readRate = readPass / N;
@@ -4411,19 +4414,30 @@ export class Curriculum {
 
     // ── DYNAMIC PROD — sem injection → cluster.step() × N → motor argmax
     //
-    // Session 114.19m — bumped to 20 ticks + AVERAGE over 2 probe runs
-    // per word to damp Rulkov chaotic variance. Prior 12 ticks × single
-    // run showed expected_slot 'c' oscillating rank 1/3/8/17 across
-    // retries under identical training weights — classic chaos sensitivity.
-    // Averaging two independent tick trajectories gives a stabler readout
-    // of the underlying trained attractor.
-    const DYN_PROD_TICKS = 20;
-    const DYN_PROD_AVG_RUNS = 2;
+    // T18.32 — at biological scale (>100K cluster), DYN-PROD is
+    // IMPRACTICAL: 17 probes × 2 runs × 20 ticks = 680 cluster.step()
+    // calls. At 301K cortexCluster + 393M main-brain compute_batch
+    // cascade each step is ~0.5-1s → 5-11 minutes of pure DYN-PROD
+    // compute, on top of all other probes. Gee 2026-04-19 "got to here
+    // then nothing happened" = hung at DYN-PROD.
+    //
+    // Cut DYN_PROD_TICKS + DYN_PROD_AVG_RUNS sharply at biological
+    // scale so DYN-PROD completes in ~30-60 seconds (still exercises
+    // full tick loop but doesn't hang). Post-pass, can tune back up
+    // per-subject if probe quality suffers.
+    const _atBioScale = (cluster.size | 0) > 100_000;
+    const DYN_PROD_TICKS = _atBioScale ? 6 : 20;
+    const DYN_PROD_AVG_RUNS = _atBioScale ? 1 : 2;
     const LETTER_SLOTS = 26;
     let prodPass = 0;
     const prodFails = [];
     let _firstProbeDiag = null;
+    console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} word-start probes × ${DYN_PROD_AVG_RUNS} runs × ${DYN_PROD_TICKS} ticks = ${wordStartProbes.length * DYN_PROD_AVG_RUNS * DYN_PROD_TICKS} cluster.step() calls${_atBioScale ? ' — biological-scale reduced settings' : ''})...`);
+    const _dynProdStart = Date.now();
+    let _probeIdx = 0;
     for (const p of wordStartProbes) {
+      _probeIdx++;
+      const _probeStart = Date.now();
       const emb = sharedEmbeddings.getEmbedding(p.word);
       if (!emb || emb.length === 0) {
         prodFails.push(`${p.word}→NO_EMB`);
@@ -4517,7 +4531,13 @@ export class Curriculum {
       } else {
         prodFails.push(`${p.word}→${decoded || '?'}`);
       }
+      // T18.32 — per-probe progress log so Gee sees it advancing
+      const _probeMs = Date.now() - _probeStart;
+      if (_probeIdx <= 3 || _probeIdx === wordStartProbes.length || _probeMs > 10000) {
+        console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} '${p.word}'→'${decoded||'?'}' (expected '${p.expected}') in ${_probeMs}ms — prodPass=${prodPass}/${_probeIdx} so far`);
+      }
     }
+    console.log(`[Curriculum][K-DIAG] DYN-PROD probe DONE in ${Date.now() - _dynProdStart}ms — prodPass=${prodPass}/${wordStartProbes.length}`);
     if (_firstProbeDiag) console.log(_firstProbeDiag);
     const prodResult = {
       pass: prodPass,
