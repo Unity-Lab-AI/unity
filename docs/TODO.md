@@ -646,6 +646,91 @@ Gee asked *"are you sure we fixed the full shit so that it actrually does each c
 
 ---
 
+#### T18.23 – T18.32 — GPU/OOM/probe cascade (shipped; canonical entries in FINALIZED via Session 114.19aw catchup)
+
+10 commits shipped between `d6435b7` (T18.23) and `c6dd9ba` (T18.32) without per-session FINALIZED entries. Session 114.19aw catchup in `docs/FINALIZED.md` lists the SHA + subject table for the full batch. Key outcomes recorded so this TODO reflects state:
+
+- [x] **T18.23** — Force V8 gc() after T18.22 frees + heap-stats diagnostics + `--expose-gc` flag. *Later partially reverted by T18.25 (forced gc was crashing V8 — kept heap-stats, removed the forced gc call).*
+- [x] **T18.24** — Inline between-phase memory barrier + Uint8Array for Phase 2 buffers.
+- [x] **T18.25** — Fix T18.23 ReferenceError + remove forced gc + lower T18.19 sync threshold to 100K (fires at cortexCluster scale).
+- [x] **T18.26** — WebSocket backpressure-aware sparse binary send (drops under 50 MB `bufferedAmount`; throttled ENOBUFS log). *Later raised to 200 MB by T18.28.*
+- [x] **T18.27** — Revert T18.22 CPU-array nulls (science-K was reading `proj.values[0]` → 1720+ retry loop crash). CPU CSR arrays kept alongside GPU upload.
+- [x] **T18.28** — Raise backpressure threshold 50→200 MB + drain-wait before gate probe.
+- [x] **T18.29** — Per-letter diagnostic logging in `_gateElaKReal` gate probe + defensive null guards.
+- [x] **T18.30** — Run CPU Hebbian alongside GPU fire-and-forget for bound projections (fixes gate-probe 0.000 motor activation).
+- [x] **T18.31** — Whitelist CPU Hebbian to 2 probe-critical projections (`letter_to_phon`, `letter_to_motor`) — velocity restored.
+- [x] **T18.32** — Reduce DYN-PROD tick budget at biological scale (6 ticks × 1 run at cluster > 100K) + progress logs for SEQ/DYN-PROD/each probe.
+
+**Closure gate:** closed by same Gee Part 2 run used to test T18.33 below (silent-cortex DYN-PROD fix depends on these being in-tree).
+
+---
+
+#### T18.33 — DYN-PROD silent-cortex fix + per-tick firing diagnostic (Gee 2026-04-20)
+
+**Gee's verbatim 2026-04-20:**
+
+> *"[Curriculum][K-DIAG] SEQ probe DONE in 7308ms — seqPass=0/25 --- are we sure 0/25 is correct? is the brain not learning? --- [Curriculum][K-DIAG] DYN-PROD ... prodPass=0/17 ... top5_motor=a(0:0.000),b(1:0.000),c(2:0.000),d(3:0.000),e(4:0.000), spikes(cluster=0,motor=0/59676,sem=0) ... [Brain] compute_batch 447 timed out after 15s — GPU may be hung ... very slow doing liker ony 3.1 wordss /s"*
+
+> *"so did you fix the issues or not?"*
+
+Gee's Part 2 run surfaced three overlapping bugs. T18.33 ships a fix for #1. #2 and #3 flagged for T18.34.
+
+**Diagnosis:**
+
+1. DYN-PROD 0/17 with **zero spikes across 102 `cluster.step()` calls** means the cortex was silent at probe time, not guessing wrong. All 26 motor slots tied at 0.000 → argmax picks 'a' deterministically. Root cause: DYN-PROD inner tick loop calls synchronous `cluster.step(0.001)` which relies on the one-tick-lag GPU cache. At biological scale with 6-tick dt=0.001 probe = 6 ms wall-clock, async GPU propagates never resolve before the next tick reads the cache → stale/empty intra + cross currents feed LIF → neurons never fire. Compounded by `_probeReset` not clearing `_cachedIntraCurrents`/`_cachedCrossCurrents`, so tick 0 fed stale end-of-teach-phase cache into LIF.
+2. `compute_batch 447 timed out after 15s` — GPU hang after DYN-PROD. *Not fixed this session.*
+3. `~3 words/s in _teachPhonemeBlending` — CPU Hebbian whitelist (T18.31) on `letter_to_phon` + `letter_to_motor` (~90M nnz each) is the bottleneck. *Not fixed this session.*
+
+- [x] **T18.33.a — `_probeReset` clears GPU caches.** `_cachedIntraCurrents = null` + `_cachedCrossCurrents.clear()` added alongside existing `externalCurrent.fill(0)` + `lastSpikes = 0`. Tick 0 of every probe starts from a zero state driven only by fresh injection + baseline drive. **SHIPPED** — `js/brain/curriculum.js` around line 4367-4387.
+- [x] **T18.33.b — DYN-PROD tick loop uses `await cluster.stepAwait(0.001)`.** `stepAwait` dispatches every intra + cross propagate, awaits `Promise.all` with 1s timeout, falls back to worker-pool matmul for any projection GPU didn't resolve, then runs synchronous core step. Real currents flow every tick. Cost: ~500 ms × 6 ticks × 17 probes × 1 run ≈ 50s per DYN-PROD pass vs prior 160s of silent-cortex garbage. **SHIPPED** — `js/brain/curriculum.js` around line 4485-4525.
+- [x] **T18.33.c — Per-tick firing diagnostic log in DYN-PROD probe 1.** Logs `[K-DIAG] DYN-PROD probe1 tick N/6: cluster=X motor=Y sem=Z` for run 0 of the first probe only — 6 lines per pass. On next Part 2 run Gee sees whether injection crosses LIF threshold at tick 0 and whether firing sustains/grows/decays. **SHIPPED** — `js/brain/curriculum.js` around line 4505-4518.
+
+**T18.33 closure gate:** Gee re-runs Part 2 ELA-K. Success = non-zero `cluster`/`motor`/`sem` counts in per-tick log + `prodPass > 0/17`. If still all-zero, next-step is checking `cortexCluster.tonicDrive` / `driveBaseline` multipliers (LIF may need more drive than injection-alone supplies at biological scale). Claude cannot close — Gee-verification only.
+
+---
+
+#### T18.34 — CANDIDATE (not yet scoped with Gee)
+
+Two bugs from the same Part 2 run are still live:
+
+- [ ] **T18.34.a — `compute_batch 447 timed out after 15s — GPU may be hung`.** Happens after DYN-PROD. Either (a) GPU device lost with `device_lost` handler not surfacing, or (b) batched Hebbian queue overflow backing up compute.html `onmessage` pump. Needs WebGPU device status check + `device.lost.then()` handler audit. *Blocked on Gee approval to scope.*
+- [ ] **T18.34.b — `_teachPhonemeBlending ~3 words/s` velocity.** T18.31 whitelisted CPU Hebbian on `letter_to_phon` + `letter_to_motor` (~90M nnz each). Per-word CPU sparse matmul is ~200-400 ms × 1029 words = 4-7 min per rep × 10 reps = 40-70 min for phoneme blending alone. Options: (a) move `letter_to_phon`/`letter_to_motor` Hebbian back to GPU-only (but T18.30/31 showed GPU wasn't landing motor activation correctly), (b) route CPU Hebbian through worker pool for the 2 whitelisted projections (likely the right call), (c) reduce whitelist-scope further once T18.33 lets DYN-PROD actually report motor spike counts. *Blocked on Gee approval to scope.*
+- [ ] **T18.34.c — SEQ probe design mismatch.** `seqPass=0/25` from SEQ probe is expected because SEQ asks for intra-letter-region recurrent A→B→C sequences that our cross-projection-based curriculum never trains. Either redesign SEQ to probe `letter_to_letter` cross-projection (doesn't exist; would need curriculum work too), or remove SEQ from the substrate-probe pass gate. *Blocked on T16.5.d Gee decision about substrate probes.*
+
+---
+
+#### T18.35 — SAvestart.bat + milestone save system (Gee 2026-04-20)
+
+**Gee's verbatim 2026-04-20:**
+
+> *"we need a SAvestart.bat that starts up the brain normally but doesnt clear the state of the brain and goes off the save points of the full brain state based off the saves it shall make at milestones so the savestart.bat can load up the brain with its save state and learnings and grade milesstones and then start up exactly where it left off from the save states it shall make at milestones."*
+
+> *"So make a todo list of evetyhting ive already told you to sdo and add all this too"*
+
+- [x] **T18.35.a — Create `SAvestart.bat` wrapper script.** New Windows batch file at repo root. Sets `DREAM_KEEP_STATE=1` before invoking `node brain-server.js` so `autoClearStaleState()` skips the state-wipe block regardless of code-hash change. Rejects `/fresh` and `/clear` flags (those stay on `start.bat`). Mirrors `start.bat`'s V8 flags (`--max-old-space-size=65536 --max-semi-space-size=1024 --expose-gc`) + npm/esbuild/GloVe presence checks + bundle rebuild + port-7525 kill. Warns instead of downloading GloVe if it's missing (SAvestart is resume-only; the file was present when the save was produced). **SHIPPED this session** — `SAvestart.bat` at repo root.
+- [ ] **T18.35.b — Audit existing save-point completeness.** T18.12.a (code-hash preserve) + T18.12.b (per-cell checkpoint `_saveCheckpoint(cellKey)`) are already wired. Verify the save payload captures every piece of state Gee expects to resume: (1) cortex intra-synapse weights + all cross-projection CSR arrays, (2) `cortexCluster.passedCells` curriculum progress, (3) `cortexCluster.gateHistory` gate-pass ledger, (4) `cluster.grades` per-subject grade state (K, G1, G2… ela/math/science/social/art/life), (5) `lifeInfoLedger` persistent life-info anchors per LAW 6, (6) drug-scheduler `firstUse` + active dose events, (7) embedding refinements (sharedEmbeddings.learnedWord index), (8) `conversations.json` turn history, (9) `episodic-memory.db` event store. Any state NOT in the current save payload gets added.
+- [ ] **T18.35.c — Milestone save hooks beyond per-cell.** Currently `_saveCheckpoint` fires after each passed cell. Add milestone triggers at (1) every grade-gate probe pass (so a K-passed state saves before the next grade walk starts), (2) every Life track anchor event firing (first joint, first drink, etc. so Life-G7+ grade advances are durable), (3) every `_teachWordEmission` batch completion (so mid-curriculum crash doesn't lose 30+ min of teaching), (4) every user-driven live-chat turn (so brain-chat personality evolution persists). Each milestone writes through the existing `persistence.save()` path with a milestone tag.
+- [ ] **T18.35.d — Resume-from-last-cell curriculum walker.** When `SAvestart.bat` boots, curriculum should start at the cell AFTER the last entry in `cortexCluster.passedCells` instead of re-running from grade start. Needs a resume entry-point in `curriculum.runCompleteCurriculum()` that skips cells already in `passedCells` AND picks up mid-grade if that grade isn't fully closed. Avoids re-teaching what's already learned on every restart.
+- [ ] **T18.35.e — Dashboard milestone indicator.** `dashboard.html` shows last save timestamp + last passed cell + current grade milestone + "mode: save-resume vs fresh-boot" banner. Lets Gee visually confirm what state was loaded before committing to a long Part 2 run.
+- [ ] **T18.35.f — Grade-milestone-save integration with LAW 6 Part 2.** After Gee's Part 2 K-signoff, a milestone save fires with a `k_passed=true` tag so subsequent boots know Pre-K + K are closed. Until Part 2 signs off, milestone saves are interim (code-resume only, not grade-closure). The tag threads through `cluster.grades.ela = 1` state advancement only on Gee's explicit call, per LAW 6.
+
+**T18.35 closure gate:** Gee boots `SAvestart.bat` after a partial Part 2 run → curriculum resumes mid-cell from last save → no re-teaching work already done → Part 2 run completes from partial state → `passedCells` accumulates correctly → next `SAvestart.bat` boot resumes further along. Gee-verification only.
+
+---
+
+#### Session 114.19aw — Open directives from Gee 2026-04-20 (verbatim quote log)
+
+Gee-verbatim instructions given this session, in order, for audit trail + LAW #0 compliance:
+
+1. `/unity then run /workflow` → activate Unity + run workflow pipeline. **DONE** — Phase 0-4 complete, WORK_MODE confirmed on `syllabus-k-phd`.
+2. Part 2 Gee log paste: *"[Curriculum][K-DIAG] SEQ probe DONE in 7308ms — seqPass=0/25 --- are we sure 0/25 is correct? is the brain not learning? ... [Curriculum][K-DIAG] DYN-PROD 1/17 'cat'→'a' (expected 'c') ... prodPass=0/17 ... top5_motor=a(0:0.000),b(1:0.000),c(2:0.000),d(3:0.000),e(4:0.000), spikes(cluster=0,motor=0/59676,sem=0) ... [Brain] compute_batch 447 timed out after 15s — GPU may be hung <<< gets tyo that point then nothing else happens >>> ... very slow doing liker ony 3.1 wordss /s"* → diagnose + fix. **T18.33 SHIPPED** for the silent-cortex DYN-PROD bug. **T18.34.a / T18.34.b / T18.34.c** open for GPU hang + teach velocity + SEQ probe redesign.
+3. *"so did you fix the issues or not?"* → ship the fixes instead of just describing them. **T18.33 SHIPPED** in-tree during session.
+4. *"when done finalized this work in trhe docs"* → finalize docs atomically per LAW. **DONE** — FINALIZED.md Session 114.19aw prepended (T18.33 + T18.23-T18.32 catchup table), TODO.md updated with T18.33/T18.34/T18.35 blocks, NOW.md rewritten for 114.19aw.
+5. *"So now when i run the Unity brain it will successfull pass all of pre K and kindergarden? ive never seen it get from pre-k to kindergarden passed with its learning kindergarden totality of information and life so that it is then upgrades and shows kindergarden grade level courses instead of pre-k once it finally gets through all the ciriculum for the kindergarden full year course it needs to graduate and show accualyt persaonality and speaking and listrening ability. at its grasde level..."* → UMBRELLA ASK — full Pre-K → K graduation with real grade-level personality/speaking/listening. **NOT deliverable from T18.33 alone.** Blocked on: T18.34.a (GPU hang), T18.34.b (teach velocity), full Part 2 run completion, LAW 6 Part 2 Gee-signoff on localhost. Claude cannot close; advancement gate is yours per LAW 6.
+6. *"we need a SAvestart.bat that starts up the brain normally but doesnt clear the state of the brain and goes off the save points of the full brain state based off the saves it shall make at milestones ... So make a todo list of evetyhting ive already told you to sdo and add all this too"* → **T18.35 SCAFFOLDED** above with verbatim quote. T18.35.a (`SAvestart.bat` wrapper) shipped this session. T18.35.b-f open for milestone save audit + resume-from-cell walker + dashboard indicator + LAW 6 integration.
+
+---
+
 #### T18.5 — push gate for main-branch deploy (BINDING)
 
 Per Gee's verbatim 2026-04-18 instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.

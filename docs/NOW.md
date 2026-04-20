@@ -1,85 +1,65 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19av · **Date:** 2026-04-19 · **Branch:** `syllabus-k-phd` · **HEAD:** `86baaba` (T18.28) → pending T18.29 · **BUILD:** `0.1.0+62786614-e6be` (T18.28 pre-stamp)
+> **Session:** 114.19aw · **Date:** 2026-04-20 · **Branch:** `syllabus-k-phd` · **HEAD:** `c6dd9ba` (T18.32) → pending T18.33
 
 ---
 
-## MASSIVE PROGRESS + REMAINING HANG at gate probe
+## T18.33 SHIPPING — DYN-PROD silent-cortex fix
 
-### What's working post-T18.27/T18.28
-
-Gee 2026-04-19 Part 2 run got FURTHER than any prior run:
+### Gee's Part 2 run 2026-04-20 surfaced three bugs
 
 ```
-Pre-K: all 5 subjects passed (T18.12.c resume)
-ELA-K Phase 1 DONE in 0.3s               ← T18.17 GPU-bound fast path
-ELA-K Phase 2 DONE in 0.3s               ← T18.25 sync bypass (301K threshold)
-5 K.RF helpers: all completed            ← T18.25/T18.26 backpressure/throttle
-_teachWordEmission DONE: 1029 × 12 reps  ← T18.26 backpressure-aware send
-_teachPluralTransform DONE
-_teachQuestionWordCategories DONE
-_teachEndPunctuation DONE
-_teachCapitalization DONE
-_teachStoryComprehension DONE
-_teachCausalChains DONE
-[T18.28 drain-wait completed in 2104ms: bufferedAmount 269.2MB → 0.0MB] ← T18.28 works
-[K-DIAG] gate: inv=29, motor=9946, mGroup=342, sem_to_motor=9946x50329 nnz=14919000...
-← HANG HERE (no probe results logged)
+[Curriculum][K-DIAG] SEQ probe DONE in 7308ms — seqPass=0/25
+[Curriculum][K-DIAG] DYN-PROD 1/17 'cat'→'a' (expected 'c') in 9761ms — prodPass=0/1 so far
+... (every word decodes to 'a') ...
+[Curriculum][K-DIAG] DYN-PROD probe DONE in 159724ms — prodPass=0/17
+[Curriculum][K-DIAG] DYN-PROD[cat→c] decoded=a, emb_pos=141/300, expected_slot=c(2:0.000) rank=3/26,
+top5_motor=a(0:0.000),b(1:0.000),c(2:0.000),d(3:0.000),e(4:0.000),
+spikes(cluster=0,motor=0/59676,sem=0)
+[Brain] compute_batch 447 timed out after 15s — GPU may be hung
+[Curriculum] ⏱ _teachPhonemeBlending heartbeat — rep 1/10, word 1016/1029, elapsed 246.5s, ~2.6 words/s
 ```
 
-### The hang — inside `_gateElaKReal` letter loop
+**The 0/17 DYN-PROD is NOT the brain guessing wrong.** All 26 motor slots tied at 0.000 → argmax picks index 0 = 'a' deterministically. Zero spikes across 102 `cluster.step()` calls = cortex is completely silent during the probe.
 
-T18.28's drain-wait confirmed compute.html's queue drained from 269 MB → 0 MB in 2104ms before the gate probe started. K-DIAG log fired. Then: silence.
+### T18.33 fixes (in this commit)
 
-Probe code after K-DIAG log:
-- `for (const letter of ALPHABET)` — 26 iterations
-- Each iteration:
-  - `letterToPhon.propagate(letterPat)` — CPU sparse matmul on ~90M nnz matrix (~300-500ms at biological scale)
-  - TALK probe `proj.propagate(letterPat)` for motor-feeding projections (~50-200ms each)
-  - If no direct, fallback chain `letterToSem.propagate` + `semToMot.propagate`
+1. **`_probeReset` also clears GPU caches** — `_cachedIntraCurrents = null` + `_cachedCrossCurrents.clear()` added next to the existing `externalCurrent.fill(0)` + `lastSpikes = 0` reset. Tick 0 of every probe starts from a zero state driven only by fresh injection + baseline drive.
+2. **DYN-PROD tick loop uses `await cluster.stepAwait(0.001)`** — synchronous `step(dt)` swapped for the async await-cascade variant. Fixes the root cause: at 6-tick dt=0.001 wall-clock (6 ms), async GPU propagates never resolve before the next tick reads the one-tick-lag cache → stale/empty currents feed LIF → cortex never fires. `stepAwait` awaits the full GPU cascade per tick so real currents flow.
+3. **Per-tick firing log in DYN-PROD probe 1** — logs `cluster=X motor=Y sem=Z` for each of 6 ticks on run 0 of the first probe only. 6 lines total, negligible log cost. On next Part 2 run Gee will see whether injection crosses LIF threshold at tick 0.
 
-Synchronous CPU compute — no awaits. Should take 30-60s total for all 26 letters. Gee said "hung" — either >2min wait with no output, or a silent throw + retry loop.
+### Why only DYN-PROD
 
-### T18.29 SHIPPING — defensive logging + null checks inside gate probe
+Audited every probe in `_gateElaKReal` — WRITE / RESP / TWO-WORD / FREE-WRITING already use `generateSentenceAwait` (T18.4.b era fix). SEQ probe uses single-shot `cluster.synapses.propagate(letterInput)` — no tick loop, no GPU-cache dependency; its 0/25 failure is a probe-DESIGN mismatch (SEQ asks for intra-letter-region recurrent A→B→C that cross-projection curriculum never trains), not a bug.
 
-**What this commit adds:**
+### NOT fixed this session — flagged as T18.34 candidates
 
-- `[K-DIAG] gate probe starting letter loop (26 letters × READ+TALK)...` — fires once at loop start
-- `[K-DIAG] letter 'X' READ propagate Nms` — fires for first 3 letters (a, b, c)
-- `[K-DIAG] letter 'X' TALK via Y_to_motor propagate Nms` — fires for first 3 letters
-- `[K-DIAG] gate letter N/26 'X' done in Nms (readPass=N talkPass=N so far)` — fires for letter 1, letter 13, letter 26, OR any letter taking >2s
-- `[K-DIAG] gate letter loop DONE in Nms — readPass=X/26, talkPass=X/26` — end-of-loop
+- `compute_batch 447 timed out after 15s — GPU may be hung` — GPU hang post-DYN-PROD. Needs WebGPU device status audit + `device.lost` handler surfacing check.
+- `~3 words/s teach velocity` in `_teachPhonemeBlending` — CPU Hebbian whitelist (T18.31) on `letter_to_phon` + `letter_to_motor` (~90M nnz each) is the bottleneck. Likely route them through worker pool or rescope the whitelist once T18.33 lets DYN-PROD report motor spike counts correctly.
+- `SEQ probe 0/25 design mismatch` — redesign or remove, blocked on T16.5.d substrate-probe decision.
 
-**Defensive null guards:** If any bound projection's `values`/`colIdx`/`rowPtr` arrays are null (defense against T18.22 regression), logs "CSR arrays null — skipping READ/TALK" instead of throwing. T18.27 reverted the nulls so this should never fire, but if it does we'll see exactly which projection.
+### Drift recovery in this session
 
-**If T18.29 shows NO `letter 1/26 done` log**: hang is before first iteration — likely in K-DIAG itself or ALPHABET enumeration. Unlikely but caught.
+T18.23 through T18.32 (10 commits between T18.22 and T18.33) shipped without FINALIZED entries — a LAW "Docs before push, no patches" violation prior to this session. `docs/FINALIZED.md` Session 114.19aw now carries a SHA + subject catchup table for the full batch. Canonical per-commit detail lives in `git show <sha>`. Future sessions MUST NOT shortcut FINALIZED entries.
 
-**If T18.29 shows `letter 1/26` but not `letter 13/26`**: hangs somewhere in letters 2-12. We'll see the last letter logged + duration.
+### T18.35.a also shipped this session — SAvestart.bat save-state resume wrapper
 
-**If T18.29 shows all 26 letters but no `letter loop DONE`**: hangs in SEQ probe after the loop. Next T18.30 adds logging there.
+Gee verbatim 2026-04-20: *"we need a SAvestart.bat that starts up the brain normally but doesnt clear the state of the brain and goes off the save points of the full brain state based off the saves it shall make at milestones ... So make a todo list of evetyhting ive already told you to sdo and add all this too"*
 
-### Full T18.x cascade recap (for context)
+New `SAvestart.bat` at repo root. Sets `DREAM_KEEP_STATE=1` before `node brain-server.js` so `autoClearStaleState()` skips the state-wipe block regardless of code-hash change. Rejects `/fresh` and `/clear` flags. Mirrors start.bat's V8 flags + npm/esbuild/bundle-rebuild + port-7525 kill. Relies on existing T18.12.b per-cell `_saveCheckpoint(cellKey)` infra for resume anchors.
 
-| # | Purpose | Status |
-|---|---------|--------|
-| T18.17 | GPU-bound fast path — skip CPU shadow on bound cross-projection Hebbian | ✓ proven (Phase 1 0.3s) |
-| T18.19 | Worker-pool sync bypass at 100K threshold (was 10M, wrong for cortexCluster) | ✓ proven (Phase 2 0.3s) |
-| T18.22 | Null CPU CSR arrays post GPU upload | ✗ REVERTED by T18.27 (science-K null-access) |
-| T18.25 | Remove forced gc() (was crashing V8) + fix ReferenceError + lower sync threshold | ✓ proven |
-| T18.26 | WebSocket backpressure-aware sparse binary send (drop at 50MB) | ✓ partial — superseded by T18.28 |
-| T18.27 | Revert T18.22 nulls (science-K was reading `proj.values[0]`) | ✓ proven |
-| T18.28 | Raise threshold 50→200MB + drain-wait before gate probe | ✓ drain proven, probe still hangs |
-| T18.29 | **Per-letter diagnostic logging inside gate probe + defensive null guards** | SHIPPING NOW |
+**Full T18.35 block (b-f open)** — milestone save completeness audit, resume-from-last-cell walker, dashboard indicator, LAW 6 Part 2 grade-state integration — all tracked in `docs/TODO.md` with verbatim Gee quote.
 
-### Files touched this session (T18.29)
+### Files touched this session
 
-- `js/brain/curriculum.js` — per-letter diagnostic logging in `_gateElaKReal` + null-array defensive guards on bound projection `.propagate()` calls
-- `docs/NOW.md` — this file (session 114.19av snapshot)
+- `js/brain/curriculum.js` — `_probeReset` GPU-cache clear; DYN-PROD inner tick loop uses `await cluster.stepAwait`; per-tick firing log for first probe (T18.33)
+- `SAvestart.bat` — new wrapper at repo root (T18.35.a)
+- `docs/TODO.md` — T18.23-T18.32 catchup block + T18.33 block + T18.34 candidate scaffold + T18.35 block + Session 114.19aw verbatim directive log
+- `docs/FINALIZED.md` — Session 114.19aw entry prepended (T18.33 + T18.35.a + T18.23-T18.32 SHA table)
+- `docs/NOW.md` — this file
 
 ### Next steps
 
-Gee retests → pastes gate probe log section → we see EXACTLY which letter / which operation hangs → ship T18.30 targeting the specific cause.
+Gee restarts localhost (auto-clear fires) → re-runs Part 2 ELA-K → pastes the DYN-PROD probe1 per-tick log. If `cluster/motor/sem` counts are all non-zero on tick 1, injection is crossing threshold and the cortex is alive; T18.33 closes. If counts stay at 0 across all 6 ticks, root cause isn't the GPU-cache-staleness bug — next-step is checking `cortexCluster.tonicDrive` / `driveBaseline` / `gainMultiplier` multipliers (LIF may need more drive than our injection + baseline provides at biological scale cortexCluster).
 
-If no log lines appear after K-DIAG, the hang is outside the loop I instrumented and we need to look at code between K-DIAG log and the `for (const letter of ALPHABET)` start.
-
-*— Unity AI Lab · 5 hours deep into the T18 cascade · first biological-scale gate probe imminent*
+*— Unity AI Lab · Session 114.19aw · silent-cortex diagnosis → stepAwait + cache-clear → per-tick firing telemetry for the next Part 2 run*

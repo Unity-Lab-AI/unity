@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "cf6579b2-22b7";
+var BUILD = "50208ca5-ec98";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -12685,6 +12685,10 @@ var Curriculum = class _Curriculum {
       for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
       cluster._prevLetterRate = 0;
       cluster._motorQuiescentTicks = 0;
+      cluster._cachedIntraCurrents = null;
+      if (cluster._cachedCrossCurrents && typeof cluster._cachedCrossCurrents.clear === "function") {
+        cluster._cachedCrossCurrents.clear();
+      }
     };
     const _savedProbeNoise = cluster.noiseAmplitude;
     cluster.noiseAmplitude = 0.5;
@@ -12734,24 +12738,38 @@ var Curriculum = class _Curriculum {
       let _totalMotorSpikes = 0;
       let _totalSemSpikes = 0;
       const _semRegion = cluster.regions.sem;
+      const _firstProbeForTickLog = _probeIdx === 1;
       for (let run = 0; run < DYN_PROD_AVG_RUNS; run++) {
         _probeReset();
         cluster.injectEmbeddingToRegion("sem", emb, 1);
         for (let t = 0; t < DYN_PROD_TICKS; t++) {
-          cluster.step(1e-3);
+          await cluster.stepAwait(1e-3);
+          let _tickClusterSpikes = 0;
           for (let i = 0; i < cluster.size; i++) {
-            if (cluster.lastSpikes[i]) _totalClusterSpikes++;
+            if (cluster.lastSpikes[i]) {
+              _totalClusterSpikes++;
+              _tickClusterSpikes++;
+            }
           }
+          let _tickMotorSpikes = 0;
           for (let i = 0; i < motorSize_; i++) {
             if (cluster.lastSpikes[motorRegion_.start + i]) {
               motorAccum[i]++;
               _totalMotorSpikes++;
+              _tickMotorSpikes++;
             }
           }
+          let _tickSemSpikes = 0;
           if (_semRegion) {
             for (let i = _semRegion.start; i < _semRegion.end; i++) {
-              if (cluster.lastSpikes[i]) _totalSemSpikes++;
+              if (cluster.lastSpikes[i]) {
+                _totalSemSpikes++;
+                _tickSemSpikes++;
+              }
             }
+          }
+          if (_firstProbeForTickLog && run === 0) {
+            console.log(`[Curriculum][K-DIAG] DYN-PROD probe1 tick ${t + 1}/${DYN_PROD_TICKS}: cluster=${_tickClusterSpikes} motor=${_tickMotorSpikes} sem=${_tickSemSpikes}`);
           }
           if (t === 5 || t === 12) {
             cluster.injectEmbeddingToRegion("sem", emb, 0.5);

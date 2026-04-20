@@ -4364,6 +4364,15 @@ export class Curriculum {
     // (accumulated from prior injections) and lastSpikes (active
     // neuron marks). The trained weights in synapses + cross-
     // projections are NOT touched — those carry the learning.
+    //
+    // T18.33 — ALSO null `_cachedIntraCurrents` and clear
+    // `_cachedCrossCurrents`. Prior probes (before 114.19aw) left
+    // stale GPU-propagate caches around end-of-teach-phase residue,
+    // so tick-0 of the probe fed garbage intra + cross currents
+    // into the LIF current loop — neurons either over/under-fired
+    // depending on what stale values happened to persist. After
+    // this reset, tick 0 runs from a genuine zero-state with only
+    // our sem/phon injection + baseline drive driving firing.
     const _probeReset = () => {
       if (cluster.externalCurrent && typeof cluster.externalCurrent.fill === 'function') {
         cluster.externalCurrent.fill(0);
@@ -4371,6 +4380,10 @@ export class Curriculum {
       for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
       cluster._prevLetterRate = 0;
       cluster._motorQuiescentTicks = 0;
+      cluster._cachedIntraCurrents = null;
+      if (cluster._cachedCrossCurrents && typeof cluster._cachedCrossCurrents.clear === 'function') {
+        cluster._cachedCrossCurrents.clear();
+      }
     };
 
     // Session 114.19l — SUPPRESS NOISE during dynamic probes.
@@ -4456,25 +4469,56 @@ export class Curriculum {
       let _totalMotorSpikes = 0;
       let _totalSemSpikes = 0;
       const _semRegion = cluster.regions.sem;
+      // T18.33 — use `stepAwait(dt)` per tick instead of synchronous
+      // `step(dt)`. At biological scale, synchronous step relies on
+      // one-tick-lag GPU cache (`_cachedIntraCurrents` +
+      // `_cachedCrossCurrents`) populated by async propagates fired
+      // at the TAIL of the prior step. In a 6-tick dt=0.001 probe
+      // (6 ms wall-clock window) the GPU round-trip hasn't resolved
+      // before the next tick reads the cache → stale/empty currents
+      // feed the LIF current loop → cortex stays silent → DYN-PROD
+      // returns 0/17 with `spikes(cluster=0, motor=0/59676, sem=0)`
+      // (Gee's Part 2 log 2026-04-19). `stepAwait` clears caches at
+      // entry, dispatches every intra + cross propagate, awaits
+      // Promise.all (1s guard), falls back to worker-pool matmul for
+      // any projection the GPU didn't resolve, THEN runs the synchronous
+      // core step. Real currents flow every tick. Trade-off: ~500 ms
+      // per tick × 6 ticks × 17 probes × 1 run (biological scale
+      // DYN_PROD_TICKS/AVG_RUNS) ≈ 50 s per DYN-PROD pass — acceptable
+      // since our prior "fast" run was 160 s of silent-cortex garbage.
+      const _firstProbeForTickLog = (_probeIdx === 1);
       for (let run = 0; run < DYN_PROD_AVG_RUNS; run++) {
         _probeReset();
         cluster.injectEmbeddingToRegion('sem', emb, 1.0);
         for (let t = 0; t < DYN_PROD_TICKS; t++) {
-          cluster.step(0.001);
+          // eslint-disable-next-line no-await-in-loop
+          await cluster.stepAwait(0.001);
           // Count ALL spikes for diagnostic
+          let _tickClusterSpikes = 0;
           for (let i = 0; i < cluster.size; i++) {
-            if (cluster.lastSpikes[i]) _totalClusterSpikes++;
+            if (cluster.lastSpikes[i]) { _totalClusterSpikes++; _tickClusterSpikes++; }
           }
+          let _tickMotorSpikes = 0;
           for (let i = 0; i < motorSize_; i++) {
             if (cluster.lastSpikes[motorRegion_.start + i]) {
               motorAccum[i]++;
               _totalMotorSpikes++;
+              _tickMotorSpikes++;
             }
           }
+          let _tickSemSpikes = 0;
           if (_semRegion) {
             for (let i = _semRegion.start; i < _semRegion.end; i++) {
-              if (cluster.lastSpikes[i]) _totalSemSpikes++;
+              if (cluster.lastSpikes[i]) { _totalSemSpikes++; _tickSemSpikes++; }
             }
+          }
+          // T18.33 — per-tick firing log for the first probe only, so
+          // Gee sees whether injection crossed threshold at tick 0 and
+          // whether firing sustained/grew/decayed across the window.
+          // Fires for run=0 of probe 1 across all 6 ticks — 6 lines
+          // total, negligible log cost, high diagnostic value.
+          if (_firstProbeForTickLog && run === 0) {
+            console.log(`[Curriculum][K-DIAG] DYN-PROD probe1 tick ${t + 1}/${DYN_PROD_TICKS}: cluster=${_tickClusterSpikes} motor=${_tickMotorSpikes} sem=${_tickSemSpikes}`);
           }
           // Re-inject sem periodically to sustain attention
           if (t === 5 || t === 12) {
