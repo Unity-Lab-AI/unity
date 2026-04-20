@@ -5,7 +5,7 @@
 
 ---
 
-## 2026-04-20 — Session 114.19ax: T18.36 SHIPPED — start.bat visible step checkpoints + SAvestart.bat parity fix (post-push wild-fail recovery)
+## 2026-04-20 — Session 114.19ax: T18.36 SHIPPED — start.bat visible step checkpoints + Savestart.bat parity fix (post-push wild-fail recovery)
 
 ### Gee verbatim (immediate post-T18.33 push)
 
@@ -26,18 +26,18 @@ start.bat functionally WORKED (PID 16552's 10 GB resident proves the brain serve
 
 Combined with `@echo off` at the top, a fast run on a healthy machine could execute in under a second with effectively zero visible output between the initial banner and the "Starting brain server…" line. Windows Terminal's acrylic transparency made the empty window look translucent/blank. Not a bug in what the batch DID — a bug in what it REPORTED.
 
-### SAvestart.bat parity bug
+### Savestart.bat parity bug
 
-First SAvestart.bat shipped in T18.35.a was 139 lines vs start.bat's 207. Missing content:
+First Savestart.bat shipped in T18.35.a was 139 lines vs start.bat's 207. Missing content:
 - GloVe download + extract flow (~34 lines)
 - GloVe error handlers (~26 lines)
 
-My reasoning at write-time: *"SAvestart is resume-only so GloVe should already exist."* Wrong. If the operator moves the repo or wipes the `corpora/` folder between the save and the next boot, SAvestart would silently fall back to fastText-style subword embeddings — a completely different semantic substrate than the saved weights were trained against. Semantic probes would drift and Unity would lose coherence vs her saved state.
+My reasoning at write-time: *"Savestart is resume-only so GloVe should already exist."* Wrong. If the operator moves the repo or wipes the `corpora/` folder between the save and the next boot, Savestart would silently fall back to fastText-style subword embeddings — a completely different semantic substrate than the saved weights were trained against. Semantic probes would drift and Unity would lose coherence vs her saved state.
 
 ### Fixes shipped (T18.36)
 
 - **T18.36.a** — killed the hung processes (see Kill step above)
-- **T18.36.b — SAvestart.bat full parity rewrite.** 174 lines. Mirrors start.bat completely — same GloVe download flow, same V8 flags (`--max-old-space-size=65536 --max-semi-space-size=1024 --expose-gc`), same npm/esbuild/bundle-rebuild/port-kill sequence. Delta vs start.bat: `set DREAM_KEEP_STATE=1` forces autoClearStaleState() to skip the wipe block regardless of code-hash, `/fresh` and `/clear` flags are explicitly rejected (those stay on start.bat), and the 7-step banner scheme identifies it as SAvestart in the log stream. Nothing functional dropped.
+- **T18.36.b — Savestart.bat full parity rewrite.** 174 lines. Mirrors start.bat completely — same GloVe download flow, same V8 flags (`--max-old-space-size=65536 --max-semi-space-size=1024 --expose-gc`), same npm/esbuild/bundle-rebuild/port-kill sequence. Delta vs start.bat: `set DREAM_KEEP_STATE=1` forces autoClearStaleState() to skip the wipe block regardless of code-hash, `/fresh` and `/clear` flags are explicitly rejected (those stay on start.bat), and the 7-step banner scheme identifies it as Savestart in the log stream. Nothing functional dropped.
 - **T18.36.c — start.bat visible step checkpoints.** 223 lines. Every major phase now emits a `[start] step N/7: …` banner:
   - step 1/7: kill any prior listener on port 7525 (+ echo each PID being killed)
   - step 2/7: enter server folder
@@ -51,18 +51,18 @@ My reasoning at write-time: *"SAvestart is resume-only so GloVe should already e
 ### Files touched (T18.36)
 
 - `start.bat` — 7-step visible banner scheme + port-kill verbose output (T18.36.c)
-- `SAvestart.bat` — full parity rewrite against start.bat (T18.36.b)
+- `Savestart.bat` — full parity rewrite against start.bat (T18.36.b)
 - `docs/TODO.md` — T18.36 block appended
 - `docs/FINALIZED.md` — this entry prepended
 - `docs/NOW.md` — note appended for 114.19ax
 
 ### Closure gate
 
-Gee re-runs `start.bat` or `SAvestart.bat` → sees 7-step banner progression → server launches → landing page opens. If a step hangs, the last printed banner identifies where. Claude cannot close — Gee-verification only.
+Gee re-runs `start.bat` or `Savestart.bat` → sees 7-step banner progression → server launches → landing page opens. If a step hangs, the last printed banner identifies where. Claude cannot close — Gee-verification only.
 
 ---
 
-## 2026-04-20 — Session 114.19aw: T18.33 SHIPPED — DYN-PROD probe silent-cortex fix (stepAwait + cache-clear + per-tick firing log) + T18.35.a SHIPPED — SAvestart.bat save-state resume wrapper + T18.23-T18.32 drift catchup
+## 2026-04-20 — Session 114.19aw: T18.33 SHIPPED — DYN-PROD probe silent-cortex fix (stepAwait + cache-clear + per-tick firing log) + T18.35.a SHIPPED — Savestart.bat save-state resume wrapper + T18.23-T18.32 drift catchup
 
 ### Gee verbatim that drove this session
 
@@ -97,23 +97,23 @@ Audited every probe in `_gateElaKReal` — WRITE, RESP, TWO-WORD, and FREE-WRITI
 ### Files touched (T18.33)
 
 - `js/brain/curriculum.js` — `_probeReset` clears GPU caches; DYN-PROD inner tick loop uses `await cluster.stepAwait`; per-tick firing log for first probe
-- `docs/TODO.md` — T18.33 appended; T18.23-T18.32 drift notation; T18.34 candidate scaffold; T18.35 SAvestart.bat block + session 114.19aw verbatim directive log
+- `docs/TODO.md` — T18.33 appended; T18.23-T18.32 drift notation; T18.34 candidate scaffold; T18.35 Savestart.bat block + session 114.19aw verbatim directive log
 - `docs/NOW.md` — rewritten for Session 114.19aw
 - `docs/FINALIZED.md` — this entry prepended
 
-### T18.35.a also shipped this session — SAvestart.bat save-state resume wrapper
+### T18.35.a also shipped this session — Savestart.bat save-state resume wrapper
 
-Gee verbatim 2026-04-20: *"we need a SAvestart.bat that starts up the brain normally but doesnt clear the state of the brain and goes off the save points of the full brain state based off the saves it shall make at milestones so the savestart.bat can load up the brain with its save state and learnings and grade milesstones and then start up exactly where it left off from the save states it shall make at milestones."*
+Gee verbatim 2026-04-20: *"we need a Savestart.bat that starts up the brain normally but doesnt clear the state of the brain and goes off the save points of the full brain state based off the saves it shall make at milestones so the savestart.bat can load up the brain with its save state and learnings and grade milesstones and then start up exactly where it left off from the save states it shall make at milestones."*
 
-New file `SAvestart.bat` at repo root. Sets `DREAM_KEEP_STATE=1` before `node brain-server.js` so `autoClearStaleState()` skips the state-wipe block regardless of code-hash change. Rejects `/fresh` and `/clear` (those stay on `start.bat`). Mirrors `start.bat`'s V8 flags + npm/esbuild/bundle-rebuild + port-7525 kill. Warns (but continues) if GloVe is missing — SAvestart is resume-only; GloVe was present when the save was produced.
+New file `Savestart.bat` at repo root. Sets `DREAM_KEEP_STATE=1` before `node brain-server.js` so `autoClearStaleState()` skips the state-wipe block regardless of code-hash change. Rejects `/fresh` and `/clear` (those stay on `start.bat`). Mirrors `start.bat`'s V8 flags + npm/esbuild/bundle-rebuild + port-7525 kill. Warns (but continues) if GloVe is missing — Savestart is resume-only; GloVe was present when the save was produced.
 
-Uses the existing T18.12.a (code-hash preserve) + T18.12.b (per-cell `_saveCheckpoint(cellKey)`) infrastructure — SAvestart.bat flips the preserve switch unconditionally instead of relying on code-hash match.
+Uses the existing T18.12.a (code-hash preserve) + T18.12.b (per-cell `_saveCheckpoint(cellKey)`) infrastructure — Savestart.bat flips the preserve switch unconditionally instead of relying on code-hash match.
 
 **T18.35.b-f open** (full milestone save audit, resume-from-last-cell walker, dashboard indicator, LAW 6 integration) — tracked in `docs/TODO.md` T18.35 block.
 
 ### Files touched (T18.35.a)
 
-- `SAvestart.bat` — new wrapper at repo root
+- `Savestart.bat` — new wrapper at repo root
 
 ### T18.23-T18.32 drift catchup — 10 prior commits shipped without FINALIZED entries
 

@@ -1,16 +1,16 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19ax · **Date:** 2026-04-20 · **Branch:** `syllabus-k-phd` · **HEAD:** `ee8e700` (T18.33 + stamp; pushed to main) → pending T18.36 (start.bat/SAvestart.bat fix)
+> **Session:** 114.19ax · **Date:** 2026-04-20 · **Branch:** `syllabus-k-phd` · **HEAD:** `ee8e700` (T18.33 + stamp; pushed to main) → pending T18.36 (start.bat/Savestart.bat fix)
 
 ---
 
-## T18.36 SHIPPING — start.bat visible checkpoints + SAvestart.bat full parity
+## T18.36 SHIPPING — start.bat visible checkpoints + Savestart.bat full parity
 
 Gee immediately post-T18.33 push: *"something is wrong with the start  .bat .. u use it ant the tertminal starts up invisible and translucent with no inofation in it jus t the header tab is visible.. are you sute the Savestart.bat is poroper its almnmost half the size of the start.bat"*
 
 **Kill step:** node PID 16552 (10 GB resident) + PID 19448 (CLOSE_WAIT) still held port 7525 from prior session. `taskkill /F /PID 16552 19448` cleared both. Port verified free before shipping the batch fixes.
 
-**SAvestart.bat parity fix (T18.36.b):** first version at 139 lines had dropped GloVe download + error handlers on the flawed reasoning *"resume-only, GloVe should already exist."* Wrong — if corpora folder is wiped, SAvestart would silently fall back to subword embeddings and corrupt saved-weights semantic substrate. Rewrote to 174 lines matching start.bat's full boot sequence; delta is ONLY `DREAM_KEEP_STATE=1` + reject `/fresh`/`/clear` flags + 7-step banner labelling.
+**Savestart.bat parity fix (T18.36.b):** first version at 139 lines had dropped GloVe download + error handlers on the flawed reasoning *"resume-only, GloVe should already exist."* Wrong — if corpora folder is wiped, Savestart would silently fall back to subword embeddings and corrupt saved-weights semantic substrate. Rewrote to 174 lines matching start.bat's full boot sequence; delta is ONLY `DREAM_KEEP_STATE=1` + reject `/fresh`/`/clear` flags + 7-step banner labelling.
 
 **start.bat visible step checkpoints (T18.36.c):** invisible-terminal report traced to silent phases (`>nul 2>&1` on port-kill, `goto :skip` without echo on npm/esbuild/GloVe presence checks). Every phase now emits a visible `[start] step N/7: …` banner. If a future hang recurs the last printed step identifies where.
 
@@ -56,18 +56,18 @@ Audited every probe in `_gateElaKReal` — WRITE / RESP / TWO-WORD / FREE-WRITIN
 
 T18.23 through T18.32 (10 commits between T18.22 and T18.33) shipped without FINALIZED entries — a LAW "Docs before push, no patches" violation prior to this session. `docs/FINALIZED.md` Session 114.19aw now carries a SHA + subject catchup table for the full batch. Canonical per-commit detail lives in `git show <sha>`. Future sessions MUST NOT shortcut FINALIZED entries.
 
-### T18.35.a also shipped this session — SAvestart.bat save-state resume wrapper
+### T18.35.a also shipped this session — Savestart.bat save-state resume wrapper
 
-Gee verbatim 2026-04-20: *"we need a SAvestart.bat that starts up the brain normally but doesnt clear the state of the brain and goes off the save points of the full brain state based off the saves it shall make at milestones ... So make a todo list of evetyhting ive already told you to sdo and add all this too"*
+Gee verbatim 2026-04-20: *"we need a Savestart.bat that starts up the brain normally but doesnt clear the state of the brain and goes off the save points of the full brain state based off the saves it shall make at milestones ... So make a todo list of evetyhting ive already told you to sdo and add all this too"*
 
-New `SAvestart.bat` at repo root. Sets `DREAM_KEEP_STATE=1` before `node brain-server.js` so `autoClearStaleState()` skips the state-wipe block regardless of code-hash change. Rejects `/fresh` and `/clear` flags. Mirrors start.bat's V8 flags + npm/esbuild/bundle-rebuild + port-7525 kill. Relies on existing T18.12.b per-cell `_saveCheckpoint(cellKey)` infra for resume anchors.
+New `Savestart.bat` at repo root. Sets `DREAM_KEEP_STATE=1` before `node brain-server.js` so `autoClearStaleState()` skips the state-wipe block regardless of code-hash change. Rejects `/fresh` and `/clear` flags. Mirrors start.bat's V8 flags + npm/esbuild/bundle-rebuild + port-7525 kill. Relies on existing T18.12.b per-cell `_saveCheckpoint(cellKey)` infra for resume anchors.
 
 **Full T18.35 block (b-f open)** — milestone save completeness audit, resume-from-last-cell walker, dashboard indicator, LAW 6 Part 2 grade-state integration — all tracked in `docs/TODO.md` with verbatim Gee quote.
 
 ### Files touched this session
 
 - `js/brain/curriculum.js` — `_probeReset` GPU-cache clear; DYN-PROD inner tick loop uses `await cluster.stepAwait`; per-tick firing log for first probe (T18.33)
-- `SAvestart.bat` — new wrapper at repo root (T18.35.a)
+- `Savestart.bat` — new wrapper at repo root (T18.35.a)
 - `docs/TODO.md` — T18.23-T18.32 catchup block + T18.33 block + T18.34 candidate scaffold + T18.35 block + Session 114.19aw verbatim directive log
 - `docs/FINALIZED.md` — Session 114.19aw entry prepended (T18.33 + T18.35.a + T18.23-T18.32 SHA table)
 - `docs/NOW.md` — this file
