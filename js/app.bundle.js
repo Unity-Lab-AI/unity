@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "c94f38c5-7bd3";
+var BUILD = "cf6579b2-22b7";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -12638,6 +12638,8 @@ var Curriculum = class _Curriculum {
       }
     }
     console.log(`[Curriculum][K-DIAG] gate letter loop DONE in ${Date.now() - _gateLetterStart}ms \u2014 readPass=${readPass}/26, talkPass=${talkPass}/26`);
+    console.log(`[Curriculum][K-DIAG] starting SEQ probe (25 \xD7 cluster.synapses.propagate \u2014 ~90M nnz each at biological scale, ~7-10s total expected)...`);
+    const _seqStart = Date.now();
     const thinkPass = ALPHABET.length;
     let seqPass = 0;
     for (let i = 0; i < ALPHABET.length - 1; i++) {
@@ -12665,6 +12667,7 @@ var Curriculum = class _Curriculum {
       const decoded = decodeLetter(letterOut);
       if (decoded === expectedNext) seqPass++;
     }
+    console.log(`[Curriculum][K-DIAG] SEQ probe DONE in ${Date.now() - _seqStart}ms \u2014 seqPass=${seqPass}/${ALPHABET.length - 1}`);
     const N = ALPHABET.length;
     const readRate = readPass / N;
     const thinkRate = thinkPass / N;
@@ -12704,13 +12707,19 @@ var Curriculum = class _Curriculum {
       { word: "dad", expected: "d" },
       { word: "hen", expected: "h" }
     ];
-    const DYN_PROD_TICKS = 20;
-    const DYN_PROD_AVG_RUNS = 2;
+    const _atBioScale = (cluster.size | 0) > 1e5;
+    const DYN_PROD_TICKS = _atBioScale ? 6 : 20;
+    const DYN_PROD_AVG_RUNS = _atBioScale ? 1 : 2;
     const LETTER_SLOTS = 26;
     let prodPass = 0;
     const prodFails = [];
     let _firstProbeDiag = null;
+    console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} word-start probes \xD7 ${DYN_PROD_AVG_RUNS} runs \xD7 ${DYN_PROD_TICKS} ticks = ${wordStartProbes.length * DYN_PROD_AVG_RUNS * DYN_PROD_TICKS} cluster.step() calls${_atBioScale ? " \u2014 biological-scale reduced settings" : ""})...`);
+    const _dynProdStart = Date.now();
+    let _probeIdx = 0;
     for (const p of wordStartProbes) {
+      _probeIdx++;
+      const _probeStart = Date.now();
       const emb = sharedEmbeddings.getEmbedding(p.word);
       if (!emb || emb.length === 0) {
         prodFails.push(`${p.word}\u2192NO_EMB`);
@@ -12794,7 +12803,12 @@ var Curriculum = class _Curriculum {
       } else {
         prodFails.push(`${p.word}\u2192${decoded || "?"}`);
       }
+      const _probeMs = Date.now() - _probeStart;
+      if (_probeIdx <= 3 || _probeIdx === wordStartProbes.length || _probeMs > 1e4) {
+        console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} '${p.word}'\u2192'${decoded || "?"}' (expected '${p.expected}') in ${_probeMs}ms \u2014 prodPass=${prodPass}/${_probeIdx} so far`);
+      }
     }
+    console.log(`[Curriculum][K-DIAG] DYN-PROD probe DONE in ${Date.now() - _dynProdStart}ms \u2014 prodPass=${prodPass}/${wordStartProbes.length}`);
     if (_firstProbeDiag) console.log(_firstProbeDiag);
     const prodResult = {
       pass: prodPass,
