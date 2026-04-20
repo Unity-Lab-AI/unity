@@ -6,13 +6,13 @@ echo     Unity Brain Server
 echo   ==============================
 echo.
 
-REM T18.12.d — /fresh or /clear flag forces brain state wipe on boot
-REM (overrides the T18.12.a code-hash preserve behavior). Default
-REM `start.bat` boot preserves state if brain-code source files are
-REM unchanged since the last run — curriculum progress, passedCells,
-REM gateHistory, weights all survive restarts. Use /fresh when you
-REM explicitly want a clean-slate retrain (e.g., embedding refinements
-REM went bad, persistence got corrupted, testing fresh boot behavior).
+REM /fresh or /clear flag forces brain state wipe on boot (overrides
+REM the code-hash preserve behavior). Default boot preserves state if
+REM brain-code source files are unchanged since the last run —
+REM curriculum progress, passedCells, gateHistory, weights all survive
+REM restarts. Use /fresh when you explicitly want a clean-slate retrain
+REM (e.g., embedding refinements went bad, persistence got corrupted,
+REM testing fresh boot behavior).
 if /i "%1"=="/fresh" set DREAM_FORCE_CLEAR=1
 if /i "%1"=="/clear" set DREAM_FORCE_CLEAR=1
 if defined DREAM_FORCE_CLEAR (
@@ -20,12 +20,12 @@ if defined DREAM_FORCE_CLEAR (
     echo.
 )
 
-REM T18.36 — step checkpoints so operators always see progress. Prior
-REM reports of "invisible translucent terminal with just the title tab"
-REM stemmed from silent-output phases (port-kill redirected >nul 2>&1,
-REM npm/esbuild presence checks that goto-skip on success). Each major
-REM phase now emits a visible banner so if a hang ever recurs, the last
-REM printed step identifies where.
+REM Step checkpoints so operators always see progress. Prior reports of
+REM "invisible translucent terminal with just the title tab" stemmed from
+REM silent-output phases (port-kill redirected >nul 2>&1, npm/esbuild
+REM presence checks that goto-skip on success). Each major phase now
+REM emits a visible banner so if a hang ever recurs, the last printed
+REM step identifies where.
 
 echo [start] step 1/7: killing any prior listener on port 7525...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr :7525 ^| findstr LISTENING') do (
@@ -71,10 +71,10 @@ pushd "%~dp0corpora"
 REM --progress-bar gives a simple [====] progress line that doesn't use
 REM carriage-return animation. Without --progress-bar, curl's default
 REM progress table uses \r to overwrite lines, which corrupts CMD's
-REM subsequent "if errorlevel" line parse - Gee's Session 114.17 log
-REM showed "'rrorlevel' is not recognized" from exactly this bug.
-REM Also using %ERRORLEVEL% explicit check (more robust than bare
-REM "if errorlevel 1" against prior curl progress state).
+REM subsequent "if errorlevel" line parse (seen as "'rrorlevel' is not
+REM recognized" from exactly this bug). Also using %ERRORLEVEL%
+REM explicit check (more robust than bare "if errorlevel 1" against
+REM prior curl progress state).
 curl -L --fail --show-error --progress-bar --max-time 1800 -o glove.6B.zip https://nlp.stanford.edu/data/glove.6B.zip
 if %ERRORLEVEL% NEQ 0 (
     popd
@@ -117,52 +117,61 @@ REM via brain-server.js `_spawnGpuClient()` once the HTTP listener
 REM is up. This keeps `node brain-server.js` and `start.bat` both
 REM one-command entry points; no duplicate tabs, no stale log
 REM telling the operator to open compute.html manually.
-REM T18.21 — --max-semi-space-size=1024 (1 GB semi-space per V8 new-
-REM generation region). Default Node semi-space is 16 MB, which at
-REM biological scale Phase 2 sustains external-memory allocation rates
-REM (worker-pool SAB + curriculum Float64Array + Buffer pool) high
-REM enough that V8 can't commit semi-space growth during Mark-Compact
-REM cycles → "Committing semi space failed. Allocation failed -
-REM JavaScript heap out of memory" → FATAL. Gee 2026-04-19 ELA-K runs
-REM hit this OOM at `_teachLetterCaseBinding` START after Phase 2's
-REM 200+ seconds of accumulated external-memory pressure. Bumping
-REM semi-space to 1 GB gives V8 ~64× more breathing room; the Mark-
-REM Compact cycles can still run cleanly even under sustained external-
-REM memory allocation rates of ~10 GB/sec for short bursts. Combined
-REM with the existing --max-old-space-size=65536 (64 GB) this gives V8
-REM total ~66 GB of headroom — well below the 128 GB physical RAM
-REM ceiling on Gee's box, so process virtual memory commits succeed.
-REM T18.23 — --expose-gc flag lets cluster.initGpu() call global.gc()
-REM after T18.22's CPU CSR free block to force V8 to actually reclaim
-REM the ~8 GB of external memory immediately (instead of waiting for
-REM the next scheduled Mark-Compact cycle). Without --expose-gc the
-REM null-assignments in T18.22 unref the typed arrays but V8 can take
-REM seconds to minutes to GC them — long enough for Phase 2 external-
-REM memory pressure to build and OOM before the reclaim lands. Forced
-REM gc() after all 15 uploads guarantees the 8 GB is gone before
-REM curriculum teach starts. Heap-stats logging before + after the
-REM forced gc() lets Gee visually confirm the reclaim actually happens.
-REM T18.37 — redirect brain-server stdout/stderr to server\server.log so
+REM --max-semi-space-size=1024 (1 GB semi-space per V8 new-generation
+REM region). Default Node semi-space is 16 MB, which at biological scale
+REM Phase 2 sustains external-memory allocation rates (worker-pool SAB +
+REM curriculum Float64Array + Buffer pool) high enough that V8 can't
+REM commit semi-space growth during Mark-Compact cycles → "Committing
+REM semi space failed. Allocation failed - JavaScript heap out of
+REM memory" → FATAL. Bumping semi-space to 1 GB gives V8 ~64× more
+REM breathing room; Mark-Compact can run cleanly under sustained
+REM external-memory allocation rates of ~10 GB/sec for short bursts.
+REM Combined with --max-old-space-size=65536 (64 GB) V8 has ~66 GB
+REM of headroom, well below a typical 128 GB physical RAM ceiling.
+REM --expose-gc lets cluster.initGpu() call global.gc() after the CPU
+REM CSR free block to force V8 to reclaim the ~8 GB of external memory
+REM immediately (instead of waiting for the next scheduled Mark-Compact
+REM cycle). Without --expose-gc the null-assignments unref the typed
+REM arrays but V8 can take seconds to minutes to GC them — long enough
+REM for Phase 2 external-memory pressure to build and OOM before the
+REM reclaim lands. Forced gc() after all uploads guarantees the 8 GB
+REM is gone before curriculum teach starts. Heap-stats logging before +
+REM after the forced gc() lets operators visually confirm the reclaim.
+REM Brain-server stdout/stderr is redirected to server\server.log so
 REM operators can tail heartbeat + brain info even if this launcher
-REM terminal goes invisible (Windows Terminal + conhost rendering glitches
-REM leave child-process output blind when the parent window can't paint).
-REM A SECOND PowerShell window is spawned that tails the log with
-REM Get-Content -Wait — a separate process, separate rendering, so even
-REM if THIS cmd window is translucent/blank the log window still paints.
-REM Fallback path: if the PowerShell tail window also breaks, server.log
-REM is on disk at server\server.log and any terminal can read it.
+REM terminal goes invisible (Windows Terminal + conhost rendering
+REM glitches leave child-process output blind when the parent window
+REM can't paint). A SECOND PowerShell window is spawned that tails the
+REM log with Get-Content -Wait — a separate process, separate
+REM rendering, so even if THIS cmd window is translucent/blank the log
+REM window still paints. Fallback path: if the PowerShell tail window
+REM also breaks, server.log is on disk at server\server.log and any
+REM terminal can read it.
+REM Force UTF-8 end-to-end on the PowerShell tail window. Node writes
+REM UTF-8 bytes to server.log (emoji + em-dash + box-drawing chars in
+REM curriculum heartbeats). PowerShell 5.1's Get-Content without an
+REM explicit -Encoding defaults to the system code page (Windows-1252
+REM on US Windows), which decodes UTF-8 E2 95 90 (═) as â• mojibake.
+REM Plus the PowerShell console's OutputEncoding must be UTF-8 or even
+REM a correctly-decoded emoji won't render right when re-emitted.
+REM Setting both [Console]::OutputEncoding + Get-Content -Encoding UTF8
+REM renders the log window cleanly.
 echo [start] step 7/7: launching brain server + log tail window (GPU EXCLUSIVE)...
 echo   server log: %~dp0server\server.log
 if exist server.log del server.log
 start /b "" cmd /c "node --max-old-space-size=65536 --max-semi-space-size=1024 --expose-gc brain-server.js > server.log 2>&1"
 ping -n 2 127.0.0.1 >nul
-start "Unity Brain Log Tail" powershell -NoExit -Command "Get-Content -Path '%~dp0server\server.log' -Wait -Tail 200"
+start "Unity Brain Log Tail" powershell -NoExit -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content -Path '%~dp0server\server.log' -Wait -Tail 200 -Encoding UTF8"
 ping -n 2 127.0.0.1 >nul
 start "" http://localhost:7525
+REM Dashboard auto-opens alongside the landing page so the milestone panel
+REM (curriculum state, save-resume vs fresh-boot, passed cells, operator
+REM signoffs) is visible from the first moment the brain is up.
+start "" http://localhost:7525/dashboard.html
 echo.
 echo   Landing:     http://localhost:7525
+echo   Dashboard:   http://localhost:7525/dashboard.html (auto-opened)
 echo   GPU compute: http://localhost:7525/compute.html (auto-launched by server)
-echo   Dashboard:   http://localhost:7525/dashboard.html
 echo   Log tail:    separate PowerShell window "Unity Brain Log Tail"
 echo   Log file:    %~dp0server\server.log (always on disk)
 echo.

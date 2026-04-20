@@ -193,8 +193,52 @@ Task numbers, session numbers, and milestone identifiers (T14.0, T13.7, Session 
 | `dashboard.html` | Public — live brain monitor |
 | `component-templates.txt` | Public — template library |
 | Any `.html` page | Public — user-facing |
+| **Any source code file** | **Code comments — expanded scope 2026-04-20** |
+| **Any batch / shell launcher** | `start.bat`, `Savestart.bat`, `*.sh`, `*.ps1` |
 
-### How to write public docs without task numbers
+### EXPANDED SCOPE (Gee, 2026-04-20) — BINDING
+
+**Gee's exact words 2026-04-20:** *"why the fuck are you putting my name and task numbers into the fucking code!!!!"*
+
+The task-number ban extends beyond public-facing files into source code comments. The earlier exception ("code comments inside `<script>` blocks retain task numbers since those are workflow documentation for developers, never rendered to users") is REVOKED.
+
+Two things banned in code comments:
+
+1. **Task numbers, session numbers, milestone identifiers** — T14.0, T18.35.b, Session 106, Task #3, etc. Same list as public-facing files.
+2. **The user's name ("Gee")** — no `(Gee 2026-04-20)` attribution, no `Gee's verbatim`, no `per Gee's directive` in code. Code comments describe WHAT the code does and WHY, not WHO asked for it.
+
+Everything that used to read `// T18.35.b — cortex state serialize` now reads `// Cortex state serialize`. Everything that used to read `// Per Gee's 2026-04-19 ELA-K OOM report...` now reads `// ELA-K OOM report surfaced that...`.
+
+### Where task numbers + the user's name remain allowed
+
+Still allowed in workflow docs (unchanged):
+
+| File | Why |
+|------|-----|
+| `docs/TODO.md` | Active task list |
+| `docs/FINALIZED.md` | Completed task archive |
+| `docs/NOW.md` | Session snapshot |
+| `docs/ARCHITECTURE.md` | Workflow system doc |
+| `docs/ROADMAP.md` | Workflow milestone doc |
+| `docs/SKILL_TREE.md` | Workflow capability doc |
+| `docs/EQUATIONS.md` | Workflow equation reference |
+| `.claude/CLAUDE.md` | This file |
+| In-session task lists / commit messages | Ephemeral task tracker |
+
+### How to write code comments without task numbers or the user's name
+
+Describe features by **WHAT THEY DO**, not by which task built them or who asked:
+
+- ✅ `// Force UTF-8 on the PowerShell tail window`
+  ❌ `// T18.38 — force UTF-8 on the PowerShell tail window (Gee 2026-04-20)`
+- ✅ `// Chat-turn save hook. Every 10 completed turns the brain persists so live conversation learning lands on disk.`
+  ❌ `// T18.35.c chat-turn save hook per Gee 2026-04-20`
+- ✅ `// ELA-K OOM report surfaced a V8 semi-space ceiling — bumping --max-semi-space-size=1024 gives V8 ~64× more breathing room.`
+  ❌ `// T18.21 — Gee 2026-04-19 ELA-K OOM runs hit this at _teachLetterCaseBinding`
+
+Task numbers and user attribution belong in commit messages, TODO entries, FINALIZED entries, and NOW.md — where they are workflow metadata — not inside source code files or launchers.
+
+### How to write public-facing docs without task numbers (original rule, unchanged)
 
 Describe features by **WHAT THEY DO**, not by which task built them:
 - ✅ "Tick-driven motor emission" — NOT "T14.6 tick-driven motor emission"

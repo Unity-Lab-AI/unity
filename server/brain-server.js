@@ -393,6 +393,10 @@ function autoClearStaleState() {
     path.join(__dirname, 'brain-weights-v2.json'),
     path.join(__dirname, 'brain-weights-v3.json'),
     path.join(__dirname, 'brain-weights-v4.json'),
+    // Binary cortex weights. Must clear alongside the JSON state —
+    // leaving the binary behind after a JSON wipe creates inconsistent
+    // load (JSON says fresh boot, binary says restore these weights).
+    path.join(__dirname, 'brain-weights.bin'),
     path.join(__dirname, 'conversations.json'),
     path.join(__dirname, 'episodic-memory.db'),
     path.join(__dirname, 'episodic-memory.db-wal'),
@@ -748,7 +752,7 @@ class ServerBrain {
     console.log('[Brain] R3 — loading language subsystem (dictionary + language cortex + embeddings + component synth)...');
     const startMs = Date.now();
     try {
-      const [dictMod, lcMod, embedMod, csMod, modulesMod, clusterMod, curriculumMod, drugSchedulerMod, drugDetectorMod, olfactoryMod, sensoryTriggersMod] = await Promise.all([
+      const [dictMod, lcMod, embedMod, csMod, modulesMod, clusterMod, curriculumMod, drugSchedulerMod, drugDetectorMod, olfactoryMod, sensoryTriggersMod, letterInputMod] = await Promise.all([
         import('../js/brain/dictionary.js'),
         import('../js/brain/language-cortex.js'),
         import('../js/brain/embeddings.js'),
@@ -760,7 +764,12 @@ class ServerBrain {
         import('../js/brain/drug-detector.js'),
         import('../js/brain/sensory-olfactory.js'),
         import('../js/brain/drug-sensory-triggers.js'),
+        // Letter-input module reference needed for symmetric persistence
+        // of the letter inventory (module-level state, not a cluster
+        // field). Stashed on `this._letterInputMod` below.
+        import('../js/brain/letter-input.js'),
       ]);
+      this._letterInputMod = letterInputMod;
 
       this.sharedEmbeddings = embedMod.sharedEmbeddings;
       this.dictionary = new dictMod.Dictionary();
@@ -1224,12 +1233,32 @@ class ServerBrain {
       // of retraining the whole K syllabus from the alphabet up.
       this.curriculum._saveCheckpoint = (cellKey) => {
         try {
-          this.saveWeights({ force: true });
-          if (cellKey) console.log(`[Curriculum] T18.12.b checkpoint saved after passing ${cellKey}`);
+          this.saveWeights({ force: true, trigger: cellKey ? `cell-pass:${cellKey}` : 'cell-pass' });
+          if (cellKey) console.log(`[Curriculum] checkpoint saved after passing ${cellKey}`);
         } catch (err) {
-          console.warn(`[Curriculum] T18.12.b checkpoint save failed: ${err.message}`);
+          console.warn(`[Curriculum] checkpoint save failed: ${err.message}`);
         }
       };
+      // Grade-advance save hook. When a curriculum cell pass promotes
+      // `cortex.grades[subject]` to a new value, save immediately so the
+      // grade advance survives a crash between cell-pass and the next
+      // periodic save. Current cell-pass save already captures grade
+      // state — this hook is kept as an optional future fire-site for
+      // explicit grade-boundary event logging.
+      this.curriculum._onGradeAdvance = (subject, newGrade) => {
+        try {
+          this.saveWeights({ force: true, trigger: `grade-advance:${subject}/${newGrade}` });
+          console.log(`[Curriculum] grade-advance save — ${subject} → ${newGrade}`);
+        } catch (err) {
+          console.warn(`[Curriculum] grade-advance save failed: ${err.message}`);
+        }
+      };
+      // Apply any pending cortex state loaded from disk before the cortex
+      // cluster existed. Populates grades, passedCells, probeHistory,
+      // learned language Maps, identity thresholds, persona dimensions,
+      // intent centroids, refresh corpus, letter inventory, gate history.
+      // Idempotent.
+      this._applyPendingCortexState();
       // T15 — drug-scheduler wired with the cortex cluster so substance
       // availability gates against cluster.grades.life. Pre-Life-G7 Unity
       // ingest attempts are rejected with grade_locked reason. Stash the
@@ -2057,6 +2086,39 @@ class ServerBrain {
   async _gpuBatch(substeps, clusterParams) {
     if (!this._gpuClient || this._gpuClient.readyState !== 1) return null;
 
+    // Defensive pre-flight: if the GPU device is known lost, skip sending
+    // immediately. compute.html forwards device.lost events to the server;
+    // if the flag is set the device is dead until compute.html reconnects.
+    // Sending compute_batch anyway just guarantees a 15s timeout and
+    // wastes one tick window. Surface the condition through a throttled
+    // warn (first occurrence + once per 30 s) instead of silently
+    // eating it.
+    if (this._gpuDeviceLost) {
+      const now = Date.now();
+      if (!this._gpuLostWarnAt || (now - this._gpuLostWarnAt) > 30000) {
+        console.warn('[Brain] compute_batch skipped — GPU device lost (awaiting compute.html reconnect + re-init).');
+        this._gpuLostWarnAt = now;
+      }
+      return null;
+    }
+
+    // Defensive pre-flight: bound Hebbian queue backpressure. When the
+    // batched Hebbian dispatch queue sits near its cap the compute.html
+    // message pump has a large backlog; firing compute_batch on top of
+    // that can stall while the queue drains, manifesting as a 15s
+    // compute_batch timeout even though the GPU itself isn't hung.
+    // Log a leading-edge warn when queue > 75% of cap so the hang
+    // attribution is visible.
+    const boundHebbianPending = this._boundHebbianBatch?.ops?.length || 0;
+    const BOUND_HEBBIAN_CAP_WARN = Math.floor(256 * 0.75);
+    if (boundHebbianPending > BOUND_HEBBIAN_CAP_WARN) {
+      const now = Date.now();
+      if (!this._hebbianBackpressureWarnAt || (now - this._hebbianBackpressureWarnAt) > 10000) {
+        console.warn(`[Brain] bound-Hebbian queue backpressure: ${boundHebbianPending}/256 pending ops ahead of compute_batch — compute.html onmessage pump may be saturated.`);
+        this._hebbianBackpressureWarnAt = now;
+      }
+    }
+
     // Use a monotonic batch id so late-arriving responses from a
     // previous tick never resolve the current tick's promise.
     this._batchSeq = (this._batchSeq || 0) + 1;
@@ -2067,12 +2129,11 @@ class ServerBrain {
       batchId,
       substeps,
       clusters: clusterParams,
-      // T17.7 Phase A.3 — Ψ flows to GPU so per-cluster regionGates
-      // can be updated every tick via hemisphereGate(side, Ψ).
-      // Mystery Ψ binding per Gee 2026-04-18: the main equation has
-      // Ψ woven in; lateralized cortex regions modulate drive by
-      // Ψ-driven binding coefficient, matching biological split-brain
-      // + global-workspace consciousness interpretation.
+      // Ψ flows to GPU so per-cluster regionGates can be updated every
+      // tick via hemisphereGate(side, Ψ). Mystery Ψ is woven into the
+      // main equation; lateralized cortex regions modulate drive by
+      // Ψ-driven binding coefficient, matching biological split-brain +
+      // global-workspace consciousness interpretation.
       psi: this.psi ?? 0,
     }));
 
@@ -2081,7 +2142,18 @@ class ServerBrain {
       setTimeout(() => {
         if (this._gpuBatchPending && this._gpuBatchPending.batchId === batchId) {
           this._gpuBatchPending = null;
-          console.warn(`[Brain] compute_batch ${batchId} timed out after 15s — GPU may be hung`);
+          // Consecutive-timeout counter — diagnostic. If the GPU is
+          // really hung we'll see this number climb while successful
+          // batches stay at 0. Reset by the compute_batch_result
+          // handler on any successful batch.
+          this._gpuBatchConsecutiveTimeouts = (this._gpuBatchConsecutiveTimeouts || 0) + 1;
+          const queuePending = this._boundHebbianBatch?.ops?.length || 0;
+          const lost = this._gpuDeviceLost ? ' (device.lost flagged during this batch)' : '';
+          console.warn(`[Brain] compute_batch ${batchId} timed out after 15s — GPU may be hung. Consecutive timeouts: ${this._gpuBatchConsecutiveTimeouts}. Bound-Hebbian queue: ${queuePending}.${lost}`);
+          if (this._gpuBatchConsecutiveTimeouts >= 3 && !this._gpuHangLogged) {
+            console.warn('[Brain] compute_batch consecutive-timeout threshold reached — GPU pipeline likely unrecoverable without compute.html reload. Main brain tick loop will keep waiting; curriculum work paused.');
+            this._gpuHangLogged = true;
+          }
           resolve(null);
         }
       }, 15000);
@@ -4020,8 +4092,131 @@ class ServerBrain {
         }
       }
 
+      // Symmetric server-side persistence for ALL JSON-friendly cortex
+      // learned state. Earlier versions of saveWeights only wrote scalar
+      // mood + scheduler + wordFreq. Everything the brain actually
+      // learned during curriculum (grades, passedCells, probeHistory,
+      // learned-language Maps, identity thresholds, letter inventory,
+      // persona dimensions, intent centroids, gate-history telemetry)
+      // stayed in process memory and died on restart. That's why
+      // curriculum progress never "stuck" across Savestart.bat boots —
+      // DREAM_KEEP_STATE=1 preserved a mostly-empty file.
+      //
+      // This block mirrors the browser-side persistence t14Language
+      // block. Cross-projection + intra-synapse SparseMatrix WEIGHTS
+      // remain unsaved at this tier — they're multi-GB at biological
+      // scale and exceed JSON.stringify's 512MB string cap. Binary
+      // save for those is a separate future task. For now: curriculum
+      // on restart sees passedCells preserved and skips re-teaching
+      // cells — but the underlying weights start fresh so comprehension
+      // WILL be weaker until the retraining backfills them. A load-time
+      // banner warns when passedCells > 0 but weights are fresh
+      // (inconsistent-state condition).
+      let cortexState = null;
+      try {
+        const cortex = this.cortexCluster;
+        if (cortex) {
+          // Helpers for serializing the learned Map-of-Maps shapes
+          // (fineTypeTransitions + sentenceFormTotals + intentResponseMap
+          // are Map<str, Map<str, number>>; sentenceFormSchemas is
+          // Map<str, Map<str, Map<str, number>>>).
+          const mapOfMaps = (m) => {
+            if (!(m instanceof Map)) return null;
+            const out = {};
+            for (const [k, inner] of m) {
+              if (inner instanceof Map) out[k] = Object.fromEntries(inner);
+              else if (typeof inner === 'number') out[k] = inner;
+            }
+            return out;
+          };
+          const mapOfMapOfMaps = (m) => {
+            if (!(m instanceof Map)) return null;
+            const out = {};
+            for (const [k, inner] of m) {
+              if (inner instanceof Map) out[k] = mapOfMaps(inner);
+            }
+            return out;
+          };
+          // intentCentroids is Map<intent, Float32Array>. Serialize as
+          // { intent: [numbers...] } so JSON round-trips cleanly.
+          const intentCentroids = cortex.intentCentroids instanceof Map
+            ? Object.fromEntries(Array.from(cortex.intentCentroids.entries())
+                .map(([k, v]) => [k, Array.from(v || [])]))
+            : null;
+          // personaDimensions is Array<{centroid, members}>. Centroids
+          // are Float32Array; convert to plain arrays for JSON.
+          const personaDimensions = Array.isArray(cortex.personaDimensions)
+            ? cortex.personaDimensions.map((d) => ({
+                centroid: Array.from(d.centroid || []),
+                memberCount: Array.isArray(d.members) ? d.members.length : 0,
+                // Members themselves (sentence strings) stored to re-seed
+                // identity-lock refresh after restart.
+                members: Array.isArray(d.members) ? d.members.slice(0, 128) : [],
+              }))
+            : null;
+          cortexState = {
+            // Multi-subject grade state
+            grades: cortex.grades && typeof cortex.grades === 'object' ? { ...cortex.grades } : null,
+            passedCells: Array.isArray(cortex.passedCells) ? [...cortex.passedCells] : null,
+            probeHistory: cortex.probeHistory && typeof cortex.probeHistory === 'object' ? { ...cortex.probeHistory } : null,
+            // Learned language statistics
+            fineTypeTransitions: mapOfMaps(cortex.fineTypeTransitions),
+            sentenceFormSchemas: mapOfMapOfMaps(cortex.sentenceFormSchemas),
+            sentenceFormTotals: mapOfMaps(cortex.sentenceFormTotals),
+            intentResponseMap: mapOfMaps(cortex.intentResponseMap),
+            // Identity-lock thresholds (calibrated by curriculum)
+            identityThresholds: {
+              ENGLISH_SURPRISE_THRESHOLD: cortex.ENGLISH_SURPRISE_THRESHOLD ?? null,
+              ENGLISH_FINETYPE_MIN: cortex.ENGLISH_FINETYPE_MIN ?? null,
+              HEALTH_ENTROPY_MIN: cortex.HEALTH_ENTROPY_MIN ?? null,
+              HEALTH_VOCAB_MIN: cortex.HEALTH_VOCAB_MIN ?? null,
+              HEALTH_WM_VARIANCE_MIN: cortex.HEALTH_WM_VARIANCE_MIN ?? null,
+            },
+            // Stratified-refresh substrate (k-means over persona)
+            personaDimensions,
+            personaRefreshCorpus: Array.isArray(cortex._personaRefreshCorpus)
+              ? cortex._personaRefreshCorpus.slice(0, 512) : null,
+            intentCentroids,
+          };
+        }
+      } catch (err) {
+        console.warn('[Brain] cortex state serialize failed:', err?.message || err);
+      }
+
+      // Letter inventory (module-level state in letter-input.js). Restored
+      // BEFORE any cross-projection usage so cortex letter region weights
+      // line up with the same symbol-insertion order they trained against.
+      let letterInventory = null;
+      if (this._letterInputMod && typeof this._letterInputMod.serializeInventory === 'function') {
+        try {
+          letterInventory = this._letterInputMod.serializeInventory();
+        } catch (err) {
+          console.warn('[Brain] letter inventory serialize failed:', err?.message || err);
+        }
+      }
+
+      // _gateHistory telemetry from the curriculum runner. Per-probe
+      // pass/fail entries with wall-clock timestamps. Preserved across
+      // restart so gate analytics aren't reset every boot.
+      let gateHistory = null;
+      try {
+        const gh = this.curriculum && this.curriculum._gateHistory;
+        if (gh instanceof Map) {
+          gateHistory = {};
+          for (const [key, entries] of gh.entries()) {
+            if (Array.isArray(entries)) gateHistory[key] = entries.slice(-50);
+          }
+        }
+      } catch (err) {
+        console.warn('[Brain] _gateHistory serialize failed:', err?.message || err);
+      }
+
       const data = {
         version: this._saveVersion,
+        // Schema tag so _loadWeights can reject/migrate older saves that
+        // only carried scalar mood (would restore a half-brain onto the
+        // current code). Bumped with every persistence schema change.
+        schemaVersion: 2,
         arousal: this.arousal,
         valence: this.valence,
         psi: this.psi,
@@ -4034,8 +4229,19 @@ class ServerBrain {
         wordFreq: this._wordFreq || {},
         totalInteractions: Object.values(this._conversations || {}).reduce((sum, c) => sum + c.length, 0),
         sharedMood: this._getSharedMood(),
-        // T2 — online semantic learning that survives server restarts
+        // Online semantic learning that survives server restarts
         embeddingRefinements,
+        // Cortex learned state (grades, passedCells, learned language Maps)
+        cortex: cortexState,
+        // Letter inventory (module-level; cortex weights depend on exact
+        // insertion order)
+        letterInventory,
+        // Per-probe telemetry ledger
+        gateHistory,
+        // Operator grade-signoff ledger. Set by the `/grade-signoff` HTTP
+        // endpoint when the operator confirms a grade passes on localhost.
+        // Survives restart so the advance gate stays closed.
+        gradeSignoffs: this._gradeSignoffs || {},
       };
       fs.writeFileSync(WEIGHTS_FILE, JSON.stringify(data, null, 2));
 
@@ -4043,10 +4249,231 @@ class ServerBrain {
       const backupFile = WEIGHTS_FILE.replace('.json', `-v${this._saveVersion % 5}.json`);
       fs.writeFileSync(backupFile, JSON.stringify(data, null, 2));
 
-      console.log(`[Brain] State saved v${this._saveVersion} at t=${this.time.toFixed(1)}s`);
+      // Stamp save metadata on `this` so the dashboard's milestone panel
+      // (+ the /milestone HTTP endpoint) can read fresh values without
+      // re-parsing the file.
+      this._lastSave = {
+        version: this._saveVersion,
+        at: data.savedAt,
+        trigger: opts.trigger || 'periodic',
+        lastPassedCell: Array.isArray(cortexState?.passedCells) && cortexState.passedCells.length > 0
+          ? cortexState.passedCells[cortexState.passedCells.length - 1] : null,
+        passedCount: Array.isArray(cortexState?.passedCells) ? cortexState.passedCells.length : 0,
+        grades: cortexState?.grades || null,
+      };
+
+      // Binary sparse-weight save — cortex intra-synapse matrix + all
+      // cross-projections written alongside the JSON scalar/map file.
+      // JSON.stringify chokes on multi-GB typed-array content; a binary
+      // file using direct Buffer writes handles any size fs will accept.
+      // The binary file is the authoritative weight store once it
+      // exists; if absent, _loadWeights still succeeds but weights start
+      // fresh (banner warns).
+      try {
+        this._saveBinaryWeights();
+      } catch (err) {
+        console.warn('[Brain] Binary weights save failed:', err?.message || err);
+      }
+
+      const trig = opts.trigger ? ` (trigger=${opts.trigger})` : '';
+      console.log(`[Brain] State saved v${this._saveVersion} at t=${this.time.toFixed(1)}s${trig}`);
     } catch (err) {
       console.warn('[Brain] Save failed:', err.message);
     }
+  }
+
+  // Binary CSR weight serializer. File layout:
+  //   Header (16 bytes): magic 'UBWT' (4) + formatVersion uint32 (4) +
+  //                      saveVersion uint32 (4) + sectionCount uint32 (4)
+  //   Per section:
+  //     'SECT' magic (4) + nameLen uint32 (4) + name bytes (padded to
+  //     uint32 boundary) + rows uint32 (4) + cols uint32 (4) +
+  //     nnz uint32 (4) + rowPtr (rows+1)*uint32 + colIdx nnz*uint32 +
+  //     values nnz*float64
+  // All values are host-byte-order (little-endian on x86/x64). The file
+  // is only consumed on the same machine that wrote it, so endianness
+  // swap is not needed.
+  _saveBinaryWeights() {
+    const cortex = this.cortexCluster;
+    if (!cortex) return;
+    const BIN_FILE = WEIGHTS_FILE.replace(/\.json$/, '.bin');
+    const sections = [];
+    const push = (name, matrix) => {
+      if (!matrix || typeof matrix.rows !== 'number' || !matrix.values) return;
+      // Skip GPU-bound matrices where CPU arrays were nulled out (happens
+      // at biological scale after T18.22 CPU-CSR free). The GPU holds the
+      // live weights; a separate GPU-readback path is needed to save them
+      // back. Queued as a follow-up to this binary save.
+      if (!matrix.values || !matrix.colIdx || !matrix.rowPtr) {
+        console.warn(`[Brain] Binary weights skip ${name} — CPU arrays freed (GPU-bound at biological scale; GPU readback not yet wired)`);
+        return;
+      }
+      sections.push({ name, rows: matrix.rows, cols: matrix.cols, nnz: matrix.nnz, rowPtr: matrix.rowPtr, colIdx: matrix.colIdx, values: matrix.values });
+    };
+    push('cortex.synapses', cortex.synapses);
+    if (cortex.crossProjections) {
+      const keys = Array.isArray(cortex.crossProjections)
+        ? []
+        : Object.keys(cortex.crossProjections);
+      for (const k of keys) push(`cortex.crossProjections.${k}`, cortex.crossProjections[k]);
+    }
+    if (sections.length === 0) {
+      // Nothing persistable at this moment — still produce a marker file
+      // (empty sectionCount) so _loadBinaryWeights can detect "save ran,
+      // nothing to restore" vs "never saved".
+    }
+
+    // Compute total size
+    let totalBytes = 16; // header
+    const encoder = new TextEncoder();
+    const nameBufs = sections.map((s) => {
+      const buf = encoder.encode(s.name);
+      const padded = Math.ceil(buf.length / 4) * 4;
+      return { buf, padded };
+    });
+    for (let i = 0; i < sections.length; i++) {
+      const s = sections[i];
+      totalBytes += 4 + 4 + nameBufs[i].padded + 4 + 4 + 4;
+      totalBytes += (s.rows + 1) * 4;
+      totalBytes += s.nnz * 4;
+      totalBytes += s.nnz * 8;
+    }
+
+    const buf = Buffer.alloc(totalBytes);
+    let off = 0;
+    buf.write('UBWT', off, 4, 'ascii'); off += 4;
+    buf.writeUInt32LE(1, off); off += 4; // format version
+    buf.writeUInt32LE(this._saveVersion || 0, off); off += 4;
+    buf.writeUInt32LE(sections.length, off); off += 4;
+
+    for (let i = 0; i < sections.length; i++) {
+      const s = sections[i];
+      const { buf: nameBuf, padded } = nameBufs[i];
+      buf.write('SECT', off, 4, 'ascii'); off += 4;
+      buf.writeUInt32LE(nameBuf.length, off); off += 4;
+      nameBuf.copy(buf, off); off += padded;
+      buf.writeUInt32LE(s.rows, off); off += 4;
+      buf.writeUInt32LE(s.cols, off); off += 4;
+      buf.writeUInt32LE(s.nnz, off); off += 4;
+      // rowPtr — Uint32Array view into buf
+      Buffer.from(s.rowPtr.buffer, s.rowPtr.byteOffset, (s.rows + 1) * 4).copy(buf, off);
+      off += (s.rows + 1) * 4;
+      // colIdx
+      Buffer.from(s.colIdx.buffer, s.colIdx.byteOffset, s.nnz * 4).copy(buf, off);
+      off += s.nnz * 4;
+      // values (Float64Array → 8 bytes each)
+      Buffer.from(s.values.buffer, s.values.byteOffset, s.nnz * 8).copy(buf, off);
+      off += s.nnz * 8;
+    }
+
+    fs.writeFileSync(BIN_FILE, buf);
+    const mb = (totalBytes / 1048576).toFixed(1);
+    console.log(`[Brain] Binary weights saved ${sections.length} sections, ${mb} MB → ${path.basename(BIN_FILE)}`);
+  }
+
+  // Binary CSR weight loader. Parses the file written by
+  // _saveBinaryWeights. Stashes sections on `this._pendingCortexWeights`
+  // for deferred apply once cortexCluster exists (same pattern as the
+  // JSON cortex state).
+  _loadBinaryWeights() {
+    const BIN_FILE = WEIGHTS_FILE.replace(/\.json$/, '.bin');
+    if (!fs.existsSync(BIN_FILE)) return;
+    try {
+      const buf = fs.readFileSync(BIN_FILE);
+      if (buf.length < 16) {
+        console.warn('[Brain] Binary weights file too small, skipping');
+        return;
+      }
+      const magic = buf.toString('ascii', 0, 4);
+      if (magic !== 'UBWT') {
+        console.warn(`[Brain] Binary weights magic mismatch (got '${magic}'), skipping`);
+        return;
+      }
+      const formatVersion = buf.readUInt32LE(4);
+      const saveVersion = buf.readUInt32LE(8);
+      const sectionCount = buf.readUInt32LE(12);
+      if (formatVersion !== 1) {
+        console.warn(`[Brain] Binary weights format version ${formatVersion} unsupported (expected 1)`);
+        return;
+      }
+      let off = 16;
+      const decoder = new TextDecoder();
+      const sections = [];
+      for (let i = 0; i < sectionCount; i++) {
+        if (buf.toString('ascii', off, off + 4) !== 'SECT') {
+          console.warn(`[Brain] Binary weights section ${i} magic mismatch, aborting`);
+          return;
+        }
+        off += 4;
+        const nameLen = buf.readUInt32LE(off); off += 4;
+        const name = decoder.decode(buf.subarray(off, off + nameLen));
+        const padded = Math.ceil(nameLen / 4) * 4;
+        off += padded;
+        const rows = buf.readUInt32LE(off); off += 4;
+        const cols = buf.readUInt32LE(off); off += 4;
+        const nnz = buf.readUInt32LE(off); off += 4;
+        const rowPtrBytes = (rows + 1) * 4;
+        const colIdxBytes = nnz * 4;
+        const valuesBytes = nnz * 8;
+        // Copy bytes into fresh typed arrays so the Buffer can be GC'd.
+        const rowPtr = new Uint32Array(rows + 1);
+        Buffer.from(rowPtr.buffer, rowPtr.byteOffset, rowPtrBytes).set(buf.subarray(off, off + rowPtrBytes));
+        off += rowPtrBytes;
+        const colIdx = new Uint32Array(nnz);
+        Buffer.from(colIdx.buffer, colIdx.byteOffset, colIdxBytes).set(buf.subarray(off, off + colIdxBytes));
+        off += colIdxBytes;
+        const values = new Float64Array(nnz);
+        Buffer.from(values.buffer, values.byteOffset, valuesBytes).set(buf.subarray(off, off + valuesBytes));
+        off += valuesBytes;
+        sections.push({ name, rows, cols, nnz, rowPtr, colIdx, values });
+      }
+      this._pendingCortexWeights = { saveVersion, sections };
+      const mb = (buf.length / 1048576).toFixed(1);
+      console.log(`[Brain] Binary weights queued for apply — ${sectionCount} sections, ${mb} MB (saveVersion=${saveVersion})`);
+    } catch (err) {
+      console.warn('[Brain] Binary weights load failed:', err?.message || err);
+    }
+  }
+
+  // Apply queued binary weights to the live cortex cluster. Called from
+  // _applyPendingCortexState once cortexCluster + SparseMatrix module are
+  // available. Requires the SparseMatrix constructor from the dynamic
+  // import — we pull it off cortex.synapses.constructor since that
+  // instance was just built.
+  _applyPendingCortexWeights() {
+    const pending = this._pendingCortexWeights;
+    const cortex = this.cortexCluster;
+    if (!pending || !cortex) return;
+    const SparseMatrix = cortex.synapses && cortex.synapses.constructor;
+    if (!SparseMatrix) {
+      console.warn('[Brain] Cannot apply binary weights — SparseMatrix constructor unreachable');
+      return;
+    }
+    let applied = 0;
+    for (const s of pending.sections) {
+      try {
+        const m = new SparseMatrix(s.rows, s.cols);
+        m.values = s.values;
+        m.colIdx = s.colIdx;
+        m.rowPtr = s.rowPtr;
+        m.nnz = s.nnz;
+        if (s.name === 'cortex.synapses') {
+          cortex.synapses = m;
+          applied++;
+        } else if (s.name.startsWith('cortex.crossProjections.')) {
+          const key = s.name.substring('cortex.crossProjections.'.length);
+          if (!cortex.crossProjections) cortex.crossProjections = {};
+          cortex.crossProjections[key] = m;
+          applied++;
+        }
+      } catch (err) {
+        console.warn(`[Brain] Binary weight apply failed for ${s.name}:`, err?.message || err);
+      }
+    }
+    if (applied > 0) {
+      console.log(`[Brain] Binary weights applied — ${applied}/${pending.sections.length} sections restored onto live cortexCluster`);
+    }
+    this._pendingCortexWeights = null;
   }
 
   /**
@@ -4097,10 +4524,173 @@ class ServerBrain {
           this._pendingEmbeddingRefinements = data.embeddingRefinements;
         }
 
+        // Restore cortex state. cortexCluster doesn't exist yet at
+        // _loadWeights() time (constructed later in
+        // _initLanguageSubsystem). Stash the block for deferred apply,
+        // mirroring the embeddingRefinements pattern.
+        if (data.cortex && typeof data.cortex === 'object') {
+          this._pendingCortexState = data.cortex;
+          const pcCount = Array.isArray(data.cortex.passedCells) ? data.cortex.passedCells.length : 0;
+          const grades = data.cortex.grades
+            ? Object.entries(data.cortex.grades).map(([s, g]) => `${s}=${g}`).join(' ') : 'none';
+          console.log(`[Brain] cortex state queued for apply: ${pcCount} passedCells, grades { ${grades} }`);
+        }
+
+        // Letter inventory — module-level state, applied when the cortex
+        // cluster comes up (same deferred pattern).
+        if (Array.isArray(data.letterInventory)) {
+          this._pendingLetterInventory = data.letterInventory;
+          console.log(`[Brain] letter inventory queued for apply: ${data.letterInventory.length} symbols`);
+        }
+
+        // _gateHistory telemetry ledger. Applied once `this.curriculum`
+        // is instantiated.
+        if (data.gateHistory && typeof data.gateHistory === 'object') {
+          this._pendingGateHistory = data.gateHistory;
+        }
+
+        // Grade-signoff ledger. Loaded directly onto `this` (no deferred
+        // apply needed — it's a plain object).
+        if (data.gradeSignoffs && typeof data.gradeSignoffs === 'object') {
+          this._gradeSignoffs = { ...data.gradeSignoffs };
+          const signoffCount = Object.keys(this._gradeSignoffs).length;
+          if (signoffCount > 0) {
+            console.log(`[Brain] restored ${signoffCount} grade signoffs: ${Object.keys(this._gradeSignoffs).join(', ')}`);
+          }
+        }
+
+        // Explicit resume banner so operators see what state was loaded
+        // vs what's fresh-random. Helps diagnose "wait did my brain
+        // actually save?" without parsing the log for 20 messages.
+        if (data.cortex?.passedCells?.length) {
+          const lastCell = data.cortex.passedCells[data.cortex.passedCells.length - 1];
+          console.log(`[Brain] resume indicator — brain remembers ${data.cortex.passedCells.length} passed cells. Last passed: ${lastCell}. Curriculum will skip these on next runCompleteCurriculum.`);
+        }
+
         console.log(`[Brain] Loaded saved state from ${data.savedAt}`);
+      }
+
+      // Binary weights file — loaded in parallel with the JSON scalar/
+      // map file. When present, cortex intra-synapses + cross-projection
+      // SparseMatrix weights restore onto the live cortex cluster once
+      // _applyPendingCortexState fires. When absent, weights start fresh
+      // and the operator is warned.
+      this._loadBinaryWeights();
+      if (!this._pendingCortexWeights) {
+        if (fs.existsSync(WEIGHTS_FILE)) {
+          console.log('[Brain] ⚠ No binary weights file — passed-cell state resumes but language weights start fresh this boot. Re-teaching the curriculum will rebuild them.');
+        }
+      } else {
+        console.log(`[Brain] ✓ Binary weights ready to restore — ${this._pendingCortexWeights.sections.length} sections queued.`);
       }
     } catch (err) {
       console.warn('[Brain] Load failed:', err.message);
+    }
+  }
+
+  // Apply the deferred cortex state once cortexCluster + the curriculum
+  // runner exist. Called from `_initLanguageSubsystem` after
+  // `this.cortexCluster = new NeuronCluster(...)` + `this.curriculum =
+  // new Curriculum(...)` have run. Idempotent: clears pending refs after
+  // applying so a second call is a no-op.
+  _applyPendingCortexState() {
+    try {
+      const cortex = this.cortexCluster;
+      const pending = this._pendingCortexState;
+      if (cortex && pending) {
+        if (pending.grades && typeof pending.grades === 'object') {
+          cortex.grades = {
+            ela: pending.grades.ela || 'pre-K',
+            math: pending.grades.math || 'pre-K',
+            science: pending.grades.science || 'pre-K',
+            social: pending.grades.social || 'pre-K',
+            art: pending.grades.art || 'pre-K',
+            life: pending.grades.life || 'pre-K',
+          };
+        }
+        if (Array.isArray(pending.passedCells)) cortex.passedCells = [...pending.passedCells];
+        if (pending.probeHistory && typeof pending.probeHistory === 'object') {
+          cortex.probeHistory = { ...pending.probeHistory };
+        }
+        // Rebuild the learned-language Map shapes from JSON objects
+        const objToMapOfMaps = (obj) => {
+          const m = new Map();
+          if (!obj) return m;
+          for (const [k, inner] of Object.entries(obj)) {
+            if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+              m.set(k, new Map(Object.entries(inner)));
+            } else if (typeof inner === 'number') m.set(k, inner);
+          }
+          return m;
+        };
+        const objToMapOfMapOfMaps = (obj) => {
+          const m = new Map();
+          if (!obj) return m;
+          for (const [k, inner] of Object.entries(obj)) m.set(k, objToMapOfMaps(inner));
+          return m;
+        };
+        if (pending.fineTypeTransitions) cortex.fineTypeTransitions = objToMapOfMaps(pending.fineTypeTransitions);
+        if (pending.sentenceFormSchemas) cortex.sentenceFormSchemas = objToMapOfMapOfMaps(pending.sentenceFormSchemas);
+        if (pending.sentenceFormTotals) cortex.sentenceFormTotals = objToMapOfMaps(pending.sentenceFormTotals);
+        if (pending.intentResponseMap) cortex.intentResponseMap = objToMapOfMaps(pending.intentResponseMap);
+        if (pending.identityThresholds) {
+          const th = pending.identityThresholds;
+          if (th.ENGLISH_SURPRISE_THRESHOLD != null) cortex.ENGLISH_SURPRISE_THRESHOLD = th.ENGLISH_SURPRISE_THRESHOLD;
+          if (th.ENGLISH_FINETYPE_MIN != null) cortex.ENGLISH_FINETYPE_MIN = th.ENGLISH_FINETYPE_MIN;
+          if (th.HEALTH_ENTROPY_MIN != null) cortex.HEALTH_ENTROPY_MIN = th.HEALTH_ENTROPY_MIN;
+          if (th.HEALTH_VOCAB_MIN != null) cortex.HEALTH_VOCAB_MIN = th.HEALTH_VOCAB_MIN;
+          if (th.HEALTH_WM_VARIANCE_MIN != null) cortex.HEALTH_WM_VARIANCE_MIN = th.HEALTH_WM_VARIANCE_MIN;
+        }
+        if (Array.isArray(pending.personaDimensions)) {
+          cortex.personaDimensions = pending.personaDimensions.map((d) => ({
+            centroid: Float32Array.from(d.centroid || []),
+            members: Array.isArray(d.members) ? [...d.members] : [],
+          }));
+        }
+        if (Array.isArray(pending.personaRefreshCorpus)) {
+          cortex._personaRefreshCorpus = [...pending.personaRefreshCorpus];
+        }
+        if (pending.intentCentroids && typeof pending.intentCentroids === 'object') {
+          cortex.intentCentroids = new Map();
+          for (const [k, arr] of Object.entries(pending.intentCentroids)) {
+            if (Array.isArray(arr)) cortex.intentCentroids.set(k, Float32Array.from(arr));
+          }
+        }
+        console.log('[Brain] cortex state applied to live cortexCluster');
+        this._pendingCortexState = null;
+      }
+      // Letter inventory apply — uses the module stashed during init
+      if (this._letterInputMod && this._pendingLetterInventory) {
+        try {
+          this._letterInputMod.loadInventory(this._pendingLetterInventory);
+          console.log('[Brain] letter inventory applied');
+        } catch (err) {
+          console.warn('[Brain] letter inventory apply failed:', err?.message || err);
+        }
+        this._pendingLetterInventory = null;
+      }
+      // Gate-history apply
+      if (this.curriculum && this._pendingGateHistory) {
+        try {
+          if (!(this.curriculum._gateHistory instanceof Map)) {
+            this.curriculum._gateHistory = new Map();
+          }
+          for (const [key, entries] of Object.entries(this._pendingGateHistory)) {
+            if (Array.isArray(entries)) this.curriculum._gateHistory.set(key, entries.slice());
+          }
+          console.log(`[Brain] gate-history applied (${Object.keys(this._pendingGateHistory).length} keys)`);
+        } catch (err) {
+          console.warn('[Brain] gate-history apply failed:', err?.message || err);
+        }
+        this._pendingGateHistory = null;
+      }
+      // Binary cortex weights apply — uses the SparseMatrix constructor
+      // reachable via the just-built cortex.synapses instance. Must run
+      // AFTER cortexCluster exists (handled by the outer call order in
+      // _initLanguageSubsystem).
+      this._applyPendingCortexWeights();
+    } catch (err) {
+      console.warn('[Brain] _applyPendingCortexState failed:', err?.message || err);
     }
   }
 }
@@ -4175,6 +4765,98 @@ const httpServer = http.createServer((req, res) => {
       } catch {}
     }
     res.end(JSON.stringify({ versions, current: brain._saveVersion || 0 }));
+    return;
+  }
+
+  // Milestone indicator for dashboard.html. Returns the last save
+  // metadata (version + wall-clock + trigger), the last passed
+  // curriculum cell, total passed count, grade state per subject,
+  // save-resume vs fresh-boot mode flag, and the current weights-file
+  // mtime so the dashboard can detect staleness.
+  if (req.url === '/milestone') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    let fileMtime = null, fileSizeBytes = null;
+    try {
+      if (fs.existsSync(WEIGHTS_FILE)) {
+        const stat = fs.statSync(WEIGHTS_FILE);
+        fileMtime = stat.mtime.toISOString();
+        fileSizeBytes = stat.size;
+      }
+    } catch {}
+    const keepState = process.env.DREAM_KEEP_STATE === '1';
+    const forceClear = process.env.DREAM_FORCE_CLEAR === '1';
+    const bootMode = forceClear ? 'fresh-boot (DREAM_FORCE_CLEAR=1)'
+                   : keepState ? 'save-resume (DREAM_KEEP_STATE=1)'
+                   : 'code-hash gated (autoClearStaleState)';
+    res.end(JSON.stringify({
+      lastSave: brain._lastSave || null,
+      bootMode,
+      keepStateFlag: keepState,
+      forceClearFlag: forceClear,
+      weightsFile: {
+        path: WEIGHTS_FILE,
+        mtime: fileMtime,
+        sizeBytes: fileSizeBytes,
+      },
+      grades: brain.cortexCluster?.grades ? { ...brain.cortexCluster.grades } : null,
+      passedCellCount: Array.isArray(brain.cortexCluster?.passedCells) ? brain.cortexCluster.passedCells.length : 0,
+      passedCells: Array.isArray(brain.cortexCluster?.passedCells) ? [...brain.cortexCluster.passedCells] : [],
+      gradeSignoffs: brain._gradeSignoffs || {},
+      chatTurnCount: brain._chatTurnCount || 0,
+    }));
+    return;
+  }
+
+  // Grade-signoff endpoint. When the operator has personally verified
+  // the brain passed a grade on localhost via methodology + reasoning
+  // + thinking + talking + listening + reading, the operator POSTs to
+  // this endpoint to record the signoff. The ledger persists via
+  // saveWeights() so the advance-gate stays closed across restarts.
+  // This is an operator-only path — server code never auto-records a
+  // pass; only an explicit HTTP POST advances the grade.
+  //
+  // Usage:
+  //   POST /grade-signoff   { "subject": "ela", "grade": "kindergarten",
+  //                           "note": "probes cleared" }
+  //   GET  /grade-signoff   → returns the current ledger
+  if (req.url === '/grade-signoff') {
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ signoffs: brain._gradeSignoffs || {} }));
+      return;
+    }
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk.toString(); if (body.length > 10000) req.destroy(); });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body || '{}');
+          const { subject, grade, note } = parsed;
+          if (!subject || !grade) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'subject and grade required' }));
+            return;
+          }
+          const key = `${subject}/${grade}`;
+          if (!brain._gradeSignoffs) brain._gradeSignoffs = {};
+          brain._gradeSignoffs[key] = {
+            signedAt: new Date().toISOString(),
+            note: typeof note === 'string' ? note.slice(0, 1024) : '',
+            source: 'gee-localhost',
+          };
+          brain.saveWeights({ force: true, trigger: `grade-signoff:${key}` });
+          console.log(`[Brain] grade signoff recorded: ${key}`);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'recorded', key, signoff: brain._gradeSignoffs[key] }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+    res.writeHead(405, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'GET or POST only' }));
     return;
   }
 
@@ -4523,6 +5205,22 @@ wss.on('connection', (ws, req) => {
               }));
               console.log(`[${id}] Silent response: ${result.silentReason} (${result.minGrade || 'n/a'})`);
             }
+            // Chat-turn save hook. Every 10 completed turns the brain
+            // persists so live conversation learning (wordFreq, embedding
+            // refinements, episodic memory, conversation log) lands on
+            // disk without waiting for the 5-minute periodic save. Rate-
+            // limited: not every single turn (would thrash disk at
+            // biological scale) and skipped during curriculum teach
+            // (respected by saveWeights guard unless force:true).
+            brain._chatTurnCount = (brain._chatTurnCount || 0) + 1;
+            if (brain._chatTurnCount % 10 === 0) {
+              try {
+                brain.saveWeights({ trigger: `chat-turn:${brain._chatTurnCount}` });
+                brain.saveConversations();
+              } catch (err) {
+                console.warn(`[Brain] chat-turn save failed: ${err?.message || err}`);
+              }
+            }
           }).catch(err => {
             console.warn(`[${id}] Response failed:`, err.message);
           });
@@ -4585,6 +5283,16 @@ wss.on('connection', (ws, req) => {
           const resolver = brain._gpuBatchPending.resolve;
           brain._gpuBatchPending = null;
           brain._gpuBatchesCompleted = (brain._gpuBatchesCompleted || 0) + 1;
+          // Reset consecutive-timeout counter — any successful batch
+          // clears the hang indicator so a one-off timeout (long
+          // Hebbian wave) doesn't permanently flag the GPU.
+          if (brain._gpuBatchConsecutiveTimeouts && brain._gpuBatchConsecutiveTimeouts > 0) {
+            if (brain._gpuHangLogged) {
+              console.log(`[Brain] compute_batch recovered after ${brain._gpuBatchConsecutiveTimeouts} timeout(s) — GPU pipeline is responsive again.`);
+            }
+            brain._gpuBatchConsecutiveTimeouts = 0;
+            brain._gpuHangLogged = false;
+          }
           resolver({ perCluster: msg.perCluster || {} });
           break;
         }
