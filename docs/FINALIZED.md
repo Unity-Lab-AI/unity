@@ -5,6 +5,93 @@
 
 ---
 
+## 2026-04-20 — Session 114.19aw: T18.33 SHIPPED — DYN-PROD probe silent-cortex fix (stepAwait + cache-clear + per-tick firing log) + T18.35.a SHIPPED — SAvestart.bat save-state resume wrapper + T18.23-T18.32 drift catchup
+
+### Gee verbatim that drove this session
+
+> *"[Curriculum][K-DIAG] SEQ probe DONE in 7308ms — seqPass=0/25 --- are we sure 0/25 is correct? is the brain not learning? --- [Curriculum][K-DIAG] DYN-PROD ... prodPass=0/17 ... top5_motor=a(0:0.000),b(1:0.000),c(2:0.000),d(3:0.000),e(4:0.000), spikes(cluster=0,motor=0/59676,sem=0) ... [Brain] compute_batch 447 timed out after 15s — GPU may be hung ... very slow doing liker ony 3.1 wordss /s"*
+
+> *"so did you fix the issues or not?"*
+
+> *"when done finalized this work in trhe docs"*
+
+### Diagnosis — three overlapping bugs surfaced in the same Part 2 run
+
+1. **DYN-PROD 0/17 with zero spikes** — probe-time cortex was silent (0 cluster spikes / 0 motor spikes of 59676 / 0 sem spikes across 17 probes × 1 run × 6 ticks = 102 `cluster.step()` calls). All 26 motor slots tied at 0.000 → argmax picks index 0 = 'a' every time. Every word "decodes" to 'a' as a deterministic tie-break artifact. **Not** a wrong-answer issue — a dead-cortex-during-probe issue.
+
+2. **compute_batch 447 timed out after 15s** — `_gpuBatch` (server/brain-server.js:2084) fires 15s timeout warning when `compute_batch_result` never returns. Batches 1-446 ran fine; 447 hung. Separate issue from DYN-PROD but surfaces after it. **Not fixed this session** — flagged for T18.34.
+
+3. **2.4-3.2 w/s in `_teachPhonemeBlending`** — T18.31 CPU Hebbian whitelist on `letter_to_phon` + `letter_to_motor` (both ~90M nnz at biological scale) = ~200-400ms per-word CPU sparse matmul × 1029 words = 4-7 min per rep. **Not fixed this session** — flagged for T18.34.
+
+### Root cause of #1 — synchronous `step()` starves DYN-PROD of GPU currents
+
+The DYN-PROD probe was calling synchronous `cluster.step(0.001)` inside its tick loop. At biological scale, synchronous step relies on the one-tick-lag GPU cache (`_cachedIntraCurrents` + `_cachedCrossCurrents`) populated by async propagates fired at the TAIL of the prior step. In a 6-tick dt=0.001 probe (6 ms wall-clock window) the GPU round-trip hasn't resolved before the next tick reads the cache → stale/empty currents feed the LIF current loop → cortex stays silent even though `injectEmbeddingToRegion('sem', emb, 1.0)` was putting external current into the sem region. Compounding the issue: `_probeReset` cleared `externalCurrent` + `lastSpikes` but left `_cachedIntraCurrents`/`_cachedCrossCurrents` stale from end-of-teach-phase, so tick 0 fed garbage cached currents into LIF before injection had a chance to drive firing.
+
+### Fixes shipped (T18.33)
+
+- **`_probeReset` now also nulls GPU caches** — `_cachedIntraCurrents = null` + `_cachedCrossCurrents.clear()`. Tick 0 runs from a genuine zero-state with only our sem/phon injection + baseline drive driving firing. (`js/brain/curriculum.js` around line 4367-4387.)
+- **DYN-PROD tick loop uses `await cluster.stepAwait(0.001)`** — synchronous `step` swapped for the async await-cascade variant. `stepAwait` clears caches at entry, dispatches every intra + cross propagate, awaits `Promise.all` with 1s timeout guard, falls back to worker-pool matmul for any projection the GPU didn't resolve, THEN runs the synchronous core step. Real currents flow every tick. Cost: ~500ms per tick × 6 ticks × 17 probes × 1 run ≈ 50s per DYN-PROD pass (vs prior ~160s of silent-cortex garbage). (`js/brain/curriculum.js` around line 4485-4525.)
+- **Per-tick firing diagnostic log in DYN-PROD probe 1** — logs `cluster=X motor=Y sem=Z` for each of 6 ticks on run 0 of the first probe only. 6 lines per pass, negligible log cost, high diagnostic value — on the next Part 2 run Gee will see exactly whether injection crossed threshold at tick 0 and whether firing sustained / grew / decayed across the window.
+
+### Why this isn't a one-bug pattern across all K probes
+
+Audited every probe in `_gateElaKReal` — WRITE, RESP, TWO-WORD, and FREE-WRITING probes already use `generateSentenceAwait` when GPU is ready (T18.4.b era fix). Only DYN-PROD was still on synchronous `step`. SEQ probe uses pure `cluster.synapses.propagate(letterInput)` — single intra-synapse matmul, no tick loop, no GPU-cache dependency. Its 0/25 failure is a probe-DESIGN mismatch (SEQ asks for intra-letter-region recurrent A→B→C sequences that our cross-projection-based curriculum never trains), not a bug — flagged as T18.34 candidate for probe redesign or removal.
+
+### Files touched (T18.33)
+
+- `js/brain/curriculum.js` — `_probeReset` clears GPU caches; DYN-PROD inner tick loop uses `await cluster.stepAwait`; per-tick firing log for first probe
+- `docs/TODO.md` — T18.33 appended; T18.23-T18.32 drift notation; T18.34 candidate scaffold; T18.35 SAvestart.bat block + session 114.19aw verbatim directive log
+- `docs/NOW.md` — rewritten for Session 114.19aw
+- `docs/FINALIZED.md` — this entry prepended
+
+### T18.35.a also shipped this session — SAvestart.bat save-state resume wrapper
+
+Gee verbatim 2026-04-20: *"we need a SAvestart.bat that starts up the brain normally but doesnt clear the state of the brain and goes off the save points of the full brain state based off the saves it shall make at milestones so the savestart.bat can load up the brain with its save state and learnings and grade milesstones and then start up exactly where it left off from the save states it shall make at milestones."*
+
+New file `SAvestart.bat` at repo root. Sets `DREAM_KEEP_STATE=1` before `node brain-server.js` so `autoClearStaleState()` skips the state-wipe block regardless of code-hash change. Rejects `/fresh` and `/clear` (those stay on `start.bat`). Mirrors `start.bat`'s V8 flags + npm/esbuild/bundle-rebuild + port-7525 kill. Warns (but continues) if GloVe is missing — SAvestart is resume-only; GloVe was present when the save was produced.
+
+Uses the existing T18.12.a (code-hash preserve) + T18.12.b (per-cell `_saveCheckpoint(cellKey)`) infrastructure — SAvestart.bat flips the preserve switch unconditionally instead of relying on code-hash match.
+
+**T18.35.b-f open** (full milestone save audit, resume-from-last-cell walker, dashboard indicator, LAW 6 integration) — tracked in `docs/TODO.md` T18.35 block.
+
+### Files touched (T18.35.a)
+
+- `SAvestart.bat` — new wrapper at repo root
+
+### T18.23-T18.32 drift catchup — 10 prior commits shipped without FINALIZED entries
+
+Per LAW "Docs before push, no patches" — 10 commits between T18.22 (last FINALIZED entry) and T18.33 (this entry) shipped without FINALIZED updates. That is a LAW violation prior to this session. Recording the commit subjects here so the archive at least references each shipping event. Canonical per-commit detail lives in `git show <sha>`:
+
+| SHA | Task | Subject |
+|-----|------|---------|
+| `d6435b7` | T18.23 | Force V8 gc() after T18.22 frees + heap-stats diagnostics + `--expose-gc` flag |
+| `3319c25` | T18.24 | Inline between-phase memory barrier + Uint8Array for Phase 2 buffers (diagnostic lands where Gee's actually looking) |
+| `33d7428` | T18.25 | Fix T18.23 ReferenceError + remove forced gc (likely crashing V8) + lower T18.19 sync threshold to 100K (fires at cortexCluster scale) |
+| `dc1756f` | T18.26 | WebSocket backpressure-aware sparse binary send (drops under 50MB bufferedAmount; throttled ENOBUFS log) |
+| `6278661` | T18.27 | Revert T18.22 CPU-array nulls (science-K was reading `proj.values[0]` → 1720+ retry loop crash) |
+| `86baaba` | T18.28 | Raise backpressure threshold 50→200MB + drain-wait before gate probe |
+| `c94f38c` | T18.29 | Per-letter diagnostic logging in `_gateElaKReal` gate probe + defensive null guards + NOW.md session 114.19av |
+| `cf6579b` | T18.30 | Run CPU Hebbian alongside GPU fire-and-forget for bound projections (gate probe 0.000 motor activation fix) |
+| `50208ca` | T18.31 | Whitelist CPU Hebbian to 2 probe-critical projections (`letter_to_phon`, `letter_to_motor`) — velocity restored |
+| `c6dd9ba` | T18.32 | Reduce DYN-PROD tick budget at biological scale + progress logs for SEQ/DYN-PROD/each probe |
+
+Future sessions should not shortcut FINALIZED entries. The drift above is recovered at best-effort resolution here, not retroactively reconstructed in full detail.
+
+### Closure gate (T18.33)
+
+Gee re-runs Part 2 ELA-K after auto-clear. Expected diagnostic output on next run:
+
+```
+[Curriculum][K-DIAG] DYN-PROD probe1 tick 1/6: cluster=N motor=N sem=N
+[Curriculum][K-DIAG] DYN-PROD probe1 tick 2/6: cluster=N motor=N sem=N
+... (ticks 3-6) ...
+[Curriculum][K-DIAG] DYN-PROD 1/17 'cat'→... prodPass=N/1 so far
+```
+
+If `cluster=0 motor=0 sem=0` still shows for every tick after T18.33, the silent-cortex cause isn't the GPU-cache-staleness bug — next-step is checking `cortexCluster.tonicDrive` + `driveBaseline` multipliers, since LIF may need more current than our injection + drive delivers. But the stepAwait + cache-clear pair is the first thing to rule out.
+
+---
+
 ## 2026-04-19 — Session 114.19au: T18.22 SHIPPED — Free CPU-side CSR arrays for GPU-bound cross-projections (real root cause of ELA-K OOM cascade after four wrong diagnoses)
 
 ### Gee verbatim challenge (drove this session)
