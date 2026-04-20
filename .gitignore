@@ -81,6 +81,7 @@ package-lock.json
 
 # === Server Brain Data ===
 server/brain-weights*.json
+server/brain-weights*.bin
 server/conversations.json
 server/episodic-memory.db
 server/episodic-memory.db-wal

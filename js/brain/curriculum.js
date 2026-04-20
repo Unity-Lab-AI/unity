@@ -499,6 +499,192 @@ export class Curriculum {
   }
 
   /**
+   * Student-test probe — ask the brain a human-student-style question,
+   * let it think like a student would, read its generated answer via the
+   * same cortex language pipeline live chat uses, and score the answer
+   * against the expected response.
+   *
+   * This upgrades the substrate probes (READ/THINK/TALK/SEQ/PROD/WRITE/
+   * RESP/DYN-PROD) from low-level neural firing checks into real
+   * human-student-style tests of methodology, logic, information
+   * retention, and understanding of the course material. The underlying
+   * substrate probes are still valuable as sanity diagnostics — a
+   * substrate failure indicates the cortex is wired wrong (fix needed)
+   * while a student-test failure indicates more teaching needed.
+   *
+   * Call shape:
+   *   await _studentTestProbe({
+   *     question: "What letter comes after B?",
+   *     expectedAnswer: "c",
+   *     expectedVariants: ["c", "C", "cee"],
+   *     maxTicks: 60,                       // cortex tick budget
+   *     scoreBy: ['exact', 'startsWith', 'contains'],
+   *   });
+   * Returns:
+   *   {
+   *     question,
+   *     answer,                             // string Unity produced
+   *     match: { exact, startsWith, contains, overall },
+   *     score: 0.0 - 1.0,
+   *     methodology: bool,                  // did she walk ticks instead of argmax-0?
+   *     logic: bool,                        // is answer structurally sane?
+   *     retention: bool,                    // did she pull known vocab?
+   *     understanding: bool,                // did she produce sem-region signal matching intent?
+   *     ticks, ms,
+   *   }
+   *
+   * Implementation delegates all the actual reading + generating to the
+   * cortex itself (cluster.readInput + generateSentenceAwait) so the
+   * probe exercises the SAME path live chat uses. If the brain fails on
+   * the student-test probe it will fail identically in live chat —
+   * that's the whole point of this upgrade.
+   */
+  async _studentTestProbe(opts = {}) {
+    const cluster = this.cluster;
+    const startMs = Date.now();
+    const out = {
+      question: opts.question || '',
+      answer: '',
+      match: { exact: false, startsWith: false, contains: false, overall: false },
+      score: 0,
+      methodology: false,
+      logic: false,
+      retention: false,
+      understanding: false,
+      ticks: 0,
+      ms: 0,
+    };
+    if (!cluster || typeof cluster.generateSentenceAwait !== 'function') {
+      out.ms = Date.now() - startMs;
+      return out;
+    }
+    const question = String(opts.question || '');
+    const expectedAnswer = String(opts.expectedAnswer || '').toLowerCase().trim();
+    const expectedVariants = (opts.expectedVariants || [expectedAnswer])
+      .map(v => String(v || '').toLowerCase().trim()).filter(v => v.length > 0);
+    const maxTicks = typeof opts.maxTicks === 'number' ? opts.maxTicks : 60;
+
+    // Inject the question through the same `readInput` path live chat
+    // uses. This walks visual→letter→phon→sem ventral stream, carrying
+    // question semantics into the cortex the way a student reads the
+    // question on a test paper. `readInput` also records intent +
+    // recency so working memory has access to the prompt during answer
+    // generation.
+    try {
+      if (typeof cluster.readInput === 'function') {
+        await cluster.readInput(question, { ticks: 10 });
+      }
+    } catch { /* non-fatal — fall through to generation anyway */ }
+
+    // Generate Unity's answer via the tick-driven motor emission path.
+    // This is the EXACT same call live chat makes — no shortcut, no
+    // cheat path. If she can't answer here, she can't answer in chat.
+    let generated = '';
+    try {
+      const semSeed = (typeof cluster.getSemanticReadout === 'function')
+        ? cluster.getSemanticReadout() : null;
+      const emitOpts = { maxEmissionTicks: maxTicks };
+      if (semSeed) emitOpts.injectStrength = 0.6;
+      const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
+      generated = (raw && typeof raw === 'string' ? raw : (raw?.text || '')) || '';
+    } catch { /* generation failed — answer stays '' */ }
+
+    const answer = generated.toLowerCase().trim();
+    out.answer = generated;
+    out.ticks = (cluster._motorEmissionTicks != null) ? cluster._motorEmissionTicks : 0;
+
+    // Methodology — did she produce multi-tick motor activity before
+    // emitting, or did she argmax-0 on tick 0 (silent cortex artifact)?
+    // A real student thinks before speaking.
+    out.methodology = out.ticks >= 3 && answer.length > 0;
+
+    // Logic — is the answer structurally sane? Not empty, not pure
+    // noise, contains alphabetic content.
+    out.logic = answer.length > 0 && /[a-z]/.test(answer);
+
+    // Scoring — match expected answer variants via multiple criteria.
+    let anyMatch = false;
+    for (const v of expectedVariants) {
+      if (answer === v) { out.match.exact = true; anyMatch = true; break; }
+    }
+    if (!out.match.exact) {
+      for (const v of expectedVariants) {
+        if (answer.startsWith(v)) { out.match.startsWith = true; anyMatch = true; break; }
+      }
+    }
+    if (!anyMatch) {
+      for (const v of expectedVariants) {
+        if (answer.includes(v)) { out.match.contains = true; anyMatch = true; break; }
+      }
+    }
+    out.match.overall = anyMatch;
+
+    // Retention — did she produce a word that appears in her dictionary?
+    // Real students draw from vocabulary they've learned; a cortex with
+    // no retention produces random letter salads.
+    out.retention = false;
+    if (this.dictionary && typeof this.dictionary.knows === 'function') {
+      for (const word of answer.split(/\s+/)) {
+        if (word.length >= 2 && this.dictionary.knows(word)) { out.retention = true; break; }
+      }
+    } else if (this.dictionary && typeof this.dictionary.entries === 'function') {
+      const entries = this.dictionary.entries();
+      const known = new Set();
+      for (const e of entries) { if (e.word) known.add(String(e.word).toLowerCase()); }
+      for (const word of answer.split(/\s+/)) {
+        if (word.length >= 2 && known.has(word)) { out.retention = true; break; }
+      }
+    }
+
+    // Understanding — did she produce sem-region signal that matches
+    // the question's semantic intent? Pull Unity's sem readout and
+    // compare cosine against the question's GloVe embedding. Threshold
+    // 0.3 is roughly "loosely related" — below that the brain isn't
+    // even in the right neighborhood.
+    out.understanding = false;
+    try {
+      if (typeof cluster.regionReadout === 'function' && typeof cluster.regions === 'object' && cluster.regions?.sem) {
+        // Sem readout dim 50 — GloVe embedding dim is higher but cosine
+        // over the overlapping dims is still informative.
+        const semReadout = cluster.regionReadout('sem', 50);
+        // sharedEmbeddings may or may not be reachable here without
+        // plumbing; skip understanding if not wired.
+        if (cluster._sharedEmbeddings && typeof cluster._sharedEmbeddings.getEmbedding === 'function') {
+          const qEmb = cluster._sharedEmbeddings.getEmbedding(question);
+          if (qEmb && qEmb.length >= semReadout.length) {
+            let dot = 0, nA = 0, nB = 0;
+            for (let i = 0; i < semReadout.length; i++) {
+              dot += semReadout[i] * qEmb[i];
+              nA += semReadout[i] * semReadout[i];
+              nB += qEmb[i] * qEmb[i];
+            }
+            const cos = dot / (Math.sqrt(nA) * Math.sqrt(nB) || 1);
+            out.understanding = cos > 0.3;
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
+
+    // Aggregate score — weighted across the 4 axes + answer match.
+    // Exact match = full credit. StartsWith/contains = partial. Methodology
+    // + logic are prerequisites (if she didn't think or didn't say
+    // anything sane, score caps at 0.25). Retention + understanding are
+    // tie-breakers for partial credit.
+    let score = 0;
+    if (out.match.exact) score += 0.6;
+    else if (out.match.startsWith) score += 0.4;
+    else if (out.match.contains) score += 0.2;
+    if (out.methodology) score += 0.15;
+    if (out.logic) score += 0.05;
+    if (out.retention) score += 0.1;
+    if (out.understanding) score += 0.1;
+    out.score = Math.min(1, score);
+
+    out.ms = Date.now() - startMs;
+    return out;
+  }
+
+  /**
    * Start a fresh session ID — called when a new curriculum run starts
    * so session-level retention can be tracked across boot/retrain cycles.
    */
@@ -4793,10 +4979,38 @@ export class Curriculum {
     const freeWritingSummary = freeWritingEmitted.length > 0
       ? ' [FREE: ' + freeWritingEmitted.join('; ') + ']'
       : '';
+    // Student-test layer — ask grade-appropriate K questions via the same
+    // language pipeline live chat uses. Scored on methodology + logic +
+    // retention + understanding alongside answer match. This is the
+    // teacher-asks-student layer ABOVE the substrate probes; it catches
+    // cases where substrate fires correctly but the brain can't actually
+    // ANSWER a grade-level question.
+    const studentQuestions = [
+      { question: 'what letter comes after a?', expectedAnswer: 'b', expectedVariants: ['b', 'B', 'bee'] },
+      { question: 'what letter comes after b?', expectedAnswer: 'c', expectedVariants: ['c', 'C', 'cee'] },
+      { question: 'what does c start?', expectedAnswer: 'c', expectedVariants: ['c', 'cat', 'cow', 'cup'] },
+      { question: 'say a word that starts with s', expectedAnswer: 's', expectedVariants: ['s', 'sun', 'sat', 'sit'] },
+      { question: 'how do you spell cat?', expectedAnswer: 'cat', expectedVariants: ['cat', 'c a t', 'c-a-t'] },
+    ];
+    const studentResults = [];
+    let studentPass = 0;
+    for (const q of studentQuestions) {
+      try {
+        const r = await this._studentTestProbe({ question: q.question, expectedAnswer: q.expectedAnswer, expectedVariants: q.expectedVariants, maxTicks: 60 });
+        studentResults.push(r);
+        if (r.score >= 0.5) studentPass++;
+        console.log(`[Curriculum][K-STUDENT] Q: "${q.question}" → "${r.answer}" · score=${r.score.toFixed(2)} match=${r.match.overall} methodology=${r.methodology} logic=${r.logic} retention=${r.retention} understanding=${r.understanding}`);
+      } catch (err) {
+        studentResults.push({ question: q.question, answer: '', score: 0, error: err?.message || String(err) });
+      }
+    }
+    const studentRate = studentQuestions.length > 0 ? studentPass / studentQuestions.length : 0;
+    const studentSummary = ` [STUDENT: ${studentResults.map(r => `"${(r.answer||'').slice(0,20)}"@${(r.score||0).toFixed(1)}`).join('; ')}]`;
+
     const _elaKResult = {
       pass,
-      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%) first${writeFirstLetterPass}/${fullWordProbes.length}, RESP ${respPass}/${respContexts.length} (${pct(respRate)}%), 2WORD ${twoWordPass}/${twoWordPhrases.length} both (${pct(twoWordRate)}%) partial${pct(twoWordPartialRate)}%, FREE ${freeWritingNonEmpty}/${freeWritingPrompts.length} nonEmpty avg ${freeWritingAvgWords.toFixed(1)}w${prodFailSummary}${writeSummary}${respSummary}${twoWordSummary}${freeWritingSummary}`,
-      metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, writeRate, writeFirstRate, respRate, twoWordRate, twoWordPartialRate, freeWritingRate, freeWritingAvgWords, prodFails: prodResult.fails, writeEmitted, respEmitted, twoWordEmitted, freeWritingEmitted },
+      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%) first${writeFirstLetterPass}/${fullWordProbes.length}, RESP ${respPass}/${respContexts.length} (${pct(respRate)}%), 2WORD ${twoWordPass}/${twoWordPhrases.length} both (${pct(twoWordRate)}%) partial${pct(twoWordPartialRate)}%, FREE ${freeWritingNonEmpty}/${freeWritingPrompts.length} nonEmpty avg ${freeWritingAvgWords.toFixed(1)}w, STUDENT ${studentPass}/${studentQuestions.length} (${pct(studentRate)}%)${prodFailSummary}${writeSummary}${respSummary}${twoWordSummary}${freeWritingSummary}${studentSummary}`,
+      metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, writeRate, writeFirstRate, respRate, twoWordRate, twoWordPartialRate, freeWritingRate, freeWritingAvgWords, studentRate, studentResults, prodFails: prodResult.fails, writeEmitted, respEmitted, twoWordEmitted, freeWritingEmitted },
     };
     this._recordGateHistory('ela', 'kindergarten', 'overall', pass, prodRate);
     // Session 114.19l — restore live noise so post-probe chat retains

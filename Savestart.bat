@@ -93,22 +93,35 @@ if errorlevel 1 goto err_bundle
 echo   Bundle built - browser will load fresh code.
 echo.
 
-REM T18.37 — stdout/stderr redirected to server\server.log + spawn a
-REM separate PowerShell tail window so heartbeat + brain info paint
-REM in a fresh process even if THIS launcher terminal goes invisible
-REM (Windows Terminal / conhost rendering glitches).
+REM stdout/stderr redirected to server\server.log + spawn a separate
+REM PowerShell tail window so heartbeat + brain info paint in a fresh
+REM process even if THIS launcher terminal goes invisible (Windows
+REM Terminal / conhost rendering glitches).
+REM Force UTF-8 end-to-end on the tail window. Node writes UTF-8 to
+REM server.log (emoji + em-dash + box-drawing chars). PowerShell 5.1's
+REM Get-Content without -Encoding decodes as system code page (CP1252
+REM US) and turns ═══ into â•â•â• mojibake in the log window. Set the
+REM console OutputEncoding to UTF-8 AND pass -Encoding UTF8 to
+REM Get-Content so the bytes are both decoded AND rendered as UTF-8
+REM end-to-end.
 echo [Savestart] step 7/7: launching brain server + log tail (SAVE-STATE RESUME, DREAM_KEEP_STATE=1)...
 echo   server log: %~dp0server\server.log
 if exist server.log del server.log
 start /b "" cmd /c "node --max-old-space-size=65536 --max-semi-space-size=1024 --expose-gc brain-server.js > server.log 2>&1"
 ping -n 2 127.0.0.1 >nul
-start "Unity Brain Log Tail" powershell -NoExit -Command "Get-Content -Path '%~dp0server\server.log' -Wait -Tail 200"
+start "Unity Brain Log Tail" powershell -NoExit -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content -Path '%~dp0server\server.log' -Wait -Tail 200 -Encoding UTF8"
 ping -n 2 127.0.0.1 >nul
 start "" http://localhost:7525
+REM Dashboard auto-opens alongside the landing page so the milestone panel
+REM (curriculum state, save-resume vs fresh-boot, passed cells, operator
+REM signoffs) is visible from the first moment the brain is up. Save-state
+REM resume boot especially benefits — the operator can confirm what loaded
+REM from disk before committing to a long curriculum run.
+start "" http://localhost:7525/dashboard.html
 echo.
 echo   Landing:     http://localhost:7525
+echo   Dashboard:   http://localhost:7525/dashboard.html (auto-opened)
 echo   GPU compute: http://localhost:7525/compute.html (auto-launched by server)
-echo   Dashboard:   http://localhost:7525/dashboard.html
 echo   Log tail:    separate PowerShell window "Unity Brain Log Tail"
 echo   Log file:    %~dp0server\server.log (always on disk)
 echo.

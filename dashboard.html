@@ -104,6 +104,24 @@
       </div>
     </div>
 
+    <!-- Milestone / save-state indicator panel. Polls GET /milestone
+         every 5s. Shows boot mode (save-resume vs fresh-boot), last save
+         wall-clock + trigger, last passed cell, total passed count,
+         per-subject grade state, operator signoffs ledger. Lets the
+         operator visually confirm that Savestart.bat actually loaded what
+         was expected before committing to a long curriculum run. -->
+    <div class="card" style="margin-top:12px;">
+      <div class="card-title">Curriculum Milestone · Save State · Operator Signoffs</div>
+      <div id="d-milestone" style="padding:8px 12px;font-family:monospace;font-size:12px;color:#aaa;line-height:1.8;">
+        <div id="d-ms-boot" style="color:#f59e0b;">boot-mode: loading...</div>
+        <div id="d-ms-save" style="margin-top:6px;color:#555;font-size:10px;">last-save: —</div>
+        <div id="d-ms-passed" style="margin-top:6px;">passed cells: <span id="d-ms-passed-count" style="color:#22c55e;">0</span> · last: <span id="d-ms-passed-last" style="color:#ff4d9a;">—</span></div>
+        <div id="d-ms-grades" style="margin-top:6px;color:#888;font-size:11px;">grades: —</div>
+        <div id="d-ms-signoffs" style="margin-top:6px;color:#888;font-size:11px;">operator signoffs: —</div>
+        <div id="d-ms-weights" style="margin-top:6px;color:#555;font-size:10px;">weights file: —</div>
+      </div>
+    </div>
+
     <div class="card" style="margin-top:12px;">
       <div class="card-title">Emotional History</div>
       <canvas id="d-emotion-chart" width="800" height="200" style="width:100%;height:200px;background:#0a0a0a;border-radius:4px;"></canvas>
@@ -455,6 +473,73 @@
 
     // Redraw chart every 2 seconds
     setInterval(drawEmotionChart, 2000);
+
+    // Poll /milestone every 5s for the curriculum/save panel. HTTP
+    // instead of WebSocket because the values are low-frequency (updated
+    // only on save events or grade signoffs) and a fresh GET on a known
+    // port is simpler than piggybacking on the state broadcast.
+    async function refreshMilestone() {
+      try {
+        const scheme = location.protocol === 'https:' ? 'https:' : 'http:';
+        const host = location.hostname || 'localhost';
+        const r = await fetch(`${scheme}//${host}:7525/milestone`, { cache: 'no-store' });
+        if (!r.ok) return;
+        const m = await r.json();
+        const bootEl = document.getElementById('d-ms-boot');
+        const saveEl = document.getElementById('d-ms-save');
+        const passedCountEl = document.getElementById('d-ms-passed-count');
+        const passedLastEl = document.getElementById('d-ms-passed-last');
+        const gradesEl = document.getElementById('d-ms-grades');
+        const signoffsEl = document.getElementById('d-ms-signoffs');
+        const weightsEl = document.getElementById('d-ms-weights');
+        if (bootEl) {
+          bootEl.textContent = `boot-mode: ${m.bootMode || 'unknown'}`;
+          bootEl.style.color = (m.keepStateFlag) ? '#22c55e'
+                               : (m.forceClearFlag) ? '#ef4444' : '#f59e0b';
+        }
+        if (saveEl) {
+          if (m.lastSave) {
+            const trig = m.lastSave.trigger ? ` (${m.lastSave.trigger})` : '';
+            saveEl.textContent = `last-save: v${m.lastSave.version} at ${m.lastSave.at}${trig}`;
+          } else {
+            saveEl.textContent = 'last-save: no save yet this boot';
+          }
+        }
+        if (passedCountEl) passedCountEl.textContent = m.passedCellCount || 0;
+        if (passedLastEl) passedLastEl.textContent = (m.lastSave?.lastPassedCell) || '—';
+        if (gradesEl) {
+          if (m.grades && typeof m.grades === 'object') {
+            const pairs = Object.entries(m.grades).map(([s, g]) => `${s}=${g}`).join(' · ');
+            gradesEl.textContent = `grades: ${pairs}`;
+          } else {
+            gradesEl.textContent = 'grades: not yet initialized';
+          }
+        }
+        if (signoffsEl) {
+          const so = m.gradeSignoffs || {};
+          const keys = Object.keys(so);
+          if (keys.length === 0) {
+            signoffsEl.innerHTML = 'operator signoffs: <span style="color:#6b7280;">none yet — POST /grade-signoff {subject, grade, note} to record</span>';
+          } else {
+            const badges = keys.map(k => {
+              const when = so[k].signedAt ? so[k].signedAt.slice(0, 10) : '';
+              return `<span style="display:inline-block;background:#14532d;color:#22c55e;padding:2px 8px;border-radius:10px;font-size:10px;margin-right:6px;" title="${so[k].note || ''}">✓ ${k}${when ? ' · ' + when : ''}</span>`;
+            }).join('');
+            signoffsEl.innerHTML = `operator signoffs: ${badges}`;
+          }
+        }
+        if (weightsEl && m.weightsFile) {
+          const sizeKB = m.weightsFile.sizeBytes ? (m.weightsFile.sizeBytes / 1024).toFixed(1) : '?';
+          weightsEl.textContent = `weights file: ${m.weightsFile.path} · ${sizeKB} KB · mtime ${m.weightsFile.mtime || 'n/a'}`;
+        }
+      } catch (err) {
+        // Silent fail — the health endpoint is advisory; WebSocket carries
+        // the primary state. If /milestone is unreachable (server down,
+        // CORS, firewall) we don't want to spam the log.
+      }
+    }
+    refreshMilestone();
+    setInterval(refreshMilestone, 5000);
 
     connect();
   </script>
