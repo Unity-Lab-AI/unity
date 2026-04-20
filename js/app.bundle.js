@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "86baabaf-e83c";
+var BUILD = "c94f38c5-7bd3";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2551,9 +2551,15 @@ var NeuronCluster = class {
           this._gpuProxy.hebbianBound(`${this.name}_${name}`, lr);
         } catch {
         }
-        const preF2 = this.regionSpikes(src);
-        const postF2 = this.regionSpikes(dst);
-        proj.hebbianUpdate(preF2, postF2, lr);
+        const PROBE_CRITICAL = this._probeCriticalProjectionsSet ||= /* @__PURE__ */ new Set([
+          "letter_to_phon",
+          "letter_to_motor"
+        ]);
+        if (PROBE_CRITICAL.has(name)) {
+          const preF2 = this.regionSpikes(src);
+          const postF2 = this.regionSpikes(dst);
+          proj.hebbianUpdate(preF2, postF2, lr);
+        }
         continue;
       }
       const preF = this.regionSpikes(src);

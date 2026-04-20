@@ -1926,35 +1926,42 @@ export class NeuronCluster {
       // scale through T18.8 batched dispatch). Phase 1 goes from 13
       // minutes to 3-6 seconds at 312 iters.
       if (proj._gpuBound && this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbianBound) {
-        // T18.30 — FIRE GPU SHADOW + RUN SYNC CPU HEBBIAN. T18.17's
-        // original "continue" skipped CPU entirely. That assumed probes
-        // read GPU state via readbackLetterBuckets etc. But the gate
-        // probe code at _gateElaKReal calls proj.propagate(letterPat)
-        // on the CPU SparseMatrix — reading this.values/colIdx/rowPtr
-        // directly. Without CPU Hebbian updates during teach, CPU
-        // proj.values stays at its initial near-zero values → probes
-        // produce 0.000 motor activation → READ 8/26, TALK 2/26 gate
-        // fail (Gee 2026-04-19). Fix: run CPU Hebbian SYNCHRONOUSLY
-        // alongside the GPU fire-and-forget. At 301K cortexCluster
-        // cross-projections (avg 50M nnz), sync CPU Hebbian is
-        // ~100-200ms per call — slower than T18.17's pure-GPU fast path
-        // but CORRECT. Teach velocity drops from Phase-1-0.3s to
-        // Phase-1-~30s at biological scale but gate probe actually
-        // works. Trading velocity for correctness.
+        // T18.31 — WHITELIST CPU Hebbian to only the 2 probe-critical
+        // projections. T18.30 ran sync CPU Hebbian on ALL 14 bound
+        // projections which destroyed teach velocity (30-100× slower:
+        // _teachPhonemeBlending dropped from 25-40 words/s to 0.3-1.1
+        // words/s per Gee 2026-04-19). But T18.17's pure-GPU fast path
+        // left CPU weights stale for projections the gate probe reads
+        // via CPU SparseMatrix.propagate() → 0.000 motor activations →
+        // gate fail.
         //
-        // If at non-biological scale (browser-only where proj is NOT
-        // bound) this branch doesn't fire — falls through to the
-        // existing worker-pool/sync path below.
+        // Surgical fix: run sync CPU Hebbian ONLY on the projections
+        // the gate probe actually reads. For ELA-K gate:
+        //   - `letter_to_phon` (READ probe)
+        //   - `letter_to_motor` (TALK probe)
+        // The other 12 cross-projections stay GPU-only fast path.
+        // 2 projections × ~100-200ms = 200-400ms per _teachHebbian call
+        // vs T18.30's 14 × ~200ms = ~3s. ~7× faster than T18.30, still
+        // produces correct probe reads on the 2 critical projections.
+        //
+        // If other subjects (science/math/social/art/life K) need
+        // different probe projections, we extend the whitelist per
+        // subject. Currently focused on unblocking ELA-K gate.
         try {
           this._gpuProxy.hebbianBound(`${this.name}_${name}`, lr);
-        } catch { /* non-fatal — CPU path below still runs */ }
-        // SYNC CPU Hebbian (no worker pool, no allocation beyond the
-        // region-sized preF/postF arrays). proj.hebbianUpdate mutates
-        // proj.values in place so subsequent probe.propagate reads see
-        // the trained weights.
-        const preF = this.regionSpikes(src);
-        const postF = this.regionSpikes(dst);
-        proj.hebbianUpdate(preF, postF, lr);
+        } catch { /* non-fatal */ }
+        // Whitelist of probe-critical projection names (unprefixed key,
+        // i.e. without the cluster-name prefix). Matches what
+        // _gateElaKReal reads via cluster.crossProjections[...].propagate.
+        const PROBE_CRITICAL = this._probeCriticalProjectionsSet ||= new Set([
+          'letter_to_phon',
+          'letter_to_motor',
+        ]);
+        if (PROBE_CRITICAL.has(name)) {
+          const preF = this.regionSpikes(src);
+          const postF = this.regionSpikes(dst);
+          proj.hebbianUpdate(preF, postF, lr);
+        }
         continue;
       }
 
