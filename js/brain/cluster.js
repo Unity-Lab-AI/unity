@@ -1926,9 +1926,35 @@ export class NeuronCluster {
       // scale through T18.8 batched dispatch). Phase 1 goes from 13
       // minutes to 3-6 seconds at 312 iters.
       if (proj._gpuBound && this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbianBound) {
+        // T18.30 — FIRE GPU SHADOW + RUN SYNC CPU HEBBIAN. T18.17's
+        // original "continue" skipped CPU entirely. That assumed probes
+        // read GPU state via readbackLetterBuckets etc. But the gate
+        // probe code at _gateElaKReal calls proj.propagate(letterPat)
+        // on the CPU SparseMatrix — reading this.values/colIdx/rowPtr
+        // directly. Without CPU Hebbian updates during teach, CPU
+        // proj.values stays at its initial near-zero values → probes
+        // produce 0.000 motor activation → READ 8/26, TALK 2/26 gate
+        // fail (Gee 2026-04-19). Fix: run CPU Hebbian SYNCHRONOUSLY
+        // alongside the GPU fire-and-forget. At 301K cortexCluster
+        // cross-projections (avg 50M nnz), sync CPU Hebbian is
+        // ~100-200ms per call — slower than T18.17's pure-GPU fast path
+        // but CORRECT. Teach velocity drops from Phase-1-0.3s to
+        // Phase-1-~30s at biological scale but gate probe actually
+        // works. Trading velocity for correctness.
+        //
+        // If at non-biological scale (browser-only where proj is NOT
+        // bound) this branch doesn't fire — falls through to the
+        // existing worker-pool/sync path below.
         try {
           this._gpuProxy.hebbianBound(`${this.name}_${name}`, lr);
-        } catch { /* fire-and-forget — CPU worker dispatch path not reached */ }
+        } catch { /* non-fatal — CPU path below still runs */ }
+        // SYNC CPU Hebbian (no worker pool, no allocation beyond the
+        // region-sized preF/postF arrays). proj.hebbianUpdate mutates
+        // proj.values in place so subsequent probe.propagate reads see
+        // the trained weights.
+        const preF = this.regionSpikes(src);
+        const postF = this.regionSpikes(dst);
+        proj.hebbianUpdate(preF, postF, lr);
         continue;
       }
 

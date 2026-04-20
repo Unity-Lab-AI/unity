@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "62786614-e6be";
+var BUILD = "86baabaf-e83c";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2551,6 +2551,9 @@ var NeuronCluster = class {
           this._gpuProxy.hebbianBound(`${this.name}_${name}`, lr);
         } catch {
         }
+        const preF2 = this.regionSpikes(src);
+        const postF2 = this.regionSpikes(dst);
+        proj.hebbianUpdate(preF2, postF2, lr);
         continue;
       }
       const preF = this.regionSpikes(src);
