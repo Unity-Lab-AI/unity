@@ -1,6 +1,20 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19aw · **Date:** 2026-04-20 · **Branch:** `syllabus-k-phd` · **HEAD:** `c6dd9ba` (T18.32) → pending T18.33
+> **Session:** 114.19ax · **Date:** 2026-04-20 · **Branch:** `syllabus-k-phd` · **HEAD:** `ee8e700` (T18.33 + stamp; pushed to main) → pending T18.36 (start.bat/SAvestart.bat fix)
+
+---
+
+## T18.36 SHIPPING — start.bat visible checkpoints + SAvestart.bat full parity
+
+Gee immediately post-T18.33 push: *"something is wrong with the start  .bat .. u use it ant the tertminal starts up invisible and translucent with no inofation in it jus t the header tab is visible.. are you sute the Savestart.bat is poroper its almnmost half the size of the start.bat"*
+
+**Kill step:** node PID 16552 (10 GB resident) + PID 19448 (CLOSE_WAIT) still held port 7525 from prior session. `taskkill /F /PID 16552 19448` cleared both. Port verified free before shipping the batch fixes.
+
+**SAvestart.bat parity fix (T18.36.b):** first version at 139 lines had dropped GloVe download + error handlers on the flawed reasoning *"resume-only, GloVe should already exist."* Wrong — if corpora folder is wiped, SAvestart would silently fall back to subword embeddings and corrupt saved-weights semantic substrate. Rewrote to 174 lines matching start.bat's full boot sequence; delta is ONLY `DREAM_KEEP_STATE=1` + reject `/fresh`/`/clear` flags + 7-step banner labelling.
+
+**start.bat visible step checkpoints (T18.36.c):** invisible-terminal report traced to silent phases (`>nul 2>&1` on port-kill, `goto :skip` without echo on npm/esbuild/GloVe presence checks). Every phase now emits a visible `[start] step N/7: …` banner. If a future hang recurs the last printed step identifies where.
+
+**T18.36 closure gate:** Gee re-runs start.bat → sees 7-step banners → server launches. Gee-verification only.
 
 ---
 

@@ -731,6 +731,20 @@ Gee-verbatim instructions given this session, in order, for audit trail + LAW #0
 
 ---
 
+#### T18.36 — start.bat invisible-terminal checkpoints + SAvestart.bat parity fix (Gee 2026-04-20)
+
+**Gee's verbatim 2026-04-20 (post-T18.33 push):**
+
+> *"something is wrong with the start  .bat .. u use it ant the tertminal starts up invisible and translucent with no inofation in it jus t the header tab is visible.. i think its still running.. can you kill it.. and figure out why the start.bat is not working correctly, and are you sute the Savestart.bat is poroper its almnmost half the size of the start.bat that now isnot working"*
+
+- [x] **T18.36.a — Kill the hung brain server.** Node PID 16552 (10 GB resident) + PID 19448 (CLOSE_WAIT on :7525) were still alive from the prior session. `taskkill /F /PID 16552 /PID 19448` cleared both; port 7525 verified free before shipping the fix. **DONE this session.**
+- [x] **T18.36.b — SAvestart.bat parity fix.** First version of SAvestart.bat was 139 lines vs start.bat's 207 — I had dropped the GloVe download flow and its error handlers on the wrong reasoning *"SAvestart is resume-only, GloVe should already exist"*. That's wrong: if corpora folder is wiped after the save was produced, SAvestart would silently fall back to subword embeddings and corrupt the saved-weights semantic substrate. Rewrote SAvestart.bat to mirror start.bat's boot logic fully — same GloVe download + extract flow, same V8 flags, same npm/esbuild/bundle-rebuild/port-kill sequence — delta is ONLY `DREAM_KEEP_STATE=1` + reject `/fresh` and `/clear` flags + 7-step visible checkpoint banners. **SHIPPED** — `SAvestart.bat` rewritten to 174 lines.
+- [x] **T18.36.c — start.bat visible step checkpoints.** Gee's report of *"invisible translucent terminal with just the header tab visible"* traced to silent-output phases: port-kill was `>nul 2>&1`, npm/esbuild checks were `goto :skip` on success (no echo), GloVe check was `goto :skip` on success. Phases ran fine but operator saw nothing. Now every major phase emits a visible `[start] step N/7: ...` banner, port-kill echoes the PID being killed, npm/esbuild/GloVe emit a "present" confirmation on skip-path. If a future hang recurs, the last printed step identifies where. **SHIPPED** — `start.bat` updated to 223 lines.
+
+**T18.36 closure gate:** Gee re-runs `start.bat` (or `SAvestart.bat`) → sees the 7-step banner progression → server launches → Landing page opens. If a step hangs, the last printed banner tells us where. Claude cannot close — Gee-verification only.
+
+---
+
 #### T18.5 — push gate for main-branch deploy (BINDING)
 
 Per Gee's verbatim 2026-04-18 instruction: before ANY push to `main` for GitHub static deploy, every T18 item above must be shipped AND all docs must be updated AND Gee must explicitly say "yes, push it". Claude does not initiate the push. Claude asks first after the fixes land.

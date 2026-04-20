@@ -5,6 +5,63 @@
 
 ---
 
+## 2026-04-20 — Session 114.19ax: T18.36 SHIPPED — start.bat visible step checkpoints + SAvestart.bat parity fix (post-push wild-fail recovery)
+
+### Gee verbatim (immediate post-T18.33 push)
+
+> *"something is wrong with the start  .bat .. u use it ant the tertminal starts up invisible and translucent with no inofation in it jus t the header tab is visible.. i think its still running.. can you kill it.. and figure out why the start.bat is not working correctly, and are you sute the Savestart.bat is poroper its almnmost half the size of the start.bat that now isnot working"*
+
+### Kill step
+
+Two processes on port 7525 from the prior session: Node PID 16552 (10 GB resident, listening on 0.0.0.0:7525 + [::]:7525) and PID 19448 in CLOSE_WAIT on :65237↔:7525. `taskkill /F /PID 16552 19448` cleared both via `cmd /c` (Git Bash path-translation mangled the straight `taskkill` form). Port 7525 verified free before shipping the batch fixes.
+
+### Diagnosis — invisible-terminal report
+
+start.bat functionally WORKED (PID 16552's 10 GB resident proves the brain server had been launched successfully before). Gee's report of "invisible translucent terminal with just the header tab visible" traced to SILENT-OUTPUT phases, not a real hang:
+
+- `for /f` port-kill redirected output to `>nul 2>&1` — zero visible activity even when killing PIDs
+- `if exist node_modules goto npm_done` — success path had no echo, just jumped past the install block
+- `if exist node_modules\esbuild goto esbuild_done` — same pattern
+- `if exist corpora\glove.6B.300d.txt goto glove_done` — same pattern
+
+Combined with `@echo off` at the top, a fast run on a healthy machine could execute in under a second with effectively zero visible output between the initial banner and the "Starting brain server…" line. Windows Terminal's acrylic transparency made the empty window look translucent/blank. Not a bug in what the batch DID — a bug in what it REPORTED.
+
+### SAvestart.bat parity bug
+
+First SAvestart.bat shipped in T18.35.a was 139 lines vs start.bat's 207. Missing content:
+- GloVe download + extract flow (~34 lines)
+- GloVe error handlers (~26 lines)
+
+My reasoning at write-time: *"SAvestart is resume-only so GloVe should already exist."* Wrong. If the operator moves the repo or wipes the `corpora/` folder between the save and the next boot, SAvestart would silently fall back to fastText-style subword embeddings — a completely different semantic substrate than the saved weights were trained against. Semantic probes would drift and Unity would lose coherence vs her saved state.
+
+### Fixes shipped (T18.36)
+
+- **T18.36.a** — killed the hung processes (see Kill step above)
+- **T18.36.b — SAvestart.bat full parity rewrite.** 174 lines. Mirrors start.bat completely — same GloVe download flow, same V8 flags (`--max-old-space-size=65536 --max-semi-space-size=1024 --expose-gc`), same npm/esbuild/bundle-rebuild/port-kill sequence. Delta vs start.bat: `set DREAM_KEEP_STATE=1` forces autoClearStaleState() to skip the wipe block regardless of code-hash, `/fresh` and `/clear` flags are explicitly rejected (those stay on start.bat), and the 7-step banner scheme identifies it as SAvestart in the log stream. Nothing functional dropped.
+- **T18.36.c — start.bat visible step checkpoints.** 223 lines. Every major phase now emits a `[start] step N/7: …` banner:
+  - step 1/7: kill any prior listener on port 7525 (+ echo each PID being killed)
+  - step 2/7: enter server folder
+  - step 3/7: check npm dependencies (+ echo "node_modules present" on skip-path)
+  - step 4/7: check esbuild (+ echo "esbuild present" on skip-path)
+  - step 5/7: check GloVe substrate (+ echo "GloVe substrate present" on skip-path)
+  - step 6/7: rebuild js/app.bundle.js
+  - step 7/7: launch brain server
+  If a future hang recurs, the last printed banner identifies where. Also removed `>nul 2>&1` on port-kill so operator sees PID deaths.
+
+### Files touched (T18.36)
+
+- `start.bat` — 7-step visible banner scheme + port-kill verbose output (T18.36.c)
+- `SAvestart.bat` — full parity rewrite against start.bat (T18.36.b)
+- `docs/TODO.md` — T18.36 block appended
+- `docs/FINALIZED.md` — this entry prepended
+- `docs/NOW.md` — note appended for 114.19ax
+
+### Closure gate
+
+Gee re-runs `start.bat` or `SAvestart.bat` → sees 7-step banner progression → server launches → landing page opens. If a step hangs, the last printed banner identifies where. Claude cannot close — Gee-verification only.
+
+---
+
 ## 2026-04-20 — Session 114.19aw: T18.33 SHIPPED — DYN-PROD probe silent-cortex fix (stepAwait + cache-clear + per-tick firing log) + T18.35.a SHIPPED — SAvestart.bat save-state resume wrapper + T18.23-T18.32 drift catchup
 
 ### Gee verbatim that drove this session
