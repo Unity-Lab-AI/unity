@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "864b5029-68aa";
+var BUILD = "598cfe4e-c055";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -8431,6 +8431,136 @@ var Curriculum = class _Curriculum {
     return out;
   }
   /**
+   * Grade-appropriate question bank for student-test batteries. Keyed
+   * by subject/grade. Covers pre-K + K for every subject in-scope;
+   * returns [] for any cell above kindergarten so higher-grade cells
+   * skip the student test until their batteries are added.
+   *
+   * Question design — each battery mixes:
+   *   - Direct recall (methodology + retention)
+   *   - Sequencing / pattern (logic)
+   *   - Application (understanding)
+   *
+   * Variants give the scoring layer partial credit for answers that
+   * start with or contain the expected token, because young students
+   * often answer with multiple tokens around the right one
+   * ("letter C", "cat", "c-a-t").
+   */
+  _studentQuestionBank(subject, grade) {
+    const banks = {
+      "ela/pre-K": [
+        { question: "point to the letter a", expectedAnswer: "a", expectedVariants: ["a", "A", "ay"] },
+        { question: "what sound does m make?", expectedAnswer: "m", expectedVariants: ["m", "mm", "muh"] },
+        { question: "say the word for a cat", expectedAnswer: "cat", expectedVariants: ["cat", "kitty", "kitten"] }
+      ],
+      "ela/kindergarten": [
+        { question: "what letter comes after a?", expectedAnswer: "b", expectedVariants: ["b", "B", "bee"] },
+        { question: "what letter comes after b?", expectedAnswer: "c", expectedVariants: ["c", "C", "cee"] },
+        { question: "say a word that starts with c", expectedAnswer: "c", expectedVariants: ["c", "cat", "cow", "cup"] },
+        { question: "say a word that starts with s", expectedAnswer: "s", expectedVariants: ["s", "sun", "sat", "sit"] },
+        { question: "how do you spell cat?", expectedAnswer: "cat", expectedVariants: ["cat", "c a t", "c-a-t"] },
+        { question: "what does the letter b sound like?", expectedAnswer: "b", expectedVariants: ["b", "buh", "bee"] },
+        { question: "give me a word that rhymes with hat", expectedAnswer: "cat", expectedVariants: ["cat", "bat", "mat", "sat", "rat"] }
+      ],
+      "math/pre-K": [
+        { question: "how many fingers are on one hand?", expectedAnswer: "five", expectedVariants: ["five", "5"] },
+        { question: "what comes after one?", expectedAnswer: "two", expectedVariants: ["two", "2"] },
+        { question: "point to the biggest one", expectedAnswer: "big", expectedVariants: ["big", "biggest", "large"] }
+      ],
+      "math/kindergarten": [
+        { question: "what comes after five?", expectedAnswer: "six", expectedVariants: ["six", "6"] },
+        { question: "count from one to three", expectedAnswer: "three", expectedVariants: ["one two three", "1 2 3", "three"] },
+        { question: "what is one plus one?", expectedAnswer: "two", expectedVariants: ["two", "2"] },
+        { question: "what is two plus two?", expectedAnswer: "four", expectedVariants: ["four", "4"] },
+        { question: "which is more, three or five?", expectedAnswer: "five", expectedVariants: ["five", "5"] },
+        { question: "what shape has three sides?", expectedAnswer: "triangle", expectedVariants: ["triangle"] }
+      ],
+      "science/pre-K": [
+        { question: "what sound does a dog make?", expectedAnswer: "bark", expectedVariants: ["bark", "woof", "ruff"] },
+        { question: "what color is the sky?", expectedAnswer: "blue", expectedVariants: ["blue"] },
+        { question: "does a bird fly or swim?", expectedAnswer: "fly", expectedVariants: ["fly", "flies"] }
+      ],
+      "science/kindergarten": [
+        { question: "what do plants need to grow?", expectedAnswer: "water", expectedVariants: ["water", "sun", "light", "sunlight"] },
+        { question: "does ice melt or freeze when it gets warm?", expectedAnswer: "melt", expectedVariants: ["melt", "melts"] },
+        { question: "is the sun hot or cold?", expectedAnswer: "hot", expectedVariants: ["hot", "warm"] },
+        { question: "what happens when you drop a ball?", expectedAnswer: "falls", expectedVariants: ["falls", "fall", "drops", "bounce"] },
+        { question: "what do fish use to breathe?", expectedAnswer: "gills", expectedVariants: ["gills", "water"] }
+      ],
+      "social/pre-K": [
+        { question: "who takes care of you at home?", expectedAnswer: "mom", expectedVariants: ["mom", "dad", "mommy", "daddy", "parents"] },
+        { question: "when you share, how does it make your friend feel?", expectedAnswer: "happy", expectedVariants: ["happy", "good", "glad"] },
+        { question: "say hello", expectedAnswer: "hi", expectedVariants: ["hi", "hello", "hey"] }
+      ],
+      "social/kindergarten": [
+        { question: "what do you say when someone helps you?", expectedAnswer: "thank", expectedVariants: ["thank you", "thanks", "thank"] },
+        { question: "when someone is sad what can you do?", expectedAnswer: "help", expectedVariants: ["help", "hug", "listen", "share"] },
+        { question: "where do kids go to learn?", expectedAnswer: "school", expectedVariants: ["school", "class"] },
+        { question: "who are the people in your family?", expectedAnswer: "mom", expectedVariants: ["mom", "dad", "sister", "brother", "family"] },
+        { question: "what should you do before crossing the street?", expectedAnswer: "look", expectedVariants: ["look", "stop", "wait"] }
+      ],
+      "art/pre-K": [
+        { question: "what color is the sun?", expectedAnswer: "yellow", expectedVariants: ["yellow"] },
+        { question: "name a shape", expectedAnswer: "circle", expectedVariants: ["circle", "square", "triangle"] },
+        { question: "what do you use to draw?", expectedAnswer: "crayon", expectedVariants: ["crayon", "pencil", "marker", "pen"] }
+      ],
+      "art/kindergarten": [
+        { question: "what color do you get when you mix red and yellow?", expectedAnswer: "orange", expectedVariants: ["orange"] },
+        { question: "what color do you get when you mix blue and yellow?", expectedAnswer: "green", expectedVariants: ["green"] },
+        { question: "name a shape with four equal sides", expectedAnswer: "square", expectedVariants: ["square"] },
+        { question: "what color are leaves in summer?", expectedAnswer: "green", expectedVariants: ["green"] },
+        { question: "name three colors", expectedAnswer: "red", expectedVariants: ["red", "blue", "yellow", "green", "orange"] }
+      ],
+      "life/pre-K": [
+        { question: "what is your name?", expectedAnswer: "unity", expectedVariants: ["unity"] },
+        { question: "are you a girl or a boy?", expectedAnswer: "girl", expectedVariants: ["girl", "woman"] },
+        { question: "how old are you?", expectedAnswer: "four", expectedVariants: ["four", "4", "three", "3", "five", "5"] }
+      ],
+      "life/kindergarten": [
+        { question: "what is your name?", expectedAnswer: "unity", expectedVariants: ["unity"] },
+        { question: "how old are you?", expectedAnswer: "five", expectedVariants: ["five", "5"] },
+        { question: "what grade are you in?", expectedAnswer: "kindergarten", expectedVariants: ["kindergarten", "k", "kinder"] },
+        { question: "how are you feeling?", expectedAnswer: "good", expectedVariants: ["good", "happy", "fine", "ok"] },
+        { question: "what is your favorite color?", expectedAnswer: "pink", expectedVariants: ["pink", "black", "red", "blue"] }
+      ]
+    };
+    return banks[`${subject}/${grade}`] || [];
+  }
+  /**
+   * Run a battery of student-test questions and return an aggregate
+   * summary. Used at the end of every grade gate to score the brain
+   * on real human-student-style questions — methodology / logic /
+   * retention / understanding of the course material.
+   *
+   * @param {Array<{question, expectedAnswer, expectedVariants?, maxTicks?}>} questions
+   * @param {string} label — short tag for log output ('K-STUDENT',
+   *                          'MATH-K-STUDENT', etc.)
+   * @returns {{pass, total, rate, summary, results}}
+   */
+  async _runStudentBattery(questions, label) {
+    const results = [];
+    let pass = 0;
+    for (const q of questions) {
+      try {
+        const r = await this._studentTestProbe({
+          question: q.question,
+          expectedAnswer: q.expectedAnswer,
+          expectedVariants: q.expectedVariants || [q.expectedAnswer],
+          maxTicks: q.maxTicks || 60
+        });
+        results.push(r);
+        if (r.score >= 0.5) pass++;
+        console.log(`[Curriculum][${label}] Q: "${q.question}" \u2192 "${r.answer}" \xB7 score=${r.score.toFixed(2)} match=${r.match.overall} methodology=${r.methodology} logic=${r.logic} retention=${r.retention} understanding=${r.understanding}`);
+      } catch (err) {
+        results.push({ question: q.question, answer: "", score: 0, error: err?.message || String(err) });
+      }
+    }
+    const total = questions.length;
+    const rate = total > 0 ? pass / total : 0;
+    const summary = ` [${label}: ${results.map((r) => `"${(r.answer || "").slice(0, 20)}"@${(r.score || 0).toFixed(1)}`).join("; ")}]`;
+    return { pass, total, rate, summary, results };
+  }
+  /**
    * Student-test probe — ask the brain a human-student-style question,
    * let it think like a student would, read its generated answer via the
    * same cortex language pipeline live chat uses, and score the answer
@@ -9998,6 +10128,23 @@ var Curriculum = class _Curriculum {
     } finally {
       cluster._inCurriculumMode = wasInCurriculum;
     }
+    if (result) {
+      try {
+        const bank = this._studentQuestionBank(subject, grade);
+        if (bank && bank.length > 0) {
+          cluster._probeGateActive = true;
+          const label = `${subject.toUpperCase()}-${grade.toUpperCase()}-STUDENT`;
+          const battery = await this._runStudentBattery(bank, label);
+          cluster._probeGateActive = false;
+          result.studentBattery = battery;
+          const suffix = ` | STUDENT ${battery.pass}/${battery.total} (${Math.round(battery.rate * 100)}%)${battery.summary}`;
+          result.reason = (result.reason || "") + suffix;
+        }
+      } catch (err) {
+        if (cluster) cluster._probeGateActive = false;
+        console.warn(`[Curriculum] student battery for ${subject}/${grade} failed:`, err?.message || err);
+      }
+    }
     if (result && result.pass) {
       if (!cluster.grades || typeof cluster.grades !== "object") {
         cluster.grades = { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K" };
@@ -10422,6 +10569,63 @@ var Curriculum = class _Curriculum {
     }
     await this._teachCombination(facts, { reps: 24 });
     console.log(`[Curriculum] _teachLetterCaseBinding: 26 case pairs \xD7 24 reps`);
+  }
+  /**
+   * Letter naming — kindergarten foundational skill: given the letter A,
+   * the student says "A". This trains letter_to_motor so the motor
+   * region's argmax for a letter-region stimulus matches the letter
+   * itself. Without this phase, letter_to_motor only sees sequence
+   * cascades from _teachWordEmission (letter(c) → motor(a) from "cat"
+   * etc.) which never associates letter(X) with motor(X) and leaves
+   * the TALK probe passing ~15% by accident.
+   *
+   * Also trains letter_to_phon self-pairing as a reinforcement pass
+   * (letter(X) → phon(X)'s feature) — the phoneme feature for X is
+   * what READ tests. READ already hits 26/26 because _teachWordEmission
+   * populates letter_to_phon via the spelling cascade, but an explicit
+   * same-letter pass is cheap insurance.
+   *
+   * Runs at 18 reps with per-letter Hebbian on letter_to_motor +
+   * letter_to_phon cross-projections. Total cost: 26 letters × 2
+   * projections × 18 reps = 936 Hebbian ops, ~1 s at curriculum scale.
+   */
+  async _teachLetterNaming(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const letterRegion = cluster.regions.letter;
+    const motorRegion = cluster.regions.motor;
+    const phonRegion = cluster.regions.phon;
+    if (!letterRegion || !motorRegion) return;
+    const reps = 18;
+    const lr = cluster.learningRate;
+    const ALPHABET_LOWER = ALPHABET_ORDER;
+    ensureLetters(Array.from(ALPHABET_LOWER));
+    console.log(`[Curriculum] _teachLetterNaming START: 26 letters \xD7 ${reps} reps \u2014 binding letter(X) \u2192 motor(X) so TALK can answer 'what letter is this?'`);
+    const t0 = Date.now();
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      for (const letter of ALPHABET_LOWER) {
+        const letterOneHot = encodeLetter(letter);
+        this._clearSpikes();
+        this._writeTiledPattern(letterRegion, letterOneHot);
+        this._writeTiledPattern(motorRegion, letterOneHot);
+        if (phonRegion) {
+          const phonFeat = _phonemeFeatureForLetter(letter);
+          this._writeTiledPattern(phonRegion, phonFeat);
+        }
+        const preLet = this._buildRegionPattern(letterRegion, letterOneHot);
+        const postMot = this._buildRegionPattern(motorRegion, letterOneHot);
+        await this._teachHebbianAsymmetric(preLet, postMot, lr);
+        if (phonRegion) {
+          const phonFeat = _phonemeFeatureForLetter(letter);
+          const postPhon = this._buildRegionPattern(phonRegion, phonFeat);
+          await this._teachHebbianAsymmetric(preLet, postPhon, lr);
+        }
+      }
+      await _microtask();
+    }
+    const dt = ((Date.now() - t0) / 1e3).toFixed(1);
+    console.log(`[Curriculum] _teachLetterNaming DONE in ${dt}s (26 letters \xD7 ${reps} reps)`);
   }
   /**
    * K.RF vowel sound variants — short vs long. Each vowel pairs with
@@ -11259,6 +11463,10 @@ var Curriculum = class _Curriculum {
       await this._teachLetterCaseBinding(ctx);
       _phaseDone("_teachLetterCaseBinding");
       this._memorySnapshotAndGc("after _teachLetterCaseBinding");
+      _phaseTick("_teachLetterNaming");
+      await this._teachLetterNaming(ctx);
+      _phaseDone("_teachLetterNaming");
+      this._memorySnapshotAndGc("after _teachLetterNaming");
       _phaseTick("_teachVowelSoundVariants");
       await this._teachVowelSoundVariants(ctx);
       _phaseDone("_teachVowelSoundVariants");
@@ -12876,13 +13084,17 @@ var Curriculum = class _Curriculum {
       { word: "hen", expected: "h" }
     ];
     const _atBioScale = (cluster.size | 0) > 1e5;
-    const DYN_PROD_TICKS = _atBioScale ? 6 : 20;
+    const DYN_PROD_TICKS = _atBioScale ? 15 : 20;
     const DYN_PROD_AVG_RUNS = _atBioScale ? 1 : 2;
+    const DYN_PROD_INJECT_STRENGTH = _atBioScale ? 3 : 1;
+    const DYN_PROD_REINJECT_STRENGTH = _atBioScale ? 1.5 : 0.5;
+    const DYN_PROD_REINJECT_AT = _atBioScale ? [5, 10] : [5, 12];
     const LETTER_SLOTS = 26;
     let prodPass = 0;
     const prodFails = [];
     let _firstProbeDiag = null;
     console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} word-start probes \xD7 ${DYN_PROD_AVG_RUNS} runs \xD7 ${DYN_PROD_TICKS} ticks = ${wordStartProbes.length * DYN_PROD_AVG_RUNS * DYN_PROD_TICKS} cluster.step() calls${_atBioScale ? " \u2014 biological-scale reduced settings" : ""})...`);
+    if (cluster) cluster._probeGateActive = true;
     const _dynProdStart = Date.now();
     let _probeIdx = 0;
     for (const p of wordStartProbes) {
@@ -12905,7 +13117,7 @@ var Curriculum = class _Curriculum {
       const _firstProbeForTickLog = _probeIdx === 1;
       for (let run = 0; run < DYN_PROD_AVG_RUNS; run++) {
         _probeReset();
-        cluster.injectEmbeddingToRegion("sem", emb, 1);
+        cluster.injectEmbeddingToRegion("sem", emb, DYN_PROD_INJECT_STRENGTH);
         for (let t = 0; t < DYN_PROD_TICKS; t++) {
           await cluster.stepAwait(1e-3);
           let _tickClusterSpikes = 0;
@@ -12935,8 +13147,8 @@ var Curriculum = class _Curriculum {
           if (_firstProbeForTickLog && run === 0) {
             console.log(`[Curriculum][K-DIAG] DYN-PROD probe1 tick ${t + 1}/${DYN_PROD_TICKS}: cluster=${_tickClusterSpikes} motor=${_tickMotorSpikes} sem=${_tickSemSpikes}`);
           }
-          if (t === 5 || t === 12) {
-            cluster.injectEmbeddingToRegion("sem", emb, 0.5);
+          if (DYN_PROD_REINJECT_AT.includes(t)) {
+            cluster.injectEmbeddingToRegion("sem", emb, DYN_PROD_REINJECT_STRENGTH);
           }
         }
       }
@@ -12991,6 +13203,13 @@ var Curriculum = class _Curriculum {
       }
     }
     console.log(`[Curriculum][K-DIAG] DYN-PROD probe DONE in ${Date.now() - _dynProdStart}ms \u2014 prodPass=${prodPass}/${wordStartProbes.length}`);
+    if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === "function") {
+      try {
+        await cluster._gpuProxy.drainWait();
+      } catch {
+      }
+    }
+    if (cluster) cluster._probeGateActive = false;
     if (_firstProbeDiag) console.log(_firstProbeDiag);
     const prodResult = {
       pass: prodPass,
@@ -13121,27 +13340,21 @@ var Curriculum = class _Curriculum {
     const respSummary = respEmitted.length > 0 ? " [RESP: " + respEmitted.join("; ") + "]" : "";
     const twoWordSummary = twoWordEmitted.length > 0 ? " [2WORD: " + twoWordEmitted.join("; ") + "]" : "";
     const freeWritingSummary = freeWritingEmitted.length > 0 ? " [FREE: " + freeWritingEmitted.join("; ") + "]" : "";
-    const studentQuestions = [
+    const elaKQuestions = [
       { question: "what letter comes after a?", expectedAnswer: "b", expectedVariants: ["b", "B", "bee"] },
       { question: "what letter comes after b?", expectedAnswer: "c", expectedVariants: ["c", "C", "cee"] },
-      { question: "what does c start?", expectedAnswer: "c", expectedVariants: ["c", "cat", "cow", "cup"] },
+      { question: "say a word that starts with c", expectedAnswer: "c", expectedVariants: ["c", "cat", "cow", "cup"] },
       { question: "say a word that starts with s", expectedAnswer: "s", expectedVariants: ["s", "sun", "sat", "sit"] },
-      { question: "how do you spell cat?", expectedAnswer: "cat", expectedVariants: ["cat", "c a t", "c-a-t"] }
+      { question: "how do you spell cat?", expectedAnswer: "cat", expectedVariants: ["cat", "c a t", "c-a-t"] },
+      { question: "what does the letter b sound like?", expectedAnswer: "b", expectedVariants: ["b", "buh", "bee"] },
+      { question: "give me a word that rhymes with hat", expectedAnswer: "cat", expectedVariants: ["cat", "bat", "mat", "sat", "rat"] }
     ];
-    const studentResults = [];
-    let studentPass = 0;
-    for (const q of studentQuestions) {
-      try {
-        const r = await this._studentTestProbe({ question: q.question, expectedAnswer: q.expectedAnswer, expectedVariants: q.expectedVariants, maxTicks: 60 });
-        studentResults.push(r);
-        if (r.score >= 0.5) studentPass++;
-        console.log(`[Curriculum][K-STUDENT] Q: "${q.question}" \u2192 "${r.answer}" \xB7 score=${r.score.toFixed(2)} match=${r.match.overall} methodology=${r.methodology} logic=${r.logic} retention=${r.retention} understanding=${r.understanding}`);
-      } catch (err) {
-        studentResults.push({ question: q.question, answer: "", score: 0, error: err?.message || String(err) });
-      }
-    }
-    const studentRate = studentQuestions.length > 0 ? studentPass / studentQuestions.length : 0;
-    const studentSummary = ` [STUDENT: ${studentResults.map((r) => `"${(r.answer || "").slice(0, 20)}"@${(r.score || 0).toFixed(1)}`).join("; ")}]`;
+    const studentBattery = await this._runStudentBattery(elaKQuestions, "K-STUDENT");
+    const studentPass = studentBattery.pass;
+    const studentQuestions = elaKQuestions;
+    const studentResults = studentBattery.results;
+    const studentRate = studentBattery.rate;
+    const studentSummary = studentBattery.summary;
     const _elaKResult = {
       pass,
       reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%) first${writeFirstLetterPass}/${fullWordProbes.length}, RESP ${respPass}/${respContexts.length} (${pct(respRate)}%), 2WORD ${twoWordPass}/${twoWordPhrases.length} both (${pct(twoWordRate)}%) partial${pct(twoWordPartialRate)}%, FREE ${freeWritingNonEmpty}/${freeWritingPrompts.length} nonEmpty avg ${freeWritingAvgWords.toFixed(1)}w, STUDENT ${studentPass}/${studentQuestions.length} (${pct(studentRate)}%)${prodFailSummary}${writeSummary}${respSummary}${twoWordSummary}${freeWritingSummary}${studentSummary}`,
