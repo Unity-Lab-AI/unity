@@ -20,28 +20,43 @@ if defined DREAM_FORCE_CLEAR (
     echo.
 )
 
-REM Kill anything already on port 7525
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :7525 ^| findstr LISTENING') do taskkill /f /pid %%a >nul 2>&1
+REM T18.36 — step checkpoints so operators always see progress. Prior
+REM reports of "invisible translucent terminal with just the title tab"
+REM stemmed from silent-output phases (port-kill redirected >nul 2>&1,
+REM npm/esbuild presence checks that goto-skip on success). Each major
+REM phase now emits a visible banner so if a hang ever recurs, the last
+REM printed step identifies where.
 
-REM Move into server folder for npm operations
+echo [start] step 1/7: killing any prior listener on port 7525...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :7525 ^| findstr LISTENING') do (
+    echo   [start] taskkill /F /PID %%a
+    taskkill /f /pid %%a
+)
+echo.
+
+echo [start] step 2/7: entering server folder...
 cd /d "%~dp0server"
+echo.
 
-REM First-run npm install if node_modules missing
+echo [start] step 3/7: checking npm dependencies...
 if exist node_modules goto npm_done
 echo   Installing server dependencies (first run, ~30s)...
 call npm install
 if errorlevel 1 goto err_npm
-echo.
 :npm_done
+echo   node_modules present.
+echo.
 
-REM Make sure esbuild is present even on existing checkouts that pre-date T13.7.3
+echo [start] step 4/7: checking esbuild...
 if exist node_modules\esbuild goto esbuild_done
 echo   Installing esbuild for bundle build...
 call npm install esbuild --save-dev
 if errorlevel 1 goto err_esbuild_install
-echo.
 :esbuild_done
+echo   esbuild present.
+echo.
 
+echo [start] step 5/7: checking GloVe 6B.300d substrate...
 REM Make sure GloVe 6B.300d is present for Unity's semantic substrate.
 REM Without it, language cortex falls back to fastText-style subword hash
 REM embeddings which don't cluster rhyming/semantic neighbors - production
@@ -74,12 +89,13 @@ if %ERRORLEVEL% NEQ 0 (
 del glove.6B.zip
 popd
 echo   GloVe 6B.300d installed at corpora\glove.6B.300d.txt.
-echo.
 :glove_done
+echo   GloVe substrate present.
+echo.
 
+echo [start] step 6/7: rebuilding js/app.bundle.js...
 REM Build the JS bundle. The browser loads js/app.bundle.js, NOT live source.
 REM Bundle is gitignored so every code change requires a rebuild.
-echo   Building js/app.bundle.js...
 call npm run build
 if errorlevel 1 goto err_bundle
 echo   Bundle built - browser will load fresh code.
@@ -126,7 +142,7 @@ REM memory pressure to build and OOM before the reclaim lands. Forced
 REM gc() after all 15 uploads guarantees the 8 GB is gone before
 REM curriculum teach starts. Heap-stats logging before + after the
 REM forced gc() lets Gee visually confirm the reclaim actually happens.
-echo   Starting brain server (GPU EXCLUSIVE - no CPU workers)...
+echo [start] step 7/7: launching brain server (GPU EXCLUSIVE - no CPU workers)...
 start /b node --max-old-space-size=65536 --max-semi-space-size=1024 --expose-gc brain-server.js
 ping -n 3 127.0.0.1 >nul
 start "" http://localhost:7525
