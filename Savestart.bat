@@ -6,9 +6,9 @@ echo     Unity Brain Server
 echo     SAVE-STATE RESUME MODE
 echo   ==============================
 echo.
-echo   [SAvestart] preserving brain state unconditionally.
-echo   [SAvestart] boot will hydrate from server\brain-weights*.json
-echo   [SAvestart] + conversations.json + episodic-memory.db.
+echo   [Savestart] preserving brain state unconditionally.
+echo   [Savestart] boot will hydrate from server\brain-weights*.json
+echo   [Savestart] + conversations.json + episodic-memory.db.
 echo.
 
 REM FORCE preserve-state. Overrides autoClearStaleState() regardless of
@@ -18,29 +18,29 @@ set DREAM_KEEP_STATE=1
 set DREAM_FORCE_CLEAR=
 if /i "%1"=="/fresh" (
     echo   [!] /fresh rejected — use start.bat /fresh for a wipe.
-    echo       SAvestart.bat is save-resume only.
+    echo       Savestart.bat is save-resume only.
     pause
     exit /b 1
 )
 if /i "%1"=="/clear" (
     echo   [!] /clear rejected — use start.bat /clear for a wipe.
-    echo       SAvestart.bat is save-resume only.
+    echo       Savestart.bat is save-resume only.
     pause
     exit /b 1
 )
 
-echo [SAvestart] step 1/7: killing any prior listener on port 7525...
+echo [Savestart] step 1/7: killing any prior listener on port 7525...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr :7525 ^| findstr LISTENING') do (
-    echo   [SAvestart] taskkill /F /PID %%a
+    echo   [Savestart] taskkill /F /PID %%a
     taskkill /f /pid %%a
 )
 echo.
 
-echo [SAvestart] step 2/7: entering server folder...
+echo [Savestart] step 2/7: entering server folder...
 cd /d "%~dp0server"
 echo.
 
-echo [SAvestart] step 3/7: checking npm dependencies...
+echo [Savestart] step 3/7: checking npm dependencies...
 if exist node_modules goto npm_done
 echo   Installing server dependencies (first run, ~30s)...
 call npm install
@@ -49,7 +49,7 @@ if errorlevel 1 goto err_npm
 echo   node_modules present.
 echo.
 
-echo [SAvestart] step 4/7: checking esbuild...
+echo [Savestart] step 4/7: checking esbuild...
 if exist node_modules\esbuild goto esbuild_done
 echo   Installing esbuild for bundle build...
 call npm install esbuild --save-dev
@@ -58,8 +58,8 @@ if errorlevel 1 goto err_esbuild_install
 echo   esbuild present.
 echo.
 
-echo [SAvestart] step 5/7: checking GloVe 6B.300d substrate...
-REM GloVe presence check — SAvestart hydrates from save state, but if the
+echo [Savestart] step 5/7: checking GloVe 6B.300d substrate...
+REM GloVe presence check — Savestart hydrates from save state, but if the
 REM corpora folder was wiped since the save was produced, we STILL need to
 REM download GloVe so the semantic substrate matches what the saved weights
 REM learned against. Falling back to subword on a GloVe-trained save would
@@ -87,25 +87,36 @@ echo   GloVe 6B.300d installed at corpora\glove.6B.300d.txt.
 echo   GloVe substrate present.
 echo.
 
-echo [SAvestart] step 6/7: rebuilding js/app.bundle.js...
+echo [Savestart] step 6/7: rebuilding js/app.bundle.js...
 call npm run build
 if errorlevel 1 goto err_bundle
 echo   Bundle built - browser will load fresh code.
 echo.
 
-echo [SAvestart] step 7/7: launching brain server (SAVE-STATE RESUME, DREAM_KEEP_STATE=1)...
-start /b node --max-old-space-size=65536 --max-semi-space-size=1024 --expose-gc brain-server.js
-ping -n 3 127.0.0.1 >nul
+REM T18.37 — stdout/stderr redirected to server\server.log + spawn a
+REM separate PowerShell tail window so heartbeat + brain info paint
+REM in a fresh process even if THIS launcher terminal goes invisible
+REM (Windows Terminal / conhost rendering glitches).
+echo [Savestart] step 7/7: launching brain server + log tail (SAVE-STATE RESUME, DREAM_KEEP_STATE=1)...
+echo   server log: %~dp0server\server.log
+if exist server.log del server.log
+start /b "" cmd /c "node --max-old-space-size=65536 --max-semi-space-size=1024 --expose-gc brain-server.js > server.log 2>&1"
+ping -n 2 127.0.0.1 >nul
+start "Unity Brain Log Tail" powershell -NoExit -Command "Get-Content -Path '%~dp0server\server.log' -Wait -Tail 200"
+ping -n 2 127.0.0.1 >nul
 start "" http://localhost:7525
 echo.
 echo   Landing:     http://localhost:7525
 echo   GPU compute: http://localhost:7525/compute.html (auto-launched by server)
 echo   Dashboard:   http://localhost:7525/dashboard.html
+echo   Log tail:    separate PowerShell window "Unity Brain Log Tail"
+echo   Log file:    %~dp0server\server.log (always on disk)
+echo.
 echo   NOTE: brain runs ONLY on GPU. compute.html MUST stay open.
-echo   Press Ctrl+C to stop.
+echo   Press Ctrl+C in the log-tail window to stop tailing (brain keeps running).
 echo.
 
-REM Keep window open
+REM Keep this launcher window open for manual commands.
 cmd /k
 goto :eof
 

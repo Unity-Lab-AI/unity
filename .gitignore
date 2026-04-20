@@ -21,6 +21,13 @@ server/resource-config.json
 # hash on first boot.
 server/brain-code-hash.json
 
+# === T18.37 per-machine runtime log ===
+# start.bat + Savestart.bat redirect node brain-server.js stdout/stderr
+# to server/server.log so operators can tail heartbeat + brain info even
+# if the launcher terminal goes invisible (Windows Terminal rendering
+# glitches). Per-boot runtime data; must not be committed.
+server/server.log
+
 # === Claude Code ===
 .claude/pollinations-user.json
 .claude/settings.local.json

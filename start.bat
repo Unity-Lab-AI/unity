@@ -142,19 +142,36 @@ REM memory pressure to build and OOM before the reclaim lands. Forced
 REM gc() after all 15 uploads guarantees the 8 GB is gone before
 REM curriculum teach starts. Heap-stats logging before + after the
 REM forced gc() lets Gee visually confirm the reclaim actually happens.
-echo [start] step 7/7: launching brain server (GPU EXCLUSIVE - no CPU workers)...
-start /b node --max-old-space-size=65536 --max-semi-space-size=1024 --expose-gc brain-server.js
-ping -n 3 127.0.0.1 >nul
+REM T18.37 — redirect brain-server stdout/stderr to server\server.log so
+REM operators can tail heartbeat + brain info even if this launcher
+REM terminal goes invisible (Windows Terminal + conhost rendering glitches
+REM leave child-process output blind when the parent window can't paint).
+REM A SECOND PowerShell window is spawned that tails the log with
+REM Get-Content -Wait — a separate process, separate rendering, so even
+REM if THIS cmd window is translucent/blank the log window still paints.
+REM Fallback path: if the PowerShell tail window also breaks, server.log
+REM is on disk at server\server.log and any terminal can read it.
+echo [start] step 7/7: launching brain server + log tail window (GPU EXCLUSIVE)...
+echo   server log: %~dp0server\server.log
+if exist server.log del server.log
+start /b "" cmd /c "node --max-old-space-size=65536 --max-semi-space-size=1024 --expose-gc brain-server.js > server.log 2>&1"
+ping -n 2 127.0.0.1 >nul
+start "Unity Brain Log Tail" powershell -NoExit -Command "Get-Content -Path '%~dp0server\server.log' -Wait -Tail 200"
+ping -n 2 127.0.0.1 >nul
 start "" http://localhost:7525
 echo.
 echo   Landing:     http://localhost:7525
 echo   GPU compute: http://localhost:7525/compute.html (auto-launched by server)
 echo   Dashboard:   http://localhost:7525/dashboard.html
+echo   Log tail:    separate PowerShell window "Unity Brain Log Tail"
+echo   Log file:    %~dp0server\server.log (always on disk)
+echo.
 echo   NOTE: brain runs ONLY on GPU. compute.html MUST stay open.
-echo   Press Ctrl+C to stop.
+echo   Press Ctrl+C in the log-tail window to stop tailing (brain keeps running).
+echo   Close the log-tail window to exit fully (brain process continues).
 echo.
 
-REM Keep window open
+REM Keep this launcher window open for additional manual commands.
 cmd /k
 goto :eof
 
