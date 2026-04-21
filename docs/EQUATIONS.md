@@ -278,12 +278,14 @@ Speech: concise, sharp, slang-heavy, foul-mouthed, clingy girlfriend energy
 | Module | Neurons | Real Count | Equation | Persona driver |
 |--------|---------|------------|----------|----------------|
 | Cerebellum | 40% (largest) | ~69B (80% of real brain) | `output = prediction + ΔW·(target - actual)` | Steady correction |
-| Cortex | 25% | ~16B (bilateral hemispheres) | `ŝ = sigmoid(W·x), error = actual - predicted` | arousal×drugSpeed |
+| Cortex | 30% | ~16B (bilateral hemispheres) | `ŝ = sigmoid(W·x), error = actual - predicted` | arousal×drugSpeed |
 | Hippocampus | 10% | ~30K inputs/pyramidal cell | `E = -½ΣW·x·x` (Hopfield) | socialAttachment |
 | Amygdala | 8% | 12.21M (13 nuclei) | `V(s) = Σw·x → arousal, valence` | arousal×volatility×drug |
 | Basal Ganglia | 8% | 90-95% MSN (GABAergic) | `P(a) = softmax(Q(a)/τ)` | impulsivity |
-| Hypothalamus | 5% | 11 nuclei, few million | `dH/dt = -α(H - H_set) + input` | drugDrive |
-| Mystery Ψ | 4% | CC: 200-300M axons | `Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]` | creativity×darkHumor |
+| Hypothalamus | 2% | 11 nuclei, few million | `dH/dt = -α(H - H_set) + input` | drugDrive |
+| Mystery Ψ | 2% | CC: 200-300M axons | `Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]` | creativity×darkHumor |
+
+Fractions sum to 1.00 exactly (`0.30 + 0.10 + 0.08 + 0.08 + 0.40 + 0.02 + 0.02`) and live in `js/brain/cluster.js` as `CLUSTER_FRACTIONS`. The same table feeds `clusterSizesFor(totalNeurons)` in the browser client and the Node server so every tier produces identical cluster shapes on both runtimes.
 
 ### Inter-Cluster Projections (20 real white matter tracts)
 
