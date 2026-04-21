@@ -2156,7 +2156,13 @@ export class NeuronCluster {
             const PROBE_CRITICAL_CPU_CSR = new Set([
               'letter_to_phon',   // READ probe reads phon via CPU propagate
               'letter_to_motor',  // TALK probe + DYN-PROD letter fallback
-              'sem_to_motor',     // DYN-PROD primary path
+              'sem_to_motor',     // DYN-PROD primary path + separation probe
+              // T26.c.1 — READ probes across ELA/Sci/Soc/Life gates
+              // dereference these via CPU SparseMatrix.propagate. Keeping
+              // them off the whitelist caused the null-CSR guard to fall
+              // back to zero vectors, nuking READ rate across all gates.
+              'letter_to_sem',    // READ probe reads sem via CPU propagate
+              'motor_to_letter',  // TALK motor→letter fallback path
             ]);
             if (PROBE_CRITICAL_CPU_CSR.has(key)) {
               console.log(`[CPU-CSR-free] keeping probe-critical ${key} CPU arrays resident (${_freedMB}MB) — needed for READ/TALK/DYN-PROD gate probes.`);

@@ -259,6 +259,46 @@ export class SparseMatrix {
   }
 
   /**
+   * Per-row L2 normalization — rescales each row's values so its
+   * Euclidean norm hits `targetNorm`. Prevents weight runaway /
+   * saturation when many teach phases accumulate Hebbian updates
+   * into the same projection without any decay step. Empty rows
+   * (nnz=0) and zero-norm rows are left untouched.
+   *
+   * In-place. Preserves sparsity pattern (rowPtr + colIdx
+   * unchanged). Only `values[]` is rewritten.
+   *
+   * Skipped when the CSR arrays are null (post-T24.a selective
+   * CPU CSR free — normalization on those projections happens GPU-
+   * side via the shader pipeline, not here).
+   */
+  normalizeRows(targetNorm = 1.0) {
+    const { rows, rowPtr, wMin, wMax } = this;
+    const values = this.values;
+    if (!values || values.length === 0) return 0;
+    const tn = Number.isFinite(targetNorm) && targetNorm > 0 ? targetNorm : 1.0;
+    let rowsNormalized = 0;
+    for (let i = 0; i < rows; i++) {
+      const start = rowPtr[i];
+      const end = rowPtr[i + 1];
+      if (end <= start) continue;
+      let sumSq = 0;
+      for (let k = start; k < end; k++) sumSq += values[k] * values[k];
+      if (sumSq <= 0) continue;
+      const scale = tn / Math.sqrt(sumSq);
+      if (scale === 1) continue;
+      for (let k = start; k < end; k++) {
+        let v = values[k] * scale;
+        if (v > wMax) v = wMax;
+        else if (v < wMin) v = wMin;
+        values[k] = v;
+      }
+      rowsNormalized += 1;
+    }
+    return rowsNormalized;
+  }
+
+  /**
    * STDP: timing-dependent update on existing connections.
    */
   stdpUpdate(preSpikes, postSpikes, preTimes, postTimes, params) {
