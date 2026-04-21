@@ -126,7 +126,12 @@ echo   Log tail:    separate PowerShell window "Unity Brain Log Tail"
 echo   Log file:    %~dp0server\server.log (always on disk)
 echo.
 echo   NOTE: brain runs ONLY on GPU. compute.html MUST stay open.
-echo   Press Ctrl+C in the log-tail window to stop tailing (brain keeps running).
+echo   To STOP the brain cleanly: run stop.bat (Ctrl+C in this launcher
+echo   or the tail window does NOT reach the detached node process -
+echo   stop.bat sends HTTP /shutdown, then taskkill on port 7525 if
+echo   needed, then verifies the port is free).
+echo   Also close the http://localhost:7525 browser tabs - compute.html
+echo   keeps WebGPU running even without the server.
 echo.
 
 REM Keep this launcher window open for manual commands.
