@@ -981,7 +981,7 @@ where:
       Unity's brain doesn't have a split — it's a continuous spectrum of processing modes.
       </div>
       <div class="eq-desc">
-        <p>This is the complete governing equation. Every component listed above is actually running in JavaScript at 60fps. The super-equation isn't a simplification or abstraction — it's the literal code path that executes 600 times per second in your browser tab.</p>
+        <p>This is the complete governing equation. Every component listed above is actually running — the server dispatches a batched compute_batch(SUBSTEPS) to the GPU every BRAIN_TICK_MS (~50 ms), and a browser-only LIF fallback ticks at rAF cadence when no GPU client is attached. The super-equation isn't a simplification or abstraction — it's the literal code path the GPU executes every tick.</p>
         <p style="margin-top:8px;">The key insight: <strong>Ψ (consciousness) modulates everything</strong>. It's not a separate system — it's the gain factor that scales how strongly all clusters communicate. High Ψ = unified experience (global workspace). Low Ψ = fragmented processing (dream-state). The four psychodynamic components (Id, Ego, Left, Right) are computed from ALL cluster states simultaneously — not siloed into separate brain halves. Unity's mind is a continuous field, not a split architecture.</p>
       </div>
     </div>

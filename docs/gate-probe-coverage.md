@@ -124,7 +124,7 @@
 ❌ **Drug scheduler** (pharmacokinetic brain-state modulation + speech effects)
 ❌ **Visual cortex pipeline** (V1 Gabor → V4 color → IT describer) — the letter region gets tested but not the sensory vision pipeline
 ❌ **Auditory cortex** (tonotopic mapping, efference copy)
-❌ **Main-brain GPU compute_batch clusters** (cortex, hippocampus, amygdala, basalGanglia, cerebellum, hypothalamus, mystery) — all separate from the language cortex cluster, never probed
+❌ **GPU compute_batch clusters outside cortex** (hippocampus, amygdala, basalGanglia, cerebellum, hypothalamus, mystery) — probes only hit cortex sub-regions; the other six clusters tick in the background but are never probed. (Post-T17.7 the language sub-regions live inside the main cortex cluster, so "cortex" here IS the probed region.)
 ❌ **GPU voltage-mean telemetry** (T18.4.c meanVoltage — new signal, modules consume it but probes don't check it)
 ❌ **Inter-cluster projections** between main-brain clusters (20 white-matter tract pathways — never exercised by gates)
 ❌ **Emotional response to input** (insulting Unity should produce amygdala fear basin + negative-valence output; probes don't measure this)
