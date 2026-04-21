@@ -5028,6 +5028,25 @@ export class Curriculum {
     // curriculum trained (sem('cat') → motor argmax = 'c'). No
     // external drive, no noise, no threshold crossing dependency.
     console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} direct sem_to_motor propagate probes, no LIF ticks)...`);
+    // Force stdout flush — earlier runs showed only the starting log
+    // before a GPU-client disconnect + brain pause. If subsequent
+    // logs don't print, node's stdout may not be flushing before a
+    // freeze or the run is ending mid-setup. Direct stdout.write
+    // bypasses console.log's underlying async stream buffering so
+    // this line is guaranteed to land on disk before anything
+    // synchronous below runs.
+    try {
+      process.stdout.write('[Curriculum][K-DIAG] DYN-PROD entry reached — pre-loop setup starting\n');
+    } catch { /* stdout unavailable, skip */ }
+    // Memory snapshot at DYN-PROD entry so the operator can see
+    // V8 heap / external / arrayBuffers state. A major GC pause
+    // here would freeze the event loop for seconds → client
+    // disconnect before any subsequent log lands.
+    try {
+      const mu = process.memoryUsage();
+      const mb = (b) => (b / 1048576).toFixed(1);
+      process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD mem: heap=${mb(mu.heapUsed)}/${mb(mu.heapTotal)}MB external=${mb(mu.external)}MB arrayBuffers=${mb(mu.arrayBuffers)}MB rss=${mb(mu.rss)}MB\n`);
+    } catch { /* skip if memoryUsage fails */ }
     const _dynProdStart = Date.now();
     let _probeIdx = 0;
     // Aliases for DYN-PROD's direct-propagate path. The outer scope

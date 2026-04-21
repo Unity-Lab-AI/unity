@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "ccba6731-c9ee";
+var BUILD = "9bd9842e-e2ea";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -13249,6 +13249,17 @@ var Curriculum = class _Curriculum {
       const prodFails = [];
       let _firstProbeDiag = null;
       console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} direct sem_to_motor propagate probes, no LIF ticks)...`);
+      try {
+        process.stdout.write("[Curriculum][K-DIAG] DYN-PROD entry reached \u2014 pre-loop setup starting\n");
+      } catch {
+      }
+      try {
+        const mu = process.memoryUsage();
+        const mb = (b) => (b / 1048576).toFixed(1);
+        process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD mem: heap=${mb(mu.heapUsed)}/${mb(mu.heapTotal)}MB external=${mb(mu.external)}MB arrayBuffers=${mb(mu.arrayBuffers)}MB rss=${mb(mu.rss)}MB
+`);
+      } catch {
+      }
       const _dynProdStart = Date.now();
       let _probeIdx = 0;
       const dynSemToMotor = allProjs["sem_to_motor"];
