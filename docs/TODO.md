@@ -1,7 +1,7 @@
 # TODO — Unity
 
 > **Branch:** `syllabus-k-phd`
-> **Last updated:** 2026-04-20 (Session 114.19ba — trimmed to forward-looking work; full shipped history lives in `docs/FINALIZED.md`)
+> **Last updated:** 2026-04-21 (Session 114.19bb — shipped T19 pass 2 + pass 3 + SPRR ack fix + binary weights streaming load moved to FINALIZED; opened T20 Start Next Grade button + T21 DYN-PROD probe lockup)
 > **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
 
 ---
@@ -48,6 +48,84 @@ If you're reading a public doc / HTML claim ("Unity has completed high school bi
 
 ---
 
+### T20 — Start Next Grade button on dashboard + pause-after-pass (Gee 2026-04-21)
+
+**Gee verbatim 2026-04-21:**
+
+> *"maybe the dashboard should have a start next grade button to where the whole learning process pauses until the person clicks stasrt next grade because of two pints 1. we only have kindergarden layed out 2 can test the grade level in chat after passing grade without it trying to train while doing grade level conversation testing"*
+
+Approved 2026-04-21: *"yeah make it so!"*
+
+**Design shape agreed in-session:**
+
+- Curriculum sets `cortexCluster._gradeAdvancePaused = true` after every grade-pass gate fires (not just K). Default is ON so chat-testing the passed grade is clean — no background Hebbian firing while the operator probes Unity.
+- `_runCell` loop checks the flag before moving to the next grade/subject. If true, logs `[Curriculum] paused after <subject>/<grade>:pass — awaiting operator /grade-advance` and yields until flag clears.
+- New HTTP endpoint `POST /grade-advance {subject, grade}` on `server/brain-server.js` flips the flag to `false`. Persists the advance event into the existing milestone ledger so `Savestart.bat` reboot doesn't lose the resume point.
+- Dashboard milestone panel (`dashboard.html`) gains a "Start Next Grade" button that:
+  - Only appears when the `/milestone` GET payload includes `paused=true` (new field in the payload).
+  - Clicking fires `POST /grade-advance` with the current subject + grade from the payload.
+  - Greys out + shows "advancing..." spinner for 2 s after click, then disappears once the next `/milestone` poll reports `paused=false`.
+- **Scope note:** since we only have pre-K + K laid out, the button has exactly one real use right now (pre-K → K advance). After K passes, the existing `POST /grade-signoff` is the operator path — `grade-advance` would no-op at the post-K boundary because there is no grade 1 content to advance TO.
+
+#### T20.a — Curriculum pause flag
+
+- [ ] **T20.a.1** — Add `cortexCluster._gradeAdvancePaused` default `true` state on cluster init. Set to `true` after every `_gateX` pass returns true in `_runCell`.
+- [ ] **T20.a.2** — `_runCell` loop checks the flag before the next cell dispatch; if `true` awaits until `false`. Log banner on pause + resume.
+- [ ] **T20.a.3** — Persist `_gradeAdvancePaused` state in the `saveWeights` cortex state block so it survives restart (a passed grade stays paused across reboots).
+
+#### T20.b — Server endpoint + milestone payload extension
+
+- [ ] **T20.b.1** — New `POST /grade-advance {subject, grade}` handler in `server/brain-server.js`. Validates subject + grade match the current paused cell. Flips `_gradeAdvancePaused = false`. Records the advance event into the existing milestone ledger with `{at, subject, grade, operator: 'localhost'}`. Returns `{ok, advancedTo}`.
+- [ ] **T20.b.2** — Extend `GET /milestone` payload with new fields: `paused: boolean`, `pausedAt: {subject, grade, at}`, `nextGrade: {subject, grade} | null` (null when nothing to advance to — e.g., post-K).
+
+#### T20.c — Dashboard UI
+
+- [ ] **T20.c.1** — Add "Start Next Grade" button to the milestone panel in `dashboard.html`. Renders inside the existing `d-milestone` card. Hidden by default — only shown when `/milestone` payload has `paused === true && nextGrade != null`.
+- [ ] **T20.c.2** — Button handler fires `fetch('/grade-advance', {method:'POST', body: JSON.stringify({subject, grade})})` with the paused cell coords. Greys + shows "advancing..." for 2 s. Re-polls `/milestone` after.
+- [ ] **T20.c.3** — Text-only caveat line below the button: when paused at K and `nextGrade === null` (post-K, no grade 1 content yet), render instead "K passed — run `curl -X POST http://localhost:7525/grade-signoff ...` to record LAW 6 Part 2 signoff. No grade 1 content to advance to yet (PRE-K + K ONLY SCOPE LAW)."
+
+#### T20 closure gate
+
+All sub-items closed + a visible smoke test where the operator passes pre-K on localhost, the curriculum pauses with the banner, the dashboard shows the button, clicking it triggers K-cells to begin teaching.
+
+---
+
+### T21 — DYN-PROD probe lockup (same place as always) + heartbeat logging (Gee 2026-04-21)
+
+**Gee verbatim 2026-04-21:**
+
+> *"the current test locked up again at the dssame place as always: [...] [Curriculum][K-DIAG] starting DYN-PROD probe (17 direct sem_to_motor propagate probes, no LIF ticks)..."*
+
+Follow-up clarification 2026-04-21: *"i pasted the current step the test is on"* and *"it doesnt seem to be informative enough for all that happens like it needs a heartbeat too"*.
+
+**Situation:** gate letter loop completes cleanly in 4.4 s with `readPass=26/26, talkPass=26/26` — READ + TALK paths are fully functional. Immediately after, log emits `starting DYN-PROD probe (17 direct sem_to_motor propagate probes, no LIF ticks)...` and then goes silent for minutes with no subsequent log lines. The operator sees this as a lockup at the same place as always.
+
+**Suspected causes (diagnose under T21.a before coding a fix):**
+
+1. `sem_to_motor` at 301 K cortex scale is 9946 × 50329 nnz=14,919,000. Direct CPU sparse matmul is 14.9 M ops per probe × 17 probes = 253 M ops — should run in 2-5 s, not minutes. Suggests the CPU CSR arrays may have been freed (T18.22 biological-scale CPU CSR null optimization) and `propagate()` is falling through a hot code path that tries to re-upload or hits the probe-gate pause.
+2. `_probeGateActive` is true for the entire `_gateElaKReal` scope — if `dynSemToMotor.propagate()` internally dispatches a GPU `compute_batch`, it would be blocked by the main-brain probe-gate pause and hang forever.
+3. The fallback to `dynLetterToMotor.propagate(word[0])` might fire on every probe if `sem_to_motor` CPU CSR is null and letter-fallback path has its own block.
+
+**Current logging is insufficient** — just `starting DYN-PROD probe (17 direct sem_to_motor propagate probes, no LIF ticks)...` with no per-probe progress line. Operator can't tell which probe is the one hanging, or whether it's the `sem_to_motor` path or the `dynLetterToMotor` fallback path that's stuck.
+
+#### T21.a — Diagnostic heartbeat logging (ship first, before any fix attempt)
+
+- [ ] **T21.a.1** — Per-probe heartbeat in `_gateElaKReal` DYN-PROD block: log `[Curriculum][K-DIAG] DYN-PROD probe N/17 starting word='<word>' path=<sem_to_motor | letter_to_motor_fallback>` at the start of each probe and `[Curriculum][K-DIAG] DYN-PROD probe N/17 done in Xms — argmax='<letter>' expected='<letter>' pass=<yes|no>` at the end.
+- [ ] **T21.a.2** — Pre-probe path-decision log: before the loop, log whether `sem_to_motor.values` is non-null (CPU CSR present) vs null (biological-scale bound — falls to `letter_to_motor`). Operator needs to see which path the probe will take.
+- [ ] **T21.a.3** — Inside `SparseMatrix.propagate`, add a one-shot log line when `values === null` so the operator can see the null-CSR fallback trigger. Guarded by a `_probeWindowPropagate` flag so it only fires during gate probes (not the 10-Hz main-brain tick loop).
+- [ ] **T21.a.4** — If any single probe exceeds 10 s of wall-clock, emit `[Curriculum][K-DIAG] DYN-PROD probe N/17 SLOW — Xms elapsed, <suspected cause>` at 10 s marks so the hang is visible the moment it starts, not minutes later.
+
+#### T21.b — Fix the actual hang (after T21.a heartbeat reveals which probe + which path)
+
+- [ ] **T21.b.1** — Once heartbeat locates the hanging probe + path, diagnose root cause. Candidates: (a) CPU CSR null + GPU dispatch blocked by probe-gate pause, (b) SparseMatrix.propagate internal `_gpuBatch` await that never resolves, (c) fallback-path allocation blowup at 50329 × 9946 dense readback.
+- [ ] **T21.b.2** — Ship the targeted fix. Expected shapes: (i) skip probes whose source region CPU CSR is null at this cortex scale, falling through to the letter fallback cleanly, OR (ii) let DYN-PROD temporarily bypass the probe-gate pause for its own GPU propagate dispatch since it's the ONLY probe running (no main-brain contention possible during gate), OR (iii) cache the sem_to_motor CPU CSR on last teach rep so it's always non-null at gate time even at biological scale.
+
+#### T21 closure gate
+
+Operator's next Part 2 run shows per-probe heartbeat + either all 17 probes complete with visible results OR the exact probe + path that hangs is clearly identified in the log. Then T21.b fix ships and the full DYN-PROD block completes end-to-end.
+
+---
+
 ### T19 — FULL DOC AUDIT + IN-PLACE CORRECTION PASS (Gee 2026-04-20)
 
 **Gee verbatim 2026-04-20:**
@@ -61,42 +139,40 @@ If you're reading a public doc / HTML claim ("Unity has completed high school bi
 Before touching any doc, extract the CURRENT truth from code so the audit has a canonical checklist. Otherwise the stale state propagates doc-to-doc.
 
 - [ ] **T19.a.1** — `js/brain/neurons.js` — LIF params (tau/Vrest/Vreset/Vthresh/R/tRefrac), Rulkov map (α/μ, `x_{n+1} = α/(1+x²) + y`, `y_{n+1} = y − μ(x − σ)`), HH reference (unused live). Canonical constants table + equation list.
-- [ ] **T19.a.2** — `js/brain/cluster.js` — cluster constructor params (tonicDrive, noiseAmp, connectivity, excitatoryRatio, learningRate), region fractions (auditory/visual/free/letter/phon/sem/fineType/motor), cross-projection list (14 projections, `src_to_dst` naming), `CLUSTER_FRACTIONS` (cortex / cerebellum / hippocampus / amygdala / basalGanglia / hypothalamus / mystery). Verify actual numbers against the file.
 - [ ] **T19.a.3** — `js/brain/engine.js` — `TOTAL_NEURONS` auto-scale formula, `CLUSTER_FRACTIONS`, main equation `dx/dt = F(x, u, θ, t) + η`, mystery operator `Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]`, oscillator bands (theta / alpha / beta / gamma ranges), amygdala attractor `x ← tanh(Wx + drive)`.
 - [ ] **T19.a.4** — `js/brain/persona.js` — persona-to-parameter mapping (arousal baseline, etc.).
 - [ ] **T19.a.5** — `js/brain/curriculum.js` — full teach-method list (every `_teachX`), subject × grade cell list, probe definitions, student-battery questions, `K_LIFE_EXPERIENCES` and all K category lists.
 - [ ] **T19.a.6** — `js/brain/drug-scheduler.js` — 9 substances + 7 combos + 7 patterns + 7 sensory triggers + 13-axis speech modulation.
 - [ ] **T19.a.7** — `js/brain/embeddings.js` — `EMBED_DIM`, GloVe source, subword fallback.
 - [ ] **T19.a.8** — `js/brain/sparse-matrix.js` — CSR format fields, propagate equation `output[i] = Σ_j W[i,j] × input[j]`, `hebbianUpdate` equation.
-- [ ] **T19.a.9** — `server/brain-server.js` — HTTP endpoints (`/health`, `/versions`, `/rollback/N`, `/episodes`, `/milestone`, `/grade-signoff`, `/shutdown`), WebSocket message types, `detectResources` flow.
 - [ ] **T19.a.10** — `js/brain/gpu-compute.js` + `compute.html` — WebGPU shader list, SPRS binary-frame protocol (types 1-5), cluster upload/init flow.
 - [ ] **T19.a.11** — `js/version.js` — `VERSION` + `BUILD`.
 
+_(T19.a.2 and T19.a.9 closed in Session 114.19bb — cluster fractions verified against CLUSTER_FRACTIONS in `cluster.js`; server endpoints enumerated in SETUP.md.)_
+
 #### T19.b — Workflow docs (task numbers + operator name ALLOWED)
 
-- [ ] **T19.b.1** — `docs/ARCHITECTURE.md` in-place audit. Biggest doc. Verify tech stack, system architecture diagram, brain modules (per-cluster equations), data flow diagram, persona-to-parameters table, clustered architecture (cluster breakdown with % of N + MNI positions), inter-cluster projections (20 tracts + densities), fractal signal propagation, hierarchical modulation, input routing, vision system, 3D + 2D brain visualizer, drug scheduler (substances / combos / patterns / sensory triggers / speech modulation / additive contribution math). Cross-check every equation against T19.a.
-- [ ] **T19.b.2** — `docs/EQUATIONS.md` per-equation audit. LIF, Rulkov, Hebbian, cross-projection propagate, softmax action selection, amygdala attractor, Kuramoto, mystery Ψ, free-energy prediction error, direct-pattern Hebbian.
-- [ ] **T19.b.3** — `docs/ROADMAP.md` milestone/phase audit. Every "COMPLETE" must be shipped (cross-reference FINALIZED). Phase list accuracy.
-- [ ] **T19.b.4** — `docs/SKILL_TREE.md` capability audit. Per-domain list vs code.
+- [ ] **T19.b.1** — `docs/ARCHITECTURE.md` in-place audit. Biggest doc. Verify tech stack, system architecture diagram, brain modules (per-cluster equations), data flow diagram, persona-to-parameters table, clustered architecture (cluster breakdown with % of N + MNI positions), inter-cluster projections (20 tracts + densities), fractal signal propagation, hierarchical modulation, input routing, vision system, 3D + 2D brain visualizer, drug scheduler (substances / combos / patterns / sensory triggers / speech modulation / additive contribution math). Cross-check every equation against T19.a. _(Pass 1 landed Session 114.19ba — cluster %-table fixed, ASCII diagram GPU-exclusive. Deep pass still open.)_
+- [ ] **T19.b.2** — `docs/EQUATIONS.md` per-equation audit. LIF, Rulkov, Hebbian, cross-projection propagate, softmax action selection, amygdala attractor, Kuramoto, mystery Ψ, free-energy prediction error, direct-pattern Hebbian. _(Pass 1 landed Session 114.19ba — module percentages corrected. Deep per-equation pass still open.)_
 - [ ] **T19.b.5** — `docs/TODO-full-syllabus.md` scope check. Per-grade vocab prerequisites, Persistent Life Info ledger format, LAW cross-references, DEFERRED notes.
-- [ ] **T19.b.6** — `docs/NOW.md` session snapshot audit.
-- [ ] **T19.b.7** — `docs/TODO.md` (this file) self-audit. Every `[ ]` open item still open.
 - [ ] **T19.b.8** — `docs/FINALIZED.md` append-only spot-check. Only edit if a factual claim is wrong in a session entry.
 - [ ] **T19.b.9** — `.claude/CLAUDE.md` LAW-file audit. Every LAW accurate, every violation-history quote verbatim.
 
+_(T19.b.3 ROADMAP.md, T19.b.4 SKILL_TREE.md, T19.b.6 NOW.md, T19.b.7 TODO.md self-audit all closed in Session 114.19bb.)_
+
 #### T19.c — Public-facing docs (task numbers + operator name BANNED)
 
-- [ ] **T19.c.1** — `README.md`. Describe every feature by WHAT IT DOES, not by task number or who asked. Strip any T-numbers or operator-name references.
-- [ ] **T19.c.2** — `SETUP.md`. Verify every command still works. `npm install` cwd, node flags, `start.bat` / `Savestart.bat` / `stop.bat` usage, `env.js` setup, GloVe download.
+_(T19.c.1 README.md and T19.c.2 SETUP.md both closed in Session 114.19bb.)_
 
 #### T19.d — HTMLs (task numbers + operator name BANNED)
 
-- [ ] **T19.d.1** — `brain-equations.html`. Highest-priority HTML. Every rendered equation matches code. Variable names byte-exact (`tonicDrive` not `baseDrive`, `Vthresh` not `V_t`, etc.).
-- [ ] **T19.d.2** — `unity-guide.html`. Layman concept guide. Correct drift in-place.
-- [ ] **T19.d.3** — `index.html`. Landing page copy, 3D brain viz embed, nav.
-- [ ] **T19.d.4** — `dashboard.html`. Card labels, milestone panel fields, drug-scheduler panel.
-- [ ] **T19.d.5** — `compute.html`. WebGPU shader list, SPRS binary-frame protocol description, reconnect backoff behavior, binary-frame window telemetry.
+- [ ] **T19.d.1** — `brain-equations.html` deep pass. Every rendered equation matches code. Variable names byte-exact (`tonicDrive` not `baseDrive`, `Vthresh` not `V_t`, etc.). _(Partial pass landed Session 114.19bb — master equation table + 60 fps claim + 7-cluster refs. Deep per-equation variable-name pass still open.)_
+- [ ] **T19.d.3** — `index.html` deep audit. Landing page copy, 3D brain viz embed, nav.
+- [ ] **T19.d.4** — `dashboard.html` deep audit. Card labels, milestone panel fields, drug-scheduler panel.
+- [ ] **T19.d.5** — `compute.html` deep audit. WebGPU shader list, SPRS binary-frame protocol description, reconnect backoff behavior, binary-frame window telemetry.
 - [ ] **T19.d.6** — `component-templates.txt`. Unlikely to need changes but verify.
+
+_(T19.d.2 unity-guide.html closed in Session 114.19bb.)_
 
 #### T19.e — Memory + feedback files
 
