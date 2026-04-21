@@ -4209,6 +4209,13 @@ class ServerBrain {
             personaRefreshCorpus: Array.isArray(cortex._personaRefreshCorpus)
               ? cortex._personaRefreshCorpus.slice(0, 512) : null,
             intentCentroids,
+            // Per-cell gate-result ledger. Written by _runCell after the
+            // battery enforcement block. Contains pass flag + named
+            // blockers + aggregate/external/methodology rates. Read by
+            // /grade-signoff so the operator signoff POST is rejected
+            // when the cell hasn't actually cleared every criterion.
+            lastGateResults: (cortex._lastGateResult && typeof cortex._lastGateResult === 'object')
+              ? { ...cortex._lastGateResult } : null,
           };
         }
       } catch (err) {
@@ -4706,6 +4713,12 @@ class ServerBrain {
         if (pending.probeHistory && typeof pending.probeHistory === 'object') {
           cortex.probeHistory = { ...pending.probeHistory };
         }
+        // Restore per-cell gate-result ledger — /grade-signoff reads
+        // this to reject an operator signoff POST when the cell's most
+        // recent battery had active blockers.
+        if (pending.lastGateResults && typeof pending.lastGateResults === 'object') {
+          cortex._lastGateResult = { ...pending.lastGateResults };
+        }
         // Grade-advance pause — restore so curriculum walker lands on
         // the wait-loop at the same grade boundary the prior boot was
         // paused at. If pause was not set at save time, leave the flags
@@ -5071,23 +5084,68 @@ const httpServer = http.createServer((req, res) => {
       req.on('end', () => {
         try {
           const parsed = JSON.parse(body || '{}');
-          const { subject, grade, note } = parsed;
+          const { subject, grade, note, force } = parsed;
           if (!subject || !grade) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'subject and grade required' }));
             return;
           }
           const key = `${subject}/${grade}`;
+          // Gate-result verification — refuse the signoff when the cell's
+          // most-recent battery had active blockers OR when the cell has
+          // never run a battery. Operator can override with {"force":true}
+          // but the override is logged + persisted into the signoff note.
+          const cluster = brain.cortexCluster;
+          const gateResult = (cluster && cluster._lastGateResult && cluster._lastGateResult[key]) || null;
+          const forceOverride = force === true;
+          if (!forceOverride) {
+            if (!gateResult) {
+              res.writeHead(409, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                error: 'cell has never run the student battery — signoff refused',
+                key,
+                remedy: 'run runCompleteCurriculum through this cell first, then retry; or POST with {"force":true} to override',
+              }));
+              console.warn(`[Brain] /grade-signoff REJECTED ${key} — no gate result on file`);
+              return;
+            }
+            if (!gateResult.pass || (Array.isArray(gateResult.blockers) && gateResult.blockers.length > 0)) {
+              res.writeHead(409, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                error: 'cell has active gate blockers — signoff refused',
+                key,
+                blockers: gateResult.blockers || ['pass flag=false'],
+                aggregateRate: gateResult.aggregateRate,
+                externalRate: gateResult.externalRate,
+                methodologyRate: gateResult.methodologyRate,
+                standardsBelowCut: gateResult.standardsBelowCut || [],
+                ts: gateResult.ts,
+                remedy: 'fix the failing criteria and re-run the curriculum, or POST with {"force":true} to override',
+              }));
+              console.warn(`[Brain] /grade-signoff REJECTED ${key} — active blockers: ${(gateResult.blockers || []).join('; ')}`);
+              return;
+            }
+          }
           if (!brain._gradeSignoffs) brain._gradeSignoffs = {};
           brain._gradeSignoffs[key] = {
             signedAt: new Date().toISOString(),
             note: typeof note === 'string' ? note.slice(0, 1024) : '',
             source: 'gee-localhost',
+            forceOverride: forceOverride ? {
+              reason: 'operator explicit force:true',
+              gateResultAtOverride: gateResult || null,
+            } : undefined,
           };
           brain.saveWeights({ force: true, trigger: `grade-signoff:${key}` });
-          console.log(`[Brain] grade signoff recorded: ${key}`);
+          const tag = forceOverride ? ' (force override)' : '';
+          console.log(`[Brain] grade signoff recorded: ${key}${tag}`);
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'recorded', key, signoff: brain._gradeSignoffs[key] }));
+          res.end(JSON.stringify({
+            status: 'recorded',
+            key,
+            signoff: brain._gradeSignoffs[key],
+            gateResult: gateResult || null,
+          }));
         } catch (err) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: err.message }));

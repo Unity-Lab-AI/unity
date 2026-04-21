@@ -351,9 +351,24 @@ export class Curriculum {
       const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(1);
       const extMB = ((mem.external || 0) / 1024 / 1024).toFixed(1);
       const abMB = ((mem.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
-      console.log(`[T18.25] memory ${label}: heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB (forced gc removed — V8 auto-manages reclaim)`);
+      const rssMB = ((mem.rss || 0) / 1024 / 1024).toFixed(1);
+      // Delta tracking — operator sees climb-per-phase in real time.
+      // `_memPrior` is the last snapshot's values so Δheap / Δexternal
+      // reveal which phase is actually eating memory instead of waiting
+      // for a mid-run crash to attribute it.
+      const prior = this._memPrior;
+      let deltaTag = '';
+      if (prior) {
+        const dHeapMB = ((mem.heapUsed - prior.heapUsed) / 1024 / 1024);
+        const dExtMB = (((mem.external || 0) - (prior.external || 0)) / 1024 / 1024);
+        const dRssMB = (((mem.rss || 0) - (prior.rss || 0)) / 1024 / 1024);
+        const sign = (v) => (v >= 0 ? '+' : '');
+        deltaTag = ` · Δheap=${sign(dHeapMB)}${dHeapMB.toFixed(1)}MB Δext=${sign(dExtMB)}${dExtMB.toFixed(1)}MB Δrss=${sign(dRssMB)}${dRssMB.toFixed(1)}MB`;
+      }
+      this._memPrior = { heapUsed: mem.heapUsed, external: mem.external || 0, rss: mem.rss || 0 };
+      console.log(`[MEM] ${label}: heap=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB rss=${rssMB}MB${deltaTag}`);
     } catch (err) {
-      console.warn(`[T18.25] memory snapshot failed at ${label}:`, err && err.message);
+      console.warn(`[MEM] snapshot failed at ${label}:`, err && err.message);
     }
   }
 
@@ -2443,6 +2458,7 @@ export class Curriculum {
     // ELA-K alphabet teach, Math-K digit teach, or a specific
     // cross-projection Hebbian.
     console.log(`[Curriculum] ${subject}/${grade} START`);
+    this._memorySnapshotAndGc(`cell-entry ${subject}/${grade}`);
 
     const baseCtx = corpora ? this._buildCtx(corpora, opts) : (this._lastCtx || null);
     if (!baseCtx) return { pass: false, reason: 'no corpora provided and no cached ctx' };
@@ -2549,9 +2565,18 @@ export class Curriculum {
             }
           }
           const extRate = extTotal > 0 ? extPass / extTotal : 1;
+          // Collect the specific below-cut standards with rates so the
+          // blocker message names the failing standards instead of an
+          // opaque count. Operator + dashboard see exactly which
+          // sub-standards need reinforcement.
+          const belowCutDetail = (battery.byStandard || [])
+            .filter(s => s.belowCut)
+            .map(s => `${s.standard} ${(s.rate * 100).toFixed(0)}%<${(s.cut * 100).toFixed(0)}%`);
           const blockers = [];
           if (battery.rate < AGGR_MIN) blockers.push(`answer aggregate ${(battery.rate * 100).toFixed(1)}% < ${AGGR_MIN * 100}%`);
-          if ((battery.standardsBelowCut || 0) > 0) blockers.push(`${battery.standardsBelowCut} sub-standard(s) below cut`);
+          if (belowCutDetail.length > 0) {
+            blockers.push(`sub-standards below cut: [${belowCutDetail.join(', ')}]`);
+          }
           if (extTotal > 0 && extRate < EXTERNAL_MIN) blockers.push(`external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%) < ${EXTERNAL_MIN * 100}%`);
           if ((battery.methoQuestions || 0) > 0 && (battery.methoRate || 0) < METHODOLOGY_MIN) {
             blockers.push(`methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%) < ${METHODOLOGY_MIN * 100}%`);
@@ -2570,6 +2595,28 @@ export class Curriculum {
           result.studentBattery.externalPass = extPass;
           result.studentBattery.externalTotal = extTotal;
           result.studentBattery.externalRate = extRate;
+
+          // Cell-level gate-result ledger — stash the full blocker set +
+          // aggregate rates on the cluster so /grade-signoff can verify
+          // the cell actually passed every criterion before accepting an
+          // operator signoff POST. Survives restart via cortexState
+          // serialize in brain-server.js `_lastGateResult` field.
+          if (!cluster._lastGateResult || typeof cluster._lastGateResult !== 'object') {
+            cluster._lastGateResult = {};
+          }
+          cluster._lastGateResult[cellKey] = {
+            pass: !!result.pass,
+            blockers: blockers.slice(),
+            standardsBelowCut: belowCutDetail.slice(),
+            aggregateRate: battery.rate,
+            externalPass: extPass,
+            externalTotal: extTotal,
+            externalRate: extRate,
+            methodologyPass: battery.methoPass || 0,
+            methodologyTotal: battery.methoQuestions || 0,
+            methodologyRate: battery.methoRate || 0,
+            ts: new Date().toISOString(),
+          };
         }
       } catch (err) {
         if (cluster) cluster._probeGateActive = false;
@@ -2591,6 +2638,7 @@ export class Curriculum {
         this._saveCheckpoint(cellKey);
       }
     }
+    this._memorySnapshotAndGc(`cell-exit ${subject}/${grade} pass=${!!(result && result.pass)}`);
     return result || { pass: false, reason: 'runner returned null' };
   }
 
@@ -7852,9 +7900,27 @@ export class Curriculum {
     // 1 = category, 2 = role, 3 = sequence, etc.). Carved into
     // fineType so cortex can learn per-relation mappings.
     const relationTagId = typeof opts.relationTagId === 'number' ? opts.relationTagId : null;
+    // Soft feature writes preserve GloVe vector identity per concept.
+    // Binary-saturated writes (1-of-K on every active dim) strip the
+    // vector's discriminating amplitudes, so 14 phases × 350 pairs
+    // collapse into an indistinguishable superposition. Soft writes
+    // let each pair's magnitude profile shape the Hebbian update.
+    const binarize = opts.binarize === true; // default FALSE
+    // Row-L2-norm target applied to the sem_to_motor cross-projection
+    // after every phase rep loop. Keeps per-post-neuron weight vectors
+    // bounded as Hebbian accumulates — without this, 14 phases in a row
+    // saturate weights at wMax and wipe out discrimination.
+    const normalizeAfter = opts.normalizeAfter !== false; // default TRUE
+    const normTarget = opts.normTarget ?? 1.0;
+    // Cosine-separation debug probe — after the rep loop, propagate a
+    // sample of input-tile patterns through sem→motor and compute the
+    // pairwise cosine between motor readouts. Mean cosine > `overloadMax`
+    // flags the phase as potentially overloaded. Set false to skip.
+    const runSeparationProbe = opts.separationProbe !== false; // default TRUE
+    const overloadMax = opts.overloadMax ?? 0.30;
     let trained = 0, skipped = 0;
     const startMs = Date.now();
-    console.log(`[Curriculum][${label}] START — ${pairs.length} pairs × ${reps} reps`);
+    console.log(`[Curriculum][${label}] START — ${pairs.length} pairs × ${reps} reps · soft-writes=${!binarize} · row-norm=${normalizeAfter}`);
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return { trained, skipped };
       for (const pair of pairs) {
@@ -7867,14 +7933,18 @@ export class Curriculum {
         if (!inEmb || !outEmb || inEmb.length === 0 || outEmb.length === 0) { skipped++; continue; }
         try {
           this._clearSpikes();
-          this._writeTiledPattern(semRegion, inEmb, true);
-          this._writeTiledPattern(motorRegion, outEmb, true);
+          this._writeTiledPattern(semRegion, inEmb, binarize);
+          this._writeTiledPattern(motorRegion, outEmb, binarize);
           if (fineTypeRegion && relationTagId !== null) {
             const fineSize = fineTypeRegion.end - fineTypeRegion.start;
             const band = Math.floor(fineSize / 6);
             const tagStart = fineTypeRegion.start + relationTagId * band;
             const tagEnd = Math.min(fineTypeRegion.end, tagStart + band);
-            for (let i = tagStart; i < tagEnd; i++) cluster.lastSpikes[i] = 1;
+            // Soft tag — match the vector-write intensity so the
+            // relation channel doesn't dominate the pair pattern
+            // (binary 1 against sub-1.0 GloVe magnitudes would).
+            const tagVal = binarize ? 1 : 0.5;
+            for (let i = tagStart; i < tagEnd; i++) cluster.lastSpikes[i] = tagVal;
           }
           await this._teachHebbian(lr);
           trained++;
@@ -7884,9 +7954,98 @@ export class Curriculum {
       }
       await _microtask();
     }
+    // Per-phase row-normalization — prevents saturation as more
+    // association-pair phases accumulate onto the same projection.
+    // Targets sem_to_motor (the primary answer path) + the recurrent
+    // intra-cluster synapses since _teachHebbian fires both.
+    let normReport = '';
+    if (normalizeAfter && cluster.crossProjections) {
+      const projKeys = ['sem_to_motor', 'motor_to_sem'];
+      const normed = [];
+      for (const key of projKeys) {
+        const proj = cluster.crossProjections[key];
+        if (proj && typeof proj.normalizeRows === 'function') {
+          try {
+            const rowsNorm = proj.normalizeRows(normTarget);
+            if (rowsNorm > 0) normed.push(`${key}:${rowsNorm}`);
+          } catch { /* non-fatal */ }
+        }
+      }
+      if (normed.length > 0) normReport = ` · row-norm [${normed.join(',')}]`;
+    }
+    // Cosine-separation diagnostic — detects sem-region overload by
+    // measuring pairwise cosine between motor readouts for a sample
+    // of trained pairs. Passes if mean-cosine < overloadMax.
+    let sepReport = '';
+    if (runSeparationProbe && pairs.length >= 2) {
+      try {
+        const sep = this._checkSemBasinSeparation(pairs, { semRegion, motorRegion, overloadMax, sampleSize: 8 });
+        if (sep && typeof sep.meanCos === 'number') {
+          const flag = sep.meanCos > overloadMax ? ' ⚠OVERLOAD' : '';
+          sepReport = ` · sep-probe mean-cos=${sep.meanCos.toFixed(3)} max=${sep.maxCos.toFixed(3)}${flag}`;
+        }
+      } catch { /* non-fatal */ }
+    }
     const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1);
-    console.log(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})`);
+    console.log(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${normReport}${sepReport}`);
     return { trained, skipped };
+  }
+
+  /**
+   * Cosine-separation diagnostic for association-pair phases. For a
+   * sample of `sampleSize` pairs, writes each input pattern to sem,
+   * propagates through sem_to_motor, reads the motor readout, and
+   * returns mean + max pairwise cosine between those readouts. Mean
+   * cosine > ~0.3 signals sem-region overload — patterns collapsed
+   * into indistinguishable superpositions, probe can't discriminate.
+   */
+  _checkSemBasinSeparation(pairs, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return null;
+    const proj = cluster.crossProjections.sem_to_motor;
+    if (!proj || typeof proj.propagate !== 'function') return null;
+    if (!proj.values || proj.values.length === 0) return null; // T24.a freed CSR
+    const semRegion = opts.semRegion || (cluster.regions && cluster.regions.sem);
+    const motorRegion = opts.motorRegion || (cluster.regions && cluster.regions.motor);
+    if (!semRegion || !motorRegion) return null;
+    const sampleSize = Math.min(opts.sampleSize || 8, pairs.length);
+    const step = Math.max(1, Math.floor(pairs.length / sampleSize));
+    const readouts = [];
+    const savedSpikes = new Float64Array(cluster.lastSpikes);
+    try {
+      for (let i = 0; i < pairs.length && readouts.length < sampleSize; i += step) {
+        const pair = pairs[i];
+        if (!Array.isArray(pair) || pair.length < 2) continue;
+        const [inputWord] = pair;
+        const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
+          ? sharedEmbeddings.getEmbedding(inputWord) : null;
+        if (!inEmb || inEmb.length === 0) continue;
+        for (let j = 0; j < cluster.lastSpikes.length; j++) cluster.lastSpikes[j] = 0;
+        this._writeTiledPattern(semRegion, inEmb, false);
+        const out = proj.propagate(cluster.lastSpikes);
+        if (!out || out.length === 0) continue;
+        const motorSlice = out.slice(motorRegion.start, motorRegion.end);
+        let nrm = 0; for (let d = 0; d < motorSlice.length; d++) nrm += motorSlice[d] * motorSlice[d];
+        nrm = Math.sqrt(nrm) || 1;
+        for (let d = 0; d < motorSlice.length; d++) motorSlice[d] /= nrm;
+        readouts.push(motorSlice);
+      }
+    } finally {
+      for (let j = 0; j < cluster.lastSpikes.length; j++) cluster.lastSpikes[j] = savedSpikes[j];
+    }
+    if (readouts.length < 2) return null;
+    let sumCos = 0, maxCos = -Infinity, comparisons = 0;
+    for (let i = 0; i < readouts.length; i++) {
+      for (let j = i + 1; j < readouts.length; j++) {
+        let dot = 0;
+        const a = readouts[i], b = readouts[j];
+        const n = Math.min(a.length, b.length);
+        for (let d = 0; d < n; d++) dot += a[d] * b[d];
+        sumCos += dot; comparisons += 1;
+        if (dot > maxCos) maxCos = dot;
+      }
+    }
+    return { meanCos: sumCos / comparisons, maxCos, comparisons, sampleSize: readouts.length };
   }
 
   // ─── internal: tile a feature onto a region of a full-cluster vec ──
@@ -20759,6 +20918,20 @@ export class Curriculum {
       { question: 'what sound does a cat make', answer: 'meow' },
       { question: 'what do words have',         answer: 'sound' },
     ], { reps: 6 });
+    // Equational association-pair teach — letter → starting-word
+    // (K.RF.1d precursor) + basic phoneme associations. Pure feature-
+    // vector Hebbian; soft writes + row-normalization enforced by
+    // _teachAssociationPairs defaults.
+    await this._teachAssociationPairs([
+      // letter → word-start (phonological precursor)
+      ['a','apple'], ['b','ball'], ['c','cat'], ['d','dog'],
+      ['e','egg'], ['f','fish'], ['g','goat'], ['h','hat'],
+      ['i','ink'], ['j','jump'], ['k','kite'], ['l','leaf'],
+      ['m','moon'], ['n','net'], ['o','octopus'], ['p','pig'],
+      // phoneme pairs (initial sound → source concept)
+      ['bark','dog'], ['meow','cat'], ['moo','cow'],
+      ['quack','duck'], ['tweet','bird'],
+    ], { reps: 8, label: 'PREK-ELA-LETTER-SOUND', relationTagId: 3 });
     return this._gateVocabList(PHONEME_CONCEPTS.map(c => c.name).concat(['bark', 'meow', 'sound']));
   }
 
@@ -20783,6 +20956,19 @@ export class Curriculum {
       { question: 'which is more',    answer: 'more' },
       { question: 'which is less',    answer: 'less' },
     ], { reps: 6 });
+    // Equational association-pair teach — count sequence 1→10 word-form
+    // + magnitude compares. Seeds the K.CC count-forward path before
+    // Math-K deepens it.
+    await this._teachAssociationPairs([
+      // count forward (word-form)
+      ['one','two'], ['two','three'], ['three','four'], ['four','five'],
+      ['five','six'], ['six','seven'], ['seven','eight'],
+      ['eight','nine'], ['nine','ten'],
+      // magnitude compare
+      ['big','more'], ['small','less'],
+      ['tall','more'], ['short','less'],
+      ['many','more'], ['few','less'],
+    ], { reps: 8, label: 'PREK-MATH-COUNT-MAG', relationTagId: 5 });
     return this._gateVocabList(QUANTITY_CONCEPTS.map(c => c.name));
   }
 
@@ -20810,6 +20996,21 @@ export class Curriculum {
       { question: 'what is wet',          answer: 'water' },
       { question: 'what falls down',      answer: 'ball' },
     ], { reps: 6 });
+    // Equational association-pair teach — animal→sound + day/night +
+    // basic motion primitives. Seeds the NGSS K-PS2 / K-LS1 substrate
+    // Sci-K deepens.
+    await this._teachAssociationPairs([
+      // animal → sound
+      ['dog','bark'], ['cat','meow'], ['cow','moo'],
+      ['bird','tweet'], ['duck','quack'], ['pig','oink'],
+      ['sheep','baa'], ['horse','neigh'], ['lion','roar'],
+      // day/night
+      ['sun','day'], ['moon','night'], ['star','night'],
+      ['morning','day'], ['evening','night'],
+      // motion primitives
+      ['push','move'], ['pull','move'], ['drop','fall'],
+      ['throw','fly'],
+    ], { reps: 8, label: 'PREK-SCI-ANIMAL-SOUND', relationTagId: 1 });
     return this._gateVocabList(['animal', 'water', 'sun', 'fire', 'bark', 'meow', 'moo']);
   }
 
@@ -20834,6 +21035,20 @@ export class Curriculum {
       { question: 'what is nice to do',    answer: 'share' },
       { question: 'what is bad to be',     answer: 'mean' },
     ], { reps: 6 });
+    // Equational association-pair teach — family kinship + greetings +
+    // basic emotion pairs. Seeds the Core Knowledge K social substrate.
+    await this._teachAssociationPairs([
+      // family
+      ['mom','parent'], ['dad','parent'], ['baby','child'],
+      ['brother','sibling'], ['sister','sibling'],
+      ['grandma','family'], ['grandpa','family'],
+      // greetings
+      ['hi','hello'], ['bye','goodbye'], ['please','polite'],
+      ['thanks','grateful'],
+      // emotions
+      ['happy','smile'], ['sad','cry'], ['mad','frown'],
+      ['scared','hide'], ['love','hug'],
+    ], { reps: 8, label: 'PREK-SOC-FAMILY-EMOT', relationTagId: 1 });
     return this._gateVocabList(SOCIAL_CONCEPTS.map(c => c.name));
   }
 
@@ -20860,6 +21075,21 @@ export class Curriculum {
       { question: 'what color is grass',     answer: 'green' },
       { question: 'what do i like to draw',  answer: 'black' },
     ], { reps: 6 });
+    // Equational association-pair teach — primary colors + basic shapes
+    // + art tools. Precursors for Art-K color-mixing + shape-attribute
+    // + tool-use concept classes.
+    await this._teachAssociationPairs([
+      // primary color → category
+      ['red','color'], ['blue','color'], ['yellow','color'],
+      ['green','color'], ['black','color'], ['white','color'],
+      // shape → name
+      ['circle','round'], ['square','four'], ['triangle','three'],
+      // art tools
+      ['crayon','color'], ['pencil','draw'], ['brush','paint'],
+      ['paper','draw'], ['marker','color'],
+      // music
+      ['song','music'], ['drum','beat'], ['sing','song'],
+    ], { reps: 8, label: 'PREK-ART-COLORS-TOOLS', relationTagId: 1 });
     return this._gateVocabList(ART_CONCEPTS.map(c => c.name));
   }
 
@@ -20984,6 +21214,24 @@ export class Curriculum {
       { situation: 'stranger', emotion: new Float64Array([0,0,0,1,0,0,0,0]), label: 'scared' },
       { situation: 'blanket', emotion: new Float64Array([1,0,1,0,0,0,0,0]), label: 'comfort' },
     ]);
+
+    // Equational association-pair teach — core-self identity + body
+    // parts + primary feelings. Pre-K Life substrate deepens via same
+    // feature-vector Hebbian carving K-cell counterpart uses.
+    await this._teachAssociationPairs([
+      // identity
+      ['unity','girl'], ['girl','female'],
+      ['name','unity'], ['person','human'],
+      // body parts → sense
+      ['eye','see'], ['ear','hear'], ['nose','smell'],
+      ['mouth','taste'], ['hand','touch'],
+      // primary feelings
+      ['happy','smile'], ['sad','cry'],
+      ['scared','shake'], ['angry','frown'],
+      // routines
+      ['eat','food'], ['drink','water'],
+      ['sleep','bed'], ['play','fun'],
+    ], { reps: 8, label: 'PREK-LIFE-IDENTITY', relationTagId: 1 });
 
     // Real human-grade test for Pre-K: can Unity answer about herself?
     const lifeQuestions = [

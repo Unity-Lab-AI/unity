@@ -181,6 +181,45 @@ var init_sparse_matrix = __esm({
         }
       }
       /**
+       * Per-row L2 normalization — rescales each row's values so its
+       * Euclidean norm hits `targetNorm`. Prevents weight runaway /
+       * saturation when many teach phases accumulate Hebbian updates
+       * into the same projection without any decay step. Empty rows
+       * (nnz=0) and zero-norm rows are left untouched.
+       *
+       * In-place. Preserves sparsity pattern (rowPtr + colIdx
+       * unchanged). Only `values[]` is rewritten.
+       *
+       * Skipped when the CSR arrays are null (post-T24.a selective
+       * CPU CSR free — normalization on those projections happens GPU-
+       * side via the shader pipeline, not here).
+       */
+      normalizeRows(targetNorm = 1) {
+        const { rows, rowPtr, wMin, wMax } = this;
+        const values = this.values;
+        if (!values || values.length === 0) return 0;
+        const tn = Number.isFinite(targetNorm) && targetNorm > 0 ? targetNorm : 1;
+        let rowsNormalized = 0;
+        for (let i = 0; i < rows; i++) {
+          const start = rowPtr[i];
+          const end = rowPtr[i + 1];
+          if (end <= start) continue;
+          let sumSq = 0;
+          for (let k = start; k < end; k++) sumSq += values[k] * values[k];
+          if (sumSq <= 0) continue;
+          const scale = tn / Math.sqrt(sumSq);
+          if (scale === 1) continue;
+          for (let k = start; k < end; k++) {
+            let v = values[k] * scale;
+            if (v > wMax) v = wMax;
+            else if (v < wMin) v = wMin;
+            values[k] = v;
+          }
+          rowsNormalized += 1;
+        }
+        return rowsNormalized;
+      }
+      /**
        * STDP: timing-dependent update on existing connections.
        */
       stdpUpdate(preSpikes, postSpikes, preTimes, postTimes, params) {
@@ -608,7 +647,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "e1fdd96c-d1ad";
+var BUILD = "fe9e146b-4b8a";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2658,8 +2697,16 @@ var NeuronCluster = class {
               // READ probe reads phon via CPU propagate
               "letter_to_motor",
               // TALK probe + DYN-PROD letter fallback
-              "sem_to_motor"
-              // DYN-PROD primary path
+              "sem_to_motor",
+              // DYN-PROD primary path + separation probe
+              // T26.c.1 — READ probes across ELA/Sci/Soc/Life gates
+              // dereference these via CPU SparseMatrix.propagate. Keeping
+              // them off the whitelist caused the null-CSR guard to fall
+              // back to zero vectors, nuking READ rate across all gates.
+              "letter_to_sem",
+              // READ probe reads sem via CPU propagate
+              "motor_to_letter"
+              // TALK motor→letter fallback path
             ]);
             if (PROBE_CRITICAL_CPU_CSR.has(key)) {
               console.log(`[CPU-CSR-free] keeping probe-critical ${key} CPU arrays resident (${_freedMB}MB) \u2014 needed for READ/TALK/DYN-PROD gate probes.`);
@@ -9909,9 +9956,20 @@ var Curriculum = class _Curriculum {
       const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(1);
       const extMB = ((mem.external || 0) / 1024 / 1024).toFixed(1);
       const abMB = ((mem.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
-      console.log(`[T18.25] memory ${label}: heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB (forced gc removed \u2014 V8 auto-manages reclaim)`);
+      const rssMB = ((mem.rss || 0) / 1024 / 1024).toFixed(1);
+      const prior = this._memPrior;
+      let deltaTag = "";
+      if (prior) {
+        const dHeapMB = (mem.heapUsed - prior.heapUsed) / 1024 / 1024;
+        const dExtMB = ((mem.external || 0) - (prior.external || 0)) / 1024 / 1024;
+        const dRssMB = ((mem.rss || 0) - (prior.rss || 0)) / 1024 / 1024;
+        const sign = (v) => v >= 0 ? "+" : "";
+        deltaTag = ` \xB7 \u0394heap=${sign(dHeapMB)}${dHeapMB.toFixed(1)}MB \u0394ext=${sign(dExtMB)}${dExtMB.toFixed(1)}MB \u0394rss=${sign(dRssMB)}${dRssMB.toFixed(1)}MB`;
+      }
+      this._memPrior = { heapUsed: mem.heapUsed, external: mem.external || 0, rss: mem.rss || 0 };
+      console.log(`[MEM] ${label}: heap=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB rss=${rssMB}MB${deltaTag}`);
     } catch (err) {
-      console.warn(`[T18.25] memory snapshot failed at ${label}:`, err && err.message);
+      console.warn(`[MEM] snapshot failed at ${label}:`, err && err.message);
     }
   }
   /**
@@ -11698,6 +11756,7 @@ var Curriculum = class _Curriculum {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: "no cluster wired" };
     console.log(`[Curriculum] ${subject}/${grade} START`);
+    this._memorySnapshotAndGc(`cell-entry ${subject}/${grade}`);
     const baseCtx = corpora ? this._buildCtx(corpora, opts) : this._lastCtx || null;
     if (!baseCtx) return { pass: false, reason: "no corpora provided and no cached ctx" };
     const ctx = { ...baseCtx, cellKey: `${subject}/${grade}` };
@@ -11746,9 +11805,12 @@ var Curriculum = class _Curriculum {
             }
           }
           const extRate = extTotal > 0 ? extPass / extTotal : 1;
+          const belowCutDetail = (battery.byStandard || []).filter((s) => s.belowCut).map((s) => `${s.standard} ${(s.rate * 100).toFixed(0)}%<${(s.cut * 100).toFixed(0)}%`);
           const blockers = [];
           if (battery.rate < AGGR_MIN) blockers.push(`answer aggregate ${(battery.rate * 100).toFixed(1)}% < ${AGGR_MIN * 100}%`);
-          if ((battery.standardsBelowCut || 0) > 0) blockers.push(`${battery.standardsBelowCut} sub-standard(s) below cut`);
+          if (belowCutDetail.length > 0) {
+            blockers.push(`sub-standards below cut: [${belowCutDetail.join(", ")}]`);
+          }
           if (extTotal > 0 && extRate < EXTERNAL_MIN) blockers.push(`external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%) < ${EXTERNAL_MIN * 100}%`);
           if ((battery.methoQuestions || 0) > 0 && (battery.methoRate || 0) < METHODOLOGY_MIN) {
             blockers.push(`methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%) < ${METHODOLOGY_MIN * 100}%`);
@@ -11764,6 +11826,22 @@ var Curriculum = class _Curriculum {
           result.studentBattery.externalPass = extPass;
           result.studentBattery.externalTotal = extTotal;
           result.studentBattery.externalRate = extRate;
+          if (!cluster._lastGateResult || typeof cluster._lastGateResult !== "object") {
+            cluster._lastGateResult = {};
+          }
+          cluster._lastGateResult[cellKey] = {
+            pass: !!result.pass,
+            blockers: blockers.slice(),
+            standardsBelowCut: belowCutDetail.slice(),
+            aggregateRate: battery.rate,
+            externalPass: extPass,
+            externalTotal: extTotal,
+            externalRate: extRate,
+            methodologyPass: battery.methoPass || 0,
+            methodologyTotal: battery.methoQuestions || 0,
+            methodologyRate: battery.methoRate || 0,
+            ts: (/* @__PURE__ */ new Date()).toISOString()
+          };
         }
       } catch (err) {
         if (cluster) cluster._probeGateActive = false;
@@ -11781,6 +11859,7 @@ var Curriculum = class _Curriculum {
         this._saveCheckpoint(cellKey);
       }
     }
+    this._memorySnapshotAndGc(`cell-exit ${subject}/${grade} pass=${!!(result && result.pass)}`);
     return result || { pass: false, reason: "runner returned null" };
   }
   /**
@@ -17679,9 +17758,14 @@ var Curriculum = class _Curriculum {
       return { trained: 0, skipped: pairs.length };
     }
     const relationTagId = typeof opts.relationTagId === "number" ? opts.relationTagId : null;
+    const binarize = opts.binarize === true;
+    const normalizeAfter = opts.normalizeAfter !== false;
+    const normTarget = opts.normTarget ?? 1;
+    const runSeparationProbe = opts.separationProbe !== false;
+    const overloadMax = opts.overloadMax ?? 0.3;
     let trained = 0, skipped = 0;
     const startMs = Date.now();
-    console.log(`[Curriculum][${label}] START \u2014 ${pairs.length} pairs \xD7 ${reps} reps`);
+    console.log(`[Curriculum][${label}] START \u2014 ${pairs.length} pairs \xD7 ${reps} reps \xB7 soft-writes=${!binarize} \xB7 row-norm=${normalizeAfter}`);
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return { trained, skipped };
       for (const pair of pairs) {
@@ -17698,14 +17782,15 @@ var Curriculum = class _Curriculum {
         }
         try {
           this._clearSpikes();
-          this._writeTiledPattern(semRegion, inEmb, true);
-          this._writeTiledPattern(motorRegion, outEmb, true);
+          this._writeTiledPattern(semRegion, inEmb, binarize);
+          this._writeTiledPattern(motorRegion, outEmb, binarize);
           if (fineTypeRegion && relationTagId !== null) {
             const fineSize = fineTypeRegion.end - fineTypeRegion.start;
             const band = Math.floor(fineSize / 6);
             const tagStart = fineTypeRegion.start + relationTagId * band;
             const tagEnd = Math.min(fineTypeRegion.end, tagStart + band);
-            for (let i = tagStart; i < tagEnd; i++) cluster.lastSpikes[i] = 1;
+            const tagVal = binarize ? 1 : 0.5;
+            for (let i = tagStart; i < tagEnd; i++) cluster.lastSpikes[i] = tagVal;
           }
           await this._teachHebbian(lr);
           trained++;
@@ -17715,9 +17800,93 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
+    let normReport = "";
+    if (normalizeAfter && cluster.crossProjections) {
+      const projKeys = ["sem_to_motor", "motor_to_sem"];
+      const normed = [];
+      for (const key of projKeys) {
+        const proj = cluster.crossProjections[key];
+        if (proj && typeof proj.normalizeRows === "function") {
+          try {
+            const rowsNorm = proj.normalizeRows(normTarget);
+            if (rowsNorm > 0) normed.push(`${key}:${rowsNorm}`);
+          } catch {
+          }
+        }
+      }
+      if (normed.length > 0) normReport = ` \xB7 row-norm [${normed.join(",")}]`;
+    }
+    let sepReport = "";
+    if (runSeparationProbe && pairs.length >= 2) {
+      try {
+        const sep = this._checkSemBasinSeparation(pairs, { semRegion, motorRegion, overloadMax, sampleSize: 8 });
+        if (sep && typeof sep.meanCos === "number") {
+          const flag = sep.meanCos > overloadMax ? " \u26A0OVERLOAD" : "";
+          sepReport = ` \xB7 sep-probe mean-cos=${sep.meanCos.toFixed(3)} max=${sep.maxCos.toFixed(3)}${flag}`;
+        }
+      } catch {
+      }
+    }
     const elapsedSec = ((Date.now() - startMs) / 1e3).toFixed(1);
-    console.log(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})`);
+    console.log(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${normReport}${sepReport}`);
     return { trained, skipped };
+  }
+  /**
+   * Cosine-separation diagnostic for association-pair phases. For a
+   * sample of `sampleSize` pairs, writes each input pattern to sem,
+   * propagates through sem_to_motor, reads the motor readout, and
+   * returns mean + max pairwise cosine between those readouts. Mean
+   * cosine > ~0.3 signals sem-region overload — patterns collapsed
+   * into indistinguishable superpositions, probe can't discriminate.
+   */
+  _checkSemBasinSeparation(pairs, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return null;
+    const proj = cluster.crossProjections.sem_to_motor;
+    if (!proj || typeof proj.propagate !== "function") return null;
+    if (!proj.values || proj.values.length === 0) return null;
+    const semRegion = opts.semRegion || cluster.regions && cluster.regions.sem;
+    const motorRegion = opts.motorRegion || cluster.regions && cluster.regions.motor;
+    if (!semRegion || !motorRegion) return null;
+    const sampleSize = Math.min(opts.sampleSize || 8, pairs.length);
+    const step = Math.max(1, Math.floor(pairs.length / sampleSize));
+    const readouts = [];
+    const savedSpikes = new Float64Array(cluster.lastSpikes);
+    try {
+      for (let i = 0; i < pairs.length && readouts.length < sampleSize; i += step) {
+        const pair = pairs[i];
+        if (!Array.isArray(pair) || pair.length < 2) continue;
+        const [inputWord] = pair;
+        const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(inputWord) : null;
+        if (!inEmb || inEmb.length === 0) continue;
+        for (let j = 0; j < cluster.lastSpikes.length; j++) cluster.lastSpikes[j] = 0;
+        this._writeTiledPattern(semRegion, inEmb, false);
+        const out = proj.propagate(cluster.lastSpikes);
+        if (!out || out.length === 0) continue;
+        const motorSlice = out.slice(motorRegion.start, motorRegion.end);
+        let nrm = 0;
+        for (let d = 0; d < motorSlice.length; d++) nrm += motorSlice[d] * motorSlice[d];
+        nrm = Math.sqrt(nrm) || 1;
+        for (let d = 0; d < motorSlice.length; d++) motorSlice[d] /= nrm;
+        readouts.push(motorSlice);
+      }
+    } finally {
+      for (let j = 0; j < cluster.lastSpikes.length; j++) cluster.lastSpikes[j] = savedSpikes[j];
+    }
+    if (readouts.length < 2) return null;
+    let sumCos = 0, maxCos = -Infinity, comparisons = 0;
+    for (let i = 0; i < readouts.length; i++) {
+      for (let j = i + 1; j < readouts.length; j++) {
+        let dot = 0;
+        const a = readouts[i], b = readouts[j];
+        const n = Math.min(a.length, b.length);
+        for (let d = 0; d < n; d++) dot += a[d] * b[d];
+        sumCos += dot;
+        comparisons += 1;
+        if (dot > maxCos) maxCos = dot;
+      }
+    }
+    return { meanCos: sumCos / comparisons, maxCos, comparisons, sampleSize: readouts.length };
   }
   // ─── internal: tile a feature onto a region of a full-cluster vec ──
   // Same tiling math used by the gate probes and `_writeTiledPattern`;
@@ -30882,6 +31051,31 @@ var Curriculum = class _Curriculum {
       { question: "what sound does a cat make", answer: "meow" },
       { question: "what do words have", answer: "sound" }
     ], { reps: 6 });
+    await this._teachAssociationPairs([
+      // letter → word-start (phonological precursor)
+      ["a", "apple"],
+      ["b", "ball"],
+      ["c", "cat"],
+      ["d", "dog"],
+      ["e", "egg"],
+      ["f", "fish"],
+      ["g", "goat"],
+      ["h", "hat"],
+      ["i", "ink"],
+      ["j", "jump"],
+      ["k", "kite"],
+      ["l", "leaf"],
+      ["m", "moon"],
+      ["n", "net"],
+      ["o", "octopus"],
+      ["p", "pig"],
+      // phoneme pairs (initial sound → source concept)
+      ["bark", "dog"],
+      ["meow", "cat"],
+      ["moo", "cow"],
+      ["quack", "duck"],
+      ["tweet", "bird"]
+    ], { reps: 8, label: "PREK-ELA-LETTER-SOUND", relationTagId: 3 });
     return this._gateVocabList(PHONEME_CONCEPTS.map((c) => c.name).concat(["bark", "meow", "sound"]));
   }
   async runMathPreK(_ctx) {
@@ -30902,6 +31096,25 @@ var Curriculum = class _Curriculum {
       { question: "which is more", answer: "more" },
       { question: "which is less", answer: "less" }
     ], { reps: 6 });
+    await this._teachAssociationPairs([
+      // count forward (word-form)
+      ["one", "two"],
+      ["two", "three"],
+      ["three", "four"],
+      ["four", "five"],
+      ["five", "six"],
+      ["six", "seven"],
+      ["seven", "eight"],
+      ["eight", "nine"],
+      ["nine", "ten"],
+      // magnitude compare
+      ["big", "more"],
+      ["small", "less"],
+      ["tall", "more"],
+      ["short", "less"],
+      ["many", "more"],
+      ["few", "less"]
+    ], { reps: 8, label: "PREK-MATH-COUNT-MAG", relationTagId: 5 });
     return this._gateVocabList(QUANTITY_CONCEPTS.map((c) => c.name));
   }
   async runSciPreK(_ctx) {
@@ -30925,6 +31138,29 @@ var Curriculum = class _Curriculum {
       { question: "what is wet", answer: "water" },
       { question: "what falls down", answer: "ball" }
     ], { reps: 6 });
+    await this._teachAssociationPairs([
+      // animal → sound
+      ["dog", "bark"],
+      ["cat", "meow"],
+      ["cow", "moo"],
+      ["bird", "tweet"],
+      ["duck", "quack"],
+      ["pig", "oink"],
+      ["sheep", "baa"],
+      ["horse", "neigh"],
+      ["lion", "roar"],
+      // day/night
+      ["sun", "day"],
+      ["moon", "night"],
+      ["star", "night"],
+      ["morning", "day"],
+      ["evening", "night"],
+      // motion primitives
+      ["push", "move"],
+      ["pull", "move"],
+      ["drop", "fall"],
+      ["throw", "fly"]
+    ], { reps: 8, label: "PREK-SCI-ANIMAL-SOUND", relationTagId: 1 });
     return this._gateVocabList(["animal", "water", "sun", "fire", "bark", "meow", "moo"]);
   }
   async runSocPreK(_ctx) {
@@ -30946,6 +31182,27 @@ var Curriculum = class _Curriculum {
       { question: "what is nice to do", answer: "share" },
       { question: "what is bad to be", answer: "mean" }
     ], { reps: 6 });
+    await this._teachAssociationPairs([
+      // family
+      ["mom", "parent"],
+      ["dad", "parent"],
+      ["baby", "child"],
+      ["brother", "sibling"],
+      ["sister", "sibling"],
+      ["grandma", "family"],
+      ["grandpa", "family"],
+      // greetings
+      ["hi", "hello"],
+      ["bye", "goodbye"],
+      ["please", "polite"],
+      ["thanks", "grateful"],
+      // emotions
+      ["happy", "smile"],
+      ["sad", "cry"],
+      ["mad", "frown"],
+      ["scared", "hide"],
+      ["love", "hug"]
+    ], { reps: 8, label: "PREK-SOC-FAMILY-EMOT", relationTagId: 1 });
     return this._gateVocabList(SOCIAL_CONCEPTS.map((c) => c.name));
   }
   async runArtPreK(_ctx) {
@@ -30968,6 +31225,29 @@ var Curriculum = class _Curriculum {
       { question: "what color is grass", answer: "green" },
       { question: "what do i like to draw", answer: "black" }
     ], { reps: 6 });
+    await this._teachAssociationPairs([
+      // primary color → category
+      ["red", "color"],
+      ["blue", "color"],
+      ["yellow", "color"],
+      ["green", "color"],
+      ["black", "color"],
+      ["white", "color"],
+      // shape → name
+      ["circle", "round"],
+      ["square", "four"],
+      ["triangle", "three"],
+      // art tools
+      ["crayon", "color"],
+      ["pencil", "draw"],
+      ["brush", "paint"],
+      ["paper", "draw"],
+      ["marker", "color"],
+      // music
+      ["song", "music"],
+      ["drum", "beat"],
+      ["sing", "song"]
+    ], { reps: 8, label: "PREK-ART-COLORS-TOOLS", relationTagId: 1 });
     return this._gateVocabList(ART_CONCEPTS.map((c) => c.name));
   }
   async runLifePreK(ctx) {
@@ -31085,6 +31365,29 @@ var Curriculum = class _Curriculum {
       { situation: "stranger", emotion: new Float64Array([0, 0, 0, 1, 0, 0, 0, 0]), label: "scared" },
       { situation: "blanket", emotion: new Float64Array([1, 0, 1, 0, 0, 0, 0, 0]), label: "comfort" }
     ]);
+    await this._teachAssociationPairs([
+      // identity
+      ["unity", "girl"],
+      ["girl", "female"],
+      ["name", "unity"],
+      ["person", "human"],
+      // body parts → sense
+      ["eye", "see"],
+      ["ear", "hear"],
+      ["nose", "smell"],
+      ["mouth", "taste"],
+      ["hand", "touch"],
+      // primary feelings
+      ["happy", "smile"],
+      ["sad", "cry"],
+      ["scared", "shake"],
+      ["angry", "frown"],
+      // routines
+      ["eat", "food"],
+      ["drink", "water"],
+      ["sleep", "bed"],
+      ["play", "fun"]
+    ], { reps: 8, label: "PREK-LIFE-IDENTITY", relationTagId: 1 });
     const lifeQuestions = [
       { prompt: ["who", "are", "you"], answer: "unity" },
       { prompt: ["what", "is", "your", "name"], answer: "unity" },
