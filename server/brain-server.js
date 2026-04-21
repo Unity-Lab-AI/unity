@@ -4356,25 +4356,65 @@ class ServerBrain {
       // nothing to restore" vs "never saved".
     }
 
-    // Compute total size
-    let totalBytes = 16; // header
+    // Compute total size per-section + overall
     const encoder = new TextEncoder();
     const nameBufs = sections.map((s) => {
       const buf = encoder.encode(s.name);
       const padded = Math.ceil(buf.length / 4) * 4;
       return { buf, padded };
     });
-    for (let i = 0; i < sections.length; i++) {
-      const s = sections[i];
-      totalBytes += 4 + 4 + nameBufs[i].padded + 4 + 4 + 4;
-      totalBytes += (s.rows + 1) * 4;
-      totalBytes += s.nnz * 4;
-      totalBytes += s.nnz * 8;
+    const sectionBytes = sections.map((s, i) => {
+      let n = 4 + 4 + nameBufs[i].padded + 4 + 4 + 4; // SECT magic + nameLen + name pad + rows + cols + nnz
+      n += (s.rows + 1) * 4; // rowPtr
+      n += s.nnz * 4;        // colIdx
+      n += s.nnz * 8;        // values
+      return n;
+    });
+    let totalBytes = 16 + sectionBytes.reduce((a, b) => a + b, 0);
+
+    // Drop sections until totalBytes fits under the safe cap. Node's
+    // Buffer.write fast path (FastWriteString<ASCII>) asserts on
+    // `dst.length() - offset <= uint32::max`, which effectively caps
+    // the writable buffer at ~4 GB. A single intra-synapse matrix at
+    // biological scale can already be ~1-1.5 GB, and the cumulative
+    // offset across cortex.synapses + every un-freed cross-projection
+    // can blow past 4 GB and crash Node with a hard assertion inside
+    // node_buffer.cc. Cap at 3.5 GB to leave headroom for header +
+    // section framing.
+    const SAFE_MAX_BYTES = 3.5 * 1024 * 1024 * 1024;
+    const skipped = [];
+    while (totalBytes > SAFE_MAX_BYTES && sections.length > 0) {
+      // Drop the largest remaining section first so we preserve as
+      // much of the state as possible.
+      let largestIdx = 0;
+      for (let i = 1; i < sections.length; i++) {
+        if (sectionBytes[i] > sectionBytes[largestIdx]) largestIdx = i;
+      }
+      skipped.push({ name: sections[largestIdx].name, bytes: sectionBytes[largestIdx] });
+      totalBytes -= sectionBytes[largestIdx];
+      sections.splice(largestIdx, 1);
+      sectionBytes.splice(largestIdx, 1);
+      nameBufs.splice(largestIdx, 1);
+    }
+    if (skipped.length > 0) {
+      const skippedMb = skipped.map((s) => `${s.name}(${(s.bytes / 1048576).toFixed(0)}MB)`).join(', ');
+      console.warn(`[Brain] Binary weights size cap — dropped ${skipped.length} sections to fit under 3.5 GB: ${skippedMb}. Remaining sections will still persist.`);
+    }
+    if (sections.length === 0) {
+      console.warn('[Brain] Binary weights — every section exceeded the size cap, skipping save entirely.');
+      return;
     }
 
     const buf = Buffer.alloc(totalBytes);
+    // Use Buffer.from + copy for magic bytes instead of buf.write(str,
+    // off, len, 'ascii'). The .write() path hits the V8 fast API which
+    // asserts on uint32 offset bounds even for small writes when the
+    // parent buffer crosses the 4 GB mark. Buffer.from + copy uses the
+    // slow path which handles 64-bit offsets correctly.
+    const UBWT = Buffer.from('UBWT', 'ascii');
+    const SECT = Buffer.from('SECT', 'ascii');
     let off = 0;
-    buf.write('UBWT', off, 4, 'ascii'); off += 4;
+    UBWT.copy(buf, off); off += 4;
     buf.writeUInt32LE(1, off); off += 4; // format version
     buf.writeUInt32LE(this._saveVersion || 0, off); off += 4;
     buf.writeUInt32LE(sections.length, off); off += 4;
@@ -4382,7 +4422,7 @@ class ServerBrain {
     for (let i = 0; i < sections.length; i++) {
       const s = sections[i];
       const { buf: nameBuf, padded } = nameBufs[i];
-      buf.write('SECT', off, 4, 'ascii'); off += 4;
+      SECT.copy(buf, off); off += 4;
       buf.writeUInt32LE(nameBuf.length, off); off += 4;
       nameBuf.copy(buf, off); off += padded;
       buf.writeUInt32LE(s.rows, off); off += 4;
