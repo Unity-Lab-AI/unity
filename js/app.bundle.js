@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "6e1b7346-3d36";
+var BUILD = "78ce1c67-ed54";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -14865,17 +14865,201 @@ var Curriculum = class _Curriculum {
         ["pronoun", "person"]
       ]);
       _phaseDone("_teachCausalChains");
-      try {
-        const qaPairs = TRAIN_BANKS["ela/kindergarten"] || [];
-        if (qaPairs.length > 0) {
-          _phaseTick("_teachQABinding");
-          await this._teachQABinding(qaPairs, { reps: 10, label: "ELA-K-QA-BINDING" });
-          _phaseDone("_teachQABinding");
-          this._memorySnapshotAndGc("after _teachQABinding");
-        }
-      } catch (err) {
-        console.warn("[Curriculum] ELA-K QA binding failed:", err?.message || err);
+      _phaseTick("_teachOpposites");
+      await this._teachAssociationPairs([
+        ["big", "small"],
+        ["small", "big"],
+        ["hot", "cold"],
+        ["cold", "hot"],
+        ["up", "down"],
+        ["down", "up"],
+        ["fast", "slow"],
+        ["slow", "fast"],
+        ["tall", "short"],
+        ["short", "tall"],
+        ["new", "old"],
+        ["old", "new"],
+        ["day", "night"],
+        ["night", "day"],
+        ["light", "dark"],
+        ["dark", "light"],
+        ["happy", "sad"],
+        ["sad", "happy"],
+        ["in", "out"],
+        ["out", "in"],
+        ["on", "off"],
+        ["off", "on"],
+        ["wet", "dry"],
+        ["dry", "wet"],
+        ["open", "closed"],
+        ["closed", "open"],
+        ["good", "bad"],
+        ["bad", "good"],
+        ["come", "go"],
+        ["go", "come"],
+        ["push", "pull"],
+        ["pull", "push"],
+        ["more", "less"],
+        ["less", "more"],
+        ["loud", "quiet"],
+        ["quiet", "loud"],
+        ["hard", "soft"],
+        ["soft", "hard"],
+        ["full", "empty"],
+        ["empty", "full"],
+        ["young", "old"],
+        ["old", "young"],
+        ["strong", "weak"],
+        ["weak", "strong"],
+        ["up", "below"],
+        ["above", "below"]
+      ], { reps: 10, label: "ELA-K-OPPOSITES", relationTagId: 0 });
+      _phaseDone("_teachOpposites");
+      _phaseTick("_teachCategories");
+      await this._teachAssociationPairs([
+        ["dog", "animal"],
+        ["cat", "animal"],
+        ["bird", "animal"],
+        ["fish", "animal"],
+        ["horse", "animal"],
+        ["cow", "animal"],
+        ["pig", "animal"],
+        ["sheep", "animal"],
+        ["apple", "fruit"],
+        ["banana", "fruit"],
+        ["grape", "fruit"],
+        ["orange", "fruit"],
+        ["carrot", "vegetable"],
+        ["potato", "vegetable"],
+        ["bean", "vegetable"],
+        ["red", "color"],
+        ["blue", "color"],
+        ["green", "color"],
+        ["yellow", "color"],
+        ["black", "color"],
+        ["white", "color"],
+        ["pink", "color"],
+        ["purple", "color"],
+        ["circle", "shape"],
+        ["square", "shape"],
+        ["triangle", "shape"],
+        ["rectangle", "shape"],
+        ["one", "number"],
+        ["two", "number"],
+        ["three", "number"],
+        ["four", "number"],
+        ["five", "number"],
+        ["six", "number"],
+        ["seven", "number"],
+        ["eight", "number"],
+        ["monday", "day"],
+        ["tuesday", "day"],
+        ["friday", "day"],
+        ["january", "month"],
+        ["june", "month"],
+        ["december", "month"],
+        ["rain", "weather"],
+        ["snow", "weather"],
+        ["sun", "weather"],
+        ["wind", "weather"],
+        ["head", "body"],
+        ["arm", "body"],
+        ["leg", "body"],
+        ["hand", "body"]
+      ], { reps: 10, label: "ELA-K-CATEGORIES", relationTagId: 1 });
+      _phaseDone("_teachCategories");
+      _phaseTick("_teachStoryRoles");
+      await this._teachAssociationPairs([
+        ["hero", "character"],
+        ["person", "character"],
+        ["someone", "character"],
+        ["place", "setting"],
+        ["where", "setting"],
+        ["location", "setting"],
+        ["wrote", "author"],
+        ["book", "author"],
+        ["writer", "author"],
+        ["pictures", "illustrator"],
+        ["drew", "illustrator"],
+        ["art", "illustrator"],
+        ["beginning", "start"],
+        ["middle", "middle"],
+        ["ending", "end"],
+        ["title", "name"],
+        ["cover", "front"],
+        ["problem", "conflict"],
+        ["solution", "resolved"]
+      ], { reps: 10, label: "ELA-K-STORY-ROLES", relationTagId: 2 });
+      _phaseDone("_teachStoryRoles");
+      _phaseTick("_teachPrintConcepts");
+      await this._teachAssociationPairs([
+        ["read", "top"],
+        ["start", "top"],
+        ["begin", "top"],
+        ["first", "top"],
+        ["end", "bottom"],
+        ["last", "bottom"],
+        ["finish", "bottom"],
+        ["read", "left"],
+        ["direction", "left"],
+        ["sentence", "period"],
+        ["question", "mark"],
+        ["exclaim", "exclamation"],
+        ["statement", "period"],
+        ["ending", "period"],
+        ["word", "space"],
+        ["between", "space"],
+        ["separate", "space"],
+        ["capital", "start"],
+        ["uppercase", "first"],
+        ["beginning", "capital"]
+      ], { reps: 10, label: "ELA-K-PRINT", relationTagId: 3 });
+      _phaseDone("_teachPrintConcepts");
+      _phaseTick("_teachWordTypes");
+      await this._teachAssociationPairs([
+        // nouns (things, people, places)
+        ["cat", "noun"],
+        ["dog", "noun"],
+        ["house", "noun"],
+        ["chair", "noun"],
+        ["table", "noun"],
+        ["book", "noun"],
+        ["ball", "noun"],
+        ["tree", "noun"],
+        ["teacher", "noun"],
+        ["mom", "noun"],
+        ["car", "noun"],
+        ["sun", "noun"],
+        // verbs (actions)
+        ["run", "verb"],
+        ["jump", "verb"],
+        ["eat", "verb"],
+        ["sleep", "verb"],
+        ["walk", "verb"],
+        ["sing", "verb"],
+        ["read", "verb"],
+        ["write", "verb"],
+        ["play", "verb"],
+        ["sit", "verb"],
+        ["stand", "verb"],
+        ["swim", "verb"],
+        // adjectives (descriptions)
+        ["red", "adjective"],
+        ["big", "adjective"],
+        ["happy", "adjective"],
+        ["fast", "adjective"],
+        ["tall", "adjective"],
+        ["soft", "adjective"]
+      ], { reps: 10, label: "ELA-K-WORD-TYPES", relationTagId: 4 });
+      _phaseDone("_teachWordTypes");
+      _phaseTick("_teachAlphabetSequencePairs");
+      const letters = "abcdefghijklmnopqrstuvwxyz";
+      const seqPairs = [];
+      for (let i = 0; i < letters.length - 1; i++) {
+        seqPairs.push([letters[i], letters[i + 1]]);
       }
+      await this._teachAssociationPairs(seqPairs, { reps: 12, label: "ELA-K-ALPHABET-SEQ", relationTagId: 5 });
+      _phaseDone("_teachAlphabetSequencePairs");
       this._elaKRemakeDone = true;
     }
     return await this._gateElaKReal();
@@ -15637,14 +15821,67 @@ var Curriculum = class _Curriculum {
       await this._teachShapeFeatures(ctx);
       await this._teachShapeCompose(ctx);
       await this._teachMagnitudeToMotor(ctx);
-      try {
-        const qaPairs = TRAIN_BANKS["math/kindergarten"] || [];
-        if (qaPairs.length > 0) {
-          await this._teachQABinding(qaPairs, { reps: 10, label: "MATH-K-QA-BINDING" });
-        }
-      } catch (err) {
-        console.warn("[Curriculum] Math-K QA binding failed:", err?.message || err);
-      }
+      await this._teachAssociationPairs([
+        ["one", "two"],
+        ["two", "three"],
+        ["three", "four"],
+        ["four", "five"],
+        ["five", "six"],
+        ["six", "seven"],
+        ["seven", "eight"],
+        ["eight", "nine"],
+        ["nine", "ten"],
+        ["ten", "eleven"],
+        ["eleven", "twelve"],
+        ["twelve", "thirteen"],
+        ["thirteen", "fourteen"],
+        ["fourteen", "fifteen"],
+        ["fifteen", "sixteen"],
+        ["sixteen", "seventeen"],
+        ["seventeen", "eighteen"],
+        ["eighteen", "nineteen"],
+        ["nineteen", "twenty"],
+        ["twenty", "thirty"],
+        ["thirty", "forty"],
+        ["forty", "fifty"]
+      ], { reps: 10, label: "MATH-K-NUMBER-SEQ", relationTagId: 5 });
+      await this._teachAssociationPairs([
+        ["triangle", "three"],
+        ["square", "four"],
+        ["rectangle", "four"],
+        ["pentagon", "five"],
+        ["hexagon", "six"],
+        ["octagon", "eight"],
+        ["circle", "round"],
+        ["sphere", "ball"],
+        ["cube", "box"],
+        ["cylinder", "can"]
+      ], { reps: 10, label: "MATH-K-SHAPE-ATTR", relationTagId: 1 });
+      await this._teachAssociationPairs([
+        ["more", "greater"],
+        ["less", "smaller"],
+        ["bigger", "more"],
+        ["smaller", "less"],
+        ["five", "more-than-three"],
+        ["three", "less-than-five"],
+        ["ten", "more-than-five"],
+        ["two", "less-than-eight"]
+      ], { reps: 8, label: "MATH-K-COMPARE", relationTagId: 0 });
+      await this._teachAssociationPairs([
+        ["plus", "add"],
+        ["minus", "subtract"],
+        ["one-plus-one", "two"],
+        ["two-plus-two", "four"],
+        ["three-plus-three", "six"],
+        ["four-plus-four", "eight"],
+        ["five-plus-five", "ten"],
+        ["one-plus-two", "three"],
+        ["two-plus-three", "five"],
+        ["three-plus-four", "seven"],
+        ["ten-minus-one", "nine"],
+        ["ten-minus-five", "five"],
+        ["five-minus-one", "four"]
+      ], { reps: 8, label: "MATH-K-ARITH-WORDS", relationTagId: 4 });
       this._mathKTransformsDone = true;
     }
     return await this._gateMathKReal();
@@ -17404,72 +17641,72 @@ var Curriculum = class _Curriculum {
       if (allowMicrotask) await _microtask();
     }
   }
-  // ─── _teachQABinding — LLM-analog question→answer training ────────
+  // ─── _teachAssociationPairs — pure feature-vector concept binding ──
   //
-  // For each {question, answer} pair, carve the sem→motor (and
-  // recurrent intra-cluster) cross-projection so that when the brain
-  // reads the question via the ventral visual→letter→phon→sem path,
-  // the motor region holds the answer pattern by the time generation
-  // reads it out. Equational equivalent of LLM input→target training:
+  // For each [inputWord, outputWord] pair, inject GloVe(input) into
+  // the sem region and GloVe(output) into the motor region via direct
+  // pattern tiling, then fire the cross-projection + recurrent
+  // intra-cluster Hebbian. Pure feature-tensor equational math — no
+  // text streaming, no readInput, no string parsing. Matches the
+  // shape of `_teachCausalChains` / `_teachCombination` / the other
+  // direct-pattern teach methods.
   //
-  //   1. cluster.readInput(question) — streams characters through
-  //      visual→letter→phon→sem. After N ticks cortex.lastSpikes
-  //      reflects the question-post-read state.
-  //   2. _writeTiledPattern(motor, answerEmb) — OVERWRITE motor region
-  //      with the target answer's GloVe embedding. Now lastSpikes =
-  //      question-state across most regions + target answer in motor.
-  //   3. _teachHebbian(lr) — fires cross-projection Hebbian on the
-  //      paired spike pattern. sem→motor strengthens for the question-
-  //      content → answer pairing. Over N reps this carves a learned
-  //      mapping.
+  // At probe time, when the sem region develops an embedding
+  // matching `inputWord`, the trained sem→motor cross-projection
+  // drives the motor pattern matching `outputWord`. Tick-driven
+  // motor emission then reads the answer letter-by-letter.
   //
-  // At probe time, generateSentenceAwait reads input (same ventral
-  // path), ticks the cluster, and motor argmax emerges from the
-  // trained cross-projection weights. If the training set covered
-  // the pattern (same sub-standard, different content) the learned
-  // basins generalize to the held-out EXAM_BANKS questions.
+  // Also optionally tags fineType with a relation-type id so the
+  // cortex learns the RELATION as well as the pair (opposite /
+  // category / story-role / etc.).
   //
-  // Persistence: the updated cross-projection weights save via
-  // brain-server.js `_saveBinaryWeights` (streaming binary format,
-  // every cross-projection CSR captured). Restart + Savestart.bat
-  // preserves the learned state across reboots.
-  async _teachQABinding(pairs, opts = {}) {
+  // Persistence: cross-projection weights save via brain-server.js
+  // `_saveBinaryWeights` streaming binary format — every cross-
+  // projection CSR captured. Restart + Savestart.bat preserves the
+  // learned state across reboots.
+  async _teachAssociationPairs(pairs, opts = {}) {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return { trained: 0, skipped: 0 };
     if (!Array.isArray(pairs) || pairs.length === 0) return { trained: 0, skipped: 0 };
-    const reps = opts.reps ?? 6;
+    const reps = opts.reps ?? 8;
     const lr = opts.lr ?? cluster.learningRate;
-    const label = opts.label || "QA-BINDING";
-    const motorRegion = cluster.regions && cluster.regions.motor;
+    const label = opts.label || "ASSOC";
     const semRegion = cluster.regions && cluster.regions.sem;
-    if (!motorRegion || !semRegion) {
-      console.warn(`[Curriculum][${label}] skipped \u2014 motor or sem region not available`);
+    const motorRegion = cluster.regions && cluster.regions.motor;
+    const fineTypeRegion = cluster.regions && cluster.regions.fineType;
+    if (!semRegion || !motorRegion) {
+      console.warn(`[Curriculum][${label}] skipped \u2014 sem or motor region not available`);
       return { trained: 0, skipped: pairs.length };
     }
+    const relationTagId = typeof opts.relationTagId === "number" ? opts.relationTagId : null;
     let trained = 0, skipped = 0;
     const startMs = Date.now();
-    console.log(`[Curriculum][${label}] START \u2014 ${pairs.length} Q\u2192A pairs \xD7 ${reps} reps`);
+    console.log(`[Curriculum][${label}] START \u2014 ${pairs.length} pairs \xD7 ${reps} reps`);
     for (let rep = 0; rep < reps; rep++) {
-      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) {
-        console.log(`[Curriculum][${label}] shutdown requested \u2014 stopping at rep ${rep}/${reps}`);
-        break;
-      }
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return { trained, skipped };
       for (const pair of pairs) {
-        if (!pair || !pair.question || !pair.expectedAnswer) {
+        if (!Array.isArray(pair) || pair.length < 2) {
           skipped++;
           continue;
         }
-        const answer = String(pair.expectedAnswer).trim();
-        const answerEmb = answer && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(answer) : null;
-        if (!answerEmb || answerEmb.length === 0) {
+        const [inputWord, outputWord] = pair;
+        const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(inputWord) : null;
+        const outEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(outputWord) : null;
+        if (!inEmb || !outEmb || inEmb.length === 0 || outEmb.length === 0) {
           skipped++;
           continue;
         }
         try {
-          if (typeof cluster.readInput === "function") {
-            await cluster.readInput(String(pair.question), { ticks: 8 });
+          this._clearSpikes();
+          this._writeTiledPattern(semRegion, inEmb, true);
+          this._writeTiledPattern(motorRegion, outEmb, true);
+          if (fineTypeRegion && relationTagId !== null) {
+            const fineSize = fineTypeRegion.end - fineTypeRegion.start;
+            const band = Math.floor(fineSize / 6);
+            const tagStart = fineTypeRegion.start + relationTagId * band;
+            const tagEnd = Math.min(fineTypeRegion.end, tagStart + band);
+            for (let i = tagStart; i < tagEnd; i++) cluster.lastSpikes[i] = 1;
           }
-          this._writeTiledPattern(motorRegion, answerEmb, true);
           await this._teachHebbian(lr);
           trained++;
         } catch (err) {
@@ -17479,7 +17716,7 @@ var Curriculum = class _Curriculum {
       await _microtask();
     }
     const elapsedSec = ((Date.now() - startMs) / 1e3).toFixed(1);
-    console.log(`[Curriculum][${label}] DONE \u2014 trained ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})`);
+    console.log(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})`);
     return { trained, skipped };
   }
   // ─── internal: tile a feature onto a region of a full-cluster vec ──
