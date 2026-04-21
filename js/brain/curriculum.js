@@ -4912,8 +4912,12 @@ export class Curriculum {
     console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} direct sem_to_motor propagate probes, no LIF ticks)...`);
     const _dynProdStart = Date.now();
     let _probeIdx = 0;
-    const semToMotor = allProjs['sem_to_motor'];
-    const letterToMotor = allProjs['letter_to_motor'];
+    // Aliases for DYN-PROD's direct-propagate path. The outer scope
+    // already has `letterToMotor` bound to `motor_to_letter` (misleading
+    // name from earlier code) so we use distinct DYN-prefixed names
+    // here to keep the direct-propagate probe self-contained.
+    const dynSemToMotor = allProjs['sem_to_motor'];
+    const dynLetterToMotor = allProjs['letter_to_motor'];
     // At biological scale sem_to_motor's CPU CSR may have been freed
     // to save ~8 GB of external memory (per the GPU-bound CSR free
     // optimization). In that case fall back to letter_to_motor (which
@@ -4922,8 +4926,8 @@ export class Curriculum {
     // "given word W, decode its first letter from motor" — either
     // sem('W') or letter(W[0]) as the probe input produces the same
     // expected motor argmax.
-    const semPathAvailable = !!(semToMotor && semToMotor.values && semToMotor.colIdx && semToMotor.rowPtr);
-    const letterFallback = !!(letterToMotor && letterToMotor.values && letterToMotor.colIdx && letterToMotor.rowPtr);
+    const semPathAvailable = !!(dynSemToMotor && dynSemToMotor.values && dynSemToMotor.colIdx && dynSemToMotor.rowPtr);
+    const letterFallback = !!(dynLetterToMotor && dynLetterToMotor.values && dynLetterToMotor.colIdx && dynLetterToMotor.rowPtr);
     if (!semPathAvailable && !letterFallback) {
       console.warn('[Curriculum][K-DIAG] DYN-PROD skipped — neither sem_to_motor nor letter_to_motor has CPU CSR available.');
       for (const p of wordStartProbes) prodFails.push(`${p.word}→NO_PROJ`);
@@ -4964,7 +4968,7 @@ export class Curriculum {
             }
           }
           // Propagate through learned sem_to_motor weights.
-          motorOutput = semToMotor.propagate(semPattern);
+          motorOutput = dynSemToMotor.propagate(semPattern);
         } else {
           // Fallback path — use letter_to_motor with word's first letter.
           // Equivalent test: the trained motor argmax for letter(W[0])
@@ -4984,7 +4988,7 @@ export class Curriculum {
               letterPat[idx] = 1.0;
             }
           }
-          motorOutput = letterToMotor.propagate(letterPat);
+          motorOutput = dynLetterToMotor.propagate(letterPat);
         }
         // Reduce motor output to 26 letter slots via group averaging.
         const readoutSize = Math.min(invSize_, LETTER_SLOTS);

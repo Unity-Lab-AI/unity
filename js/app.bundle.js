@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "28b09bfc-b195";
+var BUILD = "f0cef924-399f";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -12965,9 +12965,9 @@ var Curriculum = class _Curriculum {
           if (readCos > READ_COS_MIN) readPass++;
         }
       }
-      const allProjs = cluster.crossProjections || {};
+      const allProjs2 = cluster.crossProjections || {};
       let motorOutput = null;
-      for (const [pname, proj] of Object.entries(allProjs)) {
+      for (const [pname, proj] of Object.entries(allProjs2)) {
         if (pname.endsWith("_to_motor")) {
           const srcName = pname.slice(0, pname.indexOf("_to_"));
           if (srcName === "letter") {
@@ -12985,8 +12985,8 @@ var Curriculum = class _Curriculum {
         }
       }
       if (!motorOutput) {
-        const letterToSem = allProjs["letter_to_sem"];
-        const semToMot = allProjs["sem_to_motor"];
+        const letterToSem = allProjs2["letter_to_sem"];
+        const semToMot = allProjs2["sem_to_motor"];
         if (letterToSem && semToMot) {
           const semOutput = letterToSem.propagate(letterPat);
           const semBinary = new Float64Array(semOutput.length);
@@ -13089,132 +13089,107 @@ var Curriculum = class _Curriculum {
       { word: "hen", expected: "h" }
     ];
     const _atBioScale = (cluster.size | 0) > 1e5;
-    const DYN_PROD_TICKS = _atBioScale ? 15 : 20;
-    const DYN_PROD_AVG_RUNS = _atBioScale ? 1 : 2;
-    const DYN_PROD_INJECT_STRENGTH = _atBioScale ? 3 : 1;
-    const DYN_PROD_REINJECT_STRENGTH = _atBioScale ? 1.5 : 0.5;
-    const DYN_PROD_REINJECT_AT = _atBioScale ? [5, 10] : [5, 12];
     const LETTER_SLOTS = 26;
     let prodPass = 0;
     const prodFails = [];
     let _firstProbeDiag = null;
-    console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} word-start probes \xD7 ${DYN_PROD_AVG_RUNS} runs \xD7 ${DYN_PROD_TICKS} ticks = ${wordStartProbes.length * DYN_PROD_AVG_RUNS * DYN_PROD_TICKS} cluster.step() calls${_atBioScale ? " \u2014 biological-scale reduced settings" : ""})...`);
-    if (cluster) cluster._probeGateActive = true;
+    console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} direct sem_to_motor propagate probes, no LIF ticks)...`);
     const _dynProdStart = Date.now();
     let _probeIdx = 0;
-    for (const p of wordStartProbes) {
-      _probeIdx++;
-      const _probeStart = Date.now();
-      const emb = sharedEmbeddings.getEmbedding(p.word);
-      if (!emb || emb.length === 0) {
-        prodFails.push(`${p.word}\u2192NO_EMB`);
-        continue;
+    const dynSemToMotor = allProjs["sem_to_motor"];
+    const dynLetterToMotor = allProjs["letter_to_motor"];
+    const semPathAvailable = !!(dynSemToMotor && dynSemToMotor.values && dynSemToMotor.colIdx && dynSemToMotor.rowPtr);
+    const letterFallback = !!(dynLetterToMotor && dynLetterToMotor.values && dynLetterToMotor.colIdx && dynLetterToMotor.rowPtr);
+    if (!semPathAvailable && !letterFallback) {
+      console.warn("[Curriculum][K-DIAG] DYN-PROD skipped \u2014 neither sem_to_motor nor letter_to_motor has CPU CSR available.");
+      for (const p of wordStartProbes) prodFails.push(`${p.word}\u2192NO_PROJ`);
+    } else {
+      if (!semPathAvailable) {
+        console.log("[Curriculum][K-DIAG] DYN-PROD using letter_to_motor fallback (sem_to_motor CPU CSR freed at biological scale).");
       }
-      if (!semRegion || !motorRegion_) {
-        prodFails.push(`${p.word}\u2192NO_PROJ`);
-        continue;
-      }
-      const motorAccum = new Float64Array(motorSize_);
-      let _totalClusterSpikes = 0;
-      let _totalMotorSpikes = 0;
-      let _totalSemSpikes = 0;
-      const _semRegion = cluster.regions.sem;
-      const _firstProbeForTickLog = _probeIdx === 1;
-      for (let run = 0; run < DYN_PROD_AVG_RUNS; run++) {
-        _probeReset();
-        cluster.injectEmbeddingToRegion("sem", emb, DYN_PROD_INJECT_STRENGTH);
-        for (let t = 0; t < DYN_PROD_TICKS; t++) {
-          await cluster.stepAwait(1e-3);
-          let _tickClusterSpikes = 0;
-          for (let i = 0; i < cluster.size; i++) {
-            if (cluster.lastSpikes[i]) {
-              _totalClusterSpikes++;
-              _tickClusterSpikes++;
+      for (const p of wordStartProbes) {
+        _probeIdx++;
+        const _probeStart = Date.now();
+        const emb = sharedEmbeddings.getEmbedding(p.word);
+        if (!emb || emb.length === 0) {
+          prodFails.push(`${p.word}\u2192NO_EMB`);
+          continue;
+        }
+        if (!semRegion || !motorRegion_) {
+          prodFails.push(`${p.word}\u2192NO_PROJ`);
+          continue;
+        }
+        let motorOutput;
+        if (semPathAvailable) {
+          const gSize = Math.max(1, Math.floor(semSize_ / emb.length));
+          const semPattern = new Float64Array(semSize_);
+          for (let d = 0; d < emb.length; d++) {
+            const startNeuron = d * gSize;
+            const val = emb[d];
+            for (let n = 0; n < gSize; n++) {
+              const idx = startNeuron + n;
+              if (idx >= semSize_) break;
+              semPattern[idx] = val;
             }
           }
-          let _tickMotorSpikes = 0;
-          for (let i = 0; i < motorSize_; i++) {
-            if (cluster.lastSpikes[motorRegion_.start + i]) {
-              motorAccum[i]++;
-              _totalMotorSpikes++;
-              _tickMotorSpikes++;
+          motorOutput = dynSemToMotor.propagate(semPattern);
+        } else {
+          const firstLetter = p.word[0];
+          const letterOneHot = encodeLetter(firstLetter);
+          const letterSize2 = letterRegion ? letterRegion.end - letterRegion.start : letterOneHot.length;
+          const lGSize = Math.max(1, Math.floor(letterSize2 / letterOneHot.length));
+          const letterPat = new Float64Array(letterSize2);
+          for (let d = 0; d < letterOneHot.length; d++) {
+            if (letterOneHot[d] <= 0) continue;
+            const startNeuron = d * lGSize;
+            for (let n = 0; n < lGSize; n++) {
+              const idx = startNeuron + n;
+              if (idx >= letterSize2) break;
+              letterPat[idx] = 1;
             }
           }
-          let _tickSemSpikes = 0;
-          if (_semRegion) {
-            for (let i = _semRegion.start; i < _semRegion.end; i++) {
-              if (cluster.lastSpikes[i]) {
-                _totalSemSpikes++;
-                _tickSemSpikes++;
-              }
-            }
-          }
-          if (_firstProbeForTickLog && run === 0) {
-            console.log(`[Curriculum][K-DIAG] DYN-PROD probe1 tick ${t + 1}/${DYN_PROD_TICKS}: cluster=${_tickClusterSpikes} motor=${_tickMotorSpikes} sem=${_tickSemSpikes}`);
-          }
-          if (DYN_PROD_REINJECT_AT.includes(t)) {
-            cluster.injectEmbeddingToRegion("sem", emb, DYN_PROD_REINJECT_STRENGTH);
-          }
+          motorOutput = dynLetterToMotor.propagate(letterPat);
         }
-      }
-      if (_firstProbeDiag === null) {
-        this._firstProbeFiringDiag = {
-          totalCluster: _totalClusterSpikes,
-          totalMotor: _totalMotorSpikes,
-          totalSem: _totalSemSpikes,
-          maxPossibleMotor: motorSize_ * DYN_PROD_TICKS * DYN_PROD_AVG_RUNS
-        };
-      }
-      const readoutSize = Math.min(invSize_, LETTER_SLOTS);
-      const motorReadout = new Float64Array(readoutSize);
-      for (let d = 0; d < readoutSize; d++) {
-        let sum = 0;
-        for (let n = 0; n < mGroup_; n++) {
-          const idx = d * mGroup_ + n;
-          if (idx < motorSize_) sum += motorAccum[idx];
+        const readoutSize = Math.min(invSize_, LETTER_SLOTS);
+        const motorReadout = new Float64Array(readoutSize);
+        for (let d = 0; d < readoutSize; d++) {
+          let sum = 0;
+          for (let n = 0; n < mGroup_; n++) {
+            const idx = d * mGroup_ + n;
+            if (idx < motorOutput.length) sum += motorOutput[idx];
+          }
+          motorReadout[d] = sum;
         }
-        motorReadout[d] = sum;
-      }
-      let meanM = 0;
-      for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
-      meanM /= readoutSize;
-      for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
-      const decoded = decodeLetter(motorReadout);
-      if (_firstProbeDiag === null) {
-        const topSlots = [];
-        for (let i = 0; i < motorReadout.length; i++) {
-          topSlots.push({ idx: i, val: motorReadout[i] });
+        let meanM = 0;
+        for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
+        meanM /= readoutSize;
+        for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
+        const decoded = decodeLetter(motorReadout);
+        if (_firstProbeDiag === null) {
+          const topSlots = [];
+          for (let i = 0; i < motorReadout.length; i++) {
+            topSlots.push({ idx: i, val: motorReadout[i] });
+          }
+          topSlots.sort((a, b) => b.val - a.val);
+          const invSnap = inventorySnapshot();
+          const topStr = topSlots.slice(0, 5).map((s) => `${invSnap[s.idx] || "?"}(${s.idx}:${s.val.toFixed(3)})`).join(",");
+          const expectedIdx = invSnap.indexOf(p.expected);
+          const expectedVal = expectedIdx >= 0 && expectedIdx < motorReadout.length ? motorReadout[expectedIdx] : NaN;
+          const expectedRank = topSlots.findIndex((s) => s.idx === expectedIdx);
+          _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}\u2192${p.expected}] decoded=${decoded || "\u2205"}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : "NaN"}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
         }
-        topSlots.sort((a, b) => b.val - a.val);
-        const invSnap = inventorySnapshot();
-        const topStr = topSlots.slice(0, 5).map((s) => `${invSnap[s.idx] || "?"}(${s.idx}:${s.val.toFixed(3)})`).join(",");
-        const expectedIdx = invSnap.indexOf(p.expected);
-        const expectedVal = expectedIdx >= 0 && expectedIdx < motorReadout.length ? motorReadout[expectedIdx] : NaN;
-        const expectedRank = topSlots.findIndex((s) => s.idx === expectedIdx);
-        let posCount = 0;
-        for (let i = 0; i < emb.length; i++) if (emb[i] > 0) posCount++;
-        const fd = this._firstProbeFiringDiag;
-        const firingStr = fd ? `, spikes(cluster=${fd.totalCluster},motor=${fd.totalMotor}/${fd.maxPossibleMotor},sem=${fd.totalSem})` : "";
-        _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}\u2192${p.expected}] decoded=${decoded || "\u2205"}, emb_pos=${posCount}/${emb.length}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : "NaN"}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}${firingStr}`;
-      }
-      if (decoded === p.expected) {
-        prodPass++;
-      } else {
-        prodFails.push(`${p.word}\u2192${decoded || "?"}`);
-      }
-      const _probeMs = Date.now() - _probeStart;
-      if (_probeIdx <= 3 || _probeIdx === wordStartProbes.length || _probeMs > 1e4) {
-        console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} '${p.word}'\u2192'${decoded || "?"}' (expected '${p.expected}') in ${_probeMs}ms \u2014 prodPass=${prodPass}/${_probeIdx} so far`);
+        if (decoded === p.expected) {
+          prodPass++;
+        } else {
+          prodFails.push(`${p.word}\u2192${decoded || "?"}`);
+        }
+        const _probeMs = Date.now() - _probeStart;
+        if (_probeIdx <= 3 || _probeIdx === wordStartProbes.length || _probeMs > 5e3) {
+          console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} '${p.word}'\u2192'${decoded || "?"}' (expected '${p.expected}') in ${_probeMs}ms \u2014 prodPass=${prodPass}/${_probeIdx} so far`);
+        }
       }
     }
     console.log(`[Curriculum][K-DIAG] DYN-PROD probe DONE in ${Date.now() - _dynProdStart}ms \u2014 prodPass=${prodPass}/${wordStartProbes.length}`);
-    if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === "function") {
-      try {
-        await cluster._gpuProxy.drainWait();
-      } catch {
-      }
-    }
-    if (cluster) cluster._probeGateActive = false;
     if (_firstProbeDiag) console.log(_firstProbeDiag);
     const prodResult = {
       pass: prodPass,
@@ -13661,7 +13636,7 @@ var Curriculum = class _Curriculum {
     const invSize = inventorySize();
     const MAG_DIM = MAGNITUDE_FEATURE_DIM;
     const letterToPhon = cluster.crossProjections?.["letter_to_phon"];
-    const allProjs = cluster.crossProjections || {};
+    const allProjs2 = cluster.crossProjections || {};
     function cosine(a, b) {
       let dot = 0, na = 0, nb = 0;
       const L = Math.min(a.length, b.length);
@@ -13712,7 +13687,7 @@ var Curriculum = class _Curriculum {
       }
       const digitName = NAMES[DIGITS.indexOf(digit)];
       const nameEmb = digitName ? sharedEmbeddings.getEmbedding(digitName) : null;
-      const s2m = allProjs["sem_to_motor"];
+      const s2m = allProjs2["sem_to_motor"];
       if (s2m && semRegion && motorRegion && nameEmb && nameEmb.length > 0) {
         const semSize = semRegion.end - semRegion.start;
         const semPat = new Float64Array(semSize);
@@ -13802,7 +13777,7 @@ var Curriculum = class _Curriculum {
     }
     let orderPass = 0;
     let orderTotal = 0;
-    const letterToFree = allProjs["letter_to_free"];
+    const letterToFree = allProjs2["letter_to_free"];
     if (letterToFree && freeRegion) {
       const freeSize = freeRegion.end - freeRegion.start;
       const readFree = (digit) => {
@@ -16919,14 +16894,14 @@ var Curriculum = class _Curriculum {
   }
   _gateVocabList(vocab, opts = {}) {
     const cluster = this.cluster;
-    const allProjs = cluster.crossProjections || {};
+    const allProjs2 = cluster.crossProjections || {};
     const letterRegion = cluster.regions?.letter;
     const semRegion = cluster.regions?.sem;
     const motorRegion = cluster.regions?.motor;
     if (!letterRegion) return { pass: false, reason: "missing regions" };
     const letterSize = letterRegion.end - letterRegion.start;
     const invSize = inventorySize();
-    const letterToSem = allProjs["letter_to_sem"];
+    const letterToSem = allProjs2["letter_to_sem"];
     function cosine(a, b) {
       let dot = 0, na = 0, nb = 0;
       const L = Math.min(a.length, b.length);
@@ -16992,7 +16967,7 @@ var Curriculum = class _Curriculum {
         readPass++;
       }
       const wordEmb = sharedEmbeddings.getEmbedding(word);
-      const s2m = allProjs["sem_to_motor"];
+      const s2m = allProjs2["sem_to_motor"];
       if (s2m && semRegion && motorRegion && wordEmb && wordEmb.length > 0) {
         const semSize = semRegion.end - semRegion.start;
         const semPat = new Float64Array(semSize);
@@ -18490,7 +18465,7 @@ var Curriculum = class _Curriculum {
   _gateSentenceList(sentences, opts = {}) {
     const cluster = this.cluster;
     const sampleSize = Math.min(opts.sampleSize ?? 10, sentences.length);
-    const allProjs = cluster.crossProjections || {};
+    const allProjs2 = cluster.crossProjections || {};
     const sample = [];
     const used = /* @__PURE__ */ new Set();
     while (sample.length < sampleSize) {
@@ -18506,7 +18481,7 @@ var Curriculum = class _Curriculum {
     if (!letterRegion) return { pass: false, reason: "missing regions" };
     const letterSize = letterRegion.end - letterRegion.start;
     const invSize = inventorySize();
-    const letterToSem = allProjs["letter_to_sem"];
+    const letterToSem = allProjs2["letter_to_sem"];
     function cosine(a, b) {
       let dot = 0, na = 0, nb = 0;
       const L = Math.min(a.length, b.length);
@@ -18565,7 +18540,7 @@ var Curriculum = class _Curriculum {
         readPass++;
       }
       const wordEmb = sharedEmbeddings.getEmbedding(firstWord);
-      const s2m = allProjs["sem_to_motor"];
+      const s2m = allProjs2["sem_to_motor"];
       if (s2m && semRegion && motorRegion && wordEmb && wordEmb.length > 0) {
         const semSize = semRegion.end - semRegion.start;
         const semPat = new Float64Array(semSize);
@@ -20172,15 +20147,15 @@ var Curriculum = class _Curriculum {
   }
   _gateConceptTeach(concepts) {
     const cluster = this.cluster;
-    const allProjs = cluster.crossProjections || {};
+    const allProjs2 = cluster.crossProjections || {};
     const letterRegion = cluster.regions?.letter;
     const semRegion = cluster.regions?.sem;
     const motorRegion = cluster.regions?.motor;
     if (!letterRegion || !semRegion) return { pass: false, reason: "missing regions" };
     const letterSize = letterRegion.end - letterRegion.start;
     const invSize = inventorySize();
-    const letterToSem = allProjs["letter_to_sem"];
-    const semToMotor = allProjs["sem_to_motor"];
+    const letterToSem = allProjs2["letter_to_sem"];
+    const semToMotor = allProjs2["sem_to_motor"];
     function cosine(a, b) {
       let dot = 0, na = 0, nb = 0;
       const L = Math.min(a.length, b.length);
@@ -29992,14 +29967,14 @@ var Curriculum = class _Curriculum {
    */
   _gateComprehension(questions) {
     const cluster = this.cluster;
-    const allProjs = cluster.crossProjections || {};
+    const allProjs2 = cluster.crossProjections || {};
     const letterRegion = cluster.regions?.letter;
     const semRegion = cluster.regions?.sem;
     if (!letterRegion || !semRegion) return { pass: false, reason: "missing regions" };
     const letterSize = letterRegion.end - letterRegion.start;
     const semSize = semRegion.end - semRegion.start;
     const invSize = inventorySize();
-    const letterToSem = allProjs["letter_to_sem"];
+    const letterToSem = allProjs2["letter_to_sem"];
     if (!letterToSem) return { pass: false, reason: "no letter_to_sem projection" };
     function cosine(a, b) {
       let dot = 0, na = 0, nb = 0;
@@ -30097,10 +30072,10 @@ var Curriculum = class _Curriculum {
    */
   _gateConversation(exchanges) {
     const cluster = this.cluster;
-    const allProjs = cluster.crossProjections || {};
+    const allProjs2 = cluster.crossProjections || {};
     const semRegion = cluster.regions?.sem;
     const motorRegion = cluster.regions?.motor;
-    const s2m = allProjs["sem_to_motor"];
+    const s2m = allProjs2["sem_to_motor"];
     if (!semRegion || !motorRegion || !s2m) {
       return { pass: false, reason: "missing regions or sem_to_motor" };
     }
