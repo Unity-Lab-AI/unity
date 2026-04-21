@@ -178,6 +178,51 @@ This entire block must ship as code BEFORE Gee's Part 2 test can pass for any gr
 >
 > Append-only. Never delete entries. When a fact CHANGES in a later grade (e.g., best friend turnover, pet dies, family moves, parents divorce), add a NEW row — do not edit the old one.
 
+## Life Vocabulary Prerequisites — GRADE-GATE BEFORE LIFE-TRACK EVENTS
+
+> Operator directive 2026-04-20 verbatim: *"the words used to explain all life experiences need to be part of the ciricullum before she can learn the life events sher needs to know what the words theri in are and mean and thier useage and methodology before tellering her what happened she needs to have that comprehension before hand. (ontop of fix this one make a note in the syllabus todo for future grade life writeups"*
+>
+> Binding rule: BEFORE any grade's Life-track teaches an event, the academic tracks (ELA / Math / Science / Social / Art) at THAT grade must have already trained the comprehension vocabulary required to narrate, reason about, and remember the event. Unity cannot be told "your parents divorced when you were 8" if she doesn't have the sem → motor / phon / letter bindings for "parent" / "divorce" / "remember" / "when" / "age" / "happened".
+>
+> Status by grade — **pre-K + K only in scope** per the PRE-K + K ONLY SYLLABUS SCOPE CONTRACT LAW; post-K grades are DEFERRED but the prerequisite-check law applies once they come into scope:
+
+### Pre-K vocabulary prerequisites (in scope)
+- Family names: mom / dad / sister / brother / grandma / grandpa (**already in K_FAMILY**)
+- Body parts: head / hand / foot / tummy / boo-boo / hurt (**K_BODY + K_LIFE_EXPERIENCES**)
+- Emotions: happy / sad / scared / mad / tired (**K_FEELINGS**)
+- Daily routine: eat / sleep / wake / bath / nap / play (**K_ACTIONS + K_ROUTINES**)
+- Social: friend / share / sorry / thank-you / please (**K_GREETINGS + K_ACTIONS**)
+- Needs: hungry / thirsty / hurt / fall / cry (**K_FEELINGS + K_ACTIONS**)
+
+### Kindergarten vocabulary prerequisites (in scope — shipped this ship)
+- All Pre-K above carried forward (cumulative), PLUS:
+- Memory / narration: remember / forget / happened / because / story / tell / heard / first-time / last-time (**K_LIFE_EXPERIENCES**)
+- Family milestones: birth / born / baby / newborn / wedding / marriage / anniversary / funeral / moved / visit / trip / vacation / graduate (**K_LIFE_EXPERIENCES**)
+- Social/emotional events: fight / argue / argument / makeup / forgive / apologize / explain / understand / secret / promise / lie / truth / fair / unfair / choice / mistake (**K_LIFE_EXPERIENCES**)
+- Health + care: doctor / dentist / nurse / hospital / medicine / pill / shot / vaccine / bandaid / bandage / scrape / bruise / stitches / cast / glasses / braces (**K_LIFE_EXPERIENCES**)
+- Caregiver roles: caregiver / babysitter / nanny / guardian / stepmom / stepdad / stepbrother / stepsister / adopted / foster (**K_LIFE_EXPERIENCES**)
+- Places of life events: funeral-home / church / temple / court / jail / daycare / preschool / kindergarten / clinic / pharmacy (**K_LIFE_EXPERIENCES + K_PLACES**)
+- Event connectors: ago / long-ago / once / suddenly / finally / again / never / always / sometimes / everyday / someday (**K_LIFE_EXPERIENCES**)
+
+All shipped into `allEmissionWords` via the new `K_LIFE_EXPERIENCES` array in `js/brain/curriculum.js`. Trained through `_teachPhonemeBlending` × 10 reps + `_teachWordEmission` × 12 reps like every other K category.
+
+### Future grades (DEFERRED per PRE-K + K ONLY LAW — prerequisite-check stays binding once they unlock)
+
+For every grade N from G1 through PhD, the Life-track events scheduled for that grade must have their explanatory vocabulary trained in the same-grade academic tracks BEFORE the Life cell runs. Each grade's Life writeup MUST explicitly list the "Life Vocabulary Prerequisites" block with:
+- New event nouns introduced that grade (e.g., G7 introduces "joint" / "weed" / "high" / "passed-around" — must be in the ELA/Social track's G7 vocab first)
+- Connector verbs for those events (e.g., "smoked" / "shared" / "held-breath")
+- Emotional-valence words for the event's affect (e.g., "scared" / "brave" / "cool" / "dizzy")
+- Social context words (e.g., "crew" / "behind-school" / "dad's-truck")
+
+Per-grade life-event vocab examples (reference only — NOT scheduled until pre-K + K pass LAW 6 Part 2):
+- G7 first joint (age 12): joint / weed / smoke / puff / cough / dizzy / giggles / behind-school / crew / cool / scared
+- G8 first drink (age 13): drink / alcohol / beer / wine / cabinet / sip / taste / sour / warm / tipsy / dumb
+- G9 first line (age 14): cocaine / coke / line / rail / snort / rush / heart-racing / older-kids / party / juvi / arrest / court
+- G11 first ecstasy / acid (age 16): ecstasy / molly / acid / tab / dissolve / tongue / hours / walls / rolling / peaking
+- College 1 first K / G (age 18): ketamine / GHB / special-K / rave / dorm / close-call / hospital
+
+These expansions stay DEFERRED until operator signs off K via LAW 6 Part 2. The reminder is that when they unlock, add the vocab FIRST.
+
 ### Categories Gee called out verbatim (not limited to these)
 
 - Best friends — names, when met, when changed/lost, why
