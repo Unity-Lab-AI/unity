@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "547daaa7-98f7";
+var BUILD = "ccba6731-c9ee";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -14199,10 +14199,10 @@ var Curriculum = class _Curriculum {
   // embedding anchors the sem region, so the cortex forms a WORD-LEVEL
   // attractor basin at the end of each letter sequence.
   //
-  // Word lists are DATA, not rules — same as the alphabet in Session 2
-  // and the digit sequence in Session 3. Gee's "no lookup tables for
-  // rules" binding applies to hardcoded English grammar rules, not to
-  // the primitive symbols being taught (alphabet, digits, sight words).
+  // Word lists are DATA, not rules — same as the alphabet and digit
+  // sequence. The "no lookup tables for rules" binding applies to
+  // hardcoded English grammar rules, not to the primitive symbols
+  // being taught (alphabet, digits, sight words).
   // A K-G1 classroom has a sight word chart on the wall; that chart is
   // data, and so are these lists.
   // ─── TODO-aligned ELA-G1 helpers (Session 27) ────────────────────
@@ -15319,9 +15319,9 @@ var Curriculum = class _Curriculum {
     console.log(`[Curriculum] _teachComparisonTransformations: ${pairs.length} pairs \xD7 ${REPS} reps`);
   }
   // ═══════════════════════════════════════════════════════════════════
-  // T14.24 Session 114 — Math-K PART 1 expansion: equational teaching
-  // for every K.CC / K.OA / K.NBT / K.MD / K.G concept that was absent
-  // from Session 109's digit-only coverage. Same direct-pattern Hebbian
+  // Math-K PART 1 expansion: equational teaching for every K.CC /
+  // K.OA / K.NBT / K.MD / K.G concept that was absent from the
+  // earlier digit-only coverage. Same direct-pattern Hebbian
   // scaffold (write intended pattern into lastSpikes, fire
   // _crossRegionHebbian) as _teachAdditionTransformations. Uses the
   // wide-range _magnitudeFeatureForNumber helper for any value > 9.
@@ -15420,19 +15420,20 @@ var Curriculum = class _Curriculum {
     }
   }
   // ═══════════════════════════════════════════════════════════════════
-  // Session 114.13 Fix A — Asymmetric Hebbian for directional bindings
+  // Fix A — Asymmetric Hebbian for directional bindings
   // ═══════════════════════════════════════════════════════════════════
   //
-  // Gee's Part 2 attempt 1 showed SEQ crashing from Session 106's 100%
-  // to 8% + motor letter-sticking emissions like "fffffffv vvvvvvvaaaaaaa".
-  // Root cause: _teachHebbian uses SYMMETRIC cluster.synapses.hebbianUpdate
-  // (pre=post=lastSpikes) which creates self-loop reinforcement w[i,i]
-  // for every fired neuron. At 13.4M-neurons-per-cluster scale, motor-
-  // region self-loops are strong enough to hold a letter's argmax
-  // stable for many consecutive ticks (letter sticking). And symmetric
-  // letter↔motor writes in _teachWordEmission wash out Session 106's
-  // asymmetric directional alphabet sequence (pre=letter(N),
-  // post=letter(N+1)) via cross-contamination.
+  // An earlier Part 2 attempt showed SEQ crashing from 100% to 8%
+  // + motor letter-sticking emissions like "fffffffv vvvvvvvaaaaaaa".
+  // Root cause: _teachHebbian uses SYMMETRIC cluster.synapses
+  // .hebbianUpdate (pre=post=lastSpikes) which creates self-loop
+  // reinforcement w[i,i] for every fired neuron. At 13.4M-neurons-
+  // per-cluster scale, motor-region self-loops are strong enough to
+  // hold a letter's argmax stable for many consecutive ticks
+  // (letter sticking). And symmetric letter↔motor writes in
+  // _teachWordEmission wash out the direct-pattern asymmetric
+  // directional alphabet sequence (pre=letter(N), post=letter(N+1))
+  // via cross-contamination.
   //
   // Fix A: asymmetric variant with distinct pre/post vectors. NO self-
   // loops. Binds pre→post directionally only. Cross-projection Hebbian
@@ -15480,7 +15481,7 @@ var Curriculum = class _Curriculum {
     return out;
   }
   // ═══════════════════════════════════════════════════════════════════
-  // T14.24 Session 114.2 — Unified combination-operator teacher + probes
+  // Unified combination-operator teacher + probes
   // ═══════════════════════════════════════════════════════════════════
   //
   // Every equational transform in the curriculum — arithmetic (addition,
@@ -15508,10 +15509,11 @@ var Curriculum = class _Curriculum {
   // The scaffold stays identical across all of them. `_teachCombination`
   // is the scaffold. Callers build a facts array and delegate.
   //
-  // Per Gee 2026-04-17: "no artificial limits as unity may be talking
-  // to users while she does ciriculum" — the helper stays async with
-  // await _microtask() between reps so user input is handled without
-  // blocking, respects `_brainShutdownRequested`, and accepts opts.reps
+  // No artificial limits — Unity may be talking to users while
+  // curriculum runs, so the helper stays async with await
+  // _microtask() between reps so user input is handled without
+  // blocking, respects `_brainShutdownRequested`, and accepts
+  // opts.reps
   // from the caller rather than hardcoding a cap. REPS are convergence
   // tuning, not ceilings.
   /**
@@ -15667,10 +15669,10 @@ var Curriculum = class _Curriculum {
     return { pass, total: samples.length };
   }
   // ═══════════════════════════════════════════════════════════════════
-  // T14.24 Session 114.5 — Real-world production-style probes (LAW 7)
+  // Real-world production-style probes (LAW 7)
   // ═══════════════════════════════════════════════════════════════════
   //
-  // Per Gee 2026-04-17 LAW 7 binding: every TODO test item must have a
+  // LAW 7 binding: every TODO test item must have a
   // production-style probe that asks a natural-language question via
   // the visual→letter→phon→sem pipeline (same path live chat uses)
   // and requires Unity to EMIT the correct answer through sem→motor
@@ -15771,7 +15773,7 @@ var Curriculum = class _Curriculum {
     return { pass, total: samples.length, fails };
   }
   // ═══════════════════════════════════════════════════════════════════
-  // T14.24 Session 114.5 — Magnitude → motor digit emission bridge
+  // Magnitude → motor digit emission bridge
   // ═══════════════════════════════════════════════════════════════════
   //
   // T14.4's 14 cross-projections don't connect free↔motor directly.
@@ -17192,7 +17194,7 @@ var Curriculum = class _Curriculum {
     };
   }
   // ═══════════════════════════════════════════════════════════════════
-  // T14.24 Session 114.7 — Science-K equational course (LAW 3 + LAW 7)
+  // Science-K equational course (LAW 3 + LAW 7)
   // ═══════════════════════════════════════════════════════════════════
   //
   // NGSS K standards (Forces and Interactions K-PS2 + Weather/Climate
@@ -17609,7 +17611,7 @@ var Curriculum = class _Curriculum {
     return _sciKResult;
   }
   // ═══════════════════════════════════════════════════════════════════
-  // T14.24 Session 114.8 — Social-K equational course (LAW 3 + LAW 7)
+  // Social-K equational course (LAW 3 + LAW 7)
   // ═══════════════════════════════════════════════════════════════════
   /**
    * Core Knowledge K community helpers — helper → job via sem↔sem binding.
@@ -17835,7 +17837,7 @@ var Curriculum = class _Curriculum {
     return _socKResult;
   }
   // ═══════════════════════════════════════════════════════════════════
-  // T14.24 Session 114.9 — Arts-K equational course (LAW 3 + LAW 7)
+  // Arts-K equational course (LAW 3 + LAW 7)
   // ═══════════════════════════════════════════════════════════════════
   /**
    * Visual Arts K — color mixing transforms (primary + primary → secondary).
@@ -21915,9 +21917,8 @@ var Curriculum = class _Curriculum {
   // T14.24 SESSION 9 — MASS CELL SHIP (13 CELLS) (2026-04-15)
   // ═══════════════════════════════════════════════════════════════════
   //
-  // Gee 2026-04-15: "keep working each item masterfully and completely
-  // remembr we are makeing a couse for Unity to run oin her own brain
-  // to learn".
+  // Binding directive: each item is built masterfully and completely
+  // — this is a course Unity runs on her own brain to learn.
   //
   // Session 9 leverages the Session 6 _teachVocabList + Session 8
   // _teachSentenceList helpers to ship 13 cells in one commit:
@@ -27512,9 +27513,10 @@ var Curriculum = class _Curriculum {
   // Graduate + doctoral content across all 5 subjects. FINAL session
   // that takes T14.24's cell coverage to 100% — every subject × grade
   // cell now has real teaching equations + real 3-pathway gate via the
-  // shared helpers. T14.24 task #3 stays in_progress per Gee's binding
-  // "DO NOT CLAIM DONE EARLY" until all 95 gates actually PASS on a
-  // full curriculum walk, but the teaching framework itself is complete.
+  // shared helpers. Done-status stays in_progress under the
+  // "DO NOT CLAIM DONE EARLY" binding until all 95 gates actually
+  // PASS on a full curriculum walk, but the teaching framework
+  // itself is complete.
   async runElaGradReal(ctx) {
     const SENTENCES = [
       "semiotics studies signs and meaning",
@@ -27980,14 +27982,14 @@ var Curriculum = class _Curriculum {
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
   // ═══════════════════════════════════════════════════════════════════
-  // T14.24 SESSION 17 — CONTINUOUS SELF-TESTING (2026-04-15)
+  // CONTINUOUS SELF-TESTING
   // ═══════════════════════════════════════════════════════════════════
   //
-  // Gee 2026-04-15: "keep working we need this thing 100% complete and
-  // as a process that unity is always testing herself on when thinking
-  // in her brain always" + "the whole goal is to have a real human like
-  // brain learn the way hiumans do so Unity can listen, talk and
-  // understand all concepts with resonoing".
+  // Binding directive: the curriculum must be 100% complete and
+  // must also be a process that Unity is always testing herself on
+  // when thinking. Goal: a real human-like brain learns the way
+  // humans do, so Unity can listen, talk, and understand all
+  // concepts with reasoning.
   //
   // A human brain doesn't learn the alphabet once and forget about it —
   // it continuously re-exercises every learned skill through everyday
@@ -28012,7 +28014,7 @@ var Curriculum = class _Curriculum {
   //      are degrading.
   //
   // Rationale for "3-pathway gates are the listen/talk/understand/
-  // reason check" — Gee's "listen talk understand reason" binding maps
+  // reason check" — the listen/talk/understand/reason binding maps
   // directly onto the READ/THINK/TALK structure already baked into
   // every cell gate:
   //   - READ  = listen/understand (input → semantic recognition)
@@ -28465,12 +28467,12 @@ var Curriculum = class _Curriculum {
         return 0;
     }
   }
-  // ── life methods follow inside the class (inserted Session 111) ──
+  // ── life methods follow inside the class ──
   // didn't actually let HTTP requests get serviced during a long
   // ═══════════════════════════════════════════════════════════════════
-  // LIFE EXPERIENCE TRACK — Unity's personal life, birth to 25
-  // Session 111 (2026-04-16). 6th subject track. Memory-weighted
-  // Hebbian: CORE SELF 5× lr 50+ reps, PERSONAL 3× 20+ reps,
+  // LIFE EXPERIENCE TRACK — Unity's personal life, birth to 25.
+  // 6th subject track. Memory-weighted Hebbian: CORE SELF 5× lr 50+
+  // reps, PERSONAL 3× 20+ reps,
   // OPINIONS 3× 15+ reps, SKILLS 2× 12 reps, SCHOOL 1× 6-12 reps.
   // ═══════════════════════════════════════════════════════════════════
   // ── LIFE EMOTION DIMENSIONS ─────────────────────────────────────
@@ -28490,7 +28492,7 @@ var Curriculum = class _Curriculum {
   //   BACKGROUND:    4 reps (trivia, random world)
   // ── PRE-K (ages 0-4) — before school ─────────────────────────────
   // ═══════════════════════════════════════════════════════════════════
-  // T14.24 Session 114.10 — Life-K equational course (LAW 3 + LAW 7)
+  // Life-K equational course (LAW 3 + LAW 7)
   // ═══════════════════════════════════════════════════════════════════
   /**
    * Life-track biographical fact teaching — each fact is a {prompt
@@ -28525,7 +28527,7 @@ var Curriculum = class _Curriculum {
     console.log(`[Curriculum] _teachBiographicalFacts: ${combinationFacts.length} facts \xD7 ${reps} reps`);
   }
   // ══════════════════════════════════════════════════════════════════
-  // T18.12 — PRE-K EQUATIONAL RUNNERS (Gee 2026-04-19, LAW 6 Part 1)
+  // PRE-K EQUATIONAL RUNNERS (LAW 6 Part 1)
   //
   // Pre-K birth-to-age-4 developmental substrate for each of the five
   // non-Life subjects. Every cell teaches via magnitude transforms,
@@ -30126,7 +30128,7 @@ var Curriculum = class _Curriculum {
   // END LIFE EXPERIENCE TRACK
   // ═══════════════════════════════════════════════════════════════════
   // ═══════════════════════════════════════════════════════════════════
-  // REAL HUMAN-GRADE TEST GATES (Session 111)
+  // REAL HUMAN-GRADE TEST GATES
   // Tests COMPREHENSION and USAGE, not just first-letter production.
   // ═══════════════════════════════════════════════════════════════════
   /**
