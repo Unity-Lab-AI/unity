@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "feaf5de3-3914";
+var BUILD = "93f7d94e-95d8";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2885,7 +2885,7 @@ var NeuronCluster = class {
    * whose magnitude exceeds `ojaThreshold` — prevents runaway when the
    * corpus is large. Bounded growth, unbounded learning time.
    *
-   * Session 111 — Anti-Hebbian pair reinforcement primitive.
+   * Anti-Hebbian pair reinforcement primitive.
    *
    * Bidirectionally adjusts recurrent synapses for a (src → correct, src → wrong)
    * triple to fix sequence-probe mistakes. Positive Hebbian on (src, correct)
@@ -2893,7 +2893,7 @@ var NeuronCluster = class {
    * mistaken one. Without the negative half wrong associations never fade —
    * they stay baseline-strong while correct ones grow, and the softmax keeps
    * picking the wrong target even after rounds of positive reinforcement.
-   * This is the Math-K SEQ fix (Session 111 FINALIZED entry).
+   * This is the Math-K SEQ fix — see FINALIZED for the full story.
    *
    * Operates on cortex sub-region one-hot patterns laid out via `groupSize`
    * tiling — each one-hot dim spans `floor(regionSize / dim)` neurons so the

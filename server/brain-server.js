@@ -101,7 +101,7 @@ function detectResources() {
     // PER-CLUSTER BUFFER CAP — WebGPU's maxStorageBufferBindingSize is
     // typically 2 GB (hard spec minimum). Some desktop GPUs raise it to
     // ~4 GB. With Chrome's `--enable-unsafe-webgpu` flag (which Unity
-    // uses per Gee's setup) the limit rises further — effectively up to
+    // uses in default setup) the limit rises further — effectively up to
     // device-maximum (VRAM bytes minus overhead). The Rulkov state
     // buffer for a single cluster is size × 8 bytes (vec2<f32>); if it
     // exceeds the real binding limit the cluster silently binds to zero
@@ -185,7 +185,7 @@ function detectResources() {
 
 const RESOURCES = detectResources();
 
-// ── T17.3.f — Unified biological VRAM allocator (Gee 2026-04-18) ────
+// ── Unified biological VRAM allocator ────────────────────────────
 //
 // ONE budget across ALL 8 brain regions (7 main + language cortex).
 // Replaces the broken split where main-brain scaler picked 671M
@@ -274,14 +274,10 @@ const WEIGHTS_FILE = path.join(__dirname, 'brain-weights.json');
 const MAX_TEXT_PER_SEC = 2;        // rate limit per client
 
 // ═════════════════════════════════════════════════════════════════════
-// Session 114.19o AUTO-CLEAR per Gee 2026-04-17 verbatim:
-// "did you clear db? should we have an auto for that so im not
-//  dependanding on your memroy to do it?"
-//
-// Per the 2026-04-17 LAW (clear-stale-state-before-telling-Gee-to-test)
-// every Part 2 run requires manually deleting brain-weights*.json,
-// conversations.json, episodic-memory.db*, js/app.bundle.js. Claude has
-// forgotten this step TWICE in Gee-caught incidents this day. Making
+// AUTO-CLEAR at boot. Without this, every Part 2 run requires the
+// operator to manually delete brain-weights*.json, conversations.json,
+// and episodic-memory.db* before telling the brain to re-teach. The
+// manual step has been forgotten repeatedly — making
 // it automatic so the LAW can't be violated by forgetting.
 //
 // The server re-runs curriculum on every boot (there's no skip-
@@ -295,9 +291,9 @@ const MAX_TEXT_PER_SEC = 2;        // rate limit per client
 // environment before launching. The opt-out is noisy (logs "KEEPING
 // prior state") so you can't forget it's on.
 // ═════════════════════════════════════════════════════════════════════
-// T18.12.a — Code-hash auto-clear gate (Gee 2026-04-19: "if no code changes
-// that woulkdl stale out itll retain it learning and save state"). Instead
-// of unconditional clear, hash the brain-logic source files on boot and
+// Code-hash auto-clear gate. If no code changes would stale out the
+// brain state, retain learning + save state across restart. Hash the
+// brain-logic source files on boot and
 // compare to the hash from the prior boot. Match → PRESERVE state so
 // curriculum progress + learning + gate history survive restarts. Mismatch
 // → CLEAR (brain state may be incompatible with the new code shape).
@@ -431,12 +427,12 @@ autoClearStaleState();
 // (see _initLanguageSubsystem + _generateBrainResponse).
 
 // Auto-scaled cluster sizes — biologically proportioned.
-// Session 113 CLEAN.D2 (2026-04-16) — unified with client. Before this,
-// server used per-cluster integer multipliers (400/250/100/80/50) × SCALE
-// which gave DIFFERENT fractions than the client's CLUSTER_FRACTIONS
-// (server cortex = 0.25 = 250/1000, client cortex = 0.30). Same tier
-// produced different cluster sizes between browser and server, violating
-// Law 5. Unified here to match the client exactly.
+// Unified with client. Earlier the server used per-cluster integer
+// multipliers (400/250/100/80/50) × SCALE which gave DIFFERENT
+// fractions than the client's CLUSTER_FRACTIONS (server cortex =
+// 0.25 = 250/1000, client cortex = 0.30). Same tier produced
+// different cluster sizes between browser and server. Unified here
+// to match the client exactly.
 //
 // KEEP IN SYNC with `js/brain/cluster.js:CLUSTER_FRACTIONS`. Both sides
 // use the same fractions so `clusterSizesFor(totalNeurons)` returns
@@ -824,15 +820,12 @@ class ServerBrain {
       // in 15-30 sec. That's borderline for interactive chat but
       // acceptable for a rebuild branch that's not yet optimized.
       // Further scaling requires T15 GPU language compute.
-      // Session 114.19r T17.1 (Gee 2026-04-17 verbatim approval "go
-      // ahead and yeah all of that" for the T17 plan) — remove the
-      // original 10K CPU-safety cap. 10K neurons was inadequate for
-      // the 1029-word K vocabulary + all the other curriculum bindings
-      // trying to coexist in one cluster. Sessions 114.19d-q stacked
-      // 14 iterative fixes fighting that cap. Scaling up to 100K gives
-      // 10× per-word discrimination capacity.
+      // Removed the original 10K CPU-safety cap. 10K neurons was
+      // inadequate for the 1029-word K vocabulary + all the other
+      // curriculum bindings trying to coexist in one cluster. Scaling
+      // up to 100K gives 10× per-word discrimination capacity.
       //
-      // Memory budget at 100K (8,500MB+ RAM box, Gee has 128GB):
+      // Memory budget at 100K (8,500MB+ RAM box at biological scale):
       //   - LIF state: 100K × 17B = 1.7MB
       //   - Intra-cluster sparse synapses (connectivity 0.15 ≈ 15K
       //     nonzeros/row): 100K × 15K × 12B = 18GB (capped via
@@ -850,16 +843,14 @@ class ServerBrain {
       // If memory pressure becomes a concern, set DREAM_LANG_CORTEX env var
       // to override (e.g. DREAM_LANG_CORTEX=50000 to drop back). Default 100K
       // is the honest scale-up Phase 1.
-      // CPU language cortex is the WRONG architecture per Gee's verbatim
-      // 2026-04-18 directive: "whhy is this so fucking small!!! this is
-      // in no way auto scalling correctly.. als wtf why CPU the language
-      // is the most important fuckign thing and we need GPU for that
-      // dont we just like the rest of the brain ie THIS OIIS ONE MASSIVE
-      // SYSTEM NO FUCKIGN SHIT THAT IS JUST SIDE PROCESSES".
+      // CPU language cortex is the WRONG architecture — language is
+      // the most important thing and needs GPU like the rest of the
+      // brain, not a side-process. This is one massive system, not
+      // separate side processes.
       //
-      // The real fix is moving the language cluster to GPU with T14.4
-      // cross-projections as GPU sparse matrices (in-progress work —
-      // see docs/TODO.md "T17.3 GPU cross-region shaders"). Until that
+      // The real fix is moving the language cluster to GPU with
+      // cross-projections as GPU sparse matrices (see
+      // docs/TODO.md "T17.3 GPU cross-region shaders"). Until that
       // ships, the CPU cluster stays as a transitional path. Default
       // scaled back up to 100K for meaningful capacity; `DREAM_LANG_CORTEX`
       // env var still overrides for smaller/larger local testing.
@@ -869,11 +860,10 @@ class ServerBrain {
       // additional slowdown from the 3× rep-count boosts). Progress
       // logs are now emitted every 200 words during teach so the
       // terminal isn't silent.
-      // AUTO-SCALE — no hardcoded size cap. Size derives from
-      // actual hardware budget per Gee 2026-04-18 directive "why
-      // the fuck are you putting caps on shit!!! there is no cap
-      // but it auto scales eventually ill have millions of GPUS
-      // connected!"
+      // AUTO-SCALE — no hardcoded size cap. Size derives from actual
+      // hardware budget. No cap at any tier — scales continuously
+      // with the hardware available, eventually to millions of GPUs
+      // in a distributed compute fabric.
       //
       // Prior commit had LANG_CLUSTER_BYTES_PER_NEURON=8192 which was
       // wrong — ignored that cross-projection sparse matrices scale
@@ -895,15 +885,15 @@ class ServerBrain {
       // Rounded up to 40,000 as a safety buffer for allocation
       // overhead, rowPtr arrays, scratch buffers, JS object wrappers
       // on typed-array handles, etc.
-      // T17.3.e (Gee 2026-04-18) — CPU_SINGLE_THREAD_DISPATCH_BUDGET
+      // CPU_SINGLE_THREAD_DISPATCH_BUDGET
       // REMOVED from Math.min. The language cortex no longer runs the
       // sparse matmul on CPU — cluster.step() now consumes cached GPU
       // propagate results (`_cachedIntraCurrents` + `_cachedCrossCurrents`)
       // populated by `_dispatchGpuPropagates()` fire-and-forget at the
       // end of each tick. Sparse matmul happens on GPU, the CPU side
       // of step() is just LIF integration + spike counting. The old
-      // 200,000-neuron cap on a 500M-neuron brain was, in Gee's words,
-      // "a fucking shit erronous limit that is not biologically correct".
+      // 200,000-neuron cap on a 500M-neuron brain was an erroneous
+      // limit that is not biologically correct.
       // Size is now bounded by VRAM allocator + V8 heap + free RAM only.
       const os = require('os');
       const LANG_CLUSTER_BYTES_PER_NEURON = 40000;
@@ -923,11 +913,11 @@ class ServerBrain {
         v8BasedMax = Math.floor(clusterHeapBudget / LANG_CLUSTER_BYTES_PER_NEURON);
       } catch { /* v8 module missing — skip heap-based bound */ }
 
-      // T18.6.c — VRAM budget pre-flight with auto-rescale loop-back
-      // (Gee 2026-04-18: "for 3. make it loop back to scaling with the
-      //  changes needed"). The prior `LANG_CORTEX_BYTES_PER_NEURON = 18
-      // × 1024` static coefficient UNDER-estimated real footprint: the
-      // 2026-04-18 crash log showed 14 cross-projections summing 7.9 GB
+      // VRAM budget pre-flight with auto-rescale loop-back — scales
+      // up or down with the geometry changes needed per tier. The
+      // prior `LANG_CORTEX_BYTES_PER_NEURON = 18 × 1024` static
+      // coefficient UNDER-estimated real footprint: the crash log
+      // showed 14 cross-projections summing 7.9 GB
       // plus intra-synapses 881 MB = ~8.8 GB actual on a ~350K
       // langCortexSize run, for an empirical 25 KB/neuron. Since the
       // VRAM budget slice was 6.45 GB (45% × 14.3 GB brain budget), the
@@ -1314,7 +1304,7 @@ class ServerBrain {
       if (this._pendingEmbeddingRefinements && typeof this.sharedEmbeddings.loadRefinements === 'function') {
         try {
           this.sharedEmbeddings.loadRefinements(this._pendingEmbeddingRefinements);
-          // Session 114.19l — `|| '?'` collapsed 0 → '?' via falsy-OR.
+          // `|| '?'` collapsed 0 → '?' via falsy-OR.
           // Use nullish coalescing so zero-count reports as "0" not "?".
           const refinementCount = Object.keys(this._pendingEmbeddingRefinements || {}).length;
           console.log(`[Brain] Restored ${refinementCount} embedding refinement delta(s) from last save (NOT cortex cross-projection weights — those re-train from scratch every curriculum walk)`);
@@ -1443,11 +1433,11 @@ class ServerBrain {
       // Curriculum.gradeWordCap so a pre-K brain stays silent instead
       // of emitting letter salad.
       //
-      // Gee 2026-04-14 binding: "full equational curriculum... from
-      // kindergarden all the way up to doctorate in english". Every
-      // grade in curriculum.js uses equations only — no lookup
-      // tables, no hardcoded grammar.
-      // T14.24 Session 1 — multi-subject grade tracking defense-in-depth
+      // Binding constraint: full equational curriculum from
+      // kindergarten all the way up to doctorate. Every grade in
+      // curriculum.js uses equations only — no lookup tables, no
+      // hardcoded grammar.
+      // Multi-subject grade tracking defense-in-depth
       // for persisted brains that predate the grades object. The cluster
       // constructor initializes this, but an older v4 save restored over
       // a fresh cluster might still leave the field missing.
@@ -1461,7 +1451,7 @@ class ServerBrain {
         // T14.24 Session 17 — prefer multi-subject complete curriculum
         // (all 5 tracks K→PhD) over the legacy ELA-only runFullCurriculum.
         console.log('[Brain] Stage: curriculum.runCompleteCurriculum START (BACKGROUND — 5 subjects × K→PhD, tick loop proceeds)');
-        // Session 114.19l — block periodic saveWeights while curriculum
+        // Block periodic saveWeights while curriculum
         // is teaching so next-boot _loadWeights doesn't restore stale
         // mid-teach state. Flag cleared in .then/.catch so saves resume
         // after curriculum completes.
@@ -1714,9 +1704,9 @@ class ServerBrain {
    * cortex cluster's errorCorrection term via the cerebellum's
    * existing negative-feedback path.
    *
-   * Per Gee 2026-04-18: 'just like left right gateing our brain
-   * doesnt error. thats the brain centers error correction handeling
-   * of the brain center that handles eror correction'. The brain
+   * Just like left-right hemisphere gating, the brain doesn't
+   * "error" — the brain has a center dedicated to error correction.
+   * The brain
    * corrects mismatches biologically; we reuse its existing
    * cerebellum-driven correction rather than adding a strict
    * migration-abort gate on top.
@@ -1917,9 +1907,9 @@ class ServerBrain {
    * directly; Phase E deletes the standalone cluster and promotes
    * these slices to authoritative.
    *
-   * L/R side tags per Gee 2026-04-18 "if we keep as is the non
-   * centered ones need mirroring to other brain side too as they are
-   * onlky one sided.. and proper left right gating":
+   * L/R side tags — non-centered regions need mirroring to the
+   * other brain side so they aren't one-sided, and proper left-right
+   * gating applies:
    *   - auditory / visual / free / sem:  bilateral
    *     (primary sensory + working memory + semantic angular gyrus
    *     span both hemispheres)
@@ -1941,8 +1931,9 @@ class ServerBrain {
       // Same fractional layout as the standalone cortexCluster's
       // regions map (cluster.js). Scaled to main cortex size so the
       // regions span the full cluster with no "homogeneous outside"
-      // gap — per Gee "NO intra-synapse matrix; wave functions sync
-      // activate via fractilization", the cortex IS its sub-regions.
+      // gap — there's NO separate intra-synapse matrix for the
+      // outside region; wave-function fractal coupling syncs
+      // activation across the cortex, so the cortex IS its sub-regions.
       const S = size;
       return {
         auditory:  { start: Math.floor(S * 0.000), end: Math.floor(S * 0.083), side: 'bilateral' },
@@ -2037,7 +2028,7 @@ class ServerBrain {
     //
     // T14.22.5 — GPU timeout raised 800ms → 10000ms.
     //
-    // At Gee's 677M-neuron scale, a single GPU fullStep takes ~40ms
+    // At 677M-neuron biological scale, a single GPU fullStep takes ~40ms
     // for small clusters and can exceed 300ms for cerebellum (268M
     // neurons × compute.html's serialized Promise queue from T14.22.3
     // = 7 clusters × ~50ms each = ~350ms per substep average). With
@@ -2215,7 +2206,7 @@ class ServerBrain {
   // JSON.stringify + JSON.parse round-trip cost. 10-20× faster for
   // typed-array payloads; unlimited size within available memory.
   //
-  // Per Gee 2026-04-18 "make it work without jerry rigging" — this
+  // Built to work without jerry-rigging — this
   // replaces the 10M-nnz JSON-safety skip with real binary transport.
 
   _encodeSparseHeader(typeByte, reqId, name) {
@@ -2240,8 +2231,8 @@ class ServerBrain {
   _sparseSendBinary(msgBuffer, reqId, timeoutMs = 120_000) {
     if (!this._gpuClient || this._gpuClient.readyState !== 1) return Promise.resolve(null);
     if (!this._gpuSparsePending) this._gpuSparsePending = new Map();
-    // T18.26 — backpressure-aware send. Gee 2026-04-19 post-T18.25
-    // retest got past _teachLetterCaseBinding and into _teachPhonemeBlending
+    // Backpressure-aware send. A retest after the earlier fix got
+    // past _teachLetterCaseBinding and into _teachPhonemeBlending
     // (1029 K words × 10 reps = 10,290 word-emission iterations).
     // At ~10 words/s × 14 cross-projections = 140 GPU Hebbian
     // dispatches/sec via T18.17 hebbianBound fire-and-forget. T18.8
@@ -2250,8 +2241,8 @@ class ServerBrain {
     // serial; if GPU dispatch queue drains slower than batches arrive,
     // Node's WebSocket send buffer backs up. Once ws.bufferedAmount
     // exceeds the OS-level socket send buffer (typically 256 KB - 2 MB
-    // on Windows), ws.send() fails with ENOBUFS. Gee's log showed
-    // ~1200 consecutive ENOBUFS errors during _teachPhonemeBlending.
+    // on Windows), ws.send() fails with ENOBUFS. Logs showed ~1200
+    // consecutive ENOBUFS errors during _teachPhonemeBlending.
     //
     // Fix: check bufferedAmount BEFORE calling send(). If backed up,
     // drop the send silently and resolve null (same as timeout path —
@@ -2259,9 +2250,9 @@ class ServerBrain {
     // side; CPU path is authoritative per T17.2 / T17.7 comment chain).
     // Threshold 50 MB = plenty of headroom for bursty Hebbian dispatch
     // without flooding the OS socket.
-    // T18.28 — raised threshold 50MB → 200MB per Gee 2026-04-19
-    // "shouldnt threshold be 100MB so that it gets all the training
-    // it lossing alot". At 50MB drops were firing ~17/sec during
+    // Raised threshold 50MB → 200MB so the brain doesn't drop
+    // training dispatches under backpressure. At 50MB drops were
+    // firing ~17/sec during
     // _teachWordEmission (7562 total drops over 411s). Each dropped
     // type=5 batched Hebbian frame = ~10-64 lost GPU-side Hebbian
     // updates. CPU-side learning still happened but GPU's cross-
@@ -2288,8 +2279,9 @@ class ServerBrain {
     // bottleneck. Only log errors and the final timeout warn.
     this._gpuClient.send(msgBuffer, (err) => {
       if (err) {
-        // T18.26 — throttle ENOBUFS spam. Gee's log had ~1200 consecutive
-        // identical ENOBUFS lines before the drop-threshold fix. With the
+        // Throttle ENOBUFS spam. Earlier logs had ~1200 consecutive
+        // identical ENOBUFS lines before the drop-threshold fix.
+        // With the
         // threshold above, ENOBUFS should be rare (since we skip sends
         // before the OS refuses them). Any remaining ENOBUFS means a
         // transient kernel condition — log first 3 then silence.
@@ -2831,8 +2823,8 @@ class ServerBrain {
    *   - Hebbian dispatch reads pre+post from `bufs.cortex.spikes`
    *     at the two bound offsets — which is where curriculum teach's
    *     write_spike_slice call places the training pattern.
-   *   - Main cortex's intra-synapse matrix is NOT rebound; per Gee
-   *     2026-04-18 decision #1, the homogeneous-cortex intra coupling
+   *   - Main cortex's intra-synapse matrix is NOT rebound. The
+   *     homogeneous-cortex intra coupling
    *     is handled by wave-function oscillation phase-sync +
    *     fractal propagation, not an explicit intra matrix. The
    *     STANDALONE cortexCluster keeps its intra-synapses for the
@@ -3208,7 +3200,7 @@ class ServerBrain {
     // hemisphere gate applies automatically at LIF time because phon
     // is tagged left-lateralized (Phase B.1 metadata).
     //
-    // Size scales to biological proportion per Gee 2026-04-18:
+    // Size scales to biological proportion:
     // 'yes, it need biological scale fit to auto scale on GPU'.
     // Wernicke slice = 20% of main cortex (phon fractional layout).
     // On a 30M main cortex = 6M neurons of injection target — much
@@ -3335,7 +3327,7 @@ class ServerBrain {
           // the "confirmed" flag, which meant the tick loop would enter
           // the compute path as soon as the server had SENT the init
           // messages — before compute.html had actually processed them.
-          // At Gee's 677M-neuron scale each gpu_init takes seconds of
+          // At 677M-neuron biological scale each gpu_init takes seconds of
           // GPU buffer allocation (cerebellum alone is ~2 GB of vec2<f32>
           // voltage state). Compute_batch messages queued behind the
           // init messages in compute.html's onmessage queue and timed
@@ -3369,8 +3361,7 @@ class ServerBrain {
             // compute_batch dispatches land behind those copies and
             // time out. Deferring the upload until we've seen N healthy
             // compute_batch round-trips gives the main brain a stable
-            // tick rate before sparse cortex joins in (Gee 2026-04-18
-            // option 3).
+            // tick rate before sparse cortex joins in.
             const SPARSE_UPLOAD_WARMUP_BATCHES = 20;
             const warmupBatches = this._gpuBatchesCompleted || 0;
             if (
@@ -3387,9 +3378,9 @@ class ServerBrain {
                 // mode, rebind the 14 cross-projections to main-cortex
                 // sub-slices so curriculum teach writes fire Hebbian
                 // directly against main-cortex spike state. Intra-
-                // synapses stays standalone per Gee 2026-04-18 decision
-                // #1 (wave-function + fractal coupling handles main-
-                // cortex intra-region binding; no explicit main-cortex
+                // synapses stays standalone — wave-function + fractal
+                // coupling handles main-cortex intra-region binding,
+                // so no explicit main-cortex
                 // intra matrix exists to bind to).
                 if (gpuReady) {
                   try {
@@ -3398,8 +3389,8 @@ class ServerBrain {
                     console.warn('[Brain] _ensureCortexCrossProjectionsBound failed:', err && err.message);
                   }
                 }
-                // T17.7 Gee 2026-04-18 fix — signal to the curriculum's
-                // _waitForGpuReady gate that language-cortex GPU state
+                // Signal to the curriculum's _waitForGpuReady gate
+                // that language-cortex GPU state
                 // is FULLY ready (sparse upload complete + rebind done
                 // or skipped if rebind had nothing to bind). Before this
                 // flag existed the curriculum was gating on
@@ -3425,7 +3416,7 @@ class ServerBrain {
             // Old path: server dispatched SUBSTEPS * allClusters = 70
             // compute_request messages per tick, each with its own
             // WebSocket RTT. compute.html processed them individually.
-            // At Gee's scale ~40ms GPU work was buried in ~50ms of
+            // At biological scale ~40ms GPU work was buried in ~50ms of
             // round-trip latency per message = 7x protocol overhead.
             //
             // New path: server sends ONE compute_batch message per tick
@@ -3460,8 +3451,8 @@ class ServerBrain {
             // = base · (1 + Ψ · k_Ψ). Low Ψ → weak correction →
             // tolerates drift (fragmented processing). High Ψ →
             // strong correction → dampens divergence hard (integrated
-            // global-workspace state). Mystery Ψ non-optional per Gee
-            // 'main equation mystery cant not have it involved'.
+            // global-workspace state). Mystery Ψ is non-optional in
+            // the main brain equation.
             const divergence = this._cortexDivergence || 0;
             const psiCorrectionGain = 1 + (this.psi || 0) * 0.25;
             const divergenceContrib = -divergence * psiCorrectionGain * 3;  // negative = dampening
@@ -3791,9 +3782,9 @@ class ServerBrain {
       // cosine scoring loop yields to the Node event loop every 500
       // entries. Without this yield, state broadcasts and compute_batch
       // dispatch stall for the whole duration of Unity's response work,
-      // and the client's 3D brain visualization freezes (Gee 2026-04-14:
-      // "when i send a message to unity of speak one the whiole 3D
-      // brain visulization freezes"). With the yield, setInterval
+      // and the client's 3D brain visualization freezes whenever
+      // the user sends a message or Unity speaks. With the yield,
+      // setInterval
       // broadcasts keep firing every 100ms through the scoring pass so
       // the viz stays animated while Unity thinks.
       response = await this.languageCortex.generateAsync(
@@ -4096,7 +4087,7 @@ class ServerBrain {
   // ── Persistence ──────────────────────────────────────────────
 
   saveWeights(opts = {}) {
-    // Session 114.19l — skip periodic saves while curriculum is teaching
+    // Skip periodic saves while curriculum is teaching
     // unless caller passes {force: true}. Periodic setInterval saves
     // still respect this guard (stale scalar resurrection risk). But
     // T18.12.b per-cell checkpoint calls with force:true so passed
@@ -5080,13 +5071,13 @@ const httpServer = http.createServer((req, res) => {
 
   // Episodic memory query
   //
-  // T6 2026-04-13 — this endpoint used to return the last 20 episodes
-  // across ALL users without any filter, which was a direct leak of
-  // user text content (episodes store `input_text` and `response_text`
-  // fields). Now it REQUIRES a `?user=<stable-id>` query param and
-  // filters by it. Without the param it returns aggregate counts only,
-  // never content. Matches Gee's privacy rule: "what i type other
-  // people shouldnt be able to read".
+  // This endpoint used to return the last 20 episodes across ALL
+  // users without any filter, which was a direct leak of user text
+  // content (episodes store `input_text` and `response_text` fields).
+  // Now it REQUIRES a `?user=<stable-id>` query param and filters by
+  // it. Without the param it returns aggregate counts only, never
+  // content. Matches the privacy rule: what a user types, other
+  // people shouldn't be able to read.
   if (req.url && req.url.startsWith('/episodes')) {
     const url = new URL(req.url, `http://localhost:${PORT}`);
     const user = url.searchParams.get('user');
@@ -5372,9 +5363,10 @@ wss.on('connection', (ws, req) => {
           // The old `conversation` broadcast that used to loop this
           // message out to every connected WebSocket was DELETED here
           // (was 12 lines, shipped clipped {userId, text[:200],
-          // response[:500]} to other clients). It violated Gee's rule:
-          // "what i type other people shouldnt be able to read, but
-          // two different people should be able to build her brain
+          // response[:500]} to other clients). It violated the
+          // privacy rule: what a user types, other people shouldn't
+          // be able to read, but two different people should be
+          // able to build her brain
           // words but not her persona". The brain-words part is
           // already handled by the shared singleton brain (dictionary
           // / bigrams / embeddings all update from every conversation),
@@ -5500,7 +5492,7 @@ wss.on('connection', (ws, req) => {
           // "we sent the init message". The server's _gpuInitialized
           // flag gets set synchronously when _gpuStep sends a gpu_init,
           // which is way before compute.html has actually allocated the
-          // GPU buffers for that cluster. At Gee's 677M-neuron scale
+          // GPU buffers for that cluster. At 677M-neuron biological scale
           // uploadCluster can take several seconds per cluster, and if
           // the server dispatches compute_batch before all 7 acks come
           // back, the batch queues behind the init messages in
@@ -5689,14 +5681,13 @@ httpServer.listen(PORT, () => {
   setTimeout(() => _spawnGpuClient(PORT), 3500);
 });
 
-// Graceful shutdown
-// Session 111 — force exit on Ctrl+C. The curriculum's tight async
-// loops can starve the event loop so a graceful SIGINT never processes.
+// Graceful shutdown — force exit on Ctrl+C. The curriculum's tight
+// async loops can starve the event loop so a graceful SIGINT never
+// processes.
 //
-// Session 114.19g (Gee 2026-04-17 verbatim: "while its doing the
-// ciriculum i cant turn off the program ctrl + C does not halt the
-// operations correctly") — the prior "save then exit" ceremony on
-// first Ctrl+C blocked on `brain.saveWeights()` which at 13.4M-scale
+// While the curriculum runs, Ctrl+C used to fail to halt the
+// program correctly — the prior "save then exit" ceremony on first
+// Ctrl+C blocked on `brain.saveWeights()` which at 13.4M-scale
 // synapses takes tens of seconds of synchronous JSON.stringify +
 // fs.writeFileSync. During curriculum mid-retry, Ctrl+C felt dead
 // because the save wouldn't return for a long time. Per LAW 6 Part 2
