@@ -1972,6 +1972,23 @@ export class NeuronCluster {
           'letter_to_motor',
         ]);
         if (PROBE_CRITICAL.has(name) && !skipCpuWhitelist) {
+          // Sampling mode — on the FINAL rep of a teach phase we need
+          // the CPU arrays up-to-date for probes, but running the full
+          // CPU Hebbian on every call at 14.9 M nnz costs 2-3 w/s wall-
+          // clock. Caller (teach loop) can set
+          // `cluster._teachFinalRepSampleEveryN = 5` to sample every
+          // 5th whitelist call. GPU fire-and-forget still runs every
+          // call, so GPU weights are fully current; CPU arrays see
+          // 20% of the updates — enough to keep probes within tolerance
+          // given prior 9 reps of GPU-only training left the CPU arrays
+          // stale anyway. ~5× final-rep speedup.
+          const sampleN = this._teachFinalRepSampleEveryN | 0;
+          if (sampleN > 1) {
+            this._whitelistSampleCounter = (this._whitelistSampleCounter || 0) + 1;
+            if (this._whitelistSampleCounter % sampleN !== 0) {
+              continue; // skip THIS call, GPU already dispatched above
+            }
+          }
           const preF = this.regionSpikes(src);
           const postF = this.regionSpikes(dst);
           proj.hebbianUpdate(preF, postF, lr);

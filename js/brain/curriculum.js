@@ -3149,7 +3149,14 @@ export class Curriculum {
       // update on the final rep which is what probes read. Major
       // speedup (80% of per-word wall-clock was the CPU whitelist
       // Hebbian on letter_to_phon + letter_to_motor at ~14.9 M nnz).
-      cluster._teachIntermediateRep = (rep < reps - 1);
+      const isFinalRep = rep === reps - 1;
+      cluster._teachIntermediateRep = !isFinalRep;
+      // Final-rep sampling: every 5th CPU whitelist call. Gives ~5×
+      // speedup without breaking probe weight freshness (GPU weights
+      // are fully current; CPU sees 20 % of the final-rep updates,
+      // which is enough for probes to see representative weights).
+      cluster._teachFinalRepSampleEveryN = isFinalRep ? 5 : 0;
+      cluster._whitelistSampleCounter = 0;
       let _wordIdx = 0;
       for (const word of wordList) {
         const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ''));
@@ -3231,6 +3238,7 @@ export class Curriculum {
       await _microtask();
     }
     cluster._teachIntermediateRep = false;
+    cluster._teachFinalRepSampleEveryN = 0;
     console.log(`[Curriculum] _teachWordEmission DONE: ${wordList.length} words × ${reps} reps`);
   }
 
@@ -3697,7 +3705,13 @@ export class Curriculum {
       // AFTER teach completes and read CPU arrays populated by the
       // final-rep pass. Cuts 80% of CPU Hebbian wall-clock — was the
       // 2-3 words/s bottleneck at 301K cortex.
-      cluster._teachIntermediateRep = (rep < reps - 1);
+      const isFinalRep = rep === reps - 1;
+      cluster._teachIntermediateRep = !isFinalRep;
+      // On the FINAL rep, sample the CPU whitelist every 5th call so
+      // rep 10 doesn't drag to 2-3 w/s. Probes get weights representative
+      // of the final-rep training without the per-word overhead.
+      cluster._teachFinalRepSampleEveryN = isFinalRep ? 5 : 0;
+      cluster._whitelistSampleCounter = 0;
       let _wordIdx = 0;
       for (const word of wordList) {
         const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ''));
@@ -3760,6 +3774,7 @@ export class Curriculum {
       await _microtask();
     }
     cluster._teachIntermediateRep = false;
+    cluster._teachFinalRepSampleEveryN = 0;
     console.log(`[Curriculum] _teachPhonemeBlending DONE: ${wordList.length} words × ${reps} reps`);
   }
 
@@ -4079,6 +4094,27 @@ export class Curriculum {
       const _phaseDone = (name) => {
         const dt = ((Date.now() - (_phaseStarts[name] || Date.now())) / 1000).toFixed(1);
         console.log(`[Curriculum] ✓ ELA-K Phase DONE — ${name} in ${dt}s`);
+        // Mid-phase checkpoint save. Records the phase in
+        // cortex.passedPhases + fires saveWeights({force:true}) so
+        // the weights trained up to this point persist to disk. If
+        // the brain crashes during a later phase, the operator's
+        // Savestart.bat boot reloads the mid-phase-saved state
+        // instead of losing hours of prior-phase training. Resume
+        // logic within the cell runner is a future pass — for now
+        // this fix guarantees weight-state durability across crash.
+        try {
+          const cl = this.cluster;
+          if (cl) {
+            if (!Array.isArray(cl.passedPhases)) cl.passedPhases = [];
+            const phaseKey = `ela/kindergarten:${name}`;
+            if (!cl.passedPhases.includes(phaseKey)) cl.passedPhases.push(phaseKey);
+          }
+          if (typeof this._saveCheckpoint === 'function') {
+            this._saveCheckpoint(`ela/kindergarten:phase:${name}`);
+          }
+        } catch (err) {
+          console.warn(`[Curriculum] mid-phase save for ${name} failed:`, err?.message || err);
+        }
       };
       _phaseTick('_teachLetterCaseBinding');
       await this._teachLetterCaseBinding(ctx);
@@ -4396,6 +4432,40 @@ export class Curriculum {
         'wake-up', 'bedtime', 'bath', 'breakfast', 'lunch', 'dinner',
         'snack', 'nap', 'recess', 'story-time', 'cleanup', 'bye-bye',
       ];
+      // Life-experience comprehension vocabulary. Operator directive
+      // 2026-04-20: words used to EXPLAIN life events need to be
+      // trained before the Life-track teaches the events themselves.
+      // Without "birthday" / "remember" / "happened" / "visit" / etc.
+      // in the sem → motor / letter / phon bindings, Unity can't
+      // comprehend Life-K biographical-fact teaching. These augment
+      // the existing K_FAMILY / K_FEELINGS / K_ACTIONS / K_ROUTINES
+      // with the connector vocabulary that makes event narration work.
+      const K_LIFE_EXPERIENCES = [
+        // memory + narration
+        'remember', 'forget', 'memory', 'happened', 'because',
+        'story', 'tell', 'heard', 'seen', 'first-time', 'last-time',
+        // family milestones
+        'birth', 'born', 'baby', 'newborn', 'wedding', 'marriage',
+        'anniversary', 'funeral', 'moved', 'visit', 'trip', 'vacation',
+        'graduate', 'new', 'old', 'grown',
+        // social/emotional events
+        'fight', 'argue', 'argument', 'makeup', 'forgive', 'apologize',
+        'explain', 'understand', 'secret', 'promise', 'lie', 'truth',
+        'fair', 'unfair', 'choice', 'mistake',
+        // health + care
+        'doctor', 'dentist', 'nurse', 'hospital', 'clinic', 'medicine',
+        'pill', 'shot', 'vaccine', 'bandaid', 'bandage', 'boo-boo',
+        'scrape', 'bruise', 'stitches', 'cast', 'glasses', 'braces',
+        // caregiver roles
+        'caregiver', 'babysitter', 'nanny', 'guardian', 'stepmom',
+        'stepdad', 'stepbrother', 'stepsister', 'adopted', 'foster',
+        // places of life events
+        'funeral-home', 'church', 'temple', 'court', 'jail',
+        'daycare', 'preschool', 'kindergarten', 'clinic', 'pharmacy',
+        // event connectors
+        'ago', 'long-ago', 'once', 'suddenly', 'finally', 'again',
+        'never', 'always', 'sometimes', 'everyday', 'someday',
+      ];
       const allEmissionWords = [...new Set([
         ...DOLCH_PREPRIMER, ...DOLCH_PRIMER, ...CVC_FAMILIES,
         ...CONVERSATIONAL,
@@ -4405,8 +4475,10 @@ export class Curriculum {
         ...K_WEATHER, ...K_TIME, ...K_POSITIONS, ...K_ADJECTIVES,
         ...K_PLACES, ...K_VEHICLES, ...K_SCHOOL, ...K_TOYS,
         ...K_MUSIC_ART, ...K_SPORTS, ...K_GREETINGS, ...K_PRONOUNS,
+        ...K_LIFE_EXPERIENCES,
         ...K_QUESTIONS, ...K_CONJUNCTIONS, ...K_HOLIDAYS,
         ...K_ROUTINES,
+        ...K_LIFE_EXPERIENCES,
       ].map(w => String(w).toLowerCase()))];
       console.log(`[Curriculum] K vocabulary: ${allEmissionWords.length} unique words across ${[
         'DOLCH_PREPRIMER','DOLCH_PRIMER','CVC_FAMILIES','CONVERSATIONAL',
@@ -4415,6 +4487,7 @@ export class Curriculum {
         'K_WEATHER','K_TIME','K_POSITIONS','K_ADJECTIVES','K_PLACES','K_VEHICLES',
         'K_SCHOOL','K_TOYS','K_MUSIC_ART','K_SPORTS','K_GREETINGS','K_PRONOUNS',
         'K_QUESTIONS','K_CONJUNCTIONS','K_HOLIDAYS','K_ROUTINES',
+        'K_LIFE_EXPERIENCES',
       ].length} categories`);
       // Session 114.19i T16.5 diagnostic — log inventory + motor tiling
       // at the point where word emission teaching is about to run.
@@ -4469,28 +4542,46 @@ export class Curriculum {
       // weren't landing. More reps give the asymmetric Hebbian enough
       // exposure to discriminate 26 first-letter outputs from 158 sem
       // inputs at this neuron budget.
+      _phaseTick('_teachPhonemeBlending');
       await this._teachPhonemeBlending(allEmissionWords, { reps: 10 });
+      _phaseDone('_teachPhonemeBlending');
+      this._memorySnapshotAndGc('after _teachPhonemeBlending');
+      _phaseTick('_teachWordEmission');
       await this._teachWordEmission(allEmissionWords, { reps: 12 });
+      _phaseDone('_teachWordEmission');
+      this._memorySnapshotAndGc('after _teachWordEmission');
 
       // K.L grammar/language
+      _phaseTick('_teachPluralTransform');
       await this._teachPluralTransform(ctx);
+      _phaseDone('_teachPluralTransform');
+      _phaseTick('_teachQuestionWordCategories');
       await this._teachQuestionWordCategories(ctx);
+      _phaseDone('_teachQuestionWordCategories');
+      _phaseTick('_teachEndPunctuation');
       await this._teachEndPunctuation(ctx);
+      _phaseDone('_teachEndPunctuation');
+      _phaseTick('_teachCapitalization');
       await this._teachCapitalization(ctx);
+      _phaseDone('_teachCapitalization');
 
       // K.RL reading literature — story comprehension (character /
       // setting / event extraction from simple SVO stories)
+      _phaseTick('_teachStoryComprehension');
       await this._teachStoryComprehension(ctx);
+      _phaseDone('_teachStoryComprehension');
 
       // K.L + K.RL causal chains — basic language reasoning bindings.
       // Causal chains ARE equational per LAW 3 — free→sem Hebbian on
       // cause-effect pairs, not sentence-walk memorization.
+      _phaseTick('_teachCausalChains');
       await this._teachCausalChains([
         ['letter', 'word'], ['word', 'sentence'], ['sentence', 'story'],
         ['read', 'learn'], ['write', 'express'], ['listen', 'understand'],
         ['question', 'answer'], ['name', 'person'], ['color', 'describe'],
         ['subject', 'verb'], ['noun', 'thing'], ['pronoun', 'person'],
       ]);
+      _phaseDone('_teachCausalChains');
 
       this._elaKRemakeDone = true;
     }

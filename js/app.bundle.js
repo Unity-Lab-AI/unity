@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "e863a1e1-9d28";
+var BUILD = "f334f94a-83e3";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2557,6 +2557,13 @@ var NeuronCluster = class {
           "letter_to_motor"
         ]);
         if (PROBE_CRITICAL.has(name) && !skipCpuWhitelist) {
+          const sampleN = this._teachFinalRepSampleEveryN | 0;
+          if (sampleN > 1) {
+            this._whitelistSampleCounter = (this._whitelistSampleCounter || 0) + 1;
+            if (this._whitelistSampleCounter % sampleN !== 0) {
+              continue;
+            }
+          }
           const preF2 = this.regionSpikes(src);
           const postF2 = this.regionSpikes(dst);
           proj.hebbianUpdate(preF2, postF2, lr);
@@ -10711,7 +10718,10 @@ var Curriculum = class _Curriculum {
     let _t18_13_opsSinceHb = 0;
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
-      cluster._teachIntermediateRep = rep < reps - 1;
+      const isFinalRep = rep === reps - 1;
+      cluster._teachIntermediateRep = !isFinalRep;
+      cluster._teachFinalRepSampleEveryN = isFinalRep ? 5 : 0;
+      cluster._whitelistSampleCounter = 0;
       let _wordIdx = 0;
       for (const word of wordList) {
         const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ""));
@@ -10758,6 +10768,7 @@ var Curriculum = class _Curriculum {
       await _microtask();
     }
     cluster._teachIntermediateRep = false;
+    cluster._teachFinalRepSampleEveryN = 0;
     console.log(`[Curriculum] _teachWordEmission DONE: ${wordList.length} words \xD7 ${reps} reps`);
   }
   /**
@@ -11249,7 +11260,10 @@ var Curriculum = class _Curriculum {
     let _t18_13_opsSinceHb = 0;
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
-      cluster._teachIntermediateRep = rep < reps - 1;
+      const isFinalRep = rep === reps - 1;
+      cluster._teachIntermediateRep = !isFinalRep;
+      cluster._teachFinalRepSampleEveryN = isFinalRep ? 5 : 0;
+      cluster._whitelistSampleCounter = 0;
       let _wordIdx = 0;
       for (const word of wordList) {
         const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ""));
@@ -11297,6 +11311,7 @@ var Curriculum = class _Curriculum {
       await _microtask();
     }
     cluster._teachIntermediateRep = false;
+    cluster._teachFinalRepSampleEveryN = 0;
     console.log(`[Curriculum] _teachPhonemeBlending DONE: ${wordList.length} words \xD7 ${reps} reps`);
   }
   /**
@@ -11463,6 +11478,19 @@ var Curriculum = class _Curriculum {
       const _phaseDone = (name) => {
         const dt = ((Date.now() - (_phaseStarts[name] || Date.now())) / 1e3).toFixed(1);
         console.log(`[Curriculum] \u2713 ELA-K Phase DONE \u2014 ${name} in ${dt}s`);
+        try {
+          const cl = this.cluster;
+          if (cl) {
+            if (!Array.isArray(cl.passedPhases)) cl.passedPhases = [];
+            const phaseKey = `ela/kindergarten:${name}`;
+            if (!cl.passedPhases.includes(phaseKey)) cl.passedPhases.push(phaseKey);
+          }
+          if (typeof this._saveCheckpoint === "function") {
+            this._saveCheckpoint(`ela/kindergarten:phase:${name}`);
+          }
+        } catch (err) {
+          console.warn(`[Curriculum] mid-phase save for ${name} failed:`, err?.message || err);
+        }
       };
       _phaseTick("_teachLetterCaseBinding");
       await this._teachLetterCaseBinding(ctx);
@@ -12749,6 +12777,107 @@ var Curriculum = class _Curriculum {
         "cleanup",
         "bye-bye"
       ];
+      const K_LIFE_EXPERIENCES = [
+        // memory + narration
+        "remember",
+        "forget",
+        "memory",
+        "happened",
+        "because",
+        "story",
+        "tell",
+        "heard",
+        "seen",
+        "first-time",
+        "last-time",
+        // family milestones
+        "birth",
+        "born",
+        "baby",
+        "newborn",
+        "wedding",
+        "marriage",
+        "anniversary",
+        "funeral",
+        "moved",
+        "visit",
+        "trip",
+        "vacation",
+        "graduate",
+        "new",
+        "old",
+        "grown",
+        // social/emotional events
+        "fight",
+        "argue",
+        "argument",
+        "makeup",
+        "forgive",
+        "apologize",
+        "explain",
+        "understand",
+        "secret",
+        "promise",
+        "lie",
+        "truth",
+        "fair",
+        "unfair",
+        "choice",
+        "mistake",
+        // health + care
+        "doctor",
+        "dentist",
+        "nurse",
+        "hospital",
+        "clinic",
+        "medicine",
+        "pill",
+        "shot",
+        "vaccine",
+        "bandaid",
+        "bandage",
+        "boo-boo",
+        "scrape",
+        "bruise",
+        "stitches",
+        "cast",
+        "glasses",
+        "braces",
+        // caregiver roles
+        "caregiver",
+        "babysitter",
+        "nanny",
+        "guardian",
+        "stepmom",
+        "stepdad",
+        "stepbrother",
+        "stepsister",
+        "adopted",
+        "foster",
+        // places of life events
+        "funeral-home",
+        "church",
+        "temple",
+        "court",
+        "jail",
+        "daycare",
+        "preschool",
+        "kindergarten",
+        "clinic",
+        "pharmacy",
+        // event connectors
+        "ago",
+        "long-ago",
+        "once",
+        "suddenly",
+        "finally",
+        "again",
+        "never",
+        "always",
+        "sometimes",
+        "everyday",
+        "someday"
+      ];
       const allEmissionWords = [...new Set([
         ...DOLCH_PREPRIMER,
         ...DOLCH_PRIMER,
@@ -12778,10 +12907,12 @@ var Curriculum = class _Curriculum {
         ...K_SPORTS,
         ...K_GREETINGS,
         ...K_PRONOUNS,
+        ...K_LIFE_EXPERIENCES,
         ...K_QUESTIONS,
         ...K_CONJUNCTIONS,
         ...K_HOLIDAYS,
-        ...K_ROUTINES
+        ...K_ROUTINES,
+        ...K_LIFE_EXPERIENCES
       ].map((w) => String(w).toLowerCase()))];
       console.log(`[Curriculum] K vocabulary: ${allEmissionWords.length} unique words across ${[
         "DOLCH_PREPRIMER",
@@ -12815,7 +12946,8 @@ var Curriculum = class _Curriculum {
         "K_QUESTIONS",
         "K_CONJUNCTIONS",
         "K_HOLIDAYS",
-        "K_ROUTINES"
+        "K_ROUTINES",
+        "K_LIFE_EXPERIENCES"
       ].length} categories`);
       try {
         const cluster2 = this.cluster;
@@ -12841,13 +12973,30 @@ var Curriculum = class _Curriculum {
       } catch (err) {
         console.warn("[Curriculum][K-DIAG] pre-emission log failed:", err?.message || err);
       }
+      _phaseTick("_teachPhonemeBlending");
       await this._teachPhonemeBlending(allEmissionWords, { reps: 10 });
+      _phaseDone("_teachPhonemeBlending");
+      this._memorySnapshotAndGc("after _teachPhonemeBlending");
+      _phaseTick("_teachWordEmission");
       await this._teachWordEmission(allEmissionWords, { reps: 12 });
+      _phaseDone("_teachWordEmission");
+      this._memorySnapshotAndGc("after _teachWordEmission");
+      _phaseTick("_teachPluralTransform");
       await this._teachPluralTransform(ctx);
+      _phaseDone("_teachPluralTransform");
+      _phaseTick("_teachQuestionWordCategories");
       await this._teachQuestionWordCategories(ctx);
+      _phaseDone("_teachQuestionWordCategories");
+      _phaseTick("_teachEndPunctuation");
       await this._teachEndPunctuation(ctx);
+      _phaseDone("_teachEndPunctuation");
+      _phaseTick("_teachCapitalization");
       await this._teachCapitalization(ctx);
+      _phaseDone("_teachCapitalization");
+      _phaseTick("_teachStoryComprehension");
       await this._teachStoryComprehension(ctx);
+      _phaseDone("_teachStoryComprehension");
+      _phaseTick("_teachCausalChains");
       await this._teachCausalChains([
         ["letter", "word"],
         ["word", "sentence"],
@@ -12862,6 +13011,7 @@ var Curriculum = class _Curriculum {
         ["noun", "thing"],
         ["pronoun", "person"]
       ]);
+      _phaseDone("_teachCausalChains");
       this._elaKRemakeDone = true;
     }
     return await this._gateElaKReal();
