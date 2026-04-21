@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-04-21 — Session 114.19bh: T26.c.1 whitelist expansion REVERTED — re-introduced 14 GB external-memory stall that froze ELA-K Phase 1
+
+### Operator verbatim 2026-04-21
+
+> *"it froze here: [Curriculum] 📝 ELA-K Phase 1 START — alphabet cross-projection Hebbian (12 reps × 26 letters = 312 iterations) [Brain] Main tick paused while curriculum runs gate probe (cortex owns GPU exclusively for the probe window)."*
+
+### Diagnosis
+
+T26.c.1 widened `PROBE_CRITICAL_CPU_CSR` in `cluster.js` from 3 entries → 5 (added `letter_to_sem` + `motor_to_letter`). Intention was to fix READ probe zero-vector falls. Effect was the opposite: each extra whitelisted projection keeps ~1 GB of CPU CSR resident at biological scale. Going from 3 → 5 added ~2 GB to external memory, pushing it back into the V8 GC stall zone that T24.a was built to avoid. The six pre-K association-pair phases plus the five K ones accumulated enough Hebbian pressure that ELA-K Phase 1 hit a Mark-Compact stall right after the probe-gate paused the main tick. No heartbeat fired because the event loop was pinned in GC.
+
+### Fix
+
+Reverted `PROBE_CRITICAL_CPU_CSR` back to the 3-entry minimum (`letter_to_phon` + `letter_to_motor` + `sem_to_motor`). READ probes that need `letter_to_sem` now fall back to the `SparseMatrix.propagate` null-CSR guard (zero vector, correct shape). If READ rate degrades visibly in the next Part 2 run, the correct follow-up is to route READ-probe `letter_to_sem` calls through the GPU proxy instead of re-whitelisting CPU CSR.
+
+### Files touched
+
+- `js/brain/cluster.js` — `PROBE_CRITICAL_CPU_CSR` reverted to the 3-entry original; comment block updated noting the regression + the right follow-up (GPU-proxy route for READ probes).
+- `docs/FINALIZED.md` — this entry
+- `docs/TODO.md` — T26.c.1 flipped back to open with the GPU-proxy follow-up noted
+
+### Net state after this fix
+
+- T26.a gate enforcement, T26.b sem-overload fix, T26.c.2/3/4 memory closure, T26.d pre-K association-pair teach all remain shipped and active.
+- T26.c.1 whitelist expansion rolled back; READ probes on `letter_to_sem` / `motor_to_letter` return zero-vector fallbacks. GPU-proxy route for those probes is the correct fix when it becomes a measurable gate-failure signal.
+
+---
+
 ## 2026-04-21 — Session 114.19bg: T26 luck-of-the-Hebbian elimination — four-item masterful fix
 
 ### Operator verbatim (binding directive)
