@@ -10059,6 +10059,32 @@ export class Curriculum {
         { item: 'sand',   features: new Float64Array([0,0,0,0,0,0,0,1]), category: 'mineral' },
       ]);
 
+      // Equational association-pair teach — pure feature-vector writes +
+      // cross-projection Hebbian. Covers NGSS K concept mappings the exam
+      // tests: phase transitions (K-PS1), sunlight effects (K-PS3),
+      // animal products (K-LS1), natural-vs-human-made (K-ESS3),
+      // push/pull motion (K-PS2). Distinct from EXAM_BANKS Q→A content.
+      await this._teachAssociationPairs([
+        // Phase transitions
+        ['ice','solid'], ['steam','gas'], ['water','liquid'],
+        ['melt','liquid'], ['freeze','solid'], ['boil','gas'],
+        // Sunlight / heat
+        ['sun','warm'], ['sun','light'], ['shade','cool'],
+        ['fire','hot'], ['snow','cold'], ['shadow','block'],
+        // Animal products
+        ['cow','milk'], ['chicken','eggs'], ['bee','honey'],
+        ['sheep','wool'], ['duck','eggs'], ['pig','bacon'],
+        // Life needs
+        ['plant','water'], ['plant','sun'], ['animal','food'],
+        ['fish','water'], ['bird','nest'], ['bear','cave'],
+        // Natural resources
+        ['tree','wood'], ['river','water'], ['ocean','salt'],
+        ['mountain','rock'], ['forest','tree'], ['sun','energy'],
+        // Push/pull
+        ['push','away'], ['pull','toward'],
+        ['harder','faster'], ['heavier','slower'],
+      ], { reps: 8, label: 'SCI-K-CONCEPTS', relationTagId: 1 });
+
       this._sciKRemakeDone = true;
     }
 
@@ -10308,6 +10334,35 @@ export class Curriculum {
         ['rule', 'safe'], ['work', 'money'], ['money', 'food'],
       ]);
 
+      // Equational association-pair teach — Core Knowledge K concept
+      // classes: needs/wants, community helper → role, manners, safety
+      // signals, direction words, kinship. Pure feature-vector writes +
+      // cross-projection Hebbian, distinct from exam Q→A content.
+      await this._teachAssociationPairs([
+        // Needs vs wants
+        ['food','need'], ['water','need'], ['shelter','need'],
+        ['clothing','need'], ['air','need'], ['sleep','need'],
+        ['toy','want'], ['candy','want'], ['game','want'],
+        ['phone','want'], ['tv','want'], ['dessert','want'],
+        // Manners
+        ['please','polite'], ['thanks','grateful'], ['sorry','apology'],
+        ['hello','greeting'], ['goodbye','farewell'],
+        // Safety signals
+        ['stop','red'], ['go','green'], ['wait','yellow'],
+        ['emergency','911'], ['danger','stop'], ['siren','help'],
+        // Directions
+        ['north','up'], ['south','down'],
+        ['east','right'], ['west','left'],
+        // Kinship
+        ['mother','parent'], ['father','parent'],
+        ['brother','sibling'], ['sister','sibling'],
+        ['grandma','family'], ['grandpa','family'],
+        ['aunt','family'], ['uncle','family'], ['cousin','family'],
+        // Community roles
+        ['fire','firefighter'], ['crime','police'], ['sick','doctor'],
+        ['teeth','dentist'], ['mail','carrier'], ['food','farmer'],
+      ], { reps: 8, label: 'SOC-K-CONCEPTS', relationTagId: 1 });
+
       this._socKRemakeDone = true;
     }
 
@@ -10543,6 +10598,33 @@ export class Curriculum {
       await this._teachWarmCoolColors(ctx);
       await this._teachPatternCompletion(ctx);
       await this._teachMusicBasics(ctx);
+
+      // Equational association-pair teach — Arts-K concept mappings:
+      // color mixing, warm/cool classification, shape attributes, art
+      // tools, music element names. Pure feature-vector writes +
+      // cross-projection Hebbian.
+      await this._teachAssociationPairs([
+        // Primary color mixing
+        ['red-yellow','orange'], ['blue-yellow','green'],
+        ['red-blue','purple'], ['white-black','gray'],
+        // Warm / cool
+        ['red','warm'], ['orange','warm'], ['yellow','warm'],
+        ['blue','cool'], ['green','cool'], ['purple','cool'],
+        // Shape attributes
+        ['circle','round'], ['square','four'], ['triangle','three'],
+        ['rectangle','four'], ['oval','round'], ['diamond','four'],
+        // Art tools
+        ['brush','paint'], ['pencil','draw'], ['crayon','color'],
+        ['scissors','cut'], ['glue','stick'], ['paper','draw'],
+        ['clay','sculpt'], ['marker','color'], ['eraser','undo'],
+        // Music elements
+        ['drum','beat'], ['beat','pulse'], ['fast','tempo'],
+        ['slow','tempo'], ['loud','forte'], ['soft','piano'],
+        ['high','soprano'], ['low','bass'],
+        ['violin','string'], ['flute','wind'], ['piano','keys'],
+        ['song','melody'], ['rhythm','beat'],
+      ], { reps: 8, label: 'ART-K-CONCEPTS', relationTagId: 1 });
+
       this._artKRemakeDone = true;
     }
 
@@ -21015,6 +21097,31 @@ export class Curriculum {
         { question: 'favorite place',    answer: 'recess' },
         { question: 'school activity',   answer: 'drawing' },
       ], { reps: 10 });  // High reps — biographical memory is core self
+
+      // Equational association-pair teach — Life-K concept mappings:
+      // body parts + function, family kinship, feelings, self-care,
+      // friendship/safety. Distinct from biographical Q→A above.
+      await this._teachAssociationPairs([
+        // Body parts → function
+        ['eye','see'], ['ear','hear'], ['nose','smell'],
+        ['mouth','taste'], ['hand','touch'], ['foot','walk'],
+        ['head','think'], ['heart','beat'], ['tongue','taste'],
+        ['skin','feel'], ['leg','run'], ['arm','lift'],
+        // Family
+        ['mother','parent'], ['father','parent'],
+        ['brother','sibling'], ['sister','sibling'],
+        ['grandma','family'], ['grandpa','family'],
+        // Feelings
+        ['happy','smile'], ['sad','cry'], ['angry','frown'],
+        ['scared','shake'], ['excited','jump'], ['tired','yawn'],
+        // Self-care routines
+        ['brush','teeth'], ['wash','hands'], ['comb','hair'],
+        ['eat','food'], ['drink','water'], ['sleep','bed'],
+        // Friendship / safety
+        ['share','friend'], ['help','kind'], ['hurt','mean'],
+        ['stranger','careful'], ['cross','look'], ['fire','911'],
+        ['hot','careful'], ['sharp','careful'],
+      ], { reps: 8, label: 'LIFE-K-CONCEPTS', relationTagId: 1 });
 
       this._lifeKRemakeDone = true;
     }
