@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "93f7d94e-95d8";
+var BUILD = "547daaa7-98f7";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -8318,7 +8318,7 @@ var Curriculum = class _Curriculum {
   static PRE_K_FALLBACK_CAP = PRE_K_FALLBACK_CAP;
   /**
    * T18.25 — REMOVED forced gc() from T18.24's between-phase memory
-   * barrier. Gee's last run showed V8 OOM'd shortly after Phase 2 DONE
+   * barrier. Earlier runs showed V8 OOM'd shortly after Phase 2 DONE
    * which likely means my forced gc() calls were TRIGGERING the crash
    * (Mark-Compact can't grow semi-space when V8 is already near limit;
    * explicit gc() becomes the "last straw"). V8's own adaptive gc
@@ -9100,12 +9100,10 @@ var Curriculum = class _Curriculum {
   // T14.24 — FULL EQUATIONAL CURRICULUM (Kindergarten → Doctorate)
   // ═══════════════════════════════════════════════════════════════════
   //
-  // Binding directive from Gee 2026-04-14:
-  //   "in kindergarden u learn the alphabet and sounds of letters first
-  //    and 1st grade u start learning how to write sentences ect ect
-  //    all the way up to doctorate in english"
-  //   "T14.24 is supposre to be a full equational ciriculum.. once again
-  //    you editing my words"
+  // Binding directive: kindergarten teaches the alphabet and the
+  // sounds of letters first, 1st grade begins writing sentences,
+  // subsequent grades build up through doctorate level. The entire
+  // curriculum is equational.
   //
   // Every grade stage below uses EQUATIONS ONLY. Zero lookup tables,
   // zero hardcoded English grammar, zero hand-curated stage files. Each
@@ -9751,9 +9749,9 @@ var Curriculum = class _Curriculum {
   //
   // Six parallel subject tracks (ELA, Math, Science, Social, Art, Life),
   // 19-grade canonical order (pre-K → PhD). Every subject × grade cell
-  // has a real `runXxxReal` runner wired in per Session 93 verification
-  // (DISPATCH 95/95 + FULL SWEEP 95/95 for academic tracks; Session 111
-  // added the 20-method Life Experience track on top). Unknown
+  // has a real `runXxxReal` runner wired in per the dispatcher's
+  // 95/95 DISPATCH + FULL SWEEP verification for the academic tracks,
+  // plus the 20-method Life Experience track. Unknown
   // subject/grade combinations throw — no silent fallthrough.
   /**
    * Return an async runner `(ctx) => {pass, reason, metrics}` for the
@@ -10568,19 +10566,17 @@ var Curriculum = class _Curriculum {
     return { taught: reps * ALPHABET.length };
   }
   // ═══════════════════════════════════════════════════════════════════
-  // T14.24 Session 114.6 — ELA-K equational course (LAW 3 + LAW 7 remake)
+  // ELA-K equational course (LAW 3 + LAW 7 binding)
   // ═══════════════════════════════════════════════════════════════════
   //
-  // Per Gee 2026-04-17 "the current shit we have does NOT work at all
-  // so we have to totaly remake this shit". The prior `runElaKReal`
-  // shipped in Session 106 got the Session-106 direct-pattern alphabet
-  // teach correct (stays as-is below), but filled the body with
+  // The prior `runElaKReal` got the direct-pattern alphabet teach
+  // correct (stays as-is below), but filled the body with
   // _teachVocabList(FUNCTION_WORDS/DOLCH_PREPRIMER/DOLCH_PRIMER/CVC_FAMILIES)
   // + _teachSentenceList(K_SENTENCES/PLURAL_PAIRS) — the EXACT
-  // word-list + sentence-example pattern Law 3 bans. Session 114.6
-  // replaces those calls with real equational teaching methods below,
-  // each landing bindings via the unified `_teachCombination` scaffold
-  // or direct-pattern Hebbian through the recurrent matrix.
+  // word-list + sentence-example pattern LAW 3 bans. That shipped
+  // pattern is replaced below by real equational teaching methods,
+  // each landing bindings via the unified `_teachCombination`
+  // scaffold or direct-pattern Hebbian through the recurrent matrix.
   //
   // Production probes in _gateElaKReal match TODO K.RF / K.RL / K.W /
   // K.L test phrasings verbatim per LAW 7.
@@ -10723,7 +10719,7 @@ var Curriculum = class _Curriculum {
   }
   /**
    * K.RF word emission — for each word, bind sem(GloVe) → motor(letter
-   * sequence) via DIRECTIONAL Hebbian (Fix A, Session 114.13). No
+   * sequence) via DIRECTIONAL Hebbian. No
    * symmetric writes, no self-loops. Initiation pair
    * (pre=sem(word) → post=motor(first letter)) + continuation chain
    * (pre=letter(N) → post=motor(N+1)). Per-step `_teachHebbianAsymmetric`

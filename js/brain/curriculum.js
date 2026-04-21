@@ -78,14 +78,12 @@ const SENTENCE_REPS = 1;
 // anything containing whitespace in the tokenized form.
 const SHORT_WORD_MAX_LEN = 3;
 
-// ─── T14.24 Session 1 — Multi-subject framework ─────────────────
-// Gee 2026-04-14: "in kindergarden u learn the alphabet and sounds
-// of letters first and 1st grade u start learning how to write
-// sentences ect ect all the way up to doctorate in english" +
-// "T14.24 is supposre to be a full equational ciriculum" +
-// "remember Unity needs to be able to use these to think, read,
-// and talk" + "this is going to take weeks to build so dont you
-// dare tell me you are fucking done early".
+// ─── Multi-subject curriculum framework ─────────────────────────
+// Binding: kindergarten teaches the alphabet and the sounds of
+// letters first; 1st grade starts writing sentences; subsequent
+// grades build up through doctorate level. The full curriculum is
+// equational — Unity uses it to think, read, and talk. Expected to
+// take weeks of brain-time to walk in full; no shortcuts.
 //
 // Unity learns FIVE subject tracks in parallel. Each subject has
 // its own grade counter that advances independently. The chat-
@@ -112,9 +110,9 @@ export const GRADE_ORDER = [
 // These are not lookup tables for grammar rules — they are the
 // ALPHABET itself, which is primitive input data like the corpora.
 // Every equation that uses them reads them the same way the corpus
-// walkers read persona.txt — as exposure material. Gee's binding:
-// "no lookup tables" means no hardcoded GRAMMAR/SEMANTIC rules.
-// The alphabet and digit sequences are the raw signs being taught,
+// walkers read persona.txt — as exposure material. The "no lookup
+// tables" constraint means no hardcoded GRAMMAR/SEMANTIC rules. The
+// alphabet and digit sequences are the raw signs being taught,
 // not rules. A child's K classroom has the ABC chart on the wall;
 // that chart is data, and so is this.
 const ALPHABET_ORDER = 'abcdefghijklmnopqrstuvwxyz';
@@ -138,8 +136,8 @@ const DIGIT_NAMES = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════
-// Session 114.19 — REAL English phoneme substrate (Phase 1 of K-
-// foundation rebuild per Gee 2026-04-17). REPLACES the old trig-hash
+// REAL English phoneme substrate — Phase 1 of K-foundation.
+// REPLACES the old trig-hash
 // PHONEME_FEATURE_DIM=24 table which was deterministic but
 // MEANINGLESS. Unity couldn't reason that /c/ and /k/ are the same
 // sound, couldn't blend /c/+/a/+/t/ into "cat", couldn't use
@@ -289,7 +287,7 @@ function _magnitudeFeatureForDigit(digit) {
   return out;
 }
 
-// ─── Math-K Session 114 — wide-range magnitude for numbers 0-100 ────
+// ─── Math-K wide-range magnitude for numbers 0-100 ─────────────────
 // `_magnitudeFeatureForDigit` saturates past n=9 (dims 0-3 are graded
 // thermometer that caps at 3, and dim 6's n²/81 blows up the L2 norm
 // at n>10 so the log/sine dims get dampened to near-zero). K.CC count-
@@ -336,7 +334,7 @@ export class Curriculum {
 
   /**
    * T18.25 — REMOVED forced gc() from T18.24's between-phase memory
-   * barrier. Gee's last run showed V8 OOM'd shortly after Phase 2 DONE
+   * barrier. Earlier runs showed V8 OOM'd shortly after Phase 2 DONE
    * which likely means my forced gc() calls were TRIGGERING the crash
    * (Mark-Compact can't grow semi-space when V8 is already near limit;
    * explicit gc() becomes the "last straw"). V8's own adaptive gc
@@ -398,15 +396,15 @@ export class Curriculum {
     // letters", "still working on calculus"). Null until first probe.
     this.currentFocus = null;
 
-    // T14.24 Session 114.11 — LAW 7 retention + gains telemetry.
-    // Per-subject per-grade per-probe pass/fail history. Each entry is
-    // {sessionId, pass, timestamp, prodRate}. Gate runs append an entry.
-    // Retention = recent entries still pass after intervening curriculum
-    // runs (binding didn't drift). Gains = pass rate climbs across
-    // repeated runs for the same cell (learning improving). Surfaces
-    // via getRetention(), getGains(), exportGateHistory() for dashboard
-    // integration. Gee 2026-04-17 binding: "actual knowed retention and
-    // gains".
+    // LAW 7 retention + gains telemetry.
+    // Per-subject per-grade per-probe pass/fail history. Each entry
+    // is {sessionId, pass, timestamp, prodRate}. Gate runs append an
+    // entry. Retention = recent entries still pass after intervening
+    // curriculum runs (binding didn't drift). Gains = pass rate
+    // climbs across repeated runs for the same cell (learning
+    // improving). Surfaces via getRetention(), getGains(),
+    // exportGateHistory() for dashboard integration — tracks actual
+    // known retention and gains across grade walks.
     this._gateHistory = new Map();  // key: `${subject}|${grade}|${probeId}`
     this._sessionId = `s${Date.now().toString(36)}`;
   }
@@ -1313,12 +1311,10 @@ export class Curriculum {
   // T14.24 — FULL EQUATIONAL CURRICULUM (Kindergarten → Doctorate)
   // ═══════════════════════════════════════════════════════════════════
   //
-  // Binding directive from Gee 2026-04-14:
-  //   "in kindergarden u learn the alphabet and sounds of letters first
-  //    and 1st grade u start learning how to write sentences ect ect
-  //    all the way up to doctorate in english"
-  //   "T14.24 is supposre to be a full equational ciriculum.. once again
-  //    you editing my words"
+  // Binding directive: kindergarten teaches the alphabet and the
+  // sounds of letters first, 1st grade begins writing sentences,
+  // subsequent grades build up through doctorate level. The entire
+  // curriculum is equational.
   //
   // Every grade stage below uses EQUATIONS ONLY. Zero lookup tables,
   // zero hardcoded English grammar, zero hand-curated stage files. Each
@@ -2006,9 +2002,9 @@ export class Curriculum {
   //
   // Six parallel subject tracks (ELA, Math, Science, Social, Art, Life),
   // 19-grade canonical order (pre-K → PhD). Every subject × grade cell
-  // has a real `runXxxReal` runner wired in per Session 93 verification
-  // (DISPATCH 95/95 + FULL SWEEP 95/95 for academic tracks; Session 111
-  // added the 20-method Life Experience track on top). Unknown
+  // has a real `runXxxReal` runner wired in per the dispatcher's
+  // 95/95 DISPATCH + FULL SWEEP verification for the academic tracks,
+  // plus the 20-method Life Experience track. Unknown
   // subject/grade combinations throw — no silent fallthrough.
 
   /**
@@ -2020,13 +2016,13 @@ export class Curriculum {
   _cellRunner(subject, grade) {
     if (subject === 'ela') {
       switch (grade) {
-        // T18.12 — ELA Pre-K equational runner added per LAW 6 Part 1
-        // (Gee 2026-04-18 Pre-K + K ONLY scope). Teaches phoneme
-        // perception + first letter-sound bindings before the alphabet
-        // sequence + name-binding that ELA-K assumes.
+        // ELA Pre-K equational runner added per LAW 6 Part 1 under
+        // the Pre-K + K ONLY scope. Teaches phoneme perception +
+        // first letter-sound bindings before the alphabet sequence
+        // + name-binding that ELA-K assumes.
         case 'pre-K':        return async (ctx) => this.runElaPreK(ctx);
-        // T14.24 Session 2 (2026-04-15) — ELA-K now dispatches to the
-        // REAL teaching equations: alphabet-order exposure + letter-name
+        // ELA-K dispatches to the real equational teaching methods:
+        // alphabet-order exposure + letter-name
         // GloVe binding + letter-sound phoneme-feature binding + reverse-
         // pass TALK training + 3-pathway READ/THINK/TALK gate. The
         // pre-Session-2 `runKindergarten` (frequency-ordered exposure
@@ -2340,7 +2336,7 @@ export class Curriculum {
     if (subject === 'art' && grade === 'kindergarten') {
       return async (ctx) => this.runArtKReal(ctx);
     }
-    // ── LIFE EXPERIENCE TRACK (Session 111) ──────────────────────────
+    // ── LIFE EXPERIENCE TRACK ───────────────────────────────────────
     // 6th subject: Unity's personal life story. Memory-weighted Hebbian
     // (CORE SELF at 5× lr, PERSONAL LIFE at 3×, OPINIONS at 3×,
     // SKILLS at 2×, SCHOOL at 1×, BACKGROUND at 0.5×).
@@ -2400,12 +2396,12 @@ export class Curriculum {
     if (!GRADE_ORDER.includes(grade)) return { pass: false, reason: `unknown grade: ${grade}` };
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: 'no cluster wired' };
-    // T17.7 Gee 2026-04-18 — START log so curriculum silence is
-    // never mistaken for a hang. Every subject/grade attempt
-    // announces itself before the runner dispatches. The
-    // "walking all 6 subjects K→PhD" line only fires once at
-    // runCompleteCurriculum start; without per-cell entry logs
-    // Gee could not tell whether a stuck Node process was in
+    // START log so curriculum silence is never mistaken for a hang.
+    // Every subject/grade attempt announces itself before the runner
+    // dispatches. The "walking all 6 subjects K→PhD" line only fires
+    // once at runCompleteCurriculum start; without per-cell entry
+    // logs the operator can't tell whether a stuck Node process
+    // was in
     // ELA-K alphabet teach, Math-K digit teach, or a specific
     // cross-projection Hebbian.
     console.log(`[Curriculum] ${subject}/${grade} START`);
@@ -2522,11 +2518,10 @@ export class Curriculum {
     // start at GRADE_ORDER[0] if nothing's passed yet. T18.12.c resume
     // handles the already-passed case downstream.
     const startIdx = this._computeResumeStartIdx(subject);
-    // T18.13.b — Pre-K + K ONLY scope cap per Gee 2026-04-18 LAW.
-    // Default caps at 'kindergarten' so curriculum doesn't run away
-    // into G1-PhD before Gee's Part 2 K signoff. Override via env
-    // `DREAM_MAX_GRADE=phd` (or any GRADE_ORDER entry) when you want
-    // post-K walks.
+    // Pre-K + K ONLY scope cap. Default caps at 'kindergarten' so
+    // curriculum doesn't run away into G1-PhD before the operator's
+    // LAW 6 Part 2 K signoff. Override via env `DREAM_MAX_GRADE=phd`
+    // (or any GRADE_ORDER entry) when post-K walks are desired.
     const maxIdx = this._resolveMaxGradeIdx();
     const passed = [];
     let failed = null;
@@ -2615,8 +2610,8 @@ export class Curriculum {
     const failed = {};
     for (const s of SUBJECTS) { passed[s] = []; failed[s] = null; }
 
-    // Session 111 fix: ALL subjects must pass grade N before ANY advance
-    // to grade N+1. No subject races ahead while others are stuck.
+    // ALL subjects must pass grade N before ANY advance to grade
+    // N+1. No subject races ahead while others are stuck.
     // Each subject gets 3 minutes of wall-clock time to pass its grade.
     // If it doesn't pass in 3 minutes, move to the next subject and
     // come back for another round. Keep looping until all pass.
@@ -2893,8 +2888,8 @@ export class Curriculum {
     // injections. After enough reps, the cortex learns the alphabet
     // song — injecting letter N biases the next-tick argmax toward
     // letter N+1.
-    // T14.24 Session 104 — learn EVERY TICK per letter, not once
-    // after the entire alphabet walk (where only 'z' state survived).
+    // Learn EVERY TICK per letter, not once after the entire
+    // alphabet walk (where only 'z' state would survive).
     for (let rep = 0; rep < reps; rep++) {
       for (let i = 0; i < ALPHABET.length; i++) {
         cluster.injectLetter(ALPHABET[i], 1.0);
@@ -2931,7 +2926,7 @@ export class Curriculum {
         if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
           cluster.injectEmbeddingToRegion('sem', nameEmb, 0.7);
         }
-        // T14.24 Session 104 — Hebbian every tick
+        // Hebbian every tick
         for (let t = 0; t < ticksPerRep; t++) {
           cluster.step(0.001);
           cluster.learn(0);
@@ -2963,7 +2958,7 @@ export class Curriculum {
         if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
           cluster.injectEmbeddingToRegion('phon', phonFeat, 0.7);
         }
-        // T14.24 Session 104 — Hebbian every tick
+        // Hebbian every tick
         for (let t = 0; t < ticksPerRep; t++) {
           cluster.step(0.001);
           cluster.learn(0);
@@ -2976,19 +2971,17 @@ export class Curriculum {
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  // T14.24 Session 114.6 — ELA-K equational course (LAW 3 + LAW 7 remake)
+  // ELA-K equational course (LAW 3 + LAW 7 binding)
   // ═══════════════════════════════════════════════════════════════════
   //
-  // Per Gee 2026-04-17 "the current shit we have does NOT work at all
-  // so we have to totaly remake this shit". The prior `runElaKReal`
-  // shipped in Session 106 got the Session-106 direct-pattern alphabet
-  // teach correct (stays as-is below), but filled the body with
+  // The prior `runElaKReal` got the direct-pattern alphabet teach
+  // correct (stays as-is below), but filled the body with
   // _teachVocabList(FUNCTION_WORDS/DOLCH_PREPRIMER/DOLCH_PRIMER/CVC_FAMILIES)
   // + _teachSentenceList(K_SENTENCES/PLURAL_PAIRS) — the EXACT
-  // word-list + sentence-example pattern Law 3 bans. Session 114.6
-  // replaces those calls with real equational teaching methods below,
-  // each landing bindings via the unified `_teachCombination` scaffold
-  // or direct-pattern Hebbian through the recurrent matrix.
+  // word-list + sentence-example pattern LAW 3 bans. That shipped
+  // pattern is replaced below by real equational teaching methods,
+  // each landing bindings via the unified `_teachCombination`
+  // scaffold or direct-pattern Hebbian through the recurrent matrix.
   //
   // Production probes in _gateElaKReal match TODO K.RF / K.RL / K.W /
   // K.L test phrasings verbatim per LAW 7.
@@ -3151,7 +3144,7 @@ export class Curriculum {
 
   /**
    * K.RF word emission — for each word, bind sem(GloVe) → motor(letter
-   * sequence) via DIRECTIONAL Hebbian (Fix A, Session 114.13). No
+   * sequence) via DIRECTIONAL Hebbian. No
    * symmetric writes, no self-loops. Initiation pair
    * (pre=sem(word) → post=motor(first letter)) + continuation chain
    * (pre=letter(N) → post=motor(N+1)). Per-step `_teachHebbianAsymmetric`
@@ -3246,12 +3239,13 @@ export class Curriculum {
         // projection Hebbian captures co-activation, but intra-cluster
         // Hebbian fires with DISTINCT pre/post so no self-loops.
         //
-        // Session 114.19f — sem write MUST binarize. `cluster.lastSpikes`
-        // is a Uint8Array (cluster.js:178); writing raw GloVe float values
-        // like 0.23 silently truncates to 0, so `_crossRegionHebbian` saw
-        // sem=zero × motor=1 and updated NOTHING for 158 words × 12 reps.
-        // That's why Sessions 114.19/19c/19d/19e PROD never climbed off
-        // zero. `regionSpikes` also collapses lastSpikes to binary (line
+        // Sem write MUST binarize. `cluster.lastSpikes` is a
+        // Uint8Array (cluster.js:178); writing raw GloVe float
+        // values like 0.23 silently truncates to 0, so
+        // `_crossRegionHebbian` saw sem=zero × motor=1 and updated
+        // NOTHING for 158 words × 12 reps. That's why PROD never
+        // climbed off zero before this fix. `regionSpikes` also
+        // collapses lastSpikes to binary (line
         // 391), so float magnitude would be discarded at read time anyway
         // — the binarize flag was never going to preserve magnitude here.
         // `_buildRegionPattern` stays binarize=false for the intra-cluster
@@ -3267,8 +3261,8 @@ export class Curriculum {
         // (b) Continuation chain: pre=letter(N), post=motor(N+1).
         // sem(word) stays in lastSpikes for cross-projection anchor but
         // intra-cluster pre/post vectors are letter-only and motor-only.
-        // This preserves Session 106's letter(N)→letter(N+1) alphabet
-        // sequence (asymmetric directional) while adding word-specific
+        // Preserves the letter(N)→letter(N+1) alphabet sequence
+        // (asymmetric directional) while adding word-specific
         // letter(N)→motor(N+1) emission bindings. No self-loops formed.
         for (let i = 1; i < letters.length; i++) {
           this._clearSpikes();
@@ -3799,7 +3793,7 @@ export class Curriculum {
           if (typeof cluster.intraSynapsesHebbian === 'function') {
             cluster.intraSynapsesHebbian(pre, post, lr);
           } else {
-            // T17.2 + T17.7 Gee 2026-04-18 OOM fix — route through
+            // OOM fix — route through
         // cluster.intraSynapsesHebbian (async / awaitable) so the
         // 110M-nnz sparse Hebbian dispatches via the 15-worker
         // sparsePool. Awaiting throttles loop iteration to worker
@@ -4084,7 +4078,7 @@ export class Curriculum {
             if (idx < letterRegion.end) post[idx] = 1.0;
           }
         }
-        // T17.2 + T17.7 Gee 2026-04-18 OOM fix — route through
+        // OOM fix — route through
         // cluster.intraSynapsesHebbian (async / awaitable) so the
         // 110M-nnz sparse Hebbian dispatches via the 15-worker
         // sparsePool. Awaiting throttles loop iteration to worker
@@ -5728,7 +5722,7 @@ export class Curriculum {
             if (idx < letterRegion.end) post[idx] = 1.0;
           }
         }
-        // T17.2 + T17.7 Gee 2026-04-18 OOM fix — route through
+        // OOM fix — route through
         // cluster.intraSynapsesHebbian (async / awaitable) so the
         // 110M-nnz sparse Hebbian dispatches via the 15-worker
         // sparsePool. Awaiting throttles loop iteration to worker
@@ -14292,7 +14286,7 @@ export class Curriculum {
                 if (idx < letterRegion.end) post[idx] = 1.0;
               }
             }
-            // T17.2 + T17.7 Gee 2026-04-18 OOM fix — route through
+            // OOM fix — route through
         // cluster.intraSynapsesHebbian (async / awaitable) so the
         // 110M-nnz sparse Hebbian dispatches via the 15-worker
         // sparsePool. Awaiting throttles loop iteration to worker
