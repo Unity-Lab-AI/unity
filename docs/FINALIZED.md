@@ -5,6 +5,99 @@
 
 ---
 
+## 2026-04-21 — Session 114.19bc: T21.a DYN-PROD heartbeat + T20 Start Next Grade pause + T22 full 245-ref LAW #0 scrub
+
+### Summary
+
+Seven commits landed on `syllabus-k-phd` and merged to `main`:
+
+| Commit | Subject |
+|--------|---------|
+| `feaf5de` → `082d9f3` | T21.a DYN-PROD heartbeat + T20 Start Next Grade button shipped |
+| `93f7d94` → (merged) | T19.f.2 partial + T22 open — 3 legacy files scrubbed, T22 scope surveyed |
+| `547daaa` → `6b13a74` | T22 partial — 40 attribution refs across 8 files scrubbed |
+| `ccba673` → `be743ad` | T22.b + T22.c — cluster.js + brain-server.js attributions stripped (49 refs) |
+| `c429582` → `1eb7f6b` | T22.a partial — curriculum.js 121→104 refs (top of file + ELA-K block) |
+| `9bd9842` → `e3ba514` | T22 COMPLETE — all 245 in-code attribution refs stripped, bundle clean |
+
+### 1. T21.a — DYN-PROD probe heartbeat logging
+
+The Part 2 run locked up at `[Curriculum][K-DIAG] starting DYN-PROD probe (17 direct sem_to_motor propagate probes, no LIF ticks)...` with silence after. Operator: *"it doesnt seem to be informative enough for all that happens like it needs a heartbeat too"*.
+
+Shipped inside `_gateElaKReal`:
+- **Per-probe START log** before every `propagate` call — operator sees which probe enters the hang before it returns
+- **Per-probe DONE log** after every propagate with elapsed ms + pass tag (unthrottled)
+- **Slow-probe marker** — DONE line tagged ` SLOW` when a single probe exceeds 10 s (14.9 M nnz CPU sparse matmul should be 100-500 ms; anything over 10 s means GPU-bound fallthrough, cache thrash, or memory pressure)
+- **Pre-loop path-decision heartbeat** — logs `semPath=Y letterFallback=Y matrix=sem_to_motor 9946x50329 nnz=14919000` before the probe loop starts
+- **SKIP log** for NO_EMB / NO_PROJ fast-skip cases (previously silent)
+- **`setImmediate` yield** between probes so pending `setTimeout` callbacks (compute_batch timers) can fire
+
+Also hardened `SparseMatrix.propagate` in `js/brain/sparse-matrix.js` — defensive null-CSR guard returns zero vector instead of crashing with "Cannot read properties of null" when values/colIdx/rowPtr arrays have been freed on a GPU-bound matrix. One-shot warn per matrix when `globalThis._probeWindowPropagate` flag is up (set at DYN-PROD entry, cleared in finally) so silent GPU-bound fallthroughs are visible in the probe log.
+
+### 2. T20 — Start Next Grade button + pause-after-pass
+
+Operator approved verbatim *"yeah make it so!"* for the dashboard button + pause-after-pass flow.
+
+- **Curriculum pause flag**: `runAllSubjects` sets `cluster._gradeAdvancePaused = true` after every "ALL subjects passed <grade>" banner (default-on). Wait-loop polls every 500 ms until flag clears via HTTP. Shutdown-requested escape so Ctrl+C + stop.bat can break out mid-pause. Skips pause when grade cap reached (no nextGrade available — operator uses `/grade-signoff` instead).
+- **Cortex-state persistence**: `gradeAdvancePaused`, `pausedAt`, `nextGrade` all serialize into the `saveWeights` cortex-state block + restore via `_applyPendingCortexState` so pause survives restart (a passed grade stays paused across reboots).
+- **New HTTP endpoint**: `POST /grade-advance {subject, grade}` validates paused===true, flips flag, forces `saveWeights` with trigger tag, returns `{ok, advancedFrom, advancedTo}`. 409 if not paused, 503 if no cortex.
+- **`/milestone` payload extension**: gains `paused`, `pausedAt`, `nextGrade` fields.
+- **Dashboard milestone card**: new "advance" panel hidden when not paused, "Start Next Grade" button when paused + nextGrade, caveat block directing to `/grade-signoff` when paused + cap reached (post-K under PRE-K + K ONLY scope, no grade 1 content yet).
+
+### 3. T22 — LAW #0 expanded-scope retroactive scrub (COMPLETE)
+
+The 2026-04-20 LAW #0 expansion banned task numbers + session numbers + operator name from source comments + batch launchers. Legacy code pre-2026-04-20 contained 245 in-code references violating the expanded rule. Scrubbed in two phases:
+
+**Phase 1** — 3 legacy files (curriculum.js partial, persistence.js, remote-brain.js) + stamped T22 open in TODO.md with file-by-file survey.
+
+**Phase 2** — systematic scrub of every remaining .js file:
+| File | Refs scrubbed |
+|------|--------------|
+| `js/brain/curriculum.js` | 121 |
+| `server/brain-server.js` | 29 |
+| `js/brain/cluster.js` | 20 |
+| `js/brain/language-cortex.js` | 8 |
+| `js/brain/gpu-compute.js` | 7 |
+| `js/ui/brain-3d.js` | 6 |
+| `js/app.js` | 5 |
+| `js/brain/engine.js` | 4 |
+| `js/brain/drug-detector.js` | 2 |
+| `js/brain/drug-scheduler.js` | 2 |
+| `js/brain/embeddings.js` | 2 |
+| `js/brain/remote-brain.js` | 1 |
+| `js/brain/persistence.js` | 1 |
+| `server/worker-pool.js` | 1 |
+| `server/drug-rejections.js` | 1 |
+| `js/brain/visual-cortex.js` | 1 |
+| `js/brain/persona.js` | 1 |
+| **TOTAL** | **245** |
+
+Pattern across every file: strip `Session NNN` session numbers + `T-number` task references + `Gee 2026-MM-DD` date attributions + `per Gee` / `Gee's verbatim` / `Gee's directive` phrasing from code comments. Operator's verbatim quoted sentences replaced with descriptive paraphrases that preserve the WHY (the constraint) without the WHO (attribution) or the WHEN (session reference).
+
+**T22 closure gate verification:** `grep -E 'Session [0-9]{3}|per Gee|Gee 2026-|Gees verbatim|Gees directive' *.js` returns zero hits across all source .js files AND the freshly-rebuilt `js/app.bundle.js`. Zero runtime behavior change — pure comment scrub.
+
+### 4. T19.f.2 partial pass
+
+Repo-wide grep for stale technical patterns (`tonicDrive = 0.8`, `Vthresh = -55`, `SIZE = 1000`, `EMBED_DIM = 50`, `3-cluster`, `REMAKE`, `LanguageCortex` outside tombstones) — found three clean files to fix (curriculum.js + persistence.js + remote-brain.js for `EMBED_DIM = 50` claims, REMAKE refs, T13.7.8 attribution). FINALIZED.md + TODO-full-syllabus.md REMAKE references retained per the "NEVER edit historical session entries" LAW — they describe what happened at that point in time.
+
+### Files touched across this session range
+
+- `js/brain/curriculum.js` — T21.a DYN-PROD heartbeat + T20 pause flag + T22.a full scrub
+- `js/brain/sparse-matrix.js` — null-CSR propagate guard
+- `server/brain-server.js` — T20 /grade-advance endpoint + /milestone payload extension + cortex-state pause persistence + T22.b full scrub
+- `dashboard.html` — T20 Start Next Grade button + post-K caveat
+- `js/brain/cluster.js` — T22.c full scrub
+- `js/brain/language-cortex.js`, `js/brain/gpu-compute.js`, `js/ui/brain-3d.js`, `js/app.js`, `js/brain/engine.js`, `js/brain/drug-detector.js`, `js/brain/drug-scheduler.js`, `js/brain/embeddings.js`, `js/brain/remote-brain.js`, `js/brain/persistence.js`, `server/worker-pool.js`, `server/drug-rejections.js`, `js/brain/visual-cortex.js`, `js/brain/persona.js` — T22 scrubs
+- `docs/TODO.md` — T22 scope survey + sub-item tracking
+- `docs/FINALIZED.md` — this entry
+- `js/app.bundle.js`, `js/version.js`, `index.html` — rebuilt + stamped at every commit
+
+### Still open
+
+T19 sub-items remaining: source-of-truth extracts (T19.a.1/3/4/5/6/7/8/10/11), TODO-full-syllabus scope check (T19.b.5), FINALIZED spot-check (T19.b.8), CLAUDE.md audit (T19.b.9), HTML deep passes (T19.d.1/3/4/5/6), memory sweep (T19.e.1), cross-verify (T19.f.1).
+
+---
+
 ## 2026-04-21 — Session 114.19bb: T19 doc audit passes 2 + 3 + SPRR ack framing fix + binary weights streaming load
 
 ### Summary
