@@ -2681,7 +2681,39 @@ export class Curriculum {
         console.warn(`[Curriculum] ⛔ grade ${grade} incomplete after ${MAX_GRADE_ROUNDS} rounds — curriculum paused until next boot.`);
         break;
       }
-      console.log(`[Curriculum] ═══ ALL 5 subjects passed ${grade} — advancing to next grade ═══`);
+      console.log(`[Curriculum] ═══ ALL ${SUBJECTS.length} subjects passed ${grade} — advancing to next grade ═══`);
+
+      // Grade-advance pause — default-on after every full grade pass so
+      // the operator can chat-test the learned grade level without
+      // background Hebbian firing during conversation testing. Flips
+      // via the `POST /grade-advance` HTTP endpoint; persists through
+      // save/reload so a passed grade stays paused across restarts.
+      const nextIdx = i + 1;
+      const nextGrade = (nextIdx < GRADE_ORDER.length && (maxIdx < 0 || nextIdx <= maxIdx))
+        ? GRADE_ORDER[nextIdx]
+        : null;
+      if (nextGrade === null) {
+        console.log(`[Curriculum] grade cap reached at '${grade}' — no next grade to advance to. Curriculum walk complete; operator records LAW 6 Part 2 signoff via POST /grade-signoff.`);
+      } else {
+        cluster._gradeAdvancePaused = true;
+        cluster._pausedAt = { subject: null, grade, at: Date.now() };
+        cluster._nextGrade = { grade: nextGrade };
+        // Persist so the pause survives restart.
+        if (typeof this._saveCheckpoint === 'function') {
+          this._saveCheckpoint(`grade-advance-pause:${grade}`);
+        }
+        console.log(`[Curriculum] ⏸ PAUSED after '${grade}' — awaiting operator POST /grade-advance to start '${nextGrade}'. Chat-test freely; no background Hebbian will fire.`);
+        while (cluster._gradeAdvancePaused === true) {
+          if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) {
+            console.log('[Curriculum] shutdown requested during grade-advance pause — stopping.');
+            return { reached: {}, passed, failed };
+          }
+          await new Promise(r => setTimeout(r, 500));
+        }
+        console.log(`[Curriculum] ▶ RESUMED — advancing to '${nextGrade}'.`);
+        cluster._pausedAt = null;
+        cluster._nextGrade = null;
+      }
     }
 
     const reached = {};
@@ -5024,6 +5056,16 @@ export class Curriculum {
     // expected motor argmax.
     const semPathAvailable = !!(dynSemToMotor && dynSemToMotor.values && dynSemToMotor.colIdx && dynSemToMotor.rowPtr);
     const letterFallback = !!(dynLetterToMotor && dynLetterToMotor.values && dynLetterToMotor.colIdx && dynLetterToMotor.rowPtr);
+    // Pre-loop path-decision heartbeat — operator needs to know which
+    // matrix the probe loop is about to hit + whether CPU CSR is live
+    // before a single probe runs. If all paths fail this log catches
+    // it BEFORE the silent skip branch.
+    const _pathMeta = semPathAvailable
+      ? `sem_to_motor ${dynSemToMotor.rows}x${dynSemToMotor.cols} nnz=${dynSemToMotor.nnz}`
+      : (letterFallback
+        ? `letter_to_motor ${dynLetterToMotor.rows}x${dynLetterToMotor.cols} nnz=${dynLetterToMotor.nnz}`
+        : 'NONE_AVAILABLE');
+    console.log(`[Curriculum][K-DIAG] DYN-PROD pre-loop: semPath=${semPathAvailable} letterFallback=${letterFallback} matrix=${_pathMeta}`);
     if (!semPathAvailable && !letterFallback) {
       console.warn('[Curriculum][K-DIAG] DYN-PROD skipped — neither sem_to_motor nor letter_to_motor has CPU CSR available.');
       for (const p of wordStartProbes) prodFails.push(`${p.word}→NO_PROJ`);
@@ -5031,102 +5073,126 @@ export class Curriculum {
       if (!semPathAvailable) {
         console.log('[Curriculum][K-DIAG] DYN-PROD using letter_to_motor fallback (sem_to_motor CPU CSR freed at biological scale).');
       }
-      // Suppress noise just for probe bookkeeping consistency.
-      // Noise doesn't affect direct matrix propagate but the old
-      // RESP / WRITE blocks below may still use it.
-      for (const p of wordStartProbes) {
-        _probeIdx++;
-        const _probeStart = Date.now();
-        const emb = sharedEmbeddings.getEmbedding(p.word);
-        if (!emb || emb.length === 0) {
-          prodFails.push(`${p.word}→NO_EMB`);
-          continue;
-        }
-        if (!semRegion || !motorRegion_) {
-          prodFails.push(`${p.word}→NO_PROJ`);
-          continue;
-        }
-        let motorOutput;
-        if (semPathAvailable) {
-          // Build sem-region-sized injection pattern. Tile the embedding
-          // across sem neurons the same way injectEmbeddingToRegion does,
-          // so the sem→motor matrix sees the same input shape it trained
-          // against during _teachWordEmission.
-          const gSize = Math.max(1, Math.floor(semSize_ / emb.length));
-          const semPattern = new Float64Array(semSize_);
-          for (let d = 0; d < emb.length; d++) {
-            const startNeuron = d * gSize;
-            const val = emb[d];
-            for (let n = 0; n < gSize; n++) {
-              const idx = startNeuron + n;
-              if (idx >= semSize_) break;
-              semPattern[idx] = val;
+      // Probe-window flag — any SparseMatrix.propagate call that hits a
+      // null-CSR path while this flag is up logs a one-shot warning so
+      // the operator can see silent GPU-bound falls. Cleared in finally.
+      globalThis._probeWindowPropagate = true;
+      try {
+        for (const p of wordStartProbes) {
+          _probeIdx++;
+          const _probeStart = Date.now();
+          const emb = sharedEmbeddings.getEmbedding(p.word);
+          if (!emb || emb.length === 0) {
+            prodFails.push(`${p.word}→NO_EMB`);
+            console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} SKIP word='${p.word}' reason=NO_EMB`);
+            continue;
+          }
+          if (!semRegion || !motorRegion_) {
+            prodFails.push(`${p.word}→NO_PROJ`);
+            console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} SKIP word='${p.word}' reason=NO_PROJ`);
+            continue;
+          }
+          // START heartbeat — fires BEFORE propagate. If propagate hangs
+          // on this probe, operator sees START without matching DONE and
+          // can pinpoint exactly which probe + path is stuck.
+          const _probePath = semPathAvailable ? 'sem_to_motor' : 'letter_to_motor_fallback';
+          console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} START word='${p.word}' path=${_probePath}`);
+          let motorOutput;
+          if (semPathAvailable) {
+            // Build sem-region-sized injection pattern. Tile the embedding
+            // across sem neurons the same way injectEmbeddingToRegion does,
+            // so the sem→motor matrix sees the same input shape it trained
+            // against during _teachWordEmission.
+            const gSize = Math.max(1, Math.floor(semSize_ / emb.length));
+            const semPattern = new Float64Array(semSize_);
+            for (let d = 0; d < emb.length; d++) {
+              const startNeuron = d * gSize;
+              const val = emb[d];
+              for (let n = 0; n < gSize; n++) {
+                const idx = startNeuron + n;
+                if (idx >= semSize_) break;
+                semPattern[idx] = val;
+              }
             }
-          }
-          // Propagate through learned sem_to_motor weights.
-          motorOutput = dynSemToMotor.propagate(semPattern);
-        } else {
-          // Fallback path — use letter_to_motor with word's first letter.
-          // Equivalent test: the trained motor argmax for letter(W[0])
-          // should match W[0] (letter-naming binding from
-          // _teachLetterNaming + _teachWordEmission sequence cascade).
-          const firstLetter = p.word[0];
-          const letterOneHot = encodeLetter(firstLetter);
-          const letterSize = letterRegion ? (letterRegion.end - letterRegion.start) : letterOneHot.length;
-          const lGSize = Math.max(1, Math.floor(letterSize / letterOneHot.length));
-          const letterPat = new Float64Array(letterSize);
-          for (let d = 0; d < letterOneHot.length; d++) {
-            if (letterOneHot[d] <= 0) continue;
-            const startNeuron = d * lGSize;
-            for (let n = 0; n < lGSize; n++) {
-              const idx = startNeuron + n;
-              if (idx >= letterSize) break;
-              letterPat[idx] = 1.0;
+            // Propagate through learned sem_to_motor weights.
+            motorOutput = dynSemToMotor.propagate(semPattern);
+          } else {
+            // Fallback path — use letter_to_motor with word's first letter.
+            // Equivalent test: the trained motor argmax for letter(W[0])
+            // should match W[0] (letter-naming binding from
+            // _teachLetterNaming + _teachWordEmission sequence cascade).
+            const firstLetter = p.word[0];
+            const letterOneHot = encodeLetter(firstLetter);
+            const letterSize = letterRegion ? (letterRegion.end - letterRegion.start) : letterOneHot.length;
+            const lGSize = Math.max(1, Math.floor(letterSize / letterOneHot.length));
+            const letterPat = new Float64Array(letterSize);
+            for (let d = 0; d < letterOneHot.length; d++) {
+              if (letterOneHot[d] <= 0) continue;
+              const startNeuron = d * lGSize;
+              for (let n = 0; n < lGSize; n++) {
+                const idx = startNeuron + n;
+                if (idx >= letterSize) break;
+                letterPat[idx] = 1.0;
+              }
             }
+            motorOutput = dynLetterToMotor.propagate(letterPat);
           }
-          motorOutput = dynLetterToMotor.propagate(letterPat);
-        }
-        // Reduce motor output to 26 letter slots via group averaging.
-        const readoutSize = Math.min(invSize_, LETTER_SLOTS);
-        const motorReadout = new Float64Array(readoutSize);
-        for (let d = 0; d < readoutSize; d++) {
-          let sum = 0;
-          for (let n = 0; n < mGroup_; n++) {
-            const idx = d * mGroup_ + n;
-            if (idx < motorOutput.length) sum += motorOutput[idx];
+          // Reduce motor output to 26 letter slots via group averaging.
+          const readoutSize = Math.min(invSize_, LETTER_SLOTS);
+          const motorReadout = new Float64Array(readoutSize);
+          for (let d = 0; d < readoutSize; d++) {
+            let sum = 0;
+            for (let n = 0; n < mGroup_; n++) {
+              const idx = d * mGroup_ + n;
+              if (idx < motorOutput.length) sum += motorOutput[idx];
+            }
+            motorReadout[d] = sum;
           }
-          motorReadout[d] = sum;
-        }
-        // Mean-center + L2 normalize so systemic motor bias doesn't
-        // skew argmax (same post-processing shape as regionReadout).
-        let meanM = 0;
-        for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
-        meanM /= readoutSize;
-        for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
-        const decoded = decodeLetter(motorReadout);
-        // First-probe diagnostic — rank of the expected slot, top 5.
-        if (_firstProbeDiag === null) {
-          const topSlots = [];
-          for (let i = 0; i < motorReadout.length; i++) {
-            topSlots.push({ idx: i, val: motorReadout[i] });
+          // Mean-center + L2 normalize so systemic motor bias doesn't
+          // skew argmax (same post-processing shape as regionReadout).
+          let meanM = 0;
+          for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
+          meanM /= readoutSize;
+          for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
+          const decoded = decodeLetter(motorReadout);
+          // First-probe diagnostic — rank of the expected slot, top 5.
+          if (_firstProbeDiag === null) {
+            const topSlots = [];
+            for (let i = 0; i < motorReadout.length; i++) {
+              topSlots.push({ idx: i, val: motorReadout[i] });
+            }
+            topSlots.sort((a, b) => b.val - a.val);
+            const invSnap = inventorySnapshot();
+            const topStr = topSlots.slice(0, 5).map(s => `${invSnap[s.idx] || '?'}(${s.idx}:${s.val.toFixed(3)})`).join(',');
+            const expectedIdx = invSnap.indexOf(p.expected);
+            const expectedVal = (expectedIdx >= 0 && expectedIdx < motorReadout.length) ? motorReadout[expectedIdx] : NaN;
+            const expectedRank = topSlots.findIndex(s => s.idx === expectedIdx);
+            _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}→${p.expected}] decoded=${decoded || '∅'}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : 'NaN'}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
           }
-          topSlots.sort((a, b) => b.val - a.val);
-          const invSnap = inventorySnapshot();
-          const topStr = topSlots.slice(0, 5).map(s => `${invSnap[s.idx] || '?'}(${s.idx}:${s.val.toFixed(3)})`).join(',');
-          const expectedIdx = invSnap.indexOf(p.expected);
-          const expectedVal = (expectedIdx >= 0 && expectedIdx < motorReadout.length) ? motorReadout[expectedIdx] : NaN;
-          const expectedRank = topSlots.findIndex(s => s.idx === expectedIdx);
-          _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}→${p.expected}] decoded=${decoded || '∅'}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : 'NaN'}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
+          if (decoded === p.expected) {
+            prodPass++;
+          } else {
+            prodFails.push(`${p.word}→${decoded || '?'}`);
+          }
+          const _probeMs = Date.now() - _probeStart;
+          // DONE heartbeat — fires on every probe (unthrottled) so the
+          // hang's landing site is always traceable. Tags >10 s probes
+          // as SLOW since propagate is sync CPU sparse matmul and at
+          // 14.9 M nnz should be 100-500 ms per call — anything over
+          // 10 s means the path is unhealthy (GPU-bound fallthrough,
+          // cache thrash, memory pressure, etc.).
+          const _slowTag = _probeMs > 10000 ? ' SLOW' : '';
+          console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} DONE${_slowTag} '${p.word}'→'${decoded||'?'}' (expected '${p.expected}') in ${_probeMs}ms — prodPass=${prodPass}/${_probeIdx} so far`);
+          // Yield to the event loop between probes so any pending
+          // setTimeout can fire (e.g., compute_batch timers). Without
+          // this the DYN-PROD block is 17 sync probes back-to-back and
+          // the event loop never breathes — which is fine for probe
+          // correctness but masks hangs and prevents other work from
+          // scheduling. Single microtask yield, zero-ms delay.
+          await new Promise(resolve => setImmediate(resolve));
         }
-        if (decoded === p.expected) {
-          prodPass++;
-        } else {
-          prodFails.push(`${p.word}→${decoded || '?'}`);
-        }
-        const _probeMs = Date.now() - _probeStart;
-        if (_probeIdx <= 3 || _probeIdx === wordStartProbes.length || _probeMs > 5000) {
-          console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} '${p.word}'→'${decoded||'?'}' (expected '${p.expected}') in ${_probeMs}ms — prodPass=${prodPass}/${_probeIdx} so far`);
-        }
+      } finally {
+        globalThis._probeWindowPropagate = false;
       }
     }
     console.log(`[Curriculum][K-DIAG] DYN-PROD probe DONE in ${Date.now() - _dynProdStart}ms — prodPass=${prodPass}/${wordStartProbes.length}`);

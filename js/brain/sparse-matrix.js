@@ -185,6 +185,21 @@ export class SparseMatrix {
    */
   propagate(spikes) {
     const { rows, values, colIdx, rowPtr } = this;
+    // Defensive null-CSR guard. At biological scale some matrices get
+    // their CPU CSR arrays freed to save external memory once GPU-bound
+    // — calling propagate on such a matrix used to crash with "Cannot
+    // read properties of null". Now returns a zero-filled current
+    // vector of the correct size. One-shot warn during probe windows
+    // (flag set by curriculum gate blocks) so silent GPU-bound falls
+    // are visible in the probe log without spamming the main tick.
+    if (!values || !colIdx || !rowPtr) {
+      if (typeof globalThis !== 'undefined' && globalThis._probeWindowPropagate && !this._nullCsrWarned) {
+        this._nullCsrWarned = true;
+        const nm = this._name || this.name || '(unnamed)';
+        console.warn(`[SparseMatrix] propagate called with null CPU CSR on ${nm} (values=${!!values} colIdx=${!!colIdx} rowPtr=${!!rowPtr}) — returning zeros. Matrix is likely GPU-bound with CPU arrays freed.`);
+      }
+      return new Float64Array(rows || 0);
+    }
     const I = new Float64Array(rows);
 
     for (let i = 0; i < rows; i++) {
