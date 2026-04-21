@@ -4774,24 +4774,114 @@ export class Curriculum {
       ]);
       _phaseDone('_teachCausalChains');
 
-      // LLM-analog question→answer binding. Carves sem→motor +
-      // recurrent intra-cluster Hebbian on paired spike patterns
-      // from TRAIN_BANKS['ela/kindergarten'] (held-out-disjoint from
-      // EXAM_BANKS). Pairs share sub-standard + structure with the
-      // exam questions but use different specific content, so a
-      // pass on the held-out exam reflects learned generalization
-      // rather than memorization.
-      try {
-        const qaPairs = TRAIN_BANKS['ela/kindergarten'] || [];
-        if (qaPairs.length > 0) {
-          _phaseTick('_teachQABinding');
-          await this._teachQABinding(qaPairs, { reps: 10, label: 'ELA-K-QA-BINDING' });
-          _phaseDone('_teachQABinding');
-          this._memorySnapshotAndGc('after _teachQABinding');
-        }
-      } catch (err) {
-        console.warn('[Curriculum] ELA-K QA binding failed:', err?.message || err);
+      // Equational association-pair teaching — covers the K.L.5b
+      // opposite relation, K.L.5a category-membership, K.RL story-
+      // element roles, K.RF.1a print-direction concepts, K.L.1b
+      // noun/verb classification. Pure feature-vector writes via
+      // _writeTiledPattern + _teachHebbian — no text streaming, no
+      // readInput. Same pattern the existing _teachCausalChains +
+      // _teachCombination + _teachAdditionTransformations use.
+      //
+      // K.L.5b Opposites (relationTagId=0)
+      _phaseTick('_teachOpposites');
+      await this._teachAssociationPairs([
+        ['big','small'], ['small','big'],
+        ['hot','cold'], ['cold','hot'],
+        ['up','down'], ['down','up'],
+        ['fast','slow'], ['slow','fast'],
+        ['tall','short'], ['short','tall'],
+        ['new','old'], ['old','new'],
+        ['day','night'], ['night','day'],
+        ['light','dark'], ['dark','light'],
+        ['happy','sad'], ['sad','happy'],
+        ['in','out'], ['out','in'],
+        ['on','off'], ['off','on'],
+        ['wet','dry'], ['dry','wet'],
+        ['open','closed'], ['closed','open'],
+        ['good','bad'], ['bad','good'],
+        ['come','go'], ['go','come'],
+        ['push','pull'], ['pull','push'],
+        ['more','less'], ['less','more'],
+        ['loud','quiet'], ['quiet','loud'],
+        ['hard','soft'], ['soft','hard'],
+        ['full','empty'], ['empty','full'],
+        ['young','old'], ['old','young'],
+        ['strong','weak'], ['weak','strong'],
+        ['up','below'], ['above','below'],
+      ], { reps: 10, label: 'ELA-K-OPPOSITES', relationTagId: 0 });
+      _phaseDone('_teachOpposites');
+
+      // K.L.5a Category membership (relationTagId=1)
+      _phaseTick('_teachCategories');
+      await this._teachAssociationPairs([
+        ['dog','animal'], ['cat','animal'], ['bird','animal'], ['fish','animal'],
+        ['horse','animal'], ['cow','animal'], ['pig','animal'], ['sheep','animal'],
+        ['apple','fruit'], ['banana','fruit'], ['grape','fruit'], ['orange','fruit'],
+        ['carrot','vegetable'], ['potato','vegetable'], ['bean','vegetable'],
+        ['red','color'], ['blue','color'], ['green','color'], ['yellow','color'],
+        ['black','color'], ['white','color'], ['pink','color'], ['purple','color'],
+        ['circle','shape'], ['square','shape'], ['triangle','shape'], ['rectangle','shape'],
+        ['one','number'], ['two','number'], ['three','number'], ['four','number'],
+        ['five','number'], ['six','number'], ['seven','number'], ['eight','number'],
+        ['monday','day'], ['tuesday','day'], ['friday','day'],
+        ['january','month'], ['june','month'], ['december','month'],
+        ['rain','weather'], ['snow','weather'], ['sun','weather'], ['wind','weather'],
+        ['head','body'], ['arm','body'], ['leg','body'], ['hand','body'],
+      ], { reps: 10, label: 'ELA-K-CATEGORIES', relationTagId: 1 });
+      _phaseDone('_teachCategories');
+
+      // K.RL.3 + K.RL.6 Story elements & book roles (relationTagId=2)
+      _phaseTick('_teachStoryRoles');
+      await this._teachAssociationPairs([
+        ['hero','character'], ['person','character'], ['someone','character'],
+        ['place','setting'], ['where','setting'], ['location','setting'],
+        ['wrote','author'], ['book','author'], ['writer','author'],
+        ['pictures','illustrator'], ['drew','illustrator'], ['art','illustrator'],
+        ['beginning','start'], ['middle','middle'], ['ending','end'],
+        ['title','name'], ['cover','front'],
+        ['problem','conflict'], ['solution','resolved'],
+      ], { reps: 10, label: 'ELA-K-STORY-ROLES', relationTagId: 2 });
+      _phaseDone('_teachStoryRoles');
+
+      // K.RF.1a + K.RF.1b + K.RF.1c Print concepts (relationTagId=3)
+      _phaseTick('_teachPrintConcepts');
+      await this._teachAssociationPairs([
+        ['read','top'], ['start','top'], ['begin','top'], ['first','top'],
+        ['end','bottom'], ['last','bottom'], ['finish','bottom'],
+        ['read','left'], ['direction','left'],
+        ['sentence','period'], ['question','mark'], ['exclaim','exclamation'],
+        ['statement','period'], ['ending','period'],
+        ['word','space'], ['between','space'], ['separate','space'],
+        ['capital','start'], ['uppercase','first'], ['beginning','capital'],
+      ], { reps: 10, label: 'ELA-K-PRINT', relationTagId: 3 });
+      _phaseDone('_teachPrintConcepts');
+
+      // K.L.1b Noun/verb/adjective classification (relationTagId=4)
+      _phaseTick('_teachWordTypes');
+      await this._teachAssociationPairs([
+        // nouns (things, people, places)
+        ['cat','noun'], ['dog','noun'], ['house','noun'], ['chair','noun'],
+        ['table','noun'], ['book','noun'], ['ball','noun'], ['tree','noun'],
+        ['teacher','noun'], ['mom','noun'], ['car','noun'], ['sun','noun'],
+        // verbs (actions)
+        ['run','verb'], ['jump','verb'], ['eat','verb'], ['sleep','verb'],
+        ['walk','verb'], ['sing','verb'], ['read','verb'], ['write','verb'],
+        ['play','verb'], ['sit','verb'], ['stand','verb'], ['swim','verb'],
+        // adjectives (descriptions)
+        ['red','adjective'], ['big','adjective'], ['happy','adjective'],
+        ['fast','adjective'], ['tall','adjective'], ['soft','adjective'],
+      ], { reps: 10, label: 'ELA-K-WORD-TYPES', relationTagId: 4 });
+      _phaseDone('_teachWordTypes');
+
+      // K.RF.1d Alphabet sequence (relationTagId=5) — letter N → letter N+1
+      _phaseTick('_teachAlphabetSequencePairs');
+      const letters = 'abcdefghijklmnopqrstuvwxyz';
+      const seqPairs = [];
+      for (let i = 0; i < letters.length - 1; i++) {
+        seqPairs.push([letters[i], letters[i + 1]]);
       }
+      await this._teachAssociationPairs(seqPairs, { reps: 12, label: 'ELA-K-ALPHABET-SEQ', relationTagId: 5 });
+      _phaseDone('_teachAlphabetSequencePairs');
 
       this._elaKRemakeDone = true;
     }
@@ -5998,18 +6088,51 @@ export class Curriculum {
       // numeric answers through sem→motor tick-driven emission.
       await this._teachMagnitudeToMotor(ctx);
 
-      // LLM-analog question→answer binding for Math-K. Same equational
-      // Hebbian carve as ELA-K — read question via ventral path,
-      // overwrite motor with target answer, fire _teachHebbian.
-      // Training pairs distinct from math/kindergarten EXAM.
-      try {
-        const qaPairs = TRAIN_BANKS['math/kindergarten'] || [];
-        if (qaPairs.length > 0) {
-          await this._teachQABinding(qaPairs, { reps: 10, label: 'MATH-K-QA-BINDING' });
-        }
-      } catch (err) {
-        console.warn('[Curriculum] Math-K QA binding failed:', err?.message || err);
-      }
+      // Equational association-pair teach — number-name sequence
+      // (for K.CC.2 count-forward tested as word answers), shape-
+      // name pairs (K.G.1 + K.G.2), and word-form arithmetic
+      // (K.OA.1 tested as "five plus two is seven"). All pure
+      // feature-vector Hebbian via _teachAssociationPairs. The
+      // magnitude-feature math transforms already shipped carry
+      // the numeric-answer path; these pairs carry the word-form
+      // answer path that the exam uses.
+
+      // K.CC.2 number-name sequence: "one" → "two" etc. (relationTagId=5)
+      await this._teachAssociationPairs([
+        ['one','two'], ['two','three'], ['three','four'], ['four','five'],
+        ['five','six'], ['six','seven'], ['seven','eight'], ['eight','nine'],
+        ['nine','ten'], ['ten','eleven'], ['eleven','twelve'], ['twelve','thirteen'],
+        ['thirteen','fourteen'], ['fourteen','fifteen'], ['fifteen','sixteen'],
+        ['sixteen','seventeen'], ['seventeen','eighteen'], ['eighteen','nineteen'],
+        ['nineteen','twenty'], ['twenty','thirty'], ['thirty','forty'], ['forty','fifty'],
+      ], { reps: 10, label: 'MATH-K-NUMBER-SEQ', relationTagId: 5 });
+
+      // K.G.1 + K.G.2 shape name ↔ attribute (relationTagId=1)
+      await this._teachAssociationPairs([
+        ['triangle','three'], ['square','four'], ['rectangle','four'],
+        ['pentagon','five'], ['hexagon','six'], ['octagon','eight'],
+        ['circle','round'], ['sphere','ball'], ['cube','box'], ['cylinder','can'],
+      ], { reps: 10, label: 'MATH-K-SHAPE-ATTR', relationTagId: 1 });
+
+      // K.CC.6 word-form comparisons (relationTagId=0 — opposite-esque)
+      await this._teachAssociationPairs([
+        ['more','greater'], ['less','smaller'],
+        ['bigger','more'], ['smaller','less'],
+        ['five','more-than-three'], ['three','less-than-five'],
+        ['ten','more-than-five'], ['two','less-than-eight'],
+      ], { reps: 8, label: 'MATH-K-COMPARE', relationTagId: 0 });
+
+      // K.OA.1 + K.OA.5 word-form arithmetic answers — carve
+      // sem(operation-word-sum) → motor(number-word answer).
+      // Magnitude-feature transforms already carve the digit path;
+      // this carries the spelled-out path.
+      await this._teachAssociationPairs([
+        ['plus','add'], ['minus','subtract'],
+        ['one-plus-one','two'], ['two-plus-two','four'], ['three-plus-three','six'],
+        ['four-plus-four','eight'], ['five-plus-five','ten'],
+        ['one-plus-two','three'], ['two-plus-three','five'], ['three-plus-four','seven'],
+        ['ten-minus-one','nine'], ['ten-minus-five','five'], ['five-minus-one','four'],
+      ], { reps: 8, label: 'MATH-K-ARITH-WORDS', relationTagId: 4 });
 
       this._mathKTransformsDone = true;
     }
@@ -7687,76 +7810,72 @@ export class Curriculum {
     }
   }
 
-  // ─── _teachQABinding — LLM-analog question→answer training ────────
+  // ─── _teachAssociationPairs — pure feature-vector concept binding ──
   //
-  // For each {question, answer} pair, carve the sem→motor (and
-  // recurrent intra-cluster) cross-projection so that when the brain
-  // reads the question via the ventral visual→letter→phon→sem path,
-  // the motor region holds the answer pattern by the time generation
-  // reads it out. Equational equivalent of LLM input→target training:
+  // For each [inputWord, outputWord] pair, inject GloVe(input) into
+  // the sem region and GloVe(output) into the motor region via direct
+  // pattern tiling, then fire the cross-projection + recurrent
+  // intra-cluster Hebbian. Pure feature-tensor equational math — no
+  // text streaming, no readInput, no string parsing. Matches the
+  // shape of `_teachCausalChains` / `_teachCombination` / the other
+  // direct-pattern teach methods.
   //
-  //   1. cluster.readInput(question) — streams characters through
-  //      visual→letter→phon→sem. After N ticks cortex.lastSpikes
-  //      reflects the question-post-read state.
-  //   2. _writeTiledPattern(motor, answerEmb) — OVERWRITE motor region
-  //      with the target answer's GloVe embedding. Now lastSpikes =
-  //      question-state across most regions + target answer in motor.
-  //   3. _teachHebbian(lr) — fires cross-projection Hebbian on the
-  //      paired spike pattern. sem→motor strengthens for the question-
-  //      content → answer pairing. Over N reps this carves a learned
-  //      mapping.
+  // At probe time, when the sem region develops an embedding
+  // matching `inputWord`, the trained sem→motor cross-projection
+  // drives the motor pattern matching `outputWord`. Tick-driven
+  // motor emission then reads the answer letter-by-letter.
   //
-  // At probe time, generateSentenceAwait reads input (same ventral
-  // path), ticks the cluster, and motor argmax emerges from the
-  // trained cross-projection weights. If the training set covered
-  // the pattern (same sub-standard, different content) the learned
-  // basins generalize to the held-out EXAM_BANKS questions.
+  // Also optionally tags fineType with a relation-type id so the
+  // cortex learns the RELATION as well as the pair (opposite /
+  // category / story-role / etc.).
   //
-  // Persistence: the updated cross-projection weights save via
-  // brain-server.js `_saveBinaryWeights` (streaming binary format,
-  // every cross-projection CSR captured). Restart + Savestart.bat
-  // preserves the learned state across reboots.
-  async _teachQABinding(pairs, opts = {}) {
+  // Persistence: cross-projection weights save via brain-server.js
+  // `_saveBinaryWeights` streaming binary format — every cross-
+  // projection CSR captured. Restart + Savestart.bat preserves the
+  // learned state across reboots.
+  async _teachAssociationPairs(pairs, opts = {}) {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return { trained: 0, skipped: 0 };
     if (!Array.isArray(pairs) || pairs.length === 0) return { trained: 0, skipped: 0 };
-    const reps = opts.reps ?? 6;
+    const reps = opts.reps ?? 8;
     const lr = opts.lr ?? cluster.learningRate;
-    const label = opts.label || 'QA-BINDING';
-    const motorRegion = cluster.regions && cluster.regions.motor;
+    const label = opts.label || 'ASSOC';
     const semRegion = cluster.regions && cluster.regions.sem;
-    if (!motorRegion || !semRegion) {
-      console.warn(`[Curriculum][${label}] skipped — motor or sem region not available`);
+    const motorRegion = cluster.regions && cluster.regions.motor;
+    const fineTypeRegion = cluster.regions && cluster.regions.fineType;
+    if (!semRegion || !motorRegion) {
+      console.warn(`[Curriculum][${label}] skipped — sem or motor region not available`);
       return { trained: 0, skipped: pairs.length };
     }
+    // Optional relation-tag: third-of-fineType-region activation
+    // pattern identifying the relation class (0 = opposite,
+    // 1 = category, 2 = role, 3 = sequence, etc.). Carved into
+    // fineType so cortex can learn per-relation mappings.
+    const relationTagId = typeof opts.relationTagId === 'number' ? opts.relationTagId : null;
     let trained = 0, skipped = 0;
     const startMs = Date.now();
-    console.log(`[Curriculum][${label}] START — ${pairs.length} Q→A pairs × ${reps} reps`);
+    console.log(`[Curriculum][${label}] START — ${pairs.length} pairs × ${reps} reps`);
     for (let rep = 0; rep < reps; rep++) {
-      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) {
-        console.log(`[Curriculum][${label}] shutdown requested — stopping at rep ${rep}/${reps}`);
-        break;
-      }
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return { trained, skipped };
       for (const pair of pairs) {
-        if (!pair || !pair.question || !pair.expectedAnswer) { skipped++; continue; }
-        const answer = String(pair.expectedAnswer).trim();
-        const answerEmb = (answer && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function')
-          ? sharedEmbeddings.getEmbedding(answer) : null;
-        if (!answerEmb || answerEmb.length === 0) { skipped++; continue; }
+        if (!Array.isArray(pair) || pair.length < 2) { skipped++; continue; }
+        const [inputWord, outputWord] = pair;
+        const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
+          ? sharedEmbeddings.getEmbedding(inputWord) : null;
+        const outEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
+          ? sharedEmbeddings.getEmbedding(outputWord) : null;
+        if (!inEmb || !outEmb || inEmb.length === 0 || outEmb.length === 0) { skipped++; continue; }
         try {
-          // 1. Read the question through the ventral path so cortex
-          //    settles into its question-post-read representation.
-          if (typeof cluster.readInput === 'function') {
-            await cluster.readInput(String(pair.question), { ticks: 8 });
+          this._clearSpikes();
+          this._writeTiledPattern(semRegion, inEmb, true);
+          this._writeTiledPattern(motorRegion, outEmb, true);
+          if (fineTypeRegion && relationTagId !== null) {
+            const fineSize = fineTypeRegion.end - fineTypeRegion.start;
+            const band = Math.floor(fineSize / 6);
+            const tagStart = fineTypeRegion.start + relationTagId * band;
+            const tagEnd = Math.min(fineTypeRegion.end, tagStart + band);
+            for (let i = tagStart; i < tagEnd; i++) cluster.lastSpikes[i] = 1;
           }
-          // 2. Overwrite motor region with the target answer pattern.
-          //    Answer GloVe is the target representation the learned
-          //    weights need to produce when the question input is
-          //    present downstream.
-          this._writeTiledPattern(motorRegion, answerEmb, true);
-          // 3. Fire Hebbian on the paired spike pattern. Both cross-
-          //    region projections (14 of them) AND the intra-cluster
-          //    recurrent matrix get carved on the paired state.
           await this._teachHebbian(lr);
           trained++;
         } catch (err) {
@@ -7766,7 +7885,7 @@ export class Curriculum {
       await _microtask();
     }
     const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1);
-    console.log(`[Curriculum][${label}] DONE — trained ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})`);
+    console.log(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})`);
     return { trained, skipped };
   }
 
