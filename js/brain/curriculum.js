@@ -4502,12 +4502,24 @@ export class Curriculum {
     const cluster = this.cluster;
     const ALPHABET = ALPHABET_ORDER;
 
-    // T18.28 — drain-wait before gate probe. Gee 2026-04-19 froze after
-    // "[K-DIAG] gate: ..." log fired — gate-probe readbacks queue
+    // Pause main brain compute_batch dispatch for the ENTIRE gate
+    // window (letter loop + SEQ + DYN-PROD + WRITE + RESP + 2WORD +
+    // FREE + K-STUDENT). Prior code set this only at DYN-PROD entry
+    // which was too late — the gate letter loop (4-5 s CPU-side
+    // sparse matmul at 301K scale) + SEQ probe (8 s) blocked the
+    // main JS event loop for ~13 s, racing the 15 s compute_batch
+    // timeout. Setting the flag here keeps main brain paused for
+    // the whole probe suite so compute_batch dispatches stop
+    // entirely during the window. Flag cleared in the finally
+    // block at the end of the gate.
+    if (cluster) cluster._probeGateActive = true;
+
+    try {
+    // Drain-wait before gate probe — gate-probe readbacks queue
     // behind pending Hebbian frames in compute.html's serial onmessage
-    // queue. With ~17000 lifetime frames and 19-28 frames/sec drain
-    // rate, a readback request could wait 10+ minutes to land. Wait
-    // for bufferedAmount to drop below 10MB before firing probe reads.
+    // queue. With high lifetime frame count and limited drain rate,
+    // a readback request could wait minutes to land. Wait for
+    // bufferedAmount to drop below threshold before firing probe reads.
     if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === 'function') {
       try {
         console.log(`[Curriculum] T18.28 draining WebSocket queue before gate probe...`);
@@ -5277,6 +5289,21 @@ export class Curriculum {
     // chaotic dynamics. Probe block completes here regardless of pass/fail.
     cluster.noiseAmplitude = _savedProbeNoise;
     return _elaKResult;
+    } finally {
+      // Drain the GPU queue before resuming main brain so the first
+      // post-gate compute_batch doesn't race a lingering propagate
+      // response. Lingering promises can resolve against the wrong
+      // tick and push the GPU pipeline into a device-lost cascade.
+      if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === 'function') {
+        try {
+          await cluster._gpuProxy.drainWait();
+        } catch { /* non-fatal — main brain just waits an extra tick */ }
+      }
+      // Clear probe-gate flag so main brain resumes compute_batch.
+      // Fires on normal return AND on exception so main brain always
+      // resumes — no deadlock possible from an unexpected probe throw.
+      if (cluster) cluster._probeGateActive = false;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════
