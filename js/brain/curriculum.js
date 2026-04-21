@@ -4100,9 +4100,34 @@ export class Curriculum {
     let _p1LastBeat = _p1Start;
     let _p1Done = 0;
 
+    // Phase 1 boot diagnostic — runs BEFORE the loop so operator sees
+    // cluster state even if the first Hebbian call hangs. Reports the
+    // GPU-proxy readiness flag, sparse-pool readiness, per-projection
+    // GPU-bound status + CPU-CSR alive/freed status. One-shot — if
+    // anything downstream hangs, this log identifies which path the
+    // Hebbian dispatch is taking.
+    try {
+      const projNames = Object.keys(cluster.crossProjections || {});
+      const gpuReady = !!cluster._gpuProxyReady;
+      const hasProxy = !!(cluster._gpuProxy && cluster._gpuProxy.hebbianBound);
+      const poolReady = !!(cluster._sparsePool && cluster._sparsePool.ready);
+      const projStatus = projNames.map((n) => {
+        const p = cluster.crossProjections[n];
+        const gpuBound = !!(p && p._gpuBound);
+        const cpuAlive = !!(p && p.values && p.colIdx && p.rowPtr);
+        return `${n}:${gpuBound ? 'G' : '-'}${cpuAlive ? 'C' : '-'}`;
+      }).join(' ');
+      console.log(`[Curriculum] Phase 1 preflight — gpuReady=${gpuReady} proxy=${hasProxy} pool=${poolReady} · proj[G=gpuBound C=cpuCSR]: ${projStatus}`);
+    } catch (err) {
+      console.warn(`[Curriculum] Phase 1 preflight diag failed: ${err?.message || err}`);
+    }
+
     // TEACH: direct Hebbian on intended patterns
     for (let rep = 0; rep < REPS; rep++) {
       for (const letter of ALPHABET) {
+        const _iterStart = Date.now();
+        const _logFirst = (_p1Done < 3);
+        if (_logFirst) console.log(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' START`);
         const letterOneHot = encodeLetter(letter);
         const phonFeat = _phonemeFeatureForLetter(letter);
         const nameEmb = sharedEmbeddings.getEmbedding(letter);
@@ -4137,7 +4162,9 @@ export class Curriculum {
         }
 
         // Fire cross-region Hebbian on these clean patterns
+        if (_logFirst) console.log(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' pre-crossRegion (${Date.now() - _iterStart}ms into iter)`);
         await cluster._crossRegionHebbian(lr);
+        if (_logFirst) console.log(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' DONE (${Date.now() - _iterStart}ms total)`);
         this.stats.lettersSeen++;
         _p1Done++;
         const _p1Now = Date.now();
