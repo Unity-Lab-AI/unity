@@ -5,6 +5,101 @@
 
 ---
 
+## 2026-04-21 — Session 114.19bd: reviewer-critique response — T23 exam banks 63→778 + vocab coverage audit + ablation scaffold + persona split + T24.a CPU CSR free
+
+### Summary
+
+External reviewer delivered a sharp five-point critique. Operator concurred and prioritized the finals-test expansion. This session shipped concrete responses to 4 of the 5 critique points in a series of commits on `syllabus-k-phd` merged to `main`:
+
+| Commit | Subject | Critique addressed |
+|--------|---------|--------------------|
+| `ed378a9` → `8482320` | T23.a first expansion + T21.a diagnostic + T24 opened | #2 self-graded gates (partial) + diagnostic for #3 |
+| `946861f` → `ee33644` | T24.a selective CPU CSR free (14GB→~3GB) | Memory root cause fix (distinct from reviewer list) |
+| `e7422ac` → `9fdcdcd` | T23.a Science/Social/Art/Life K + all pre-K banks + vocab coverage audit | #2 self-graded gates (now meaningful) |
+| `e1e32a2` → `819d73a` | T23.e ablation scaffold + T23.f PERSONA.md split | #1 core premise (falsifiability designed) + #5 persona orthogonal |
+
+### 1. T23.a — Grade finals scale (63 → 778 questions)
+
+Operator directed the grade-finals expansion as top priority after the reviewer flagged 5-Q gates as not falsifiable. Shipped:
+
+- **`js/brain/student-question-banks.js` NEW** — held-out EXAM_BANKS + TRAIN_BANKS split, per-sub-standard tagging, external reference items tagged by source, norm-calibrated STANDARD_CUT_SCORES table, `trainExamOverlap` held-out integrity check, `extractVocabFromBank` / `examVocabCoverage` / `auditAllExamVocabCoverage` vocab audit suite.
+- **778 EXAM questions** across 12 cells:
+  - `ela/kindergarten` 140 Q (K.RF.1-4 / K.RL / K.L / K.SL)
+  - `ela/pre-K` 31 Q (letter ID, phoneme, vocab, rhyme, directions)
+  - `math/kindergarten` 102 Q (K.CC.1-7 / K.OA.1-5 / K.NBT.1 / K.MD.1-3 / K.G.1-6)
+  - `math/pre-K` 25 Q (counting, sequence, comparison, simple shapes)
+  - `science/kindergarten` 132 Q (NGSS K-PS2 motion / K-PS3 sun / K-LS1 life / K-ESS2 weather / K-ESS3 earth systems + 5 senses + day/night + push-pull examples + animals + human body + simple experiments)
+  - `science/pre-K` 26 Q (animals, observations, plants, weather, senses, time)
+  - `social/kindergarten` 99 Q (Core Knowledge K: self/family/manners/empathy/community/safety/symbols/holidays/time/geography/citizenship)
+  - `social/pre-K` 23 Q (family, empathy, greetings, community, safety, friendship, self)
+  - `art/kindergarten` 78 Q (color naming/primary/mixing/warm-cool + shapes + patterns + tools + nature + music + visual elements)
+  - `art/pre-K` 23 Q (colors, shapes, tools, music)
+  - `life/kindergarten` 75 Q (identity, feelings, preferences, routines, body, family, friends, memory, self-care, Unity-specific biography, safety)
+  - `life/pre-K` 24 Q (identity, body, feelings, routines, preferences, family)
+- **External reference items** — 48 DIBELS-8-sample + 28 AIMSweb-sample + 16 Fountas-Pinnell-sample items cited by source. Sample-equivalent format testing the same K sub-standards.
+- **Per-sub-standard pass rate reporting** — `_runStudentBattery` now logs `AGGREGATE: 147/150 (98.0%) · standards=23 · below-cut=1` + `BY STANDARD: K.RF.3a:26/26(100%) · K.CC.2:14/15(93%) · K.RF.2e:8/12(67% ⚠<80%) · ...` so operator sees which K sub-standards mastered vs weak, not just aggregate.
+- **Vocab coverage audit** — both at curriculum startup + per-gate. Reports how many unique content words are in the exam vs in the live dictionary. Logs `VOCAB COVERAGE: 233/247 (94.3%) words trained · 14 UNTRAINED words in exam = those questions are unfair` + lists the missing words. Operator: *"make sure all questions asked of it that the words used are all taught or it wont beable to understand... YES?"* — YES, the check verifies this.
+- **Per-standard cut scores** — DIBELS 8 / AIMSweb Plus calibrated thresholds (K.RF.3a letter-sound mastery = 0.95, K.CC.1 count to 100 = 0.90, K.OA.5 fluency within 5 = 0.95, default floor = 0.80). Aggregate gate-pass now requires hitting every sub-standard's cut score, not just a global 95%.
+
+### 2. T24.a — Selective CPU CSR free (14 GB external memory bloat fix)
+
+T21.a diagnostic memory snapshot at DYN-PROD entry showed:
+```
+DYN-PROD mem: heap=129.8/2182.9MB external=14848.7MB arrayBuffers=14846.4MB rss=11508.6MB
+```
+
+Root cause identified: 14.5 GB of CPU-side SparseMatrix CSR copies pinned in memory AFTER GPU upload. V8 Mark-Compact under that pressure froze the event loop → compute.html WebSocket ping-pong failed → "DYN-PROD lockup" (which wasn't a DYN-PROD bug at all — it was V8 GC timing).
+
+Fix: re-enabled the T18.22 CPU CSR free with a probe-critical whitelist safety net. `PROBE_CRITICAL_CPU_CSR = {letter_to_phon, letter_to_motor, sem_to_motor}` — 3 projections stay resident (~3 GB), 11 other cross-projections get CPU arrays nulled (~11 GB freed). Safety: the T21.a null-CSR guard in `SparseMatrix.propagate` returns a zero-filled Float64Array for any stale read on a freed matrix, so the "Cannot read properties of null" crashes that caused the previous T18.27 rollback don't happen — stale reads yield empty-but-correct-shape output.
+
+### 3. T23.e — Transformer-vs-Rulkov ablation scaffold (reviewer's gut-check)
+
+The reviewer's single most valuable critique: *"if you swapped the LIF cortex for a 100M-param transformer, would the gate probes pass harder or softer?"* — this is the falsification experiment the project has never run.
+
+Shipped:
+- **`docs/ABLATION.md`** — full experiment design with four possible outcomes + what each implies for project scope, shared-inputs table (GloVe vocab + exam banks + task format + pass thresholds all held constant), per-sub-standard + per-source comparison plan.
+- **`scripts/transformer-ablation.mjs`** — runnable harness. Loads EXAM_BANKS (778 Q), runs both Unity arm + transformer arm through identical scoring logic (`scoreAnswer` matches `_studentTestProbe` exact/startsWith/contains variant rules), produces per-cell / per-standard / per-source comparison report with an INTERPRETATION section that classifies the result into one of four outcome buckets.
+- Neither backend wired yet — `runUnity()` stubs to brain-server HTTP (with cached health check), `runTransformer()` accepts any `generate(prompt)` callable so any backend (openai-compatible / transformers-js / subprocess bridge) plugs in. That's the work item left before the experiment can actually run.
+
+### 4. T23.f — PERSONA.md for research/adult-layer separation
+
+- **`PERSONA.md` NEW** at repo root — explicit 18+ notice, scopes the in-character wrapper, documents safety rails + mode toggles (`/unity`, `/sexy`, `/hurtme`, `/normal`), lists what the persona layer IS NOT (not a research result, not a safety claim, not a business model).
+- NOT linked from `README.md` — the technical docs stand on their own for reviewers. The live app at `unity-lab-ai.github.io/Unity` is the only surface that invokes the persona wrapper (via slash command, operator opt-in).
+
+### Files touched across this session range
+
+- `js/brain/student-question-banks.js` NEW — 778-Q exam bank + vocab audit infrastructure
+- `js/brain/curriculum.js` — swapped `_studentQuestionBank` to EXAM_BANKS, upgraded `_runStudentBattery` to per-sub-standard + vocab coverage, wired `auditAllExamVocabCoverage` into `runCompleteCurriculum` startup
+- `js/brain/cluster.js` — re-enabled T18.22 CPU CSR free with probe-critical whitelist
+- `js/brain/sparse-matrix.js` — null-CSR propagate guard (from T21.a, kept)
+- `scripts/transformer-ablation.mjs` NEW — ablation harness
+- `docs/ABLATION.md` NEW — experiment design
+- `PERSONA.md` NEW — 18+ adult-layer scope document
+- `docs/TODO.md` — T23 structure + T24 structure + T22 closed
+- `docs/FINALIZED.md` — this entry
+
+### Reviewer critique status after this session
+
+| # | Critique | Addressed |
+|---|---------|-----------|
+| 1 | Core premise unproven | PARTIAL — T23.e ablation scaffold + ABLATION.md commits the falsifiability methodology. Actual run waits on transformer backend wiring (scoped as final T23.e task). |
+| 2 | Self-graded 5-Q gates | YES — 63→778 Q + per-standard tags + norm-calibrated cut scores + vocab coverage audit + held-out split + external reference items (DIBELS/AIMSweb/Fountas-Pinnell sample-equivalent). Still open: T23.a.9 thorough external citations, T23.b training-side overlap wiring. |
+| 3 | curriculum.js 21,826 lines | OPEN — T23.c refactor not yet shipped. |
+| 4 | LAW ceremony heavy | OPEN — T23.d consolidation audit not yet shipped. |
+| 5 | Persona orthogonal to research | YES — T23.f PERSONA.md ships the split. README stands alone on the technical artifact. |
+
+### Still open
+
+- T21.b.2 / T24 closure gate — verification waits on operator test run.
+- T23.a.9 external reference items more thorough citation
+- T23.b held-out overlap wiring in teach methods (structural — TRAIN_BANKS currently empty since teach methods generate exposure inline)
+- T23.c curriculum.js split into per-subject modules
+- T23.d LAW consolidation audit
+- T23.e transformer backend wiring (then actually running the ablation)
+- T19 doc-polish items (source-of-truth extracts, CLAUDE.md audit, index/dashboard/compute/component-templates deep audits, memory/feedback sweep, cross-verify)
+
+---
+
 ## 2026-04-21 — Session 114.19bc: T21.a DYN-PROD heartbeat + T20 Start Next Grade pause + T22 full 245-ref LAW #0 scrub
 
 ### Summary
