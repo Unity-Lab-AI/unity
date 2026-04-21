@@ -340,15 +340,28 @@ function connectToServer() {
             if (preLen > 0) gpu.writeSparsePreSpikes(name, preSpikes);
             const currents = await gpu.propagateSparse(name);
             const clen = currents ? currents.length : 0;
-            const resp = new ArrayBuffer(13 + clen * 4);
+            // Response layout — header size bumped 13 → 16 so the
+            // Float32Array payload starts on a 4-byte boundary.
+            // `new Float32Array(resp, offset, length)` rejects any
+            // byte offset that isn't a multiple of 4; prior offset=13
+            // threw "start offset of Float32Array should be a multiple
+            // of 4" on every sparse_propagate response.
+            //   bytes 0..3  — 'SPRR' magic
+            //   byte  4     — typeByte (2)
+            //   bytes 5..7  — padding (zeros)
+            //   bytes 8..11 — reqId (uint32 LE)
+            //   bytes 12..15 — clen (uint32 LE)
+            //   bytes 16..  — Float32 currents payload
+            const resp = new ArrayBuffer(16 + clen * 4);
             const rv = new DataView(resp);
             rv.setUint8(0,'S'.charCodeAt(0)); rv.setUint8(1,'P'.charCodeAt(0));
             rv.setUint8(2,'R'.charCodeAt(0)); rv.setUint8(3,'R'.charCodeAt(0));
             rv.setUint8(4, 2);
-            rv.setUint32(5, reqId, true);
-            rv.setUint32(9, clen, true);
+            // bytes 5..7 stay as zeros (ArrayBuffer zero-fills on alloc)
+            rv.setUint32(8, reqId, true);
+            rv.setUint32(12, clen, true);
             if (currents) {
-              new Float32Array(resp, 13, clen).set(currents);
+              new Float32Array(resp, 16, clen).set(currents);
             }
             ws.send(resp);
           } catch (err) {

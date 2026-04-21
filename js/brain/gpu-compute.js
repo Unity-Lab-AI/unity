@@ -612,7 +612,13 @@ export class GPUCompute {
       }),
       voltages: voltagesA, // single voltage buffer — in-place read/write
       spikes: makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC),
-      currents: makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST),
+      // currents needs COPY_SRC too — region-slice readbacks via
+      // copyBufferToBuffer copy FROM this buffer into a small working
+      // buffer for CPU-side inspection. Without COPY_SRC the browser
+      // WebGPU validator rejects the copyBufferToBuffer encode with
+      // "usage doesn't include CopySrc" and the whole CommandBuffer
+      // becomes invalid — breaking every readback downstream.
+      currents: makeBuffer(size * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC),
       // T17.7 Phase A.3 — regionGates storage buffer. 16 regions × 4
       // f32 per entry (start, end, gate, pad) = 256 bytes. Initialized
       // to zeros; `numRegions` defaults to 0 so the shader's linear
