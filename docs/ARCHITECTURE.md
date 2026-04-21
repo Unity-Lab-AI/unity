@@ -605,7 +605,7 @@ Dream/
 | Pollinations TTS | Voice output (shimmer/nova voices) |
 | Webcam / Vision | `getUserMedia` capture → AI scene description → gaze tracking → Eye widget |
 | localStorage | Persistent storage for keys, history, preferences, sandbox state, chat history |
-| Server Brain | WebSocket on port 7525 (moved off 8080 in R14 to avoid llama.cpp collision). Shared brain state (one singleton UnityBrain instance). User text is PRIVATE per connection (no cross-client broadcast). Dictionary / bigrams / embeddings grow from every user's conversation and benefit everyone — see privacy model in `docs/WEBSOCKET.md`. |
+| Server Brain | WebSocket on port 7525 (moved off 8080 to avoid llama.cpp collision). Shared brain state (one singleton UnityBrain instance). User text is PRIVATE per connection (no cross-client broadcast). Dictionary entries / GloVe embedding refinements / cortex cross-projection weights grow from every user's conversation and benefit everyone — see privacy model in `docs/WEBSOCKET.md`. |
 | SQLite | Episodic memory persistence on server (better-sqlite3) |
 | WebGPU | GPU compute shaders for Rulkov 2D chaotic map neuron iteration + sparse CSR synapse propagation |
 | GloVe Embeddings | 300d word vectors + fastText-style subword fallback (no download required), online context refinement |
@@ -1181,7 +1181,7 @@ The binding ceiling was added after T4.1 caught cortex+cerebellum silently retur
 - Multi-provider vision describer + sensory status HUD (R13)
 - Port move 8080 → 7525 (R14)
 - Landing page setup modal rework with clickable provider grids + per-backend instructions + env.js snippet generator (R15 + R15b)
-- Privacy model enforcement — cross-client `conversation` WebSocket broadcast deleted so user text stays private; brain growth (dictionary / bigrams / embeddings) remains shared across users via the singleton brain
+- Privacy model enforcement — cross-client `conversation` WebSocket broadcast deleted so user text stays private; brain growth (dictionary entries, GloVe embedding refinements, cortex cross-projection weights) remains shared across users via the singleton brain
 
 Remaining pre-merge punch list is ~4 small items tracked in `docs/TODO.md` as T1–T4. Post-merge followups (T5 3D brain popup expansion, T6 private episodic memory scoping) are queued but not blockers.
 

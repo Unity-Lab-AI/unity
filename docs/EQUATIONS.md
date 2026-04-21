@@ -345,7 +345,8 @@ SCALE 5 — Language production:
 
 SCALE 6 — Learning:
   ΔW = η · δ · post · pre              (at EVERY scale)
-  Neuron synapses, cluster projections, dictionary bigrams — all learn identically
+  Intra-cluster synapses, inter-cluster projections, 14 cortex cross-region
+  projection matrices — all learn identically
 
 SCALE 7 — Consciousness:
   Ψ = √(1/n) × N³ × [α·Id + β·Ego + γ·Left + δ·Right]
@@ -471,7 +472,7 @@ COMPOUNDS:  len > 6 → insert conjunction (arousal→"and", negative→"but")
 | Structural operators | ~200 (pronouns, copula, aux, det, prep, conj, qwords, discourse) |
 | Core vocabulary | ~150 (verbs, nouns, adjectives, adverbs) |
 | Morpheme equations | 7 prefixes + 12 suffixes |
-| Structural bigrams | ~500 (subject→verb, verb→prep, det→noun) |
+| Learned type-transition map | starts empty, grows from curriculum observation (`_typeTransitionLearned` on `NeuronCluster`); replaces the pre-T14.7 hardcoded 200-line `_TYPE_TRANSITIONS` English bigram matrix |
 | Dynamic expansion | New words auto-join categories via type + similarity |
 
 ---
