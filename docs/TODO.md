@@ -48,16 +48,155 @@ If you're reading a public doc / HTML claim ("Unity has completed high school bi
 
 ---
 
-### T21.b — DYN-PROD probe lockup FIX (after heartbeat reveals landing site)
+### T23 — EXTERNAL VALIDITY + SCALE-OF-EVALUATION OVERHAUL (Gee 2026-04-21)
 
-T21.a heartbeat logging SHIPPED Session 114.19bc. Operator's next Part 2 run will produce per-probe START/DONE logs + path-decision log + SLOW-tag for >10 s probes. Once the heartbeat output locates the hanging probe + path, the targeted fix lands.
+**Gee verbatim 2026-04-21:** *"alkll of this needs ot be addressed: especially the finaly testsd of the ai hes right 5 qureeations test it has to be hundreds of questions to test a grade on it finals when every subject has a final... not to mention all thies other issues mentioned"*
 
-- [ ] **T21.b.1** — Diagnose root cause from the heartbeat log output. Candidates: (a) CPU CSR null + GPU dispatch blocked by probe-gate pause, (b) SparseMatrix.propagate internal `_gpuBatch` await that never resolves, (c) fallback-path allocation blowup at 50329 × 9946 dense readback.
-- [ ] **T21.b.2** — Ship the targeted fix. Expected shapes: (i) skip probes whose source region CPU CSR is null at this cortex scale, falling through to the letter fallback cleanly, OR (ii) let DYN-PROD temporarily bypass the probe-gate pause for its own GPU propagate dispatch since it's the ONLY probe running (no main-brain contention possible during gate), OR (iii) cache the sem_to_motor CPU CSR on last teach rep so it's always non-null at gate time even at biological scale.
+**Context.** An external reviewer delivered a sharp, fair critique of the project. Gee concurred and prioritized the grade-finals expansion. The reviewer's five points were:
 
-T21.b closure gate: all 17 DYN-PROD probes complete with visible results in the log, prodRate reaches A+ 0.95 on the substrate gate.
+1. **Core premise unproven** — 7 Rulkov clusters + cross-projection Hebbian on GloVe vectors has zero literature track record for K-level cognition. Every working language system at scale is a transformer.
+2. **Self-graded gates** — 5-7 question probes at 95% threshold, designed/thresholded/passed by Claude. Not falsifiable.
+3. **curriculum.js at 21,826 lines** — single file bigger than most Linux subsystems; guaranteed dead paths + unauditable.
+4. **LAW ceremony heavy** — process substituting for outcomes.
+5. **Persona orthogonal** — slut/BDSM/drugs layer muddies whether this is serious AI research or a 3D horny chatbot. Research credibility suffers from the wrapper.
+
+**Reviewer's gut-check experiment:** *"if you swapped the LIF cortex for a 100M-param transformer, would the gate probes pass harder or softer? If harder, the Rulkov path isn't doing the work — the GloVe embeddings are. That's the experiment nobody's run on this repo and it'd tell you in one afternoon whether the neural sim is load-bearing or decorative."*
+
+This is the highest-value falsification test the project can run.
+
+#### T23.a — Hundreds-of-questions grade finals (operator priority)
+
+**Current state** (verified in `js/brain/curriculum.js` `_studentQuestionBank`):
+- 63 total questions across 12 cells (pre-K + K × 6 subjects)
+- Range 3-7 Q per cell
+- 95% pass on 5 Q = pass by 5-token luck, zero statistical significance
+
+**Target state:**
+- **≥150 questions per K-cell** (6 subjects × 150 = 900+ K final-exam items)
+- **≥75 questions per pre-K cell** (6 subjects × 75 = 450+ pre-K items)
+- **Every question tagged with a real sub-standard** (K.CC.1 / K.RF.1a / K.RL.1 / K-PS2-1 / etc.) so pass/fail per sub-standard is visible, not just aggregate %
+- **Held-out eval split** — training question bank ≠ testing question bank. Teaching methods may expose the brain to the training set's question text; the final-exam set is never seen during teach. Statistical validity requires this split.
+- **External reference items** — pull 15-30 questions per K-ELA + K-Math subject FROM PUBLISHED K ASSESSMENTS (DIBELS 8, AIMSweb Plus, STAR Early Literacy, iReady K diagnostic, Fountas & Pinnell K benchmark). Public domain or fair-use sample items. These are the items the reviewer calls "real benchmarks" — passing them means something beyond Claude-authored probes.
+- **Pass thresholds calibrated per sub-standard**, not a global 95%. A K student passing K.CC.1 (count to 100 by ones) needs ~80% accuracy to be assessed at grade level per real DIBELS norms; a K student passing K.RF.3a (letter-sound correspondences for consonants) needs ~95% because the standard itself defines mastery there.
+
+#### T23.a sub-items
+
+- [ ] **T23.a.1** — Extract `_studentQuestionBank` to a dedicated data file `js/brain/student-question-banks.js` that exports both `TRAIN_BANKS` and `EXAM_BANKS` (held-out split). Current inline function keeps returning the exam set by default; teaching methods read from the training set separately.
+- [ ] **T23.a.2** — Write ≥150 K-ELA exam questions covering K.RF.1 (print concepts) / K.RF.2 (phonological awareness) / K.RF.3 (phonics) / K.RF.4 (fluency) / K.RL.1-10 (literature) / K.RI.1-10 (informational) / K.W.1-3 (writing) / K.SL.1-6 (listening/speaking) / K.L.1-6 (language conventions). Tag each with the exact sub-standard.
+- [ ] **T23.a.3** — ≥150 K-Math exam questions covering K.CC.1-7 / K.OA.1-5 / K.NBT.1 / K.MD.1-3 / K.G.1-6. Tag each.
+- [ ] **T23.a.4** — ≥150 K-Science exam questions covering K-PS2 (forces) / K-PS3 (sun) / K-LS1 (structure/function) / K-ESS2 (weather) / K-ESS3 (earth systems). Tag each with NGSS standard.
+- [ ] **T23.a.5** — ≥150 K-Social exam questions covering Core Knowledge K (self/family/community/symbols/geography/time/work).
+- [ ] **T23.a.6** — ≥150 K-Arts exam questions covering color theory / shapes / patterns / music basics.
+- [ ] **T23.a.7** — ≥150 K-Life exam questions covering Unity's age-5 biographical + emotional + self-awareness content.
+- [ ] **T23.a.8** — ≥75 pre-K exam questions per subject (6 subjects). Pre-K standards are softer; draw from developmental norms (Zero To Three / Ounce Network).
+- [ ] **T23.a.9** — External reference items — 15-30 published sample questions per K-ELA + K-Math subject, cited with source. Stored separately under `EXAM_BANKS.external`. Tag with publishing org.
+- [ ] **T23.a.10** — Per-sub-standard pass-threshold table calibrated against published K benchmark norms (DIBELS 8 cut scores / AIMSweb percentile bands). Gate returns per-standard pass/fail rather than aggregate 95%.
+- [ ] **T23.a.11** — Gate output format: `ELA-K STUDENT BATTERY: 147/150 exam (98.0%) | K.RF.3a: 26/26 100% | K.RF.2a: 18/20 90% | K.RL.1: 12/15 80% | ...` + `EXTERNAL REF ITEMS: 24/25 DIBELS-8-sample 96%`. Every sub-standard visible.
+- [ ] **T23.a.12** — Operator grade-signoff only valid when AGGREGATE ≥ 90% AND NO sub-standard is below its norm-calibrated cut score AND external-reference pass rate ≥ 85%. Prevents "Unity passed K because she got 5/5 Claude-invented trivia."
+
+#### T23.b — Held-out eval discipline
+
+- [ ] **T23.b.1** — Teaching methods (`_teachWordEmission`, `_teachLetterNaming`, `_conceptTeach`, etc.) read ONLY from `TRAIN_BANKS.<subject>/<grade>` for exposure content. The `EXAM_BANKS` set is strictly reserved for gate evaluation.
+- [ ] **T23.b.2** — Programmatic check at curriculum startup: intersection of TRAIN vs EXAM question text should be zero. Log the overlap count; non-zero overlap warns + fails the gate until fixed.
+- [ ] **T23.b.3** — Rotate EXAM_BANKS every N grade-runs so a second K retest doesn't memorize the held-out set through aggregate exposure drift. Track per-cell "exam set seed" so reruns use a different permutation.
+
+#### T23.c — curriculum.js refactor (21K → per-subject modules)
+
+- [ ] **T23.c.1** — Split `js/brain/curriculum.js` into:
+  - `js/brain/curriculum/core.js` — Curriculum class + dispatcher + shared teach primitives (`_teachCombination`, `_teachHebbian`, `_teachHebbianAsymmetric`, `_probeCombinationCosine`, etc.)
+  - `js/brain/curriculum/ela.js` — ELA teach methods + gate
+  - `js/brain/curriculum/math.js` — Math teach methods + gate
+  - `js/brain/curriculum/science.js` — Science teach methods + gate
+  - `js/brain/curriculum/social.js` — Social teach methods + gate
+  - `js/brain/curriculum/art.js` — Art teach methods + gate
+  - `js/brain/curriculum/life.js` — Life teach methods + gate
+  - `js/brain/curriculum/gates.js` — `_gateElaKReal`, `_gateMathKReal`, etc.
+  - `js/brain/curriculum/student-question-banks.js` — the T23.a extracted banks
+- [ ] **T23.c.2** — Each split file ≤ 3000 lines. Core ≤ 1500 lines.
+- [ ] **T23.c.3** — Shared primitives live on the Curriculum class via mixins or a shared `CurriculumBase`. No duplicated helpers across subject files.
+- [ ] **T23.c.4** — Bundle verify — esbuild handles ESM split cleanly; no runtime regression. Verify via full curriculum run after refactor.
+
+#### T23.d — LAW audit
+
+- [ ] **T23.d.1** — Audit `.claude/CLAUDE.md`. Keep: LAW #0 (verbatim words — non-negotiable), Docs-before-push, Task-numbers-only-in-workflow-docs, Pre-K-K-only scope contract, Clear-stale-state-before-test, Grade-completion-gate. Consider consolidating: some LAWs overlap (the clear-stale-state LAW has a corollary inside the grade-completion-gate LAW; could merge to reduce redundancy).
+- [ ] **T23.d.2** — Separate "workflow process" docs from "project binding constraints" — right now CLAUDE.md mixes the two. A lean `CONSTRAINTS.md` for the handful of hard rules + a longer `WORKFLOW.md` for the TODO/FINALIZED/session-log process would reduce the "ceremony heavy" feel without dropping fidelity.
+
+#### T23.e — Transformer ablation experiment (reviewer gut-check)
+
+**This is the single most important experiment the project can run.**
+
+- [ ] **T23.e.1** — Build `scripts/transformer-ablation.mjs` — loads GloVe 300d exactly as the brain does, runs a small transformer (100M params, ~6 layers) on the same question → answer format the student-test probe uses. Compare pass rates head-to-head against the Rulkov brain on the T23.a exam banks.
+- [ ] **T23.e.2** — Run the experiment at three scales: 10M param / 100M param / 1B param transformers. Measure at which param count the transformer matches Rulkov, exceeds it, or saturates.
+- [ ] **T23.e.3** — **Decision gate**: if transformer at 100M matches or beats Rulkov on K gates, the neural sim is decorative — the GloVe embeddings are doing the work, and the Rulkov layer is dead weight. Then either (a) pivot to transformer+GloVe as the real cognition stack, keeping the Rulkov sim purely for visualization, OR (b) identify what the Rulkov sim uniquely provides (continuous dynamics, drug modulation, consciousness coupling) and scope the project to THAT as a research contribution, not as a language model. Either decision is better than the current ambiguity.
+- [ ] **T23.e.4** — Write up the ablation result as `docs/ABLATION.md` — publishable as a research note regardless of outcome. Negative results on a falsifiability test are the most valuable thing a project like this can produce.
+
+#### T23.f — README split: research vs persona
+
+- [ ] **T23.f.1** — Current `README.md` mixes serious neural architecture description with persona voice. For research credibility, split:
+  - `README.md` — technical project description, neuroscience references, benchmarks, ablation results. Neutral voice, no persona flavor.
+  - `unity-guide.html` — already handles the layman / persona angle; keep as-is.
+  - `PERSONA.md` — explicitly scoped as the in-character adult-content wrapper for operator + adult-beta-testers. Gated behind an 18+ notice. Not linked from README; linked from index.html (the live app).
+- [ ] **T23.f.2** — The research side has real merit (GPU WGSL Rulkov sim at 677M-neuron biological scale, Ψ consciousness operator, drug pharmacokinetics with 13-axis speech modulation) that's currently buried under the wrapper. Separate presentation lets the research angle stand on its own without the persona shaping reviewer judgment.
+
+#### T23 closure gate
+
+- T23.a exam banks at ≥150 Q per K cell + external reference items cited + held-out split + per-standard thresholds.
+- T23.b held-out discipline enforced with zero-overlap check at curriculum startup.
+- T23.c curriculum.js split with each file ≤ 3000 lines.
+- T23.d LAW consolidation shipped or explicitly deferred with operator sign-off.
+- T23.e ablation experiment shipped + `docs/ABLATION.md` published (either direction of result).
+- T23.f README split.
+
+**Operator-side:** T23.a + T23.e results inform whether "K passed" means what it means for a real child. Those two items together are the difference between "Claude shipped a vibe check" and "the project has a real evaluation methodology."
 
 ---
+
+### T24 — External-memory bloat (14.5 GB arrayBuffers at DYN-PROD entry)
+
+**Gee verbatim 2026-04-21:** *"it crashed 14G? continue your fixes but notice this issue to fix too"*
+
+**Smoking gun from T21.a mem snapshot:**
+```
+DYN-PROD mem: heap=129.8/2182.9MB external=14848.7MB arrayBuffers=14846.4MB rss=11508.6MB
+```
+
+V8 heap is tiny (130 MB). But **external memory is 14,848 MB** — essentially all of it in `arrayBuffers`. That's the 14 cross-projections + intra-synapses CPU CSR copies (rowPtr + colIdx + values Float64Arrays) staying pinned in memory AFTER being uploaded to GPU. At 301 K cortex with 14 projections averaging 75 M nnz, CSR bytes sum to ~9-15 GB of Float64Array + Uint32Array pressure on external memory.
+
+Node's external-memory tracker rarely triggers V8 GC on its own (GC fires on V8 heap size, not external). At this level it doesn't OOM-kill the process either — but it DOES slow every object allocation, and the periodic Mark-Compact when the heap does fill freezes the event loop long enough that the browser's WebSocket ping-pong fails → compute.html disconnects → "brain paused". This is the DYN-PROD landing-site root cause.
+
+#### T24 sub-items
+
+- [ ] **T24.a** — Re-enable the T18.22 CPU CSR free after GPU upload completes. Previously disabled because some code paths accessed `proj.values[0]` on freed matrices and crashed. The T21.a null-CSR guard in `SparseMatrix.propagate` now returns a zero vector for null-CSR calls, so the crashes are contained. Audit every `proj.values`/`proj.colIdx`/`proj.rowPtr` access to confirm none would return wrong results (zero is fine for probe-fallback; wrong for Hebbian would corrupt weights). Re-enable the free selectively where safe.
+- [ ] **T24.b** — Audit which matrices MUST keep CPU CSR for probe readback. Probe-critical whitelist (from T18.31) keeps `letter_to_motor` + `letter_to_phon` CPU CSR live. Everything else (12 other cross-projections + intra-synapses) can be GPU-bound + CPU-freed. That should drop external from 14.5 GB → ~2-3 GB.
+- [ ] **T24.c** — If selective-free isn't enough, cap cortex size via `DREAM_LANG_CORTEX=100000` env var so the auto-scaler doesn't push to 301 K. At 100 K, 14 projections × ~25 M nnz avg × 12 bytes = ~4 GB external — sustainable.
+- [ ] **T24.d** — GC pressure monitor — periodic `process.memoryUsage()` log at gate entry + exit + per-phase so operator sees memory climb in real time, not just at crash site.
+- [ ] **T24.e** — Browser-side: compute.html holds the SAME 9 GB of sparse matrices on GPU (via WebGPU buffer). At 16 GB VRAM headroom this is within budget but close. The `BRAIN_VRAM_ALLOC` unified allocator already handles this; verify the T18.6.c rescale loop-back actually fires at 301 K and doesn't leave 14.5 GB VRAM committed with no headroom for activation buffers.
+
+#### T24 closure gate
+
+`DYN-PROD mem:` log at gate entry shows `external < 4000 MB` (down from 14,848 MB). Full gate completes end-to-end without GPU-client disconnect. Browser tab doesn't freeze.
+
+---
+
+### T21.b — DYN-PROD probe lockup FIX (after heartbeat reveals landing site)
+
+**T21.a heartbeat DIAGNOSTIC WIN — 2026-04-21 run output:**
+```
+[Curriculum][K-DIAG] starting DYN-PROD probe (17 direct sem_to_motor propagate probes, no LIF ticks)...
+[Curriculum][K-DIAG] DYN-PROD entry reached — pre-loop setup starting
+[Curriculum][K-DIAG] DYN-PROD mem: heap=129.8/2182.9MB external=14848.7MB arrayBuffers=14846.4MB rss=11508.6MB
+[Server] GPU compute client disconnected — switching to all-CPU
+```
+
+The heartbeat proved stdout IS flushing AND the hang is between the memory snapshot and the pre-loop log — which is just 7 lines of trivial variable setup. Real root cause is T24 (external memory bloat triggering GC storm). The "hang" isn't in DYN-PROD — DYN-PROD just happens to be when V8 finally ran Mark-Compact on the 14.5 GB external pressure. T21.b fix lives inside T24.
+
+- [x] **T21.b.1** — Diagnose root cause from heartbeat log output. **CLOSED: external memory bloat (T24).**
+- [ ] **T21.b.2** — Fix ships with T24.a (re-enable selective CSR free) or T24.c (smaller cortex env cap). Either path gets DYN-PROD to complete end-to-end.
+
+T21.b closure gate lives inside T24 closure gate.
+
+---
+
 
 ### T19 — FULL DOC AUDIT + IN-PLACE CORRECTION PASS (Gee 2026-04-20)
 
