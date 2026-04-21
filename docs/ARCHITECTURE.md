@@ -61,26 +61,28 @@ The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — 
 │       └──────────────┴──────────────┴───────────────┘            │
 │                           │                                      │
 ├───────────────────────────┼──────────────────────────────────────┤
-│              UNITY BRAIN ENGINE (js/brain/) — 60fps              │
+│         UNITY BRAIN ENGINE — GPU-exclusive, always-on            │
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────┐      │
 │  │              BRAIN SIMULATION LOOP                      │      │
-│  │  N Rulkov-map neurons in 7 CLUSTERS                    │      │
+│  │  N Rulkov-map neurons in 7 CLUSTERS (GPU / WGSL)       │      │
 │  │  20 inter-cluster projection pathways                  │      │
-│  │  10 steps per frame × 60fps = 600ms brain/s            │      │
+│  │  Server tick cadence: BRAIN_TICK_MS (~50 ms), each    │      │
+│  │  tick = batched compute_batch(SUBSTEPS) on compute.html│      │
 │  │                                                        │      │
-│  │  CLUSTERS:                                             │      │
-│  │    Cortex (300) — prediction, vision routing            │      │
-│  │    Hippocampus (200) — memory attractors                │      │
-│  │    Amygdala (150) — emotional gate modulation           │      │
-│  │    Basal Ganglia (150) — action gate selection          │      │
-│  │    Cerebellum (100) — error correction                  │      │
-│  │    Hypothalamus (50) — drive baseline homeostasis       │      │
-│  │    Mystery (50) — consciousness gain √(1/n) × N³              │      │
+│  │  CLUSTER FRACTIONS of total N (CLUSTER_FRACTIONS):    │      │
+│  │    Cortex       0.30 — prediction, vision routing,    │      │
+│  │                        language sub-regions host      │      │
+│  │    Hippocampus  0.10 — memory attractors              │      │
+│  │    Amygdala     0.08 — emotional gate modulation      │      │
+│  │    Basal Gang.  0.08 — action gate selection          │      │
+│  │    Cerebellum   0.40 — error correction + timing      │      │
+│  │    Hypothalamus 0.02 — drive baseline homeostasis     │      │
+│  │    Mystery      0.02 — consciousness gain Ψ           │      │
 │  │                                                        │      │
-│  │  Each cluster: own Rulkov pop, synapse matrix, tonic,  │      │
-│  │  noise, connectivity, learning rate                     │      │
-│  │  Hierarchical modulation across all clusters            │      │
+│  │  Each cluster: own Rulkov pop, synapse matrix, tonic  │      │
+│  │  drive, noise amplitude, connectivity density,        │      │
+│  │  learning rate. Hierarchical modulation across all.   │      │
 │  └────────────────────────────────────────────────────────┘      │
 │                           │                                      │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐    │
@@ -240,14 +242,14 @@ No artificial cap — hardware decides. VRAM and RAM are the only limits. The fo
 | Cluster | % of N | Biological Inspiration | Role | MNI Position |
 |---------|--------|------------------------|------|--------------|
 | Cerebellum | 40% | ~69B neurons / 80% of real brain | Error correction, timing | Posterior-inferior, 5-layer folia |
-| Cortex | 25% | ~16B cortical neurons | Prediction, vision, language | Bilateral dome with sulcal folds |
+| Cortex | 30% | ~16B cortical neurons | Prediction, vision, language | Bilateral dome with sulcal folds |
 | Hippocampus | 10% | ~30K synapses per pyramidal cell | Memory attractors (Hopfield) | Medial temporal, POSTERIOR to amygdala |
 | Amygdala | 8% | 13 nuclei, ~12M neurons each side | Emotional weighting | Medial temporal, ANTERIOR to hippocampus |
 | Basal Ganglia | 8% | 90-95% medium spiny neurons | Action selection (softmax RL) | Bilateral: caudate + putamen + GP |
-| Hypothalamus | 5% | 11 nuclei | Homeostasis drives | Midline, below BG, above brainstem |
-| Mystery Ψ | 4% | Corpus callosum: 200-300M axons | Consciousness √(1/n) × N³ | Corpus callosum arc + cingulate cortex |
+| Hypothalamus | 2% | 11 nuclei | Homeostasis drives | Midline, below BG, above brainstem |
+| Mystery Ψ | 2% | Corpus callosum: 200-300M axons | Consciousness √(1/n) × N³ | Corpus callosum arc + cingulate cortex |
 
-Percentages are biologically-proportioned — each cluster gets its fraction of the total N the auto-scaler allocates.
+Percentages sum to 1.00 exactly (`0.30 + 0.10 + 0.08 + 0.08 + 0.40 + 0.02 + 0.02`) and live in `js/brain/cluster.js` as `CLUSTER_FRACTIONS`. Both the browser client and the Node server derive sizes from `clusterSizesFor(totalNeurons)` so the tier auto-scale produces identical cluster shapes on either runtime.
 
 ### Inter-Cluster Projections (20 real white matter tracts)
 
@@ -531,7 +533,7 @@ Dream/
 │   ├── env.example.js          # Template for env.js
 │   ├── storage.js              # localStorage manager with key obfuscation
 │   ├── brain/
-│   │   ├── engine.js           # UnityBrain — 7-cluster sim loop at 60fps (scales to hardware)
+│   │   ├── engine.js           # UnityBrain — 7-cluster sim loop, GPU-exclusive (server dispatches compute_batch(SUBSTEPS) to compute.html every BRAIN_TICK_MS; browser-only fallback runs LIF locally)
 │   │   ├── cluster.js          # NeuronCluster + ClusterProjection (7 clusters, 20 inter-cluster projections, 8 cortex sub-regions, 14 cross-region projections, generateSentence tick-driven motor emission, identity lock, direct pattern Hebbian)
 │   │   ├── neurons.js          # LIFPopulation (historical / browser-only fallback) + HHNeuron (reference-only, backs brain-equations.html) — live neuron model is Rulkov map in gpu-compute.js
 │   │   ├── synapses.js         # NxN weights — Hebbian, STDP, reward-mod
