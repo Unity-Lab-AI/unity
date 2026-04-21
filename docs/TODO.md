@@ -75,7 +75,7 @@ T18.5.b (pre-push doc checklist) and T18.5.c (ASK GEE for push approval) do NOT 
    - **Phase E.d construction deletion** — deferred post-push. cortexCluster instance stays alive as CPU-shadow for API-compat consumers (dictionary.setCluster / languageCortex.setCluster / drugScheduler cluster-binding). Full deletion requires a facade rebuild — architectural intent of T17.7 is already met with cortexCluster as a pure compat shim with no behavior impact.
 
 ### T16 open (5 items + 3 Gee-verification — 5 shipped Session 114.19x)
-1. **T16.1.b** — Verify Ctrl+C halts cleanly on next Part 2 run — *Gee-verification, not Claude-closable*
+1. ~~**T16.1.b**~~ — **SHIPPED Session 114.19az follow-on** — `stop.bat` + `POST /shutdown` endpoint + launcher banner updates. Root cause: `start /b` detaches node from launcher so Ctrl+C never reaches it. Clean halt path now exists via `stop.bat`.
 2. **T16.2.a** — Verify sem-write fix on next Part 2 run — *Gee-verification, not Claude-closable*
 3. ~~**T16.2.b**~~ — **SHIPPED Session 114.19x** (_teachWordEmission + _teachPhonemeBlending now call dictionary.learnWord on rep 0 so K-emission words land in the dictionary; fallback cosine path can sample them)
 4. ~~**T16.2.c**~~ — **SHIPPED Session 114.19x** (closed by same fix as T16.2.b — dictionary wiring paired with cross-projection teach)
@@ -983,7 +983,7 @@ Root cause (Session 114.19g diagnosis): prior SIGINT handler in `server/brain-se
 
 **T16.1.a Ctrl+C save ceremony drop — SHIPPED Session 114.19g.** See FINALIZED.
 
-- [ ] **T16.1.b — Verify Ctrl+C halts cleanly on next Part 2 run.** Gee presses Ctrl+C mid-curriculum, process exits within 1-2 seconds. If still sluggish, diagnose whether `_brainShutdownRequested` flag check is missing from any inner loop that blocks for multiple seconds per iteration.
+- [x] **T16.1.b — Verify Ctrl+C halts cleanly on next Part 2 run.** **REFRAMED + CLOSED Session 114.19az (follow-on).** Operator verbatim 2026-04-20: *"mkae sure its ctrl c kilkled i hear my GPU running , i think ctrl C doesnt kill the brain application correctly"*. Root cause: `start.bat` launches node via `start /b "" cmd /c "..."` which DETACHES the node process from the launcher terminal, so Ctrl+C in the launcher (or in the PowerShell tail window) never reaches node. Node's SIGINT handler at `server/brain-server.js:5536` was already correct — the signal just never arrived. Fix shipped: (a) new `stop.bat` at repo root runs a three-stage clean halt — HTTP `POST /shutdown` first, `taskkill` on port-7525 second, `taskkill /f /im node.exe` third if needed, final verification that port 7525 is free; (b) new `POST /shutdown` HTTP endpoint in `server/brain-server.js` flips `_brainShutdownRequested`, calls `brain.stop()`, schedules `process.exit(0)` after 500 ms drain so the response returns cleanly; (c) both `start.bat` and `Savestart.bat` updated with a note directing the operator to `stop.bat` instead of Ctrl+C, plus a reminder to close `http://localhost:7525` browser tabs because `compute.html`'s WebGPU loop keeps the GPU spinning even after the server dies.
 
 ---
 

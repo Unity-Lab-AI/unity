@@ -4791,6 +4791,27 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
+  // Graceful shutdown endpoint. stop.bat POSTs here as its first kill
+  // attempt before falling through to taskkill on the port-holder.
+  // Handler flips the shutdown flag + calls brain.stop() + schedules a
+  // process.exit(0) after a brief drain window so the HTTP response
+  // can return before the Node event loop dies. Idempotent — a second
+  // POST after shutdown is already in progress short-circuits with an
+  // already-shutting-down response.
+  if (req.url === '/shutdown' && req.method === 'POST') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (global._brainShutdownRequested) {
+      res.end(JSON.stringify({ status: 'already shutting down' }));
+      return;
+    }
+    global._brainShutdownRequested = true;
+    console.log('[Brain] HTTP /shutdown — graceful halt requested by operator (stop.bat or curl).');
+    res.end(JSON.stringify({ status: 'shutdown requested, exiting in 500ms' }));
+    try { brain.stop(); } catch {}
+    setTimeout(() => { process.exit(0); }, 500);
+    return;
+  }
+
   // Milestone indicator for dashboard.html. Returns the last save
   // metadata (version + wall-clock + trigger), the last passed
   // curriculum cell, total passed count, grade state per subject,
