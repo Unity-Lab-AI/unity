@@ -5,6 +5,61 @@
 
 ---
 
+## 2026-04-21 — Session 114.19bb: T19 doc audit passes 2 + 3 + SPRR ack framing fix + binary weights streaming load
+
+### Summary
+
+Four commits landed on `syllabus-k-phd` and merged to `main`:
+
+| Commit | Subject |
+|--------|---------|
+| `2bbee89` → `ff518ca` (merge) | T19 doc-audit pass 2 — roadmap / setup / skill-tree / now sync |
+| `eeefd33` → `d3d3a39` (merge) | T19 doc-audit pass 3 — README 8→7 clusters, unity-guide tick-driven copy |
+| `4495d56` → `7d6c268` (merge) | critical fixes: SPRR ack framing (9-byte min) + binary weights streaming load |
+
+### 1. T19 doc-audit pass 2 — ROADMAP / SETUP / SKILL_TREE / NOW
+
+Sub-items closed: **T19.b.3** (ROADMAP.md), **T19.b.4** (SKILL_TREE.md), **T19.b.6** (NOW.md), **T19.c.2** (SETUP.md).
+
+- **`docs/ROADMAP.md`** — "Last updated" bumped to 2026-04-21; Current Status table rewritten as "Pre-K + K Runtime Verification" phase with exhaustive shipped-milestones list covering save/resume, stop.bat, DYN-PROD direct matrix propagate, student-test batteries, letter-naming phase, intermediate-rep CPU Hebbian skip, mid-phase saves, probe-gate pause. "What's next" rewritten to describe LAW 6 Part 2 K signoff flow.
+- **`docs/SKILL_TREE.md`** — top blurb rewritten for 7-cluster `CLUSTER_FRACTIONS` (cortex 30 / cerebellum 40 / hippocampus 10 / amygdala 8 / basalGanglia 8 / hypothalamus 2 / mystery 2), Rulkov 2002 GPU WGSL runtime, save/resume binary (schemaVersion:2 + streaming `brain-weights.bin`), probe-gate pause, DYN-PROD direct matrix propagate (no LIF ticks), A+ 0.95 student-test threshold, letter-naming phase (26 × 18 reps × 2 projections), `stop.bat` three-stage clean halt, `Savestart.bat` resume, PRE-K + K ONLY scope law.
+- **`SETUP.md`** — project structure section includes `stop.bat` + `Savestart.bat`; endpoints list includes `/milestone` + `/grade-signoff` + `/shutdown`; 2D viz "8 tabs" → "10 tabs"; `start.bat` / `Savestart.bat` / `stop.bat` launcher-flow explanation added.
+- **`docs/NOW.md`** — Session 114.19bb header prepended covering crash-recovery stack (streaming binary save / probe-gate pause / WebGPU COPY_SRC + Float32 alignment / DYN-PROD direct matrix / SEQ removed / A+ 0.95 / stop.bat / intermediate-rep skip / mid-phase saves / letter-naming).
+
+### 2. T19 doc-audit pass 3 — README 8→7 clusters, unity-guide tick-driven copy
+
+Sub-items closed: **T19.c.1** (README.md), **T19.d.2** (unity-guide.html), plus partial on **T19.d.1** (brain-equations.html — the 60 fps claim) and **T19.b.5** correction in `docs/gate-probe-coverage.md`.
+
+- **`README.md`** — "The 8 Neural Clusters" section rewritten as "The 7 Neural Clusters" with correct `CLUSTER_FRACTIONS` percentages (cortex 30 / cerebellum 40 / hippocampus 10 / amygdala 8 / basalGanglia 8 / hypothalamus 2 / mystery 2). Phantom separate "Language Cortex 45%" block folded into the Cortex 30% section as 8 named sub-regions with correct fraction ranges (`auditory` 0-0.083, `visual` 0.083-0.250, `free` 0.250-0.500, `letter` 0.500-0.550, `phon` 0.550-0.750, `sem` 0.750-0.917, `fineType` 0.917-0.967, `motor` 0.967-1.000). Per-section VRAM-budget headers updated (Amygdala 4→8, BG 4→8, Hypothalamus 3→2, Mystery 3→2). Headers labeled "% of total neurons" instead of "% of VRAM budget" to match code semantics.
+- **`unity-guide.html`** — intro paragraph rewrote "scoring system" language to tick-driven motor emission (matches T14.6 emission loop already described later in the page). Arousal / pain / drug bullets rewritten to describe cortex spike-pattern + cross-projection dynamics instead of slot temperature. Dictionary-growth paragraph dropped the dead bigram/trigram claim — word order lives in the 14 cross-projection weights post-T14, no separate bigram table.
+- **`brain-equations.html`** — "running in JavaScript at 60fps … executes 600 times per second" replaced with the actual server dispatch cadence (`BRAIN_TICK_MS ~50 ms`) + rAF fallback note.
+- **`docs/gate-probe-coverage.md`** — "all separate from the language cortex cluster, never probed" bullet updated to reflect T17.7 single-cortex architecture (language sub-regions live inside the main cortex cluster now).
+
+### 3. Critical fix — SPRR ack framing 9-byte routing
+
+Operator's Part 2 log showed every sparse-matrix upload timing out at 180 s with `Bad message: Unexpected token 'S', "SPRR" is not valid JSON` repeating in the log. Root cause: server's WebSocket message handler at `server/brain-server.js:5180` checked `Buffer.isBuffer(data) && data.length >= 12 && data.slice(0,4).toString('ascii') === 'SPRR'` before routing to the binary SPRR decode. But `upload_ack` and `hebbian_ack` frames are only **9 bytes** (`magic 4 + typeByte 1 + reqId 4`). Every ack failed the `>= 12` gate, fell through to `JSON.parse(data.toString())`, got rejected as invalid JSON. Result: every sparse chunked upload timed out, all 14 cross-projections never uploaded, `cortex._cortexFullyReady` never flipped, curriculum aborted with "GPU never became ready, aborting teach pass". Fix: changed the check to `data.length >= 9` so 9-byte acks route to the binary path alongside the 16-byte propagate responses.
+
+### 4. Critical fix — binary weights streaming load > 2 GB
+
+Operator's log showed `Binary weights load failed: File size (9463607848) is greater than 2 GiB`. Root cause: `_loadBinaryWeights` used `fs.readFileSync(BIN_FILE)` which returns a single `Buffer` — capped at Node's 2 GiB Buffer ceiling. The matching `_saveBinaryWeights` already streams via `fs.openSync` / `fs.writeSync` with zero-copy typed-array views so it writes 9 GB fine; load had the opposite limit. Fix: rewrote `_loadBinaryWeights` with `fs.openSync` + chunked `fs.readSync` at 512 MiB per call, reading directly into `Float64Array` / `Uint32Array` backing buffers by absolute file offset. No single allocation crosses the 2 GiB line. Symmetric with the streaming save. Try/finally closes the fd on error paths.
+
+### Files touched across this session range
+
+- `docs/ROADMAP.md`, `docs/SKILL_TREE.md`, `docs/NOW.md`, `SETUP.md` — T19 pass 2
+- `README.md`, `unity-guide.html`, `brain-equations.html`, `docs/gate-probe-coverage.md` — T19 pass 3
+- `server/brain-server.js` — SPRR 9-byte check + streaming binary weights load
+- `js/app.bundle.js`, `js/version.js`, `index.html` — stamp updates at every commit
+- `docs/TODO.md` — this clean-up
+- `docs/FINALIZED.md` — this entry
+
+### Still open
+
+T19 sub-items remaining: **T19.a.1 / .3 / .4 / .5 / .6 / .7 / .8 / .10 / .11** (source-of-truth extractions), **T19.b.5** (TODO-full-syllabus.md scope check), **T19.b.7** (TODO.md self-audit — closed in this session), **T19.b.8** (FINALIZED.md spot-check), **T19.b.9** (CLAUDE.md), **T19.d.3 / .4 / .5 / .6** (index / dashboard / compute / component-templates deep passes), **T19.e.1** (memory + feedback sweep), **T19.f.1 / .f.2** (cross-verification + grep sweep).
+
+New work opened: **T20** (Start Next Grade button / pause-after-pass / `POST /grade-advance` endpoint) and **T21** (DYN-PROD probe lockup at "starting DYN-PROD probe" + heartbeat logging). See TODO.md.
+
+---
+
 ## 2026-04-20 — Session 114.19ba: teach-velocity speedup + stop.bat clean-halt + DYN-PROD redesign + 60 s compute_batch timeout + T18.40.c/d/e/f
 
 ### Summary
