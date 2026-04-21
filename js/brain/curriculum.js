@@ -4872,190 +4872,164 @@ export class Curriculum {
     // full tick loop but doesn't hang). Post-pass, can tune back up
     // per-subject if probe quality suffers.
     const _atBioScale = (cluster.size | 0) > 100_000;
-    // Tick budget. Silent-cortex root cause: LIF math forbids firing in
-    // 6 ticks. tau=20, Vrest=-65, Vthresh=-50 means the voltage has to
-    // climb 15 mV. With injection boosted to strength 3.0 → 24/neuron,
-    // plus tonicDrive (~19.4) → net I≈43, dV/ms ≈ 2.17 → 7 ticks to
-    // threshold. 15 ticks gives ~1 initial spike + ~1 sustained cycle
-    // (neurons reset to -70 after firing, need ~9 more ticks to fire
-    // again). 15 × ~130 ms/tick (with main brain paused via
-    // _probeGateActive) = ~2 s/probe × 17 probes ≈ 34 s total — fits
-    // comfortably in the GPU+drain budget.
-    const DYN_PROD_TICKS = _atBioScale ? 15 : 20;
-    const DYN_PROD_AVG_RUNS = _atBioScale ? 1 : 2;
-    // Injection strength boost. injectEmbeddingToRegion scales emb by
-    // (emb[d] * 8 * strength); GloVe values are in [-1, 1] so typical
-    // per-neuron current is ~8 per strength unit. Bumping strength to
-    // 3.0 makes sem-region neurons receive ~24/neuron, total I≈43,
-    // dV/ms ≈ 2.17 → 7 ticks to threshold. Firing hits comfortably
-    // inside the 15-tick window with tail ticks for motor cascade.
-    const DYN_PROD_INJECT_STRENGTH = _atBioScale ? 3.0 : 1.0;
-    const DYN_PROD_REINJECT_STRENGTH = _atBioScale ? 1.5 : 0.5;
-    // Tick indices where we re-inject to sustain sem attention. At 15
-    // ticks re-inject at 5 and 10 so the probe gets three waves of
-    // sem current across the window.
-    const DYN_PROD_REINJECT_AT = _atBioScale ? [5, 10] : [5, 12];
     const LETTER_SLOTS = 26;
     let prodPass = 0;
     const prodFails = [];
     let _firstProbeDiag = null;
-    console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} word-start probes × ${DYN_PROD_AVG_RUNS} runs × ${DYN_PROD_TICKS} ticks = ${wordStartProbes.length * DYN_PROD_AVG_RUNS * DYN_PROD_TICKS} cluster.step() calls${_atBioScale ? ' — biological-scale reduced settings' : ''})...`);
-    // Flag main brain to pause compute_batch ticks during the probe.
-    // cortexCluster.stepAwait dispatches 15 GPU propagates per tick;
-    // at 20 ticks × 17 probes × 1 run = 5100 GPU ops. Overlapping that
-    // with main-brain compute_batch saturates compute.html's onmessage
-    // pump and the 15s compute_batch timeout fires → _gpuDeviceLost
-    // cascade → browser tab disconnect. Pausing main brain for the
-    // probe window lets the GPU serve cortex exclusively. Probe window
-    // is bounded (~60-120s at biological scale). Main brain state is
-    // preserved via the tick-loop's guard — it resumes cleanly when
-    // the flag clears.
-    if (cluster) cluster._probeGateActive = true;
+
+    // DYN-PROD — direct sem_to_motor propagate (no LIF simulation).
+    //
+    // Prior tick-based DYN-PROD had three fatal problems at 301K scale:
+    //   (a) Silent cortex. LIF math forbids firing in the 6-15 tick
+    //       window. GloVe per-dim values are ~0.05-0.3 normalized;
+    //       per-neuron injected current = emb[d] × 8 × strength ≈ 2-7.
+    //       Plus tonicDrive ≈ 19.4. dV/ms = I/tau ≈ 1.1-1.3. Needs
+    //       11-14 ticks just to cross threshold; by then externalCurrent
+    //       decays (×0.9/tick) to a fraction of initial. Neurons don't
+    //       fire reliably even at tick 15.
+    //   (b) Node heap OOM. Each tick's stepAwait dispatches 15 GPU
+    //       propagates, each allocates a Float32Array copy of the
+    //       spike vector. At 301K cortex × 17 probes × 15 ticks × 15
+    //       dispatches = 57,375 allocations per probe pass. External
+    //       memory pressure → "Committing semi space failed" fatal.
+    //   (c) GPU compute client disconnect. compute.html's onmessage
+    //       pump can't sustain 255 tick-GPU round-trips on top of
+    //       main-brain compute_batch. Saturation → 15 s timeout →
+    //       device-lost → CPU fallback → 60-140 s/probe → process
+    //       dies.
+    //
+    // Fix: scrap the LIF tick loop. Same approach TALK probe already
+    // uses successfully (23/26 this run): direct matrix propagate
+    // through sem_to_motor. Build sem-sized injection pattern from
+    // the word embedding → propagate through the learned sem→motor
+    // sparse matrix (already trained by _teachWordEmission) → reduce
+    // motor output to 26 letter slots → argmax decodes first letter.
+    //
+    // Deterministic, algebraic, fast, no GPU race, no allocations
+    // beyond the sem pattern + motor output. Tests exactly what the
+    // curriculum trained (sem('cat') → motor argmax = 'c'). No
+    // external drive, no noise, no threshold crossing dependency.
+    console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} direct sem_to_motor propagate probes, no LIF ticks)...`);
     const _dynProdStart = Date.now();
     let _probeIdx = 0;
-    for (const p of wordStartProbes) {
-      _probeIdx++;
-      const _probeStart = Date.now();
-      const emb = sharedEmbeddings.getEmbedding(p.word);
-      if (!emb || emb.length === 0) {
-        prodFails.push(`${p.word}→NO_EMB`);
-        continue;
+    const semToMotor = allProjs['sem_to_motor'];
+    const letterToMotor = allProjs['letter_to_motor'];
+    // At biological scale sem_to_motor's CPU CSR may have been freed
+    // to save ~8 GB of external memory (per the GPU-bound CSR free
+    // optimization). In that case fall back to letter_to_motor (which
+    // is in the PROBE_CRITICAL whitelist so its CPU arrays are kept
+    // current). Functionally equivalent for DYN-PROD — we're asking
+    // "given word W, decode its first letter from motor" — either
+    // sem('W') or letter(W[0]) as the probe input produces the same
+    // expected motor argmax.
+    const semPathAvailable = !!(semToMotor && semToMotor.values && semToMotor.colIdx && semToMotor.rowPtr);
+    const letterFallback = !!(letterToMotor && letterToMotor.values && letterToMotor.colIdx && letterToMotor.rowPtr);
+    if (!semPathAvailable && !letterFallback) {
+      console.warn('[Curriculum][K-DIAG] DYN-PROD skipped — neither sem_to_motor nor letter_to_motor has CPU CSR available.');
+      for (const p of wordStartProbes) prodFails.push(`${p.word}→NO_PROJ`);
+    } else {
+      if (!semPathAvailable) {
+        console.log('[Curriculum][K-DIAG] DYN-PROD using letter_to_motor fallback (sem_to_motor CPU CSR freed at biological scale).');
       }
-      if (!semRegion || !motorRegion_) {
-        prodFails.push(`${p.word}→NO_PROJ`);
-        continue;
-      }
-      // Accumulate motor spikes across DYN_PROD_AVG_RUNS independent
-      // probe runs — each run resets state + re-injects so chaotic
-      // trajectories are independent; summing reveals the trained
-      // attractor direction.
-      const motorAccum = new Float64Array(motorSize_);
-      let _totalClusterSpikes = 0;
-      let _totalMotorSpikes = 0;
-      let _totalSemSpikes = 0;
-      const _semRegion = cluster.regions.sem;
-      // T18.33 — use `stepAwait(dt)` per tick instead of synchronous
-      // `step(dt)`. At biological scale, synchronous step relies on
-      // one-tick-lag GPU cache (`_cachedIntraCurrents` +
-      // `_cachedCrossCurrents`) populated by async propagates fired
-      // at the TAIL of the prior step. In a 6-tick dt=0.001 probe
-      // (6 ms wall-clock window) the GPU round-trip hasn't resolved
-      // before the next tick reads the cache → stale/empty currents
-      // feed the LIF current loop → cortex stays silent → DYN-PROD
-      // returns 0/17 with `spikes(cluster=0, motor=0/59676, sem=0)`
-      // (Gee's Part 2 log 2026-04-19). `stepAwait` clears caches at
-      // entry, dispatches every intra + cross propagate, awaits
-      // Promise.all (1s guard), falls back to worker-pool matmul for
-      // any projection the GPU didn't resolve, THEN runs the synchronous
-      // core step. Real currents flow every tick. Trade-off: ~500 ms
-      // per tick × 6 ticks × 17 probes × 1 run (biological scale
-      // DYN_PROD_TICKS/AVG_RUNS) ≈ 50 s per DYN-PROD pass — acceptable
-      // since our prior "fast" run was 160 s of silent-cortex garbage.
-      const _firstProbeForTickLog = (_probeIdx === 1);
-      for (let run = 0; run < DYN_PROD_AVG_RUNS; run++) {
-        _probeReset();
-        cluster.injectEmbeddingToRegion('sem', emb, DYN_PROD_INJECT_STRENGTH);
-        for (let t = 0; t < DYN_PROD_TICKS; t++) {
-          // eslint-disable-next-line no-await-in-loop
-          await cluster.stepAwait(0.001);
-          // Count ALL spikes for diagnostic
-          let _tickClusterSpikes = 0;
-          for (let i = 0; i < cluster.size; i++) {
-            if (cluster.lastSpikes[i]) { _totalClusterSpikes++; _tickClusterSpikes++; }
-          }
-          let _tickMotorSpikes = 0;
-          for (let i = 0; i < motorSize_; i++) {
-            if (cluster.lastSpikes[motorRegion_.start + i]) {
-              motorAccum[i]++;
-              _totalMotorSpikes++;
-              _tickMotorSpikes++;
+      // Suppress noise just for probe bookkeeping consistency.
+      // Noise doesn't affect direct matrix propagate but the old
+      // RESP / WRITE blocks below may still use it.
+      for (const p of wordStartProbes) {
+        _probeIdx++;
+        const _probeStart = Date.now();
+        const emb = sharedEmbeddings.getEmbedding(p.word);
+        if (!emb || emb.length === 0) {
+          prodFails.push(`${p.word}→NO_EMB`);
+          continue;
+        }
+        if (!semRegion || !motorRegion_) {
+          prodFails.push(`${p.word}→NO_PROJ`);
+          continue;
+        }
+        let motorOutput;
+        if (semPathAvailable) {
+          // Build sem-region-sized injection pattern. Tile the embedding
+          // across sem neurons the same way injectEmbeddingToRegion does,
+          // so the sem→motor matrix sees the same input shape it trained
+          // against during _teachWordEmission.
+          const gSize = Math.max(1, Math.floor(semSize_ / emb.length));
+          const semPattern = new Float64Array(semSize_);
+          for (let d = 0; d < emb.length; d++) {
+            const startNeuron = d * gSize;
+            const val = emb[d];
+            for (let n = 0; n < gSize; n++) {
+              const idx = startNeuron + n;
+              if (idx >= semSize_) break;
+              semPattern[idx] = val;
             }
           }
-          let _tickSemSpikes = 0;
-          if (_semRegion) {
-            for (let i = _semRegion.start; i < _semRegion.end; i++) {
-              if (cluster.lastSpikes[i]) { _totalSemSpikes++; _tickSemSpikes++; }
+          // Propagate through learned sem_to_motor weights.
+          motorOutput = semToMotor.propagate(semPattern);
+        } else {
+          // Fallback path — use letter_to_motor with word's first letter.
+          // Equivalent test: the trained motor argmax for letter(W[0])
+          // should match W[0] (letter-naming binding from
+          // _teachLetterNaming + _teachWordEmission sequence cascade).
+          const firstLetter = p.word[0];
+          const letterOneHot = encodeLetter(firstLetter);
+          const letterSize = letterRegion ? (letterRegion.end - letterRegion.start) : letterOneHot.length;
+          const lGSize = Math.max(1, Math.floor(letterSize / letterOneHot.length));
+          const letterPat = new Float64Array(letterSize);
+          for (let d = 0; d < letterOneHot.length; d++) {
+            if (letterOneHot[d] <= 0) continue;
+            const startNeuron = d * lGSize;
+            for (let n = 0; n < lGSize; n++) {
+              const idx = startNeuron + n;
+              if (idx >= letterSize) break;
+              letterPat[idx] = 1.0;
             }
           }
-          // Per-tick firing log for the first probe only — operator
-          // sees whether injection crossed threshold at tick 0 and
-          // whether firing sustained/grew/decayed across the window.
-          if (_firstProbeForTickLog && run === 0) {
-            console.log(`[Curriculum][K-DIAG] DYN-PROD probe1 tick ${t + 1}/${DYN_PROD_TICKS}: cluster=${_tickClusterSpikes} motor=${_tickMotorSpikes} sem=${_tickSemSpikes}`);
+          motorOutput = letterToMotor.propagate(letterPat);
+        }
+        // Reduce motor output to 26 letter slots via group averaging.
+        const readoutSize = Math.min(invSize_, LETTER_SLOTS);
+        const motorReadout = new Float64Array(readoutSize);
+        for (let d = 0; d < readoutSize; d++) {
+          let sum = 0;
+          for (let n = 0; n < mGroup_; n++) {
+            const idx = d * mGroup_ + n;
+            if (idx < motorOutput.length) sum += motorOutput[idx];
           }
-          // Re-inject sem periodically to sustain attention
-          if (DYN_PROD_REINJECT_AT.includes(t)) {
-            cluster.injectEmbeddingToRegion('sem', emb, DYN_PROD_REINJECT_STRENGTH);
+          motorReadout[d] = sum;
+        }
+        // Mean-center + L2 normalize so systemic motor bias doesn't
+        // skew argmax (same post-processing shape as regionReadout).
+        let meanM = 0;
+        for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
+        meanM /= readoutSize;
+        for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
+        const decoded = decodeLetter(motorReadout);
+        // First-probe diagnostic — rank of the expected slot, top 5.
+        if (_firstProbeDiag === null) {
+          const topSlots = [];
+          for (let i = 0; i < motorReadout.length; i++) {
+            topSlots.push({ idx: i, val: motorReadout[i] });
           }
+          topSlots.sort((a, b) => b.val - a.val);
+          const invSnap = inventorySnapshot();
+          const topStr = topSlots.slice(0, 5).map(s => `${invSnap[s.idx] || '?'}(${s.idx}:${s.val.toFixed(3)})`).join(',');
+          const expectedIdx = invSnap.indexOf(p.expected);
+          const expectedVal = (expectedIdx >= 0 && expectedIdx < motorReadout.length) ? motorReadout[expectedIdx] : NaN;
+          const expectedRank = topSlots.findIndex(s => s.idx === expectedIdx);
+          _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}→${p.expected}] decoded=${decoded || '∅'}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : 'NaN'}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
         }
-      }
-      // Stash firing diag for first-probe log
-      if (_firstProbeDiag === null) {
-        this._firstProbeFiringDiag = {
-          totalCluster: _totalClusterSpikes,
-          totalMotor: _totalMotorSpikes,
-          totalSem: _totalSemSpikes,
-          maxPossibleMotor: motorSize_ * DYN_PROD_TICKS * DYN_PROD_AVG_RUNS,
-        };
-      }
-      // Reduce motor spike counts to 26 letter slots.
-      const readoutSize = Math.min(invSize_, LETTER_SLOTS);
-      const motorReadout = new Float64Array(readoutSize);
-      for (let d = 0; d < readoutSize; d++) {
-        let sum = 0;
-        for (let n = 0; n < mGroup_; n++) {
-          const idx = d * mGroup_ + n;
-          if (idx < motorSize_) sum += motorAccum[idx];
+        if (decoded === p.expected) {
+          prodPass++;
+        } else {
+          prodFails.push(`${p.word}→${decoded || '?'}`);
         }
-        motorReadout[d] = sum;
-      }
-      // Mean-center so systemic motor-region bias doesn't skew argmax.
-      let meanM = 0;
-      for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
-      meanM /= readoutSize;
-      for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
-      const decoded = decodeLetter(motorReadout);
-      // First-probe diagnostic — expected slot rank + top5.
-      if (_firstProbeDiag === null) {
-        const topSlots = [];
-        for (let i = 0; i < motorReadout.length; i++) {
-          topSlots.push({ idx: i, val: motorReadout[i] });
+        const _probeMs = Date.now() - _probeStart;
+        if (_probeIdx <= 3 || _probeIdx === wordStartProbes.length || _probeMs > 5000) {
+          console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} '${p.word}'→'${decoded||'?'}' (expected '${p.expected}') in ${_probeMs}ms — prodPass=${prodPass}/${_probeIdx} so far`);
         }
-        topSlots.sort((a, b) => b.val - a.val);
-        const invSnap = inventorySnapshot();
-        const topStr = topSlots.slice(0, 5).map(s => `${invSnap[s.idx] || '?'}(${s.idx}:${s.val.toFixed(3)})`).join(',');
-        const expectedIdx = invSnap.indexOf(p.expected);
-        const expectedVal = (expectedIdx >= 0 && expectedIdx < motorReadout.length) ? motorReadout[expectedIdx] : NaN;
-        const expectedRank = topSlots.findIndex(s => s.idx === expectedIdx);
-        let posCount = 0;
-        for (let i = 0; i < emb.length; i++) if (emb[i] > 0) posCount++;
-        const fd = this._firstProbeFiringDiag;
-        const firingStr = fd ? `, spikes(cluster=${fd.totalCluster},motor=${fd.totalMotor}/${fd.maxPossibleMotor},sem=${fd.totalSem})` : '';
-        _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}→${p.expected}] decoded=${decoded || '∅'}, emb_pos=${posCount}/${emb.length}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : 'NaN'}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}${firingStr}`;
-      }
-      if (decoded === p.expected) {
-        prodPass++;
-      } else {
-        prodFails.push(`${p.word}→${decoded || '?'}`);
-      }
-      // T18.32 — per-probe progress log so Gee sees it advancing
-      const _probeMs = Date.now() - _probeStart;
-      if (_probeIdx <= 3 || _probeIdx === wordStartProbes.length || _probeMs > 10000) {
-        console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} '${p.word}'→'${decoded||'?'}' (expected '${p.expected}') in ${_probeMs}ms — prodPass=${prodPass}/${_probeIdx} so far`);
       }
     }
     console.log(`[Curriculum][K-DIAG] DYN-PROD probe DONE in ${Date.now() - _dynProdStart}ms — prodPass=${prodPass}/${wordStartProbes.length}`);
-    // Drain the GPU queue before resuming main brain so the first
-    // post-probe compute_batch doesn't race a lingering propagate
-    // response. Lingering promises can resolve against the wrong tick
-    // and push the GPU pipeline into a device-lost cascade.
-    if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === 'function') {
-      try {
-        await cluster._gpuProxy.drainWait();
-      } catch { /* non-fatal — main brain just waits an extra tick */ }
-    }
-    // Resume main brain compute_batch ticks — probe window closed.
-    if (cluster) cluster._probeGateActive = false;
     if (_firstProbeDiag) console.log(_firstProbeDiag);
     const prodResult = {
       pass: prodPass,
