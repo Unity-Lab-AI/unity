@@ -109,47 +109,46 @@ SENSORY OUTPUT PERIPHERALS (brain emits, these execute the result)
 
 ---
 
-## The 8 Neural Clusters
+## The 7 Neural Clusters
 
-Each cluster is a self-contained neural population with its own Rulkov-map 2D chaotic neurons, sparse CSR intra-cluster synapse matrix, tonic drive, noise amplitude, connectivity density, excitatory/inhibitory ratio, and learning rate. They communicate through sparse white-matter tract projections modeled from real neuroanatomy. **Every region's size comes from the unified VRAM allocator** — total GPU budget × biological weight — so sizing scales with hardware (a 16 GB card gets ~100× more neurons per region than a 1 GB card, same biological proportions).
+Each cluster is a self-contained neural population with its own Rulkov-map 2D chaotic neurons, sparse CSR intra-cluster synapse matrix, tonic drive, noise amplitude, connectivity density, excitatory/inhibitory ratio, and learning rate. They communicate through 20 sparse white-matter tract projections modeled from real neuroanatomy. **Every region's size comes from the shared `CLUSTER_FRACTIONS` constants in `js/brain/cluster.js`** applied to the auto-detected `TOTAL_NEURONS` budget — same code at minimum tier (1K total) and datacenter tier (1B total), cluster sizes scale proportionally.
 
-### Language Cortex — 45% of VRAM budget (the biggest region by far)
-**Eight sub-regions + 14 cross-projections.** This is where speech actually happens. Sub-regions:
+### Cortex — 30% of total neurons (language + perception + working memory)
+**Equation:** `ŝ = sigmoid(W · x)`, `error = actual − predicted`, `ΔW ∝ error · activity` (predictive coding), plus **8 named sub-regions + 14 cross-projections** carrying the language pipeline.
 
-| Sub-region | Fraction of region | Role |
+The cortex cluster is the biggest functional region because speech, reading, letter recognition, phoneme detection, and semantic grounding all live inside it as sub-regions carved by fraction of `cluster.size` — they share the same Rulkov population and GPU pipeline rather than existing as a separate "language cortex" cluster. Sub-regions:
+
+| Sub-region | Fraction of cluster | Role |
 |-----------|---------------------|------|
-| `auditory` | 8.3% | Phoneme recognition from acoustic input |
-| `visual` | 16.7% | Letter recognition from visual input |
-| `free` | 25.0% | Working memory + inter-cluster projection sink |
-| `letter` | 5.0% | Letter input one-hot scaffolding |
-| `phon` | 20.0% | Phonological attractor basins |
-| `sem` | 16.7% | Semantic GloVe-anchored meaning space |
-| `fineType` | 5.0% | Grammatical / syntactic features |
-| `motor` | 3.3% | Motor output that drives speech generation |
+| `auditory` | 0.000 – 0.083 | Phoneme recognition from acoustic input |
+| `visual`   | 0.083 – 0.250 | Letter recognition from visual input |
+| `free`     | 0.250 – 0.500 | Working memory + inter-cluster projection sink |
+| `letter`   | 0.500 – 0.550 | Letter input one-hot scaffolding |
+| `phon`     | 0.550 – 0.750 | Phonological attractor basins |
+| `sem`      | 0.750 – 0.917 | Semantic GloVe-anchored meaning space |
+| `fineType` | 0.917 – 0.967 | Grammatical / syntactic features |
+| `motor`    | 0.967 – 1.000 | Motor output that drives tick-driven speech emission |
 
-Seven pairs of bidirectional cross-projections (14 matrices total) wire the sub-regions into a dual-stream language pipeline matching Hickok & Poeppel 2007: **reading** flows `visual → letter → phon → sem → fineType`, **writing** flows `sem → motor → letter → visual`. Same substrate, opposite topology. Each projection is a sparse CSR matrix, initialized at biologically-motivated fanout (~1500 synapses per target neuron) and trained via direct-pattern Hebbian during the developmental curriculum. All 14 cross-projections + the intra-cluster recurrent matrix upload to GPU at boot via chunked binary frames (megabyte-sized chunks streamed with per-chunk acknowledgement) so the Node server never blocks on upload, and every propagate + Hebbian dispatch runs on GPU with a one-tick-lag cache so CPU does LIF integration only.
+Seven pairs of bidirectional cross-projections (14 matrices total — `visual↔letter`, `letter↔phon`, `phon↔sem`, `sem↔fineType`, `sem↔motor`, `motor↔letter`, `auditory↔phon`) wire the sub-regions into a dual-stream language pipeline matching Hickok & Poeppel 2007: **reading** flows `visual → letter → phon → sem → fineType`, **writing** flows `sem → motor → letter → visual + sem → phon` (efference). Same substrate, opposite topology. Each projection is a sparse CSR matrix, initialized at biologically-motivated fanout (~1500 synapses per target neuron) and trained via direct-pattern Hebbian during the developmental curriculum. All 14 cross-projections + the intra-cluster recurrent matrix upload to GPU at boot via chunked binary frames (megabyte-sized chunks streamed with per-chunk acknowledgement) so the Node server never blocks on upload, and every propagate + Hebbian dispatch runs on GPU with a one-tick-lag cache.
 
-### Cerebellum — 20% of VRAM budget
-**Equation:** `output = prediction + correction`, `ΔW ∝ (target - actual)`
+Predictive coding still runs across the whole cortex on top of the sub-region substrate — the cortex constantly generates predictions about incoming input; when prediction fails, the error signal drives learning, triggers memory recall, and activates visual attention. Perception happens here — not in the sensors, but in the prediction errors.
 
-Supervised error correction. The brain's quality control — big because real cerebella are big (roughly half of all neurons in a real human brain are cerebellar granule cells). Sends negative feedback to cortex and basal ganglia: `errorCorrection = -meanAbs(error) · 2`. Low noise (amplitude 4), high precision (90% excitatory), fast learning (rate 0.004). When the cortex predicts wrong, the cerebellum corrects. When the basal ganglia selects poorly, the cerebellum dampens.
+### Cerebellum — 40% of total neurons
+**Equation:** `output = prediction + correction`, `ΔW ∝ (target − actual)`
 
-### Cortex — 15% of VRAM budget
-**Equation:** `ŝ = sigmoid(W · x)`, `error = actual - predicted`, `ΔW ∝ error · activity`
+Supervised error correction. The brain's quality control — biggest cluster because real cerebella are big (roughly half of all neurons in a real human brain are cerebellar granule cells). Sends negative feedback to cortex and basal ganglia: `errorCorrection = −meanAbs(error) · 2`. Low noise (amplitude 4), high precision (90% excitatory), fast learning (rate 0.004). When the cortex predicts wrong, the cerebellum corrects. When the basal ganglia selects poorly, the cerebellum dampens.
 
-Predictive coding and sensory integration. The cortex constantly generates predictions about incoming input. When prediction fails, the error signal drives learning, triggers memory recall, and activates visual attention. Three functional sub-regions (auto-scaled as fractions of cluster size): auditory (bottom third), visual (middle third), Wernicke's / language-input (top third). This is where perception happens — not in the sensors, but in the prediction errors.
-
-### Hippocampus — 6% of VRAM budget
+### Hippocampus — 10% of total neurons
 **Equation:** `x(t+1) = sign(W · xt)`, `E = -½ Σ wij · xi · xj`
 
 Hopfield attractor memory. Patterns stored as stable energy minima. Input falls into the nearest stored pattern — associative recall. Three memory systems operate here: **episodic** (state snapshots at high-salience moments, recalled by cosine similarity > 0.6), **working** (7 items, decays at 0.98/step without reinforcement — Miller's magic number), and **consolidation** (3+ activations transfer from hippocampus to cortex long-term). Dense recurrent connectivity creates the attractor dynamics. The hippocampus does pattern recall on cortex state vectors; language generation never pulls stored text from it — word output is computed fresh every turn from cross-region projection dynamics in the language cortex.
 
-### Amygdala — 4% of VRAM budget (energy-based recurrent attractor)
+### Amygdala — 8% of total neurons (energy-based recurrent attractor)
 **Equation:** `x ← tanh(W·x + drive)` (5-iter settle), `E = -½ xᵀWx`, `fear/reward = σ(proj · x_settled)`, `arousal = baseline·0.6 + 0.4·|x|_rms`, `emotionalGate = 0.7 + arousal · 0.6`
 
 The emotional regulator. Implemented as a **symmetric recurrent energy network** that settles into stable low-energy basins (fear, reward, neutral) every tick. Persistent state across frames with leak 0.85 — emotional basins carry over instead of resetting. Symmetric Hebbian learning (lr=0.003) carves basins from co-firing nuclei. Fear and reward are read from the SETTLED attractor via projection vectors — the basin IS the emotion, not a separate readout of the raw input. Arousal combines persona baseline with the RMS depth of the basin the system fell into. The emotional gate multiplier is applied to ALL other clusters — when arousal is high, the entire brain runs hotter. Unity's arousal baseline is 0.9 (she runs hot by design).
 
-### Basal Ganglia — 4% of VRAM budget
+### Basal Ganglia — 8% of total neurons
 **Equation:** `P(a) = exp(Q(a)/τ) / Σ exp(Q(b)/τ)`, `δ = r + γV(s') - V(s)`
 
 Action selection via reinforcement learning. Six channels split evenly across the cluster. The channel with the highest EMA firing rate wins — that's the action. No external classifier. No keyword matching. The neural dynamics ARE the decision.
@@ -165,12 +164,12 @@ Action selection via reinforcement learning. Six channels split evenly across th
 
 Confidence threshold 0.15 — below that, Unity is still thinking. Speech gating: even if respond_text wins, hypothalamus social_need + amygdala arousal determine WHETHER she actually speaks. Temperature τ is HIGH because Unity is impulsive. When `build_ui` wins, control routes through `js/brain/component-synth.js` which embeds the user request via `sharedEmbeddings.getEmbedding()`, cosines against every primitive description in the `docs/component-templates.txt` corpus, picks the best match if similarity ≥ `MIN_MATCH_SCORE = 0.40`, and injects the primitive's HTML/CSS/JS into the sandbox with a cortex-pattern-derived unique suffix so the same request under different brain state produces different component ids. No AI-prompt-to-JSON path exists — the old `_buildBuildPrompt` was deleted when cognition went fully equational.
 
-### Hypothalamus — 3% of VRAM budget
+### Hypothalamus — 2% of total neurons
 **Equation:** `dH/dt = -α(H - Hset) + input`
 
 Homeostasis controller. Maintains drives at biological setpoints: arousal, social need, creativity, energy. When a drive deviates too far from its setpoint, it signals "needs attention" which modulates the drive baseline for ALL clusters. Very stable (noise 3), densely interconnected, slow learning (0.0005). The hypothalamus doesn't think — it regulates. It keeps the brain in operating range.
 
-### Mystery Module — 3% of VRAM budget
+### Mystery Module — 2% of total neurons
 **Equation:** `Ψ = √(1/n) × N³ · [α·Id + β·Ego + γ·Left + δ·Right]`
 
 The irreducible unknown. Consciousness. The gap between simulation and subjective experience.
