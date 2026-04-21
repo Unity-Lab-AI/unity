@@ -1,7 +1,7 @@
 # TODO — Unity
 
 > **Branch:** `syllabus-k-phd`
-> **Last updated:** 2026-04-21 (Session 114.19bh — reverted T26.c.1 whitelist expansion; `letter_to_sem` + `motor_to_letter` re-kept would have pushed external memory back into the V8 GC stall zone, froze operator's ELA-K Phase 1 run after the pre-K walk. T26.a/b/c.2-4/d remain shipped.)
+> **Last updated:** 2026-04-21 (Session 114.19bi — T26.c.1 follow-up CLOSED: new `_probePropagate` routes READ-probe `letter_to_sem` through GPU proxy when CPU CSR has been freed. 5 shared gate helpers + 40+ callers flipped async. External memory stays in the ~3 GB T24.a zone AND READ probes get real output instead of null-CSR zero fallbacks.)
 > **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
 
 ---
@@ -78,7 +78,7 @@ Gate pass = aggregate ≥ 90 % AND **every** sub-standard ≥ its cut AND extern
 
 #### T26.c — T24 memory closure (biological scale verified) — CLOSED
 
-- [ ] **T26.c.1 (T24.b)** — REVERTED. Widening `PROBE_CRITICAL_CPU_CSR` from 3 → 5 entries added ~2 GB of CPU CSR back to external memory at biological scale, re-triggering the V8 GC stall T24.a fixed. Froze operator's ELA-K Phase 1 run (Session 114.19bh). Follow-up when READ rate measurably fails: route READ-probe `letter_to_sem` + `motor_to_letter` calls through the GPU proxy instead of keeping CPU CSR resident — better memory footprint + correct probe reads.
+- [x] **T26.c.1 (T24.b)** — Whitelist expansion was reverted in 114.19bh (re-added 14 GB external-memory stall). Correct masterful fix shipped in 114.19bi: new `_probePropagate(projName, srcVec)` async helper in `curriculum.js` routes freed-CSR reads through `cluster._gpuProxy.propagate` + converts Float32→Float64 for uniform downstream arithmetic. `_gateVocabList`, `_gateSentenceList`, `_gateComprehension`, `_autoFinal`, `_gateConceptTeach` all flipped `async`; 40+ callers bulk-converted to `await`. Five `letterToSem.propagate` call sites replaced. Memory stays in T24.a zone, READ probes get real output.
 - [x] **T26.c.2 (T24.c)** — `DREAM_LANG_CORTEX` env cap verified wired at `brain-server.js` line 1003 (parse) + line 1037 (apply as override). Boot banner flags active override.
 - [x] **T26.c.3 (T24.d)** — `_memorySnapshotAndGc` upgraded with prior-snapshot delta tracking: `Δheap=+218.4MB Δext=+1340.2MB Δrss=+1622.1MB`. New call sites at cell-entry + cell-exit in `_runCell`; existing 9 in-phase sites benefit from deltas automatically.
 - [x] **T26.c.4 (T24.e)** — Browser-side `BRAIN_VRAM_ALLOC` rescale loop-back verified at `brain-server.js` line 1015-1037. T18.6.c geometric rescale fires before VRAM saturates.

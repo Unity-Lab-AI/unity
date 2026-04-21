@@ -5120,7 +5120,7 @@ export class Curriculum {
         const letterToSem = allProjs['letter_to_sem'];
         const semToMot = allProjs['sem_to_motor'];
         if (letterToSem && semToMot) {
-          const semOutput = letterToSem.propagate(letterPat);
+          const semOutput = await this._probePropagate('letter_to_sem', letterPat);
           const semBinary = new Float64Array(semOutput.length);
           for (let i = 0; i < semOutput.length; i++) semBinary[i] = semOutput[i] > 0 ? 1 : 0;
           motorOutput = semToMot.propagate(semBinary);
@@ -7858,6 +7858,50 @@ export class Curriculum {
     }
   }
 
+  /**
+   * Probe-side propagate wrapper. Routes CSR reads through either:
+   *   1. CPU SparseMatrix.propagate when the projection's CPU arrays
+   *      are alive (probe-critical whitelist: letter_to_phon +
+   *      letter_to_motor + sem_to_motor) — zero extra latency.
+   *   2. GPU proxy propagate when the CPU arrays have been freed by
+   *      T24.a selective-free (everything else at biological scale).
+   *      Awaits the compute.html ack; returns the dst-region currents.
+   *   3. Zero vector shaped like the dst region when neither path is
+   *      available (dead-fallback matching the null-CSR guard).
+   *
+   * The GPU proxy path unblocks READ probes that need letter_to_sem
+   * without having to whitelist CPU CSR for it (reverted T26.c.1
+   * regression — adding letter_to_sem to the whitelist re-introduced
+   * the 14 GB external-memory V8 GC stall that T24.a fixed).
+   */
+  async _probePropagate(projName, srcVec) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return null;
+    const proj = cluster.crossProjections[projName];
+    if (!proj) return null;
+    // Fast path: CPU CSR alive.
+    if (proj.values && proj.colIdx && proj.rowPtr && proj.values.length > 0) {
+      return proj.propagate(srcVec);
+    }
+    // GPU proxy fallback for freed CSR on non-whitelisted probe paths.
+    if (cluster._gpuProxyReady && cluster._gpuProxy && typeof cluster._gpuProxy.propagate === 'function') {
+      try {
+        const pre = new Uint32Array(srcVec.length);
+        for (let i = 0; i < srcVec.length; i++) pre[i] = srcVec[i] > 0 ? 1 : 0;
+        const result = await cluster._gpuProxy.propagate(`${cluster.name}_${projName}`, pre);
+        if (result && result.length > 0) {
+          // Convert Float32Array → Float64Array so downstream probe
+          // arithmetic is uniform with the CPU path output.
+          const out = new Float64Array(result.length);
+          for (let i = 0; i < result.length; i++) out[i] = result[i];
+          return out;
+        }
+      } catch { /* non-fatal — fall through to zero vector */ }
+    }
+    // Dead fallback — match null-CSR guard shape so callers don't NPE.
+    return new Float64Array(proj.rows || 0);
+  }
+
   // ─── _teachAssociationPairs — pure feature-vector concept binding ──
   //
   // For each [inputWord, outputWord] pair, inject GloVe(input) into
@@ -9450,7 +9494,7 @@ export class Curriculum {
    * @param {string[]} sentences - the sentences taught in this cell
    * @returns {{pass:boolean, reason:string}} gate result
    */
-  _autoFinal(sentences) {
+  async _autoFinal(sentences) {
     // Extract unique content words (>3 chars, skip function words)
     const STOP = new Set(['the','and','but','for','with','from','that','this','have','has','had','was','were','are','been','being','will','would','could','should','can','may','might','not','all','any','some','each','every','more','most','very','just','also','into','than','then','when','where','what','which','who','how','why','its','our','your','they','them','their','she','her','his','him','one','two']);
     const words = new Set();
@@ -9496,7 +9540,7 @@ export class Curriculum {
 
     if (questions.length < 4) return { pass: true, reason: 'auto-final: too few questions generated' };
 
-    return this._gateComprehension(questions);
+    return await this._gateComprehension(questions);
   }
 
   // structure as Session 4 ELA-G1: curated ~15-word vocab list per
@@ -9624,12 +9668,12 @@ export class Curriculum {
     }
 
     // Run comprehension gate
-    const comprehResult = this._gateComprehension(questions);
+    const comprehResult = await this._gateComprehension(questions);
 
     // Also run the READ + original TALK gate
     const MAX_FOCUS_ROUNDS = 5;
     for (let focus = 0; focus < MAX_FOCUS_ROUNDS; focus++) {
-      const gateResult = this._gateVocabList(vocab);
+      const gateResult = await this._gateVocabList(vocab);
       // PASS if comprehension passes (real test) — TALK is bonus
       if (comprehResult.pass) {
         return {
@@ -9680,10 +9724,10 @@ export class Curriculum {
       }
       await _microtask();
     }
-    return this._gateVocabList(vocab);
+    return await this._gateVocabList(vocab);
   }
 
-  _gateVocabList(vocab, opts = {}) {
+  async _gateVocabList(vocab, opts = {}) {
     // DIRECT MATRIX PROBE (same as _gateSentenceList)
     const cluster = this.cluster;
     const allProjs = cluster.crossProjections || {};
@@ -9732,7 +9776,7 @@ export class Curriculum {
 
       // READ: letter → sem cross-projection → cosine vs word embedding
       if (letterToSem && semRegion) {
-        const semOutput = letterToSem.propagate(letterPat);
+        const semOutput = await this._probePropagate('letter_to_sem', letterPat);
         const semSize = semRegion.end - semRegion.start;
         const SEM_DIM = 300;
         const sGSize = Math.max(1, Math.floor(semSize / SEM_DIM));
@@ -11350,12 +11394,12 @@ export class Curriculum {
       const context = [...words.slice(0, blankIdx), ...words.slice(blankIdx + 1)];
       fillInQuestions.push({ prompt: context, answer });
     }
-    const comprehResult = this._gateComprehension(fillInQuestions);
+    const comprehResult = await this._gateComprehension(fillInQuestions);
 
     // Also run TALK gate
     const MAX_FOCUS_ROUNDS = 5;
     for (let focus = 0; focus < MAX_FOCUS_ROUNDS; focus++) {
-      const gateResult = this._gateSentenceList(sentences, opts);
+      const gateResult = await this._gateSentenceList(sentences, opts);
       if (comprehResult.pass) {
         return {
           pass: true,
@@ -11369,10 +11413,10 @@ export class Curriculum {
       await this._teachVocabList(failedWords, ctx, { reps: reps * 3 });
       await _microtask();
     }
-    return this._gateSentenceList(sentences, opts);
+    return await this._gateSentenceList(sentences, opts);
   }
 
-  _gateSentenceList(sentences, opts = {}) {
+  async _gateSentenceList(sentences, opts = {}) {
     const cluster = this.cluster;
     const sampleSize = Math.min(opts.sampleSize ?? 10, sentences.length);
     const allProjs = cluster.crossProjections || {};
@@ -11429,7 +11473,7 @@ export class Curriculum {
 
       // READ: letter → sem via cross-projection → cosine vs first word embedding
       if (letterToSem && semRegion) {
-        const semOutput = letterToSem.propagate(letterPat);
+        const semOutput = await this._probePropagate('letter_to_sem', letterPat);
         const semSize = semRegion.end - semRegion.start;
         const SEM_DIM = 300;
         const sGSize = Math.max(1, Math.floor(semSize / SEM_DIM));
@@ -12004,10 +12048,10 @@ export class Curriculum {
       { prompt: ['the', 'dog', 'is', 'bigger', 'than', 'the'], answer: 'cat' },
       { prompt: ['she', 'ran', 'fast', 'because', 'she', 'was'], answer: 'scared' },
     ];
-    const finalResult = this._gateComprehension(FINAL_QUESTIONS);
+    const finalResult = await this._gateComprehension(FINAL_QUESTIONS);
 
     // Also run vocab gate
-    const vocabResult = this._gateVocabList(ELA_G3_VOCAB.slice(0, 20));
+    const vocabResult = await this._gateVocabList(ELA_G3_VOCAB.slice(0, 20));
 
     if (finalResult.pass || vocabResult.pass) {
       return {
@@ -12997,7 +13041,7 @@ export class Curriculum {
     }
 
     for (let rep = 0; rep < reps; rep++) {
-      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return this._gateConceptTeach(concepts);
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return await this._gateConceptTeach(concepts);
       for (const { name, feat } of concepts) {
         // Expand 8d binary feature to 16d continuous
         const expanded = new Float64Array(16);
@@ -13068,7 +13112,7 @@ export class Curriculum {
     // Gate with focused retry on failing concept names.
     const MAX_FOCUS_ROUNDS = 5;
     for (let focus = 0; focus < MAX_FOCUS_ROUNDS; focus++) {
-      const gateResult = this._gateConceptTeach(concepts);
+      const gateResult = await this._gateConceptTeach(concepts);
       if (gateResult.pass) return gateResult;
       const failedWords = gateResult.metrics?.talkFails || [];
       if (failedWords.length === 0) return gateResult;
@@ -13076,10 +13120,10 @@ export class Curriculum {
       await this._teachVocabList(failedWords, { arousal, valence }, { reps: reps * 3 });
       await _microtask();
     }
-    return this._gateConceptTeach(concepts);
+    return await this._gateConceptTeach(concepts);
   }
 
-  _gateConceptTeach(concepts) {
+  async _gateConceptTeach(concepts) {
     // Direct matrix probe: for each concept, test READ (letter→sem cosine
     // vs concept name GloVe) and TALK (sem→motor first letter match).
     const cluster = this.cluster;
@@ -13139,7 +13183,7 @@ export class Curriculum {
       // READ: letter → sem → cosine vs concept name embedding
       if (letterToSem && nameEmb && nameEmb.length > 0) {
         const letterPat = buildPattern(letterSize, letterOneHot);
-        const semOutput = letterToSem.propagate(letterPat);
+        const semOutput = await this._probePropagate('letter_to_sem', letterPat);
         const semSize = semRegion.end - semRegion.start;
         const SEM_DIM = 300;
         const sGSize = Math.max(1, Math.floor(semSize / SEM_DIM));
@@ -15099,8 +15143,8 @@ export class Curriculum {
       { prompt: ['four', 'bags', 'six', 'apples', 'each', 'total'], answer: 'twenty' },
       { prompt: ['shared', 'twelve', 'three', 'friends', 'each'], answer: 'four' },
     ];
-    const finalResult = this._gateComprehension(FINAL_QUESTIONS);
-    const vocabResult = this._gateVocabList(MATH_G3_VOCAB.slice(0, 15));
+    const finalResult = await this._gateComprehension(FINAL_QUESTIONS);
+    const vocabResult = await this._gateVocabList(MATH_G3_VOCAB.slice(0, 15));
 
     if (finalResult.pass || vocabResult.pass) {
       return {
@@ -15389,8 +15433,8 @@ export class Curriculum {
       { prompt: ['practice', 'leads', 'to'], answer: 'perfect' },
       { prompt: ['honest', 'builds'], answer: 'trust' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
-    const vocabResult = this._gateVocabList(ELA_G4_VOCAB.slice(0, 20));
+    const finalResult = await this._gateComprehension(FINAL);
+    const vocabResult = await this._gateVocabList(ELA_G4_VOCAB.slice(0, 20));
     if (finalResult.pass || vocabResult.pass) {
       return { pass: true, reason: `FINAL: ${finalResult.reason} | VOCAB: ${vocabResult.reason}` };
     }
@@ -15597,7 +15641,7 @@ export class Curriculum {
       { prompt: ['man', 'planted', 'watered', 'daily', 'result'], answer: 'flowers' },
       { prompt: ['cat', 'saw', 'bird', 'chased', 'it', 'bird'], answer: 'flew' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList(ELA_G5_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
@@ -15745,8 +15789,8 @@ export class Curriculum {
       { prompt: ['right', 'angle', 'is', 'how', 'many', 'degrees'], answer: 'ninety' },
       { prompt: ['acute', 'angle', 'is'], answer: 'less' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
-    const vocabResult = this._gateVocabList(MATH_G4_VOCAB.slice(0, 15));
+    const finalResult = await this._gateComprehension(FINAL);
+    const vocabResult = await this._gateVocabList(MATH_G4_VOCAB.slice(0, 15));
     if (finalResult.pass || vocabResult.pass) {
       return { pass: true, reason: `FINAL: ${finalResult.reason} | VOCAB: ${vocabResult.reason}` };
     }
@@ -15858,7 +15902,7 @@ export class Curriculum {
       { prompt: ['if', 'two', 'cost', 'four', 'then', 'four', 'cost'], answer: 'eight' },
       { prompt: ['common', 'denominator', 'halves', 'thirds'], answer: 'sixths' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList(MATH_G5_VOCAB.slice(0, 12), ctx, { reps: 3 });
   }
@@ -15992,7 +16036,7 @@ export class Curriculum {
     ]);
     await this._teachSolarSystem();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16025,7 +16069,7 @@ export class Curriculum {
     ]);
 
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16102,7 +16146,7 @@ export class Curriculum {
     // line 496 before the state-concept sentence pass.
     await this._teachStateNames();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16129,7 +16173,7 @@ export class Curriculum {
     // line 500 before the geography sentence pass.
     await this._teachUSRegions();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16155,7 +16199,7 @@ export class Curriculum {
     // per TODO line 557 before the color-mixing sentence pass.
     await this._teachColorMixing();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16187,7 +16231,7 @@ export class Curriculum {
       ['slow', 'adagio'], ['drum', 'beat'], ['silence', 'rest'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16213,7 +16257,7 @@ export class Curriculum {
     // TODO line 557 before the drawing sentence pass.
     await this._teachDrawingBasics();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16312,7 +16356,7 @@ export class Curriculum {
       { prompt: ['earthquake', 'ground'], answer: 'shakes' },
       { prompt: ['opposite', 'poles', 'magnets'], answer: 'attract' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList(SCI_G4_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
@@ -16354,7 +16398,7 @@ export class Curriculum {
       ['sun', 'photosynthesis', 'oxygen'], ['cold', 'freeze', 'solid'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16402,7 +16446,7 @@ export class Curriculum {
       ['tilt', 'season', 'weather'], ['heat', 'magma', 'volcano'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16490,7 +16534,7 @@ export class Curriculum {
       { prompt: ['plague', 'caused', 'then', 'freedom'], answer: 'labor' },
       { prompt: ['trade', 'wealth', 'then'], answer: 'renaissance' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList(SOC_G4_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
@@ -16534,7 +16578,7 @@ export class Curriculum {
     ]);
 
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16570,7 +16614,7 @@ export class Curriculum {
       ['trade', 'wealth', 'empire'], ['democracy', 'vote', 'freedom'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16614,7 +16658,7 @@ export class Curriculum {
       ['key', 'chord'], ['chord', 'harmony'], ['rhythm', 'groove'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16645,7 +16689,7 @@ export class Curriculum {
       ['pattern', 'rhythm'], ['movement', 'energy'], ['color', 'emotion'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16679,7 +16723,7 @@ export class Curriculum {
       ['scale', 'key', 'chord'], ['dominant', 'tension', 'resolve'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -16824,7 +16868,7 @@ export class Curriculum {
       { prompt: ['the', 'dog', 'that', 'ran', 'was'], answer: 'fast' },
       { prompt: ['because', 'it', 'rained', 'we'], answer: 'stayed' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList(ELA_G6_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
@@ -16907,7 +16951,7 @@ export class Curriculum {
       { prompt: ['absolute', 'value', 'of', 'negative', 'three'], answer: 'three' },
       { prompt: ['area', 'triangle', 'half', 'base', 'times'], answer: 'height' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList(MATH_G6_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
@@ -17086,7 +17130,7 @@ export class Curriculum {
       { prompt: ['implicit', 'means'], answer: 'implied' },
       { prompt: ['irony', 'when', 'opposite'], answer: 'expected' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList(ELA_G7_VOCAB.slice(0, 15), ctx, { reps: 3 });
   }
@@ -17236,7 +17280,7 @@ export class Curriculum {
     await this._teachEssayStructure(ESSAYS);
     await this._teachGrammarAgreement(AGREEMENT_PAIRS);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -17298,7 +17342,7 @@ export class Curriculum {
       { prompt: ['tax', 'is', 'percent', 'of'], answer: 'price' },
       { prompt: ['diameter', 'is', 'twice', 'the'], answer: 'radius' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList([
       'slope', 'intercept', 'linear', 'function', 'domain', 'range',
@@ -17361,7 +17405,7 @@ export class Curriculum {
       { prompt: ['voltage', 'equals', 'current', 'times'], answer: 'resistance' },
       { prompt: ['scatter', 'plot', 'shows'], answer: 'relationship' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList([
       'pythagorean', 'hypotenuse', 'irrational', 'function', 'quadratic',
@@ -17419,7 +17463,7 @@ export class Curriculum {
       ['sun', 'photosynthesis', 'food'], ['food', 'respiration', 'energy'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -17479,7 +17523,7 @@ export class Curriculum {
       { prompt: ['ohms', 'law', 'voltage', 'equals', 'current', 'times'], answer: 'resistance' },
       { prompt: ['wavelength', 'is', 'distance', 'between'], answer: 'peaks' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList([
       'kinetic', 'potential', 'conduction', 'convection', 'radiation',
@@ -17517,7 +17561,7 @@ export class Curriculum {
       ['exploration', 'colony', 'empire'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -17552,7 +17596,7 @@ export class Curriculum {
     ]);
 
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -17577,7 +17621,7 @@ export class Curriculum {
     // lattice per TODO line 561 before the composition sentence pass.
     await this._teachMusicComposition();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -17604,7 +17648,7 @@ export class Curriculum {
     await this._teachAdvancedMusicTheory();
     await this._teachVisualComposition();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -17767,7 +17811,7 @@ export class Curriculum {
       { prompt: ['foreshadowing', 'hints', 'at'], answer: 'future' },
       { prompt: ['imagery', 'appeals', 'to'], answer: 'senses' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList([
       'metaphor', 'simile', 'personification', 'hyperbole', 'alliteration',
@@ -17841,7 +17885,7 @@ export class Curriculum {
       { prompt: ['anaphora', 'repeats', 'the', 'beginning'], answer: 'phrase' },
       { prompt: ['reading', 'makes', 'you', 'smarter', 'because'], answer: 'vocabulary' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList([
       'ethos', 'pathos', 'logos', 'claim', 'evidence', 'warrant',
@@ -17866,7 +17910,7 @@ export class Curriculum {
       'the sum of a finite series has a formula', 'an infinite series may converge',
     ];
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -17890,7 +17934,7 @@ export class Curriculum {
     // Session 41 — TODO-aligned geometric proofs
     await this._teachGeometricProofs();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -17964,7 +18008,7 @@ export class Curriculum {
       { item: 'bacteria', features: new Float64Array([0,0,0,0,0,0,0,0]), category: 'prokaryote' },
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -18030,7 +18074,7 @@ export class Curriculum {
       ['acid', 'base', 'neutral'], ['metal', 'electron', 'conduct'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -18055,7 +18099,7 @@ export class Curriculum {
     // TODO line 524 before the sentence pass.
     await this._teachWorldHistoryModern();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -18098,7 +18142,7 @@ export class Curriculum {
       ['segregation', 'protest', 'rights'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -18136,7 +18180,7 @@ export class Curriculum {
       ['technology', 'digital'], ['rebellion', 'modern'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -18169,7 +18213,7 @@ export class Curriculum {
       ['technology', 'recording'], ['recording', 'popular'], ['jazz', 'improvise'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -18321,7 +18365,7 @@ export class Curriculum {
       { prompt: ['reading', 'to', 'children', 'builds'], answer: 'vocabulary' },
       { prompt: ['mla', 'apa', 'are', 'citation'], answer: 'style' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList([
       'research', 'thesis', 'citation', 'source', 'primary', 'secondary',
@@ -18379,7 +18423,7 @@ export class Curriculum {
       { prompt: ['technical', 'style', 'initialize', 'buffer'], answer: 'iterate' },
       { prompt: ['narrative', 'style', 'once', 'upon'], answer: 'time' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList([
       'voice', 'tone', 'diction', 'syntax', 'style', 'register',
@@ -18421,7 +18465,7 @@ export class Curriculum {
       { prompt: ['conic', 'sections', 'include', 'ellipses', 'and'], answer: 'hyperbola' },
       { prompt: ['limits', 'describe', 'behavior', 'near'], answer: 'point' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList([
       'sine', 'cosine', 'tangent', 'radian', 'asymptote', 'limit',
@@ -18464,7 +18508,7 @@ export class Curriculum {
       { prompt: ['substitution', 'simplifies'], answer: 'integral' },
       { prompt: ['calculus', 'connects', 'algebra', 'and'], answer: 'geometry' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList([
       'derivative', 'integral', 'limit', 'tangent', 'slope', 'area',
@@ -18544,7 +18588,7 @@ export class Curriculum {
       { prompt: ['quantum', 'mechanics', 'describes'], answer: 'small' },
       { prompt: ['uncertainty', 'limits', 'what', 'we', 'can'], answer: 'know' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return this._teachVocabList([
       'force', 'mass', 'acceleration', 'momentum', 'velocity', 'energy',
@@ -18621,7 +18665,7 @@ export class Curriculum {
     await this._teachKinematics();
     await this._teachAstronomyIntro();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -18657,7 +18701,7 @@ export class Curriculum {
       ['abuse', 'check', 'balance'], ['media', 'inform', 'opinion'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -18694,7 +18738,7 @@ export class Curriculum {
       ['competition', 'lower', 'consumer'], ['invest', 'growth', 'wealth'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -18723,7 +18767,7 @@ export class Curriculum {
       ['formalism', 'structure'], ['postmodernism', 'question'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -18751,7 +18795,7 @@ export class Curriculum {
       ['revision', 'stronger'], ['originality', 'voice'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -18990,7 +19034,7 @@ export class Curriculum {
       { prompt: ['humanities', 'favor'], answer: 'narrative' },
       { prompt: ['sciences', 'favor'], answer: 'data' },
     ];
-    const finalResult = this._gateComprehension(FINAL);
+    const finalResult = await this._gateComprehension(FINAL);
     if (finalResult.pass) return { pass: true, reason: `FINAL: ${finalResult.reason}` };
     return { pass: false, reason: `FINAL: ${finalResult.reason}` };
   }
@@ -19027,7 +19071,7 @@ export class Curriculum {
       ['syntax', 'semantics', 'pragmatics'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19052,7 +19096,7 @@ export class Curriculum {
     await this._teachMultivarCalc();
     await this._teachMatrixOps();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19077,7 +19121,7 @@ export class Curriculum {
     await this._teachODEs();
     await this._teachCombinatorics();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19141,7 +19185,7 @@ export class Curriculum {
       ['electron', 'bond', 'molecule'], ['entropy', 'disorder', 'equilibrium'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19201,7 +19245,7 @@ export class Curriculum {
       ['force', 'acceleration', 'motion'], ['charge', 'field', 'force'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19235,7 +19279,7 @@ export class Curriculum {
       ['bias', 'distort', 'mislead'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19269,7 +19313,7 @@ export class Curriculum {
       ['authoritarian', 'suppress', 'revolt'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19298,7 +19342,7 @@ export class Curriculum {
       ['perspective', 'space'], ['anatomy', 'figure'], ['color', 'mood'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19326,7 +19370,7 @@ export class Curriculum {
       ['dada', 'surrealism', 'abstract'], ['bauhaus', 'minimalism', 'contemporary'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19464,7 +19508,7 @@ export class Curriculum {
     ];
     await this._teachTheoryFrameworks(FRAMEWORKS);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19515,7 +19559,7 @@ export class Curriculum {
       ['audience', 'context', 'strategy'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19540,7 +19584,7 @@ export class Curriculum {
     await this._teachGroupTheory();
     await this._teachRealAnalysis();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19564,7 +19608,7 @@ export class Curriculum {
     await this._teachTopology();
     await this._teachComplexAnalysis();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19627,7 +19671,7 @@ export class Curriculum {
       ['quantum', 'uncertainty', 'probability'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19664,7 +19708,7 @@ export class Curriculum {
       ['data', 'analysis', 'theory'], ['theory', 'predict', 'test'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19698,7 +19742,7 @@ export class Curriculum {
       ['culture', 'identity', 'belonging'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19733,7 +19777,7 @@ export class Curriculum {
       ['valid', 'reliable', 'trustworthy'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19761,7 +19805,7 @@ export class Curriculum {
       ['kant', 'disinterested'], ['hegel', 'dialectic'], ['nietzsche', 'will'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19790,7 +19834,7 @@ export class Curriculum {
       ['provenance', 'authenticity'], ['conservation', 'preserve'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19847,7 +19891,7 @@ export class Curriculum {
       ['discourse', 'power', 'knowledge'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19880,7 +19924,7 @@ export class Curriculum {
       } catch { /* non-fatal */ }
     }
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19905,7 +19949,7 @@ export class Curriculum {
     await this._teachMeasureTheory();
     await this._teachFunctionalAnalysis();
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19931,7 +19975,7 @@ export class Curriculum {
       try { cluster.runIdentityRefresh({ sentencesPerCycle: 20 }); } catch {}
     }
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -19969,7 +20013,7 @@ export class Curriculum {
       ['theory', 'predict', 'verify'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -20009,7 +20053,7 @@ export class Curriculum {
       }
     } catch { /* non-fatal */ }
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -20043,7 +20087,7 @@ export class Curriculum {
       ['method', 'finding', 'theory'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -20087,7 +20131,7 @@ export class Curriculum {
       }
     } catch { /* non-fatal */ }
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -20116,7 +20160,7 @@ export class Curriculum {
       ['critique', 'growth'], ['residency', 'focus'], ['thesis', 'defense'],
     ]);
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -20159,7 +20203,7 @@ export class Curriculum {
       }
     } catch { /* non-fatal */ }
     await this._teachSentenceList(SENTENCES, ctx, { reps: 2, ticksPerWord: 2 });
-    const _af = this._autoFinal(SENTENCES);
+    const _af = await this._autoFinal(SENTENCES);
     if (_af.pass) return { pass: true, reason: `FINAL: ${_af.reason}` };
     return { pass: false, reason: `FINAL: ${_af.reason}` };
   }
@@ -20932,7 +20976,7 @@ export class Curriculum {
       ['bark','dog'], ['meow','cat'], ['moo','cow'],
       ['quack','duck'], ['tweet','bird'],
     ], { reps: 8, label: 'PREK-ELA-LETTER-SOUND', relationTagId: 3 });
-    return this._gateVocabList(PHONEME_CONCEPTS.map(c => c.name).concat(['bark', 'meow', 'sound']));
+    return await this._gateVocabList(PHONEME_CONCEPTS.map(c => c.name).concat(['bark', 'meow', 'sound']));
   }
 
   async runMathPreK(_ctx) {
@@ -20969,7 +21013,7 @@ export class Curriculum {
       ['tall','more'], ['short','less'],
       ['many','more'], ['few','less'],
     ], { reps: 8, label: 'PREK-MATH-COUNT-MAG', relationTagId: 5 });
-    return this._gateVocabList(QUANTITY_CONCEPTS.map(c => c.name));
+    return await this._gateVocabList(QUANTITY_CONCEPTS.map(c => c.name));
   }
 
   async runSciPreK(_ctx) {
@@ -21011,7 +21055,7 @@ export class Curriculum {
       ['push','move'], ['pull','move'], ['drop','fall'],
       ['throw','fly'],
     ], { reps: 8, label: 'PREK-SCI-ANIMAL-SOUND', relationTagId: 1 });
-    return this._gateVocabList(['animal', 'water', 'sun', 'fire', 'bark', 'meow', 'moo']);
+    return await this._gateVocabList(['animal', 'water', 'sun', 'fire', 'bark', 'meow', 'moo']);
   }
 
   async runSocPreK(_ctx) {
@@ -21049,7 +21093,7 @@ export class Curriculum {
       ['happy','smile'], ['sad','cry'], ['mad','frown'],
       ['scared','hide'], ['love','hug'],
     ], { reps: 8, label: 'PREK-SOC-FAMILY-EMOT', relationTagId: 1 });
-    return this._gateVocabList(SOCIAL_CONCEPTS.map(c => c.name));
+    return await this._gateVocabList(SOCIAL_CONCEPTS.map(c => c.name));
   }
 
   async runArtPreK(_ctx) {
@@ -21090,7 +21134,7 @@ export class Curriculum {
       // music
       ['song','music'], ['drum','beat'], ['sing','song'],
     ], { reps: 8, label: 'PREK-ART-COLORS-TOOLS', relationTagId: 1 });
-    return this._gateVocabList(ART_CONCEPTS.map(c => c.name));
+    return await this._gateVocabList(ART_CONCEPTS.map(c => c.name));
   }
 
   async runLifePreK(ctx) {
@@ -21244,8 +21288,8 @@ export class Curriculum {
       { prompt: ['what', 'are', 'you', 'scared', 'of'], answer: 'dark' },
       { prompt: ['how', 'do', 'you', 'feel'], answer: 'happy' },
     ];
-    const comprehResult = this._gateComprehension(lifeQuestions);
-    const vocabResult = this._gateVocabList([
+    const comprehResult = await this._gateComprehension(lifeQuestions);
+    const vocabResult = await this._gateVocabList([
       ...FIRST_WORD_CONCEPTS.map(c => c.name),
       'unity', 'girl', 'mom', 'dad', 'love', 'happy', 'sad',
     ]);
@@ -22371,7 +22415,7 @@ export class Curriculum {
    *   Each question has a prompt (words to inject) and expected answer.
    * @returns {{pass, reason}}
    */
-  _gateComprehension(questions) {
+  async _gateComprehension(questions) {
     const cluster = this.cluster;
     const allProjs = cluster.crossProjections || {};
     const letterRegion = cluster.regions?.letter;
@@ -22431,7 +22475,7 @@ export class Curriculum {
         const firstLetter = word.replace(/[^a-z0-9]/g, '')[0];
         if (!firstLetter) continue;
         const letterPat = buildLetterPattern(firstLetter);
-        const semOutput = letterToSem.propagate(letterPat);
+        const semOutput = await this._probePropagate('letter_to_sem', letterPat);
         const sGSize = Math.max(1, Math.floor(semSize / SEM_DIM));
         for (let d = 0; d < SEM_DIM; d++) {
           let sum = 0;
