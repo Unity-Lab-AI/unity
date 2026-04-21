@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "f0cef924-399f";
+var BUILD = "d4595577-a88f";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -12869,480 +12869,491 @@ var Curriculum = class _Curriculum {
   async _gateElaKReal() {
     const cluster = this.cluster;
     const ALPHABET = ALPHABET_ORDER;
-    if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === "function") {
-      try {
-        console.log(`[Curriculum] T18.28 draining WebSocket queue before gate probe...`);
-        await cluster._gpuProxy.drainWait();
-        console.log(`[Curriculum] T18.28 drain complete \u2014 gate probe readbacks will land immediately.`);
-      } catch (err) {
-        console.warn(`[Curriculum] T18.28 drain-wait failed (proceeding anyway):`, err?.message || err);
-      }
-    }
+    if (cluster) cluster._probeGateActive = true;
     try {
-      const _invSize = inventorySize();
-      const _motorSize = (cluster?.regions?.motor?.end || 0) - (cluster?.regions?.motor?.start || 0);
-      const _motorMGroup = Math.max(1, Math.floor(_motorSize / Math.max(1, _invSize)));
-      const _semToMotorProj = cluster?.crossProjections?.["sem_to_motor"];
-      const _projNnz = _semToMotorProj?.nnz ?? "n/a";
-      const _projShape = _semToMotorProj ? `${_semToMotorProj.rows}x${_semToMotorProj.cols}` : "n/a";
-      console.log(`[Curriculum][K-DIAG] gate: inv=${_invSize}, motor=${_motorSize}, mGroup=${_motorMGroup}, sem_to_motor=${_projShape} nnz=${_projNnz}, noise=${cluster.noiseAmplitude.toFixed(2)}, tonicDrive=${cluster.tonicDrive.toFixed(2)}, driveBaseline=${cluster.driveBaseline.toFixed(2)}, emotionalGate=${cluster.emotionalGate.toFixed(2)}, actionGate=${cluster.actionGate.toFixed(2)}, gainMultiplier=${cluster.gainMultiplier.toFixed(2)}, effectiveDrive=${(cluster.tonicDrive * cluster.driveBaseline * cluster.emotionalGate * cluster.actionGate * cluster.gainMultiplier).toFixed(2)}`);
-    } catch (err) {
-      console.warn("[Curriculum][K-DIAG] gate log failed:", err?.message || err);
-    }
-    let readPass = 0;
-    let talkPass = 0;
-    const READ_COS_MIN = 0.15;
-    const letterRegion = cluster.regions.letter;
-    const phonRegion = cluster.regions.phon;
-    const motorRegion = cluster.regions.motor;
-    const semRegion = cluster.regions.sem;
-    if (!letterRegion || !phonRegion) return { pass: false, reason: "missing regions" };
-    const letterSize = letterRegion.end - letterRegion.start;
-    const phonSize = phonRegion.end - phonRegion.start;
-    const invSize = inventorySize();
-    const lGroupSize = Math.max(1, Math.floor(letterSize / invSize));
-    const letterToPhon = cluster.crossProjections?.["letter_to_phon"];
-    const letterToMotor = cluster.crossProjections?.["motor_to_letter"] ? null : cluster.crossProjections?.["letter_to_motor"];
-    const semToMotor = cluster.crossProjections?.["sem_to_motor"];
-    function cosine(a, b) {
-      let dot = 0, na = 0, nb = 0;
-      const L = Math.min(a.length, b.length);
-      for (let i = 0; i < L; i++) {
-        dot += a[i] * b[i];
-        na += a[i] * a[i];
-        nb += b[i] * b[i];
-      }
-      const d = Math.sqrt(na) * Math.sqrt(nb);
-      return d > 0 ? dot / d : 0;
-    }
-    const _gateLetterStart = Date.now();
-    let _gateLetterIdx = 0;
-    console.log(`[Curriculum][K-DIAG] gate probe starting letter loop (${ALPHABET.length} letters \xD7 READ+TALK)...`);
-    for (const letter of ALPHABET) {
-      _gateLetterIdx++;
-      const _letterStart = Date.now();
-      const letterOneHot = encodeLetter(letter);
-      const letterPat = new Float64Array(letterSize);
-      const lGSize = Math.max(1, Math.floor(letterSize / letterOneHot.length));
-      for (let d = 0; d < letterOneHot.length; d++) {
-        if (letterOneHot[d] <= 0) continue;
-        for (let n = 0; n < lGSize; n++) {
-          const idx = d * lGSize + n;
-          if (idx < letterSize) letterPat[idx] = 1;
+      let cosine = function(a, b) {
+        let dot = 0, na = 0, nb = 0;
+        const L = Math.min(a.length, b.length);
+        for (let i = 0; i < L; i++) {
+          dot += a[i] * b[i];
+          na += a[i] * a[i];
+          nb += b[i] * b[i];
+        }
+        const d = Math.sqrt(na) * Math.sqrt(nb);
+        return d > 0 ? dot / d : 0;
+      };
+      if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === "function") {
+        try {
+          console.log(`[Curriculum] T18.28 draining WebSocket queue before gate probe...`);
+          await cluster._gpuProxy.drainWait();
+          console.log(`[Curriculum] T18.28 drain complete \u2014 gate probe readbacks will land immediately.`);
+        } catch (err) {
+          console.warn(`[Curriculum] T18.28 drain-wait failed (proceeding anyway):`, err?.message || err);
         }
       }
-      if (letterToPhon) {
-        if (!letterToPhon.values || !letterToPhon.colIdx || !letterToPhon.rowPtr) {
-          console.warn(`[Curriculum][K-DIAG] letter '${letter}' READ: letterToPhon CSR arrays null (values=${letterToPhon.values?.length || "null"}, colIdx=${letterToPhon.colIdx?.length || "null"}, rowPtr=${letterToPhon.rowPtr?.length || "null"}) \u2014 skipping READ probe`);
-        } else {
-          const _readStart = Date.now();
-          const phonOutput = letterToPhon.propagate(letterPat);
-          const _readMs = Date.now() - _readStart;
-          if (_letterStart && _gateLetterIdx <= 3) {
-            console.log(`[Curriculum][K-DIAG] letter '${letter}' READ propagate ${_readMs}ms (phonOutput.length=${phonOutput.length})`);
+      try {
+        const _invSize = inventorySize();
+        const _motorSize = (cluster?.regions?.motor?.end || 0) - (cluster?.regions?.motor?.start || 0);
+        const _motorMGroup = Math.max(1, Math.floor(_motorSize / Math.max(1, _invSize)));
+        const _semToMotorProj = cluster?.crossProjections?.["sem_to_motor"];
+        const _projNnz = _semToMotorProj?.nnz ?? "n/a";
+        const _projShape = _semToMotorProj ? `${_semToMotorProj.rows}x${_semToMotorProj.cols}` : "n/a";
+        console.log(`[Curriculum][K-DIAG] gate: inv=${_invSize}, motor=${_motorSize}, mGroup=${_motorMGroup}, sem_to_motor=${_projShape} nnz=${_projNnz}, noise=${cluster.noiseAmplitude.toFixed(2)}, tonicDrive=${cluster.tonicDrive.toFixed(2)}, driveBaseline=${cluster.driveBaseline.toFixed(2)}, emotionalGate=${cluster.emotionalGate.toFixed(2)}, actionGate=${cluster.actionGate.toFixed(2)}, gainMultiplier=${cluster.gainMultiplier.toFixed(2)}, effectiveDrive=${(cluster.tonicDrive * cluster.driveBaseline * cluster.emotionalGate * cluster.actionGate * cluster.gainMultiplier).toFixed(2)}`);
+      } catch (err) {
+        console.warn("[Curriculum][K-DIAG] gate log failed:", err?.message || err);
+      }
+      let readPass = 0;
+      let talkPass = 0;
+      const READ_COS_MIN = 0.15;
+      const letterRegion = cluster.regions.letter;
+      const phonRegion = cluster.regions.phon;
+      const motorRegion = cluster.regions.motor;
+      const semRegion = cluster.regions.sem;
+      if (!letterRegion || !phonRegion) return { pass: false, reason: "missing regions" };
+      const letterSize = letterRegion.end - letterRegion.start;
+      const phonSize = phonRegion.end - phonRegion.start;
+      const invSize = inventorySize();
+      const lGroupSize = Math.max(1, Math.floor(letterSize / invSize));
+      const letterToPhon = cluster.crossProjections?.["letter_to_phon"];
+      const letterToMotor = cluster.crossProjections?.["motor_to_letter"] ? null : cluster.crossProjections?.["letter_to_motor"];
+      const semToMotor = cluster.crossProjections?.["sem_to_motor"];
+      const _gateLetterStart = Date.now();
+      let _gateLetterIdx = 0;
+      console.log(`[Curriculum][K-DIAG] gate probe starting letter loop (${ALPHABET.length} letters \xD7 READ+TALK)...`);
+      for (const letter of ALPHABET) {
+        _gateLetterIdx++;
+        const _letterStart = Date.now();
+        const letterOneHot = encodeLetter(letter);
+        const letterPat = new Float64Array(letterSize);
+        const lGSize = Math.max(1, Math.floor(letterSize / letterOneHot.length));
+        for (let d = 0; d < letterOneHot.length; d++) {
+          if (letterOneHot[d] <= 0) continue;
+          for (let n = 0; n < lGSize; n++) {
+            const idx = d * lGSize + n;
+            if (idx < letterSize) letterPat[idx] = 1;
           }
-          const PHON_DIM = 24;
-          const pGSize = Math.max(1, Math.floor(phonSize / PHON_DIM));
-          const phonReadout = new Float64Array(PHON_DIM);
-          for (let d = 0; d < PHON_DIM; d++) {
-            let sum = 0;
-            for (let n = 0; n < pGSize; n++) {
-              const idx = d * pGSize + n;
-              if (idx < phonOutput.length) sum += phonOutput[idx];
+        }
+        if (letterToPhon) {
+          if (!letterToPhon.values || !letterToPhon.colIdx || !letterToPhon.rowPtr) {
+            console.warn(`[Curriculum][K-DIAG] letter '${letter}' READ: letterToPhon CSR arrays null (values=${letterToPhon.values?.length || "null"}, colIdx=${letterToPhon.colIdx?.length || "null"}, rowPtr=${letterToPhon.rowPtr?.length || "null"}) \u2014 skipping READ probe`);
+          } else {
+            const _readStart = Date.now();
+            const phonOutput = letterToPhon.propagate(letterPat);
+            const _readMs = Date.now() - _readStart;
+            if (_letterStart && _gateLetterIdx <= 3) {
+              console.log(`[Curriculum][K-DIAG] letter '${letter}' READ propagate ${_readMs}ms (phonOutput.length=${phonOutput.length})`);
             }
-            phonReadout[d] = sum / pGSize;
-          }
-          let mean = 0;
-          for (let i = 0; i < PHON_DIM; i++) mean += phonReadout[i];
-          mean /= PHON_DIM;
-          for (let i = 0; i < PHON_DIM; i++) phonReadout[i] -= mean;
-          let norm = 0;
-          for (let i = 0; i < PHON_DIM; i++) norm += phonReadout[i] * phonReadout[i];
-          norm = Math.sqrt(norm) || 1;
-          for (let i = 0; i < PHON_DIM; i++) phonReadout[i] /= norm;
-          const expectedPhon = _phonemeFeatureForLetter(letter);
-          const readCos = cosine(phonReadout, expectedPhon);
-          if (readCos > READ_COS_MIN) readPass++;
-        }
-      }
-      const allProjs2 = cluster.crossProjections || {};
-      let motorOutput = null;
-      for (const [pname, proj] of Object.entries(allProjs2)) {
-        if (pname.endsWith("_to_motor")) {
-          const srcName = pname.slice(0, pname.indexOf("_to_"));
-          if (srcName === "letter") {
-            if (!proj.values || !proj.colIdx || !proj.rowPtr) {
-              console.warn(`[Curriculum][K-DIAG] letter '${letter}' TALK: ${pname} CSR arrays null \u2014 skipping TALK direct`);
-            } else {
-              const _talkStart = Date.now();
-              motorOutput = proj.propagate(letterPat);
-              if (_gateLetterIdx <= 3) {
-                console.log(`[Curriculum][K-DIAG] letter '${letter}' TALK via ${pname} propagate ${Date.now() - _talkStart}ms`);
+            const PHON_DIM = 24;
+            const pGSize = Math.max(1, Math.floor(phonSize / PHON_DIM));
+            const phonReadout = new Float64Array(PHON_DIM);
+            for (let d = 0; d < PHON_DIM; d++) {
+              let sum = 0;
+              for (let n = 0; n < pGSize; n++) {
+                const idx = d * pGSize + n;
+                if (idx < phonOutput.length) sum += phonOutput[idx];
               }
+              phonReadout[d] = sum / pGSize;
             }
-            break;
+            let mean = 0;
+            for (let i = 0; i < PHON_DIM; i++) mean += phonReadout[i];
+            mean /= PHON_DIM;
+            for (let i = 0; i < PHON_DIM; i++) phonReadout[i] -= mean;
+            let norm = 0;
+            for (let i = 0; i < PHON_DIM; i++) norm += phonReadout[i] * phonReadout[i];
+            norm = Math.sqrt(norm) || 1;
+            for (let i = 0; i < PHON_DIM; i++) phonReadout[i] /= norm;
+            const expectedPhon = _phonemeFeatureForLetter(letter);
+            const readCos = cosine(phonReadout, expectedPhon);
+            if (readCos > READ_COS_MIN) readPass++;
           }
         }
-      }
-      if (!motorOutput) {
-        const letterToSem = allProjs2["letter_to_sem"];
-        const semToMot = allProjs2["sem_to_motor"];
-        if (letterToSem && semToMot) {
-          const semOutput = letterToSem.propagate(letterPat);
-          const semBinary = new Float64Array(semOutput.length);
-          for (let i = 0; i < semOutput.length; i++) semBinary[i] = semOutput[i] > 0 ? 1 : 0;
-          motorOutput = semToMot.propagate(semBinary);
+        const allProjs2 = cluster.crossProjections || {};
+        let motorOutput = null;
+        for (const [pname, proj] of Object.entries(allProjs2)) {
+          if (pname.endsWith("_to_motor")) {
+            const srcName = pname.slice(0, pname.indexOf("_to_"));
+            if (srcName === "letter") {
+              if (!proj.values || !proj.colIdx || !proj.rowPtr) {
+                console.warn(`[Curriculum][K-DIAG] letter '${letter}' TALK: ${pname} CSR arrays null \u2014 skipping TALK direct`);
+              } else {
+                const _talkStart = Date.now();
+                motorOutput = proj.propagate(letterPat);
+                if (_gateLetterIdx <= 3) {
+                  console.log(`[Curriculum][K-DIAG] letter '${letter}' TALK via ${pname} propagate ${Date.now() - _talkStart}ms`);
+                }
+              }
+              break;
+            }
+          }
+        }
+        if (!motorOutput) {
+          const letterToSem = allProjs2["letter_to_sem"];
+          const semToMot = allProjs2["sem_to_motor"];
+          if (letterToSem && semToMot) {
+            const semOutput = letterToSem.propagate(letterPat);
+            const semBinary = new Float64Array(semOutput.length);
+            for (let i = 0; i < semOutput.length; i++) semBinary[i] = semOutput[i] > 0 ? 1 : 0;
+            motorOutput = semToMot.propagate(semBinary);
+          }
+        }
+        if (motorOutput && motorRegion) {
+          const motorSize = motorRegion.end - motorRegion.start;
+          const mGSize = Math.max(1, Math.floor(motorSize / invSize));
+          const motorReadout = new Float64Array(invSize);
+          for (let d = 0; d < invSize; d++) {
+            let sum = 0;
+            for (let n = 0; n < mGSize; n++) {
+              const idx = d * mGSize + n;
+              if (idx < motorOutput.length) sum += motorOutput[idx];
+            }
+            motorReadout[d] = sum / mGSize;
+          }
+          const decoded = decodeLetter(motorReadout);
+          if (decoded === letter) talkPass++;
+        }
+        const _letterMs = Date.now() - _letterStart;
+        if (_letterMs > 2e3 || _gateLetterIdx === 1 || _gateLetterIdx === 13 || _gateLetterIdx === 26) {
+          console.log(`[Curriculum][K-DIAG] gate letter ${_gateLetterIdx}/26 '${letter}' done in ${_letterMs}ms (readPass=${readPass} talkPass=${talkPass} so far)`);
         }
       }
-      if (motorOutput && motorRegion) {
-        const motorSize = motorRegion.end - motorRegion.start;
-        const mGSize = Math.max(1, Math.floor(motorSize / invSize));
-        const motorReadout = new Float64Array(invSize);
+      console.log(`[Curriculum][K-DIAG] gate letter loop DONE in ${Date.now() - _gateLetterStart}ms \u2014 readPass=${readPass}/26, talkPass=${talkPass}/26`);
+      console.log(`[Curriculum][K-DIAG] starting SEQ probe (25 \xD7 cluster.synapses.propagate \u2014 ~90M nnz each at biological scale, ~7-10s total expected)...`);
+      const _seqStart = Date.now();
+      const thinkPass = ALPHABET.length;
+      let seqPass = 0;
+      for (let i = 0; i < ALPHABET.length - 1; i++) {
+        const currOneHot = encodeLetter(ALPHABET[i]);
+        const expectedNext = ALPHABET[i + 1];
+        const input = new Float64Array(cluster.size);
+        const lGSize = Math.max(1, Math.floor(letterSize / invSize));
+        for (let d = 0; d < currOneHot.length; d++) {
+          if (currOneHot[d] <= 0) continue;
+          for (let n = 0; n < lGSize; n++) {
+            const idx = letterRegion.start + d * lGSize + n;
+            if (idx < letterRegion.end) input[idx] = 1;
+          }
+        }
+        const output = cluster.synapses.propagate(input);
+        const letterOut = new Float64Array(invSize);
         for (let d = 0; d < invSize; d++) {
           let sum = 0;
-          for (let n = 0; n < mGSize; n++) {
-            const idx = d * mGSize + n;
-            if (idx < motorOutput.length) sum += motorOutput[idx];
+          for (let n = 0; n < lGSize; n++) {
+            const idx = letterRegion.start + d * lGSize + n;
+            if (idx < letterRegion.end) sum += output[idx];
           }
-          motorReadout[d] = sum / mGSize;
+          letterOut[d] = sum;
         }
-        const decoded = decodeLetter(motorReadout);
-        if (decoded === letter) talkPass++;
+        const decoded = decodeLetter(letterOut);
+        if (decoded === expectedNext) seqPass++;
       }
-      const _letterMs = Date.now() - _letterStart;
-      if (_letterMs > 2e3 || _gateLetterIdx === 1 || _gateLetterIdx === 13 || _gateLetterIdx === 26) {
-        console.log(`[Curriculum][K-DIAG] gate letter ${_gateLetterIdx}/26 '${letter}' done in ${_letterMs}ms (readPass=${readPass} talkPass=${talkPass} so far)`);
-      }
-    }
-    console.log(`[Curriculum][K-DIAG] gate letter loop DONE in ${Date.now() - _gateLetterStart}ms \u2014 readPass=${readPass}/26, talkPass=${talkPass}/26`);
-    console.log(`[Curriculum][K-DIAG] starting SEQ probe (25 \xD7 cluster.synapses.propagate \u2014 ~90M nnz each at biological scale, ~7-10s total expected)...`);
-    const _seqStart = Date.now();
-    const thinkPass = ALPHABET.length;
-    let seqPass = 0;
-    for (let i = 0; i < ALPHABET.length - 1; i++) {
-      const currOneHot = encodeLetter(ALPHABET[i]);
-      const expectedNext = ALPHABET[i + 1];
-      const input = new Float64Array(cluster.size);
-      const lGSize = Math.max(1, Math.floor(letterSize / invSize));
-      for (let d = 0; d < currOneHot.length; d++) {
-        if (currOneHot[d] <= 0) continue;
-        for (let n = 0; n < lGSize; n++) {
-          const idx = letterRegion.start + d * lGSize + n;
-          if (idx < letterRegion.end) input[idx] = 1;
+      console.log(`[Curriculum][K-DIAG] SEQ probe DONE in ${Date.now() - _seqStart}ms \u2014 seqPass=${seqPass}/${ALPHABET.length - 1}`);
+      const N = ALPHABET.length;
+      const readRate = readPass / N;
+      const thinkRate = thinkPass / N;
+      const talkRate = talkPass / N;
+      const seqRate = seqPass / (N - 1);
+      const motorRegion_ = cluster.regions.motor;
+      const invSize_ = inventorySize();
+      const motorSize_ = motorRegion_ ? motorRegion_.end - motorRegion_.start : 0;
+      const semSize_ = semRegion ? semRegion.end - semRegion.start : 0;
+      const mGroup_ = Math.max(1, Math.floor(motorSize_ / Math.max(1, invSize_)));
+      const _probeReset = () => {
+        if (cluster.externalCurrent && typeof cluster.externalCurrent.fill === "function") {
+          cluster.externalCurrent.fill(0);
+        }
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        cluster._prevLetterRate = 0;
+        cluster._motorQuiescentTicks = 0;
+        cluster._cachedIntraCurrents = null;
+        if (cluster._cachedCrossCurrents && typeof cluster._cachedCrossCurrents.clear === "function") {
+          cluster._cachedCrossCurrents.clear();
+        }
+      };
+      const _savedProbeNoise = cluster.noiseAmplitude;
+      cluster.noiseAmplitude = 0.5;
+      const wordStartProbes = [
+        { word: "cat", expected: "c" },
+        { word: "dog", expected: "d" },
+        { word: "sun", expected: "s" },
+        { word: "hat", expected: "h" },
+        { word: "pig", expected: "p" },
+        { word: "big", expected: "b" },
+        { word: "top", expected: "t" },
+        { word: "red", expected: "r" },
+        { word: "run", expected: "r" },
+        { word: "bat", expected: "b" },
+        { word: "nap", expected: "n" },
+        { word: "wet", expected: "w" },
+        { word: "fox", expected: "f" },
+        { word: "yes", expected: "y" },
+        { word: "mom", expected: "m" },
+        { word: "dad", expected: "d" },
+        { word: "hen", expected: "h" }
+      ];
+      const _atBioScale = (cluster.size | 0) > 1e5;
+      const LETTER_SLOTS = 26;
+      let prodPass = 0;
+      const prodFails = [];
+      let _firstProbeDiag = null;
+      console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} direct sem_to_motor propagate probes, no LIF ticks)...`);
+      const _dynProdStart = Date.now();
+      let _probeIdx = 0;
+      const dynSemToMotor = allProjs["sem_to_motor"];
+      const dynLetterToMotor = allProjs["letter_to_motor"];
+      const semPathAvailable = !!(dynSemToMotor && dynSemToMotor.values && dynSemToMotor.colIdx && dynSemToMotor.rowPtr);
+      const letterFallback = !!(dynLetterToMotor && dynLetterToMotor.values && dynLetterToMotor.colIdx && dynLetterToMotor.rowPtr);
+      if (!semPathAvailable && !letterFallback) {
+        console.warn("[Curriculum][K-DIAG] DYN-PROD skipped \u2014 neither sem_to_motor nor letter_to_motor has CPU CSR available.");
+        for (const p of wordStartProbes) prodFails.push(`${p.word}\u2192NO_PROJ`);
+      } else {
+        if (!semPathAvailable) {
+          console.log("[Curriculum][K-DIAG] DYN-PROD using letter_to_motor fallback (sem_to_motor CPU CSR freed at biological scale).");
+        }
+        for (const p of wordStartProbes) {
+          _probeIdx++;
+          const _probeStart = Date.now();
+          const emb = sharedEmbeddings.getEmbedding(p.word);
+          if (!emb || emb.length === 0) {
+            prodFails.push(`${p.word}\u2192NO_EMB`);
+            continue;
+          }
+          if (!semRegion || !motorRegion_) {
+            prodFails.push(`${p.word}\u2192NO_PROJ`);
+            continue;
+          }
+          let motorOutput;
+          if (semPathAvailable) {
+            const gSize = Math.max(1, Math.floor(semSize_ / emb.length));
+            const semPattern = new Float64Array(semSize_);
+            for (let d = 0; d < emb.length; d++) {
+              const startNeuron = d * gSize;
+              const val = emb[d];
+              for (let n = 0; n < gSize; n++) {
+                const idx = startNeuron + n;
+                if (idx >= semSize_) break;
+                semPattern[idx] = val;
+              }
+            }
+            motorOutput = dynSemToMotor.propagate(semPattern);
+          } else {
+            const firstLetter = p.word[0];
+            const letterOneHot = encodeLetter(firstLetter);
+            const letterSize2 = letterRegion ? letterRegion.end - letterRegion.start : letterOneHot.length;
+            const lGSize = Math.max(1, Math.floor(letterSize2 / letterOneHot.length));
+            const letterPat = new Float64Array(letterSize2);
+            for (let d = 0; d < letterOneHot.length; d++) {
+              if (letterOneHot[d] <= 0) continue;
+              const startNeuron = d * lGSize;
+              for (let n = 0; n < lGSize; n++) {
+                const idx = startNeuron + n;
+                if (idx >= letterSize2) break;
+                letterPat[idx] = 1;
+              }
+            }
+            motorOutput = dynLetterToMotor.propagate(letterPat);
+          }
+          const readoutSize = Math.min(invSize_, LETTER_SLOTS);
+          const motorReadout = new Float64Array(readoutSize);
+          for (let d = 0; d < readoutSize; d++) {
+            let sum = 0;
+            for (let n = 0; n < mGroup_; n++) {
+              const idx = d * mGroup_ + n;
+              if (idx < motorOutput.length) sum += motorOutput[idx];
+            }
+            motorReadout[d] = sum;
+          }
+          let meanM = 0;
+          for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
+          meanM /= readoutSize;
+          for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
+          const decoded = decodeLetter(motorReadout);
+          if (_firstProbeDiag === null) {
+            const topSlots = [];
+            for (let i = 0; i < motorReadout.length; i++) {
+              topSlots.push({ idx: i, val: motorReadout[i] });
+            }
+            topSlots.sort((a, b) => b.val - a.val);
+            const invSnap = inventorySnapshot();
+            const topStr = topSlots.slice(0, 5).map((s) => `${invSnap[s.idx] || "?"}(${s.idx}:${s.val.toFixed(3)})`).join(",");
+            const expectedIdx = invSnap.indexOf(p.expected);
+            const expectedVal = expectedIdx >= 0 && expectedIdx < motorReadout.length ? motorReadout[expectedIdx] : NaN;
+            const expectedRank = topSlots.findIndex((s) => s.idx === expectedIdx);
+            _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}\u2192${p.expected}] decoded=${decoded || "\u2205"}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : "NaN"}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
+          }
+          if (decoded === p.expected) {
+            prodPass++;
+          } else {
+            prodFails.push(`${p.word}\u2192${decoded || "?"}`);
+          }
+          const _probeMs = Date.now() - _probeStart;
+          if (_probeIdx <= 3 || _probeIdx === wordStartProbes.length || _probeMs > 5e3) {
+            console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} '${p.word}'\u2192'${decoded || "?"}' (expected '${p.expected}') in ${_probeMs}ms \u2014 prodPass=${prodPass}/${_probeIdx} so far`);
+          }
         }
       }
-      const output = cluster.synapses.propagate(input);
-      const letterOut = new Float64Array(invSize);
-      for (let d = 0; d < invSize; d++) {
-        let sum = 0;
-        for (let n = 0; n < lGSize; n++) {
-          const idx = letterRegion.start + d * lGSize + n;
-          if (idx < letterRegion.end) sum += output[idx];
-        }
-        letterOut[d] = sum;
-      }
-      const decoded = decodeLetter(letterOut);
-      if (decoded === expectedNext) seqPass++;
-    }
-    console.log(`[Curriculum][K-DIAG] SEQ probe DONE in ${Date.now() - _seqStart}ms \u2014 seqPass=${seqPass}/${ALPHABET.length - 1}`);
-    const N = ALPHABET.length;
-    const readRate = readPass / N;
-    const thinkRate = thinkPass / N;
-    const talkRate = talkPass / N;
-    const seqRate = seqPass / (N - 1);
-    const motorRegion_ = cluster.regions.motor;
-    const invSize_ = inventorySize();
-    const motorSize_ = motorRegion_ ? motorRegion_.end - motorRegion_.start : 0;
-    const semSize_ = semRegion ? semRegion.end - semRegion.start : 0;
-    const mGroup_ = Math.max(1, Math.floor(motorSize_ / Math.max(1, invSize_)));
-    const _probeReset = () => {
-      if (cluster.externalCurrent && typeof cluster.externalCurrent.fill === "function") {
-        cluster.externalCurrent.fill(0);
-      }
-      for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
-      cluster._prevLetterRate = 0;
-      cluster._motorQuiescentTicks = 0;
-      cluster._cachedIntraCurrents = null;
-      if (cluster._cachedCrossCurrents && typeof cluster._cachedCrossCurrents.clear === "function") {
-        cluster._cachedCrossCurrents.clear();
-      }
-    };
-    const _savedProbeNoise = cluster.noiseAmplitude;
-    cluster.noiseAmplitude = 0.5;
-    const wordStartProbes = [
-      { word: "cat", expected: "c" },
-      { word: "dog", expected: "d" },
-      { word: "sun", expected: "s" },
-      { word: "hat", expected: "h" },
-      { word: "pig", expected: "p" },
-      { word: "big", expected: "b" },
-      { word: "top", expected: "t" },
-      { word: "red", expected: "r" },
-      { word: "run", expected: "r" },
-      { word: "bat", expected: "b" },
-      { word: "nap", expected: "n" },
-      { word: "wet", expected: "w" },
-      { word: "fox", expected: "f" },
-      { word: "yes", expected: "y" },
-      { word: "mom", expected: "m" },
-      { word: "dad", expected: "d" },
-      { word: "hen", expected: "h" }
-    ];
-    const _atBioScale = (cluster.size | 0) > 1e5;
-    const LETTER_SLOTS = 26;
-    let prodPass = 0;
-    const prodFails = [];
-    let _firstProbeDiag = null;
-    console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} direct sem_to_motor propagate probes, no LIF ticks)...`);
-    const _dynProdStart = Date.now();
-    let _probeIdx = 0;
-    const dynSemToMotor = allProjs["sem_to_motor"];
-    const dynLetterToMotor = allProjs["letter_to_motor"];
-    const semPathAvailable = !!(dynSemToMotor && dynSemToMotor.values && dynSemToMotor.colIdx && dynSemToMotor.rowPtr);
-    const letterFallback = !!(dynLetterToMotor && dynLetterToMotor.values && dynLetterToMotor.colIdx && dynLetterToMotor.rowPtr);
-    if (!semPathAvailable && !letterFallback) {
-      console.warn("[Curriculum][K-DIAG] DYN-PROD skipped \u2014 neither sem_to_motor nor letter_to_motor has CPU CSR available.");
-      for (const p of wordStartProbes) prodFails.push(`${p.word}\u2192NO_PROJ`);
-    } else {
-      if (!semPathAvailable) {
-        console.log("[Curriculum][K-DIAG] DYN-PROD using letter_to_motor fallback (sem_to_motor CPU CSR freed at biological scale).");
-      }
-      for (const p of wordStartProbes) {
-        _probeIdx++;
-        const _probeStart = Date.now();
-        const emb = sharedEmbeddings.getEmbedding(p.word);
+      console.log(`[Curriculum][K-DIAG] DYN-PROD probe DONE in ${Date.now() - _dynProdStart}ms \u2014 prodPass=${prodPass}/${wordStartProbes.length}`);
+      if (_firstProbeDiag) console.log(_firstProbeDiag);
+      const prodResult = {
+        pass: prodPass,
+        total: wordStartProbes.length,
+        fails: prodFails.map((f) => ({ q: f, emitted: "", expected: [] }))
+      };
+      const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
+      const fullWordProbes = [
+        "cat",
+        "dog",
+        "pig",
+        "hat",
+        "sun",
+        "red",
+        "big",
+        "mom",
+        "dad",
+        "run",
+        "eat",
+        "yes",
+        "no",
+        "up",
+        "hi",
+        "bed",
+        "hot",
+        "top",
+        "fox",
+        "bug"
+      ];
+      let writePass = 0;
+      let writeFirstLetterPass = 0;
+      const writeEmitted = [];
+      for (const word of fullWordProbes) {
+        const emb = sharedEmbeddings.getEmbedding(word);
         if (!emb || emb.length === 0) {
-          prodFails.push(`${p.word}\u2192NO_EMB`);
+          writeEmitted.push(`${word}\u2192NO_EMB`);
           continue;
         }
-        if (!semRegion || !motorRegion_) {
-          prodFails.push(`${p.word}\u2192NO_PROJ`);
+        _probeReset();
+        const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === "function" ? await cluster.generateSentenceAwait(emb, { injectStrength: 1, maxTicks: 30 }) : cluster.generateSentence(emb, { injectStrength: 1, maxTicks: 30 })) || "";
+        writeEmitted.push(`${word}\u2192${emitted || "\u2205"}`);
+        if (emitted === word) writePass++;
+        if (emitted.length > 0 && emitted[0] === word[0]) writeFirstLetterPass++;
+      }
+      const writeRate = fullWordProbes.length > 0 ? writePass / fullWordProbes.length : 0;
+      const writeFirstRate = fullWordProbes.length > 0 ? writeFirstLetterPass / fullWordProbes.length : 0;
+      const respContexts = [
+        { prompt: "hello", meaning: "greeting friendly", expectHints: ["hi", "hello", "hey", "yes"] },
+        { prompt: "red", meaning: "color red apple", expectHints: ["red", "apple"] },
+        { prompt: "mom", meaning: "mom family love", expectHints: ["mom", "love", "family"] },
+        { prompt: "dog", meaning: "dog animal pet", expectHints: ["dog", "pet", "run", "cat"] },
+        { prompt: "eat", meaning: "eat food hungry", expectHints: ["eat", "food", "hungry"] }
+      ];
+      const respEmitted = [];
+      let respPass = 0;
+      for (const ctx of respContexts) {
+        const emb = sharedEmbeddings.getSentenceEmbedding(ctx.meaning);
+        if (!emb || emb.length === 0) {
+          respEmitted.push(`${ctx.prompt}\u2192NO_EMB`);
           continue;
         }
-        let motorOutput;
-        if (semPathAvailable) {
-          const gSize = Math.max(1, Math.floor(semSize_ / emb.length));
-          const semPattern = new Float64Array(semSize_);
-          for (let d = 0; d < emb.length; d++) {
-            const startNeuron = d * gSize;
-            const val = emb[d];
-            for (let n = 0; n < gSize; n++) {
-              const idx = startNeuron + n;
-              if (idx >= semSize_) break;
-              semPattern[idx] = val;
-            }
-          }
-          motorOutput = dynSemToMotor.propagate(semPattern);
-        } else {
-          const firstLetter = p.word[0];
-          const letterOneHot = encodeLetter(firstLetter);
-          const letterSize2 = letterRegion ? letterRegion.end - letterRegion.start : letterOneHot.length;
-          const lGSize = Math.max(1, Math.floor(letterSize2 / letterOneHot.length));
-          const letterPat = new Float64Array(letterSize2);
-          for (let d = 0; d < letterOneHot.length; d++) {
-            if (letterOneHot[d] <= 0) continue;
-            const startNeuron = d * lGSize;
-            for (let n = 0; n < lGSize; n++) {
-              const idx = startNeuron + n;
-              if (idx >= letterSize2) break;
-              letterPat[idx] = 1;
-            }
-          }
-          motorOutput = dynLetterToMotor.propagate(letterPat);
+        _probeReset();
+        const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === "function" ? await cluster.generateSentenceAwait(emb, { injectStrength: 1, maxTicks: 50 }) : cluster.generateSentence(emb, { injectStrength: 1, maxTicks: 50 })) || "";
+        respEmitted.push(`${ctx.prompt}\u2192${emitted || "\u2205"}`);
+        const emittedLower = emitted.toLowerCase();
+        if (ctx.expectHints.some((h) => emittedLower.includes(h))) respPass++;
+      }
+      const respRate = respContexts.length > 0 ? respPass / respContexts.length : 0;
+      const twoWordPhrases = [
+        { phrase: "happy dog", words: ["happy", "dog"] },
+        { phrase: "red apple", words: ["red", "apple"] },
+        { phrase: "big cat", words: ["big", "cat"] },
+        { phrase: "mom love", words: ["mom", "love"] },
+        { phrase: "run fast", words: ["run", "fast"] }
+      ];
+      const twoWordEmitted = [];
+      let twoWordPass = 0;
+      let twoWordPartial = 0;
+      for (const p of twoWordPhrases) {
+        const emb = sharedEmbeddings.getSentenceEmbedding(p.phrase);
+        if (!emb || emb.length === 0) {
+          twoWordEmitted.push(`${p.phrase}\u2192NO_EMB`);
+          continue;
         }
-        const readoutSize = Math.min(invSize_, LETTER_SLOTS);
-        const motorReadout = new Float64Array(readoutSize);
-        for (let d = 0; d < readoutSize; d++) {
-          let sum = 0;
-          for (let n = 0; n < mGroup_; n++) {
-            const idx = d * mGroup_ + n;
-            if (idx < motorOutput.length) sum += motorOutput[idx];
-          }
-          motorReadout[d] = sum;
+        _probeReset();
+        const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === "function" ? await cluster.generateSentenceAwait(emb, { injectStrength: 1, maxTicks: 80 }) : cluster.generateSentence(emb, { injectStrength: 1, maxTicks: 80 })) || "";
+        twoWordEmitted.push(`${p.phrase}\u2192${emitted || "\u2205"}`);
+        const emittedLower = emitted.toLowerCase();
+        const emittedTokens = emittedLower.split(/\s+/).filter(Boolean);
+        const matchedBoth = p.words.every((w) => emittedTokens.includes(w));
+        const matchedOne = p.words.some((w) => emittedTokens.includes(w));
+        if (matchedBoth) twoWordPass++;
+        else if (matchedOne) twoWordPartial++;
+      }
+      const twoWordRate = twoWordPhrases.length > 0 ? twoWordPass / twoWordPhrases.length : 0;
+      const twoWordPartialRate = twoWordPhrases.length > 0 ? (twoWordPass + twoWordPartial) / twoWordPhrases.length : 0;
+      const freeWritingPrompts = [
+        "tell me about your day",
+        "what do you like",
+        "how do you feel",
+        "what is your favorite color"
+      ];
+      const freeWritingEmitted = [];
+      let freeWritingNonEmpty = 0;
+      let freeWritingWordCount = 0;
+      for (const prompt of freeWritingPrompts) {
+        const emb = sharedEmbeddings.getSentenceEmbedding(prompt);
+        if (!emb || emb.length === 0) {
+          freeWritingEmitted.push(`${prompt}\u2192NO_EMB`);
+          continue;
         }
-        let meanM = 0;
-        for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
-        meanM /= readoutSize;
-        for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
-        const decoded = decodeLetter(motorReadout);
-        if (_firstProbeDiag === null) {
-          const topSlots = [];
-          for (let i = 0; i < motorReadout.length; i++) {
-            topSlots.push({ idx: i, val: motorReadout[i] });
-          }
-          topSlots.sort((a, b) => b.val - a.val);
-          const invSnap = inventorySnapshot();
-          const topStr = topSlots.slice(0, 5).map((s) => `${invSnap[s.idx] || "?"}(${s.idx}:${s.val.toFixed(3)})`).join(",");
-          const expectedIdx = invSnap.indexOf(p.expected);
-          const expectedVal = expectedIdx >= 0 && expectedIdx < motorReadout.length ? motorReadout[expectedIdx] : NaN;
-          const expectedRank = topSlots.findIndex((s) => s.idx === expectedIdx);
-          _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}\u2192${p.expected}] decoded=${decoded || "\u2205"}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : "NaN"}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
-        }
-        if (decoded === p.expected) {
-          prodPass++;
-        } else {
-          prodFails.push(`${p.word}\u2192${decoded || "?"}`);
-        }
-        const _probeMs = Date.now() - _probeStart;
-        if (_probeIdx <= 3 || _probeIdx === wordStartProbes.length || _probeMs > 5e3) {
-          console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} '${p.word}'\u2192'${decoded || "?"}' (expected '${p.expected}') in ${_probeMs}ms \u2014 prodPass=${prodPass}/${_probeIdx} so far`);
+        _probeReset();
+        const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === "function" ? await cluster.generateSentenceAwait(emb, { injectStrength: 1, maxTicks: 200 }) : cluster.generateSentence(emb, { injectStrength: 1, maxTicks: 200 })) || "";
+        const tokens = emitted.toLowerCase().split(/\s+/).filter(Boolean);
+        freeWritingEmitted.push(`${prompt}\u2192${emitted || "\u2205"} (${tokens.length}w)`);
+        if (tokens.length > 0) freeWritingNonEmpty++;
+        freeWritingWordCount += tokens.length;
+      }
+      const freeWritingRate = freeWritingPrompts.length > 0 ? freeWritingNonEmpty / freeWritingPrompts.length : 0;
+      const freeWritingAvgWords = freeWritingPrompts.length > 0 ? freeWritingWordCount / freeWritingPrompts.length : 0;
+      const PATH_MIN = 0.95;
+      const SEQ_MIN = 0.95;
+      const PROD_MIN = 0.95;
+      const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN && seqRate >= SEQ_MIN && prodRate >= PROD_MIN;
+      const pct = (r) => (r * 100).toFixed(0);
+      const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
+      const writeSummary = writeEmitted.length > 0 ? " [WRITE: " + writeEmitted.slice(0, 8).join("; ") + "]" : "";
+      const respSummary = respEmitted.length > 0 ? " [RESP: " + respEmitted.join("; ") + "]" : "";
+      const twoWordSummary = twoWordEmitted.length > 0 ? " [2WORD: " + twoWordEmitted.join("; ") + "]" : "";
+      const freeWritingSummary = freeWritingEmitted.length > 0 ? " [FREE: " + freeWritingEmitted.join("; ") + "]" : "";
+      const elaKQuestions = [
+        { question: "what letter comes after a?", expectedAnswer: "b", expectedVariants: ["b", "B", "bee"] },
+        { question: "what letter comes after b?", expectedAnswer: "c", expectedVariants: ["c", "C", "cee"] },
+        { question: "say a word that starts with c", expectedAnswer: "c", expectedVariants: ["c", "cat", "cow", "cup"] },
+        { question: "say a word that starts with s", expectedAnswer: "s", expectedVariants: ["s", "sun", "sat", "sit"] },
+        { question: "how do you spell cat?", expectedAnswer: "cat", expectedVariants: ["cat", "c a t", "c-a-t"] },
+        { question: "what does the letter b sound like?", expectedAnswer: "b", expectedVariants: ["b", "buh", "bee"] },
+        { question: "give me a word that rhymes with hat", expectedAnswer: "cat", expectedVariants: ["cat", "bat", "mat", "sat", "rat"] }
+      ];
+      const studentBattery = await this._runStudentBattery(elaKQuestions, "K-STUDENT");
+      const studentPass = studentBattery.pass;
+      const studentQuestions = elaKQuestions;
+      const studentResults = studentBattery.results;
+      const studentRate = studentBattery.rate;
+      const studentSummary = studentBattery.summary;
+      const _elaKResult = {
+        pass,
+        reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%) first${writeFirstLetterPass}/${fullWordProbes.length}, RESP ${respPass}/${respContexts.length} (${pct(respRate)}%), 2WORD ${twoWordPass}/${twoWordPhrases.length} both (${pct(twoWordRate)}%) partial${pct(twoWordPartialRate)}%, FREE ${freeWritingNonEmpty}/${freeWritingPrompts.length} nonEmpty avg ${freeWritingAvgWords.toFixed(1)}w, STUDENT ${studentPass}/${studentQuestions.length} (${pct(studentRate)}%)${prodFailSummary}${writeSummary}${respSummary}${twoWordSummary}${freeWritingSummary}${studentSummary}`,
+        metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, writeRate, writeFirstRate, respRate, twoWordRate, twoWordPartialRate, freeWritingRate, freeWritingAvgWords, studentRate, studentResults, prodFails: prodResult.fails, writeEmitted, respEmitted, twoWordEmitted, freeWritingEmitted }
+      };
+      this._recordGateHistory("ela", "kindergarten", "overall", pass, prodRate);
+      cluster.noiseAmplitude = _savedProbeNoise;
+      return _elaKResult;
+    } finally {
+      if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === "function") {
+        try {
+          await cluster._gpuProxy.drainWait();
+        } catch {
         }
       }
+      if (cluster) cluster._probeGateActive = false;
     }
-    console.log(`[Curriculum][K-DIAG] DYN-PROD probe DONE in ${Date.now() - _dynProdStart}ms \u2014 prodPass=${prodPass}/${wordStartProbes.length}`);
-    if (_firstProbeDiag) console.log(_firstProbeDiag);
-    const prodResult = {
-      pass: prodPass,
-      total: wordStartProbes.length,
-      fails: prodFails.map((f) => ({ q: f, emitted: "", expected: [] }))
-    };
-    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
-    const fullWordProbes = [
-      "cat",
-      "dog",
-      "pig",
-      "hat",
-      "sun",
-      "red",
-      "big",
-      "mom",
-      "dad",
-      "run",
-      "eat",
-      "yes",
-      "no",
-      "up",
-      "hi",
-      "bed",
-      "hot",
-      "top",
-      "fox",
-      "bug"
-    ];
-    let writePass = 0;
-    let writeFirstLetterPass = 0;
-    const writeEmitted = [];
-    for (const word of fullWordProbes) {
-      const emb = sharedEmbeddings.getEmbedding(word);
-      if (!emb || emb.length === 0) {
-        writeEmitted.push(`${word}\u2192NO_EMB`);
-        continue;
-      }
-      _probeReset();
-      const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === "function" ? await cluster.generateSentenceAwait(emb, { injectStrength: 1, maxTicks: 30 }) : cluster.generateSentence(emb, { injectStrength: 1, maxTicks: 30 })) || "";
-      writeEmitted.push(`${word}\u2192${emitted || "\u2205"}`);
-      if (emitted === word) writePass++;
-      if (emitted.length > 0 && emitted[0] === word[0]) writeFirstLetterPass++;
-    }
-    const writeRate = fullWordProbes.length > 0 ? writePass / fullWordProbes.length : 0;
-    const writeFirstRate = fullWordProbes.length > 0 ? writeFirstLetterPass / fullWordProbes.length : 0;
-    const respContexts = [
-      { prompt: "hello", meaning: "greeting friendly", expectHints: ["hi", "hello", "hey", "yes"] },
-      { prompt: "red", meaning: "color red apple", expectHints: ["red", "apple"] },
-      { prompt: "mom", meaning: "mom family love", expectHints: ["mom", "love", "family"] },
-      { prompt: "dog", meaning: "dog animal pet", expectHints: ["dog", "pet", "run", "cat"] },
-      { prompt: "eat", meaning: "eat food hungry", expectHints: ["eat", "food", "hungry"] }
-    ];
-    const respEmitted = [];
-    let respPass = 0;
-    for (const ctx of respContexts) {
-      const emb = sharedEmbeddings.getSentenceEmbedding(ctx.meaning);
-      if (!emb || emb.length === 0) {
-        respEmitted.push(`${ctx.prompt}\u2192NO_EMB`);
-        continue;
-      }
-      _probeReset();
-      const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === "function" ? await cluster.generateSentenceAwait(emb, { injectStrength: 1, maxTicks: 50 }) : cluster.generateSentence(emb, { injectStrength: 1, maxTicks: 50 })) || "";
-      respEmitted.push(`${ctx.prompt}\u2192${emitted || "\u2205"}`);
-      const emittedLower = emitted.toLowerCase();
-      if (ctx.expectHints.some((h) => emittedLower.includes(h))) respPass++;
-    }
-    const respRate = respContexts.length > 0 ? respPass / respContexts.length : 0;
-    const twoWordPhrases = [
-      { phrase: "happy dog", words: ["happy", "dog"] },
-      { phrase: "red apple", words: ["red", "apple"] },
-      { phrase: "big cat", words: ["big", "cat"] },
-      { phrase: "mom love", words: ["mom", "love"] },
-      { phrase: "run fast", words: ["run", "fast"] }
-    ];
-    const twoWordEmitted = [];
-    let twoWordPass = 0;
-    let twoWordPartial = 0;
-    for (const p of twoWordPhrases) {
-      const emb = sharedEmbeddings.getSentenceEmbedding(p.phrase);
-      if (!emb || emb.length === 0) {
-        twoWordEmitted.push(`${p.phrase}\u2192NO_EMB`);
-        continue;
-      }
-      _probeReset();
-      const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === "function" ? await cluster.generateSentenceAwait(emb, { injectStrength: 1, maxTicks: 80 }) : cluster.generateSentence(emb, { injectStrength: 1, maxTicks: 80 })) || "";
-      twoWordEmitted.push(`${p.phrase}\u2192${emitted || "\u2205"}`);
-      const emittedLower = emitted.toLowerCase();
-      const emittedTokens = emittedLower.split(/\s+/).filter(Boolean);
-      const matchedBoth = p.words.every((w) => emittedTokens.includes(w));
-      const matchedOne = p.words.some((w) => emittedTokens.includes(w));
-      if (matchedBoth) twoWordPass++;
-      else if (matchedOne) twoWordPartial++;
-    }
-    const twoWordRate = twoWordPhrases.length > 0 ? twoWordPass / twoWordPhrases.length : 0;
-    const twoWordPartialRate = twoWordPhrases.length > 0 ? (twoWordPass + twoWordPartial) / twoWordPhrases.length : 0;
-    const freeWritingPrompts = [
-      "tell me about your day",
-      "what do you like",
-      "how do you feel",
-      "what is your favorite color"
-    ];
-    const freeWritingEmitted = [];
-    let freeWritingNonEmpty = 0;
-    let freeWritingWordCount = 0;
-    for (const prompt of freeWritingPrompts) {
-      const emb = sharedEmbeddings.getSentenceEmbedding(prompt);
-      if (!emb || emb.length === 0) {
-        freeWritingEmitted.push(`${prompt}\u2192NO_EMB`);
-        continue;
-      }
-      _probeReset();
-      const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === "function" ? await cluster.generateSentenceAwait(emb, { injectStrength: 1, maxTicks: 200 }) : cluster.generateSentence(emb, { injectStrength: 1, maxTicks: 200 })) || "";
-      const tokens = emitted.toLowerCase().split(/\s+/).filter(Boolean);
-      freeWritingEmitted.push(`${prompt}\u2192${emitted || "\u2205"} (${tokens.length}w)`);
-      if (tokens.length > 0) freeWritingNonEmpty++;
-      freeWritingWordCount += tokens.length;
-    }
-    const freeWritingRate = freeWritingPrompts.length > 0 ? freeWritingNonEmpty / freeWritingPrompts.length : 0;
-    const freeWritingAvgWords = freeWritingPrompts.length > 0 ? freeWritingWordCount / freeWritingPrompts.length : 0;
-    const PATH_MIN = 0.95;
-    const SEQ_MIN = 0.95;
-    const PROD_MIN = 0.95;
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN && seqRate >= SEQ_MIN && prodRate >= PROD_MIN;
-    const pct = (r) => (r * 100).toFixed(0);
-    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
-    const writeSummary = writeEmitted.length > 0 ? " [WRITE: " + writeEmitted.slice(0, 8).join("; ") + "]" : "";
-    const respSummary = respEmitted.length > 0 ? " [RESP: " + respEmitted.join("; ") + "]" : "";
-    const twoWordSummary = twoWordEmitted.length > 0 ? " [2WORD: " + twoWordEmitted.join("; ") + "]" : "";
-    const freeWritingSummary = freeWritingEmitted.length > 0 ? " [FREE: " + freeWritingEmitted.join("; ") + "]" : "";
-    const elaKQuestions = [
-      { question: "what letter comes after a?", expectedAnswer: "b", expectedVariants: ["b", "B", "bee"] },
-      { question: "what letter comes after b?", expectedAnswer: "c", expectedVariants: ["c", "C", "cee"] },
-      { question: "say a word that starts with c", expectedAnswer: "c", expectedVariants: ["c", "cat", "cow", "cup"] },
-      { question: "say a word that starts with s", expectedAnswer: "s", expectedVariants: ["s", "sun", "sat", "sit"] },
-      { question: "how do you spell cat?", expectedAnswer: "cat", expectedVariants: ["cat", "c a t", "c-a-t"] },
-      { question: "what does the letter b sound like?", expectedAnswer: "b", expectedVariants: ["b", "buh", "bee"] },
-      { question: "give me a word that rhymes with hat", expectedAnswer: "cat", expectedVariants: ["cat", "bat", "mat", "sat", "rat"] }
-    ];
-    const studentBattery = await this._runStudentBattery(elaKQuestions, "K-STUDENT");
-    const studentPass = studentBattery.pass;
-    const studentQuestions = elaKQuestions;
-    const studentResults = studentBattery.results;
-    const studentRate = studentBattery.rate;
-    const studentSummary = studentBattery.summary;
-    const _elaKResult = {
-      pass,
-      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%) first${writeFirstLetterPass}/${fullWordProbes.length}, RESP ${respPass}/${respContexts.length} (${pct(respRate)}%), 2WORD ${twoWordPass}/${twoWordPhrases.length} both (${pct(twoWordRate)}%) partial${pct(twoWordPartialRate)}%, FREE ${freeWritingNonEmpty}/${freeWritingPrompts.length} nonEmpty avg ${freeWritingAvgWords.toFixed(1)}w, STUDENT ${studentPass}/${studentQuestions.length} (${pct(studentRate)}%)${prodFailSummary}${writeSummary}${respSummary}${twoWordSummary}${freeWritingSummary}${studentSummary}`,
-      metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, writeRate, writeFirstRate, respRate, twoWordRate, twoWordPartialRate, freeWritingRate, freeWritingAvgWords, studentRate, studentResults, prodFails: prodResult.fails, writeEmitted, respEmitted, twoWordEmitted, freeWritingEmitted }
-    };
-    this._recordGateHistory("ela", "kindergarten", "overall", pass, prodRate);
-    cluster.noiseAmplitude = _savedProbeNoise;
-    return _elaKResult;
   }
   // ═══════════════════════════════════════════════════════════════════
   // T14.24 SESSION 3 — REAL MATH-K TEACHING EQUATIONS (2026-04-15)
