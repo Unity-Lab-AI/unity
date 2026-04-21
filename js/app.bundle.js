@@ -122,6 +122,14 @@ var init_sparse_matrix = __esm({
        */
       propagate(spikes) {
         const { rows, values, colIdx, rowPtr } = this;
+        if (!values || !colIdx || !rowPtr) {
+          if (typeof globalThis !== "undefined" && globalThis._probeWindowPropagate && !this._nullCsrWarned) {
+            this._nullCsrWarned = true;
+            const nm = this._name || this.name || "(unnamed)";
+            console.warn(`[SparseMatrix] propagate called with null CPU CSR on ${nm} (values=${!!values} colIdx=${!!colIdx} rowPtr=${!!rowPtr}) \u2014 returning zeros. Matrix is likely GPU-bound with CPU arrays freed.`);
+          }
+          return new Float64Array(rows || 0);
+        }
         const I = new Float64Array(rows);
         for (let i = 0; i < rows; i++) {
           let sum = 0;
@@ -600,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "2bbee892-cf03";
+var BUILD = "4495d56f-9fbb";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -10310,7 +10318,30 @@ var Curriculum = class _Curriculum {
         console.warn(`[Curriculum] \u26D4 grade ${grade} incomplete after ${MAX_GRADE_ROUNDS} rounds \u2014 curriculum paused until next boot.`);
         break;
       }
-      console.log(`[Curriculum] \u2550\u2550\u2550 ALL 5 subjects passed ${grade} \u2014 advancing to next grade \u2550\u2550\u2550`);
+      console.log(`[Curriculum] \u2550\u2550\u2550 ALL ${SUBJECTS.length} subjects passed ${grade} \u2014 advancing to next grade \u2550\u2550\u2550`);
+      const nextIdx = i + 1;
+      const nextGrade = nextIdx < GRADE_ORDER.length && (maxIdx < 0 || nextIdx <= maxIdx) ? GRADE_ORDER[nextIdx] : null;
+      if (nextGrade === null) {
+        console.log(`[Curriculum] grade cap reached at '${grade}' \u2014 no next grade to advance to. Curriculum walk complete; operator records LAW 6 Part 2 signoff via POST /grade-signoff.`);
+      } else {
+        cluster._gradeAdvancePaused = true;
+        cluster._pausedAt = { subject: null, grade, at: Date.now() };
+        cluster._nextGrade = { grade: nextGrade };
+        if (typeof this._saveCheckpoint === "function") {
+          this._saveCheckpoint(`grade-advance-pause:${grade}`);
+        }
+        console.log(`[Curriculum] \u23F8 PAUSED after '${grade}' \u2014 awaiting operator POST /grade-advance to start '${nextGrade}'. Chat-test freely; no background Hebbian will fire.`);
+        while (cluster._gradeAdvancePaused === true) {
+          if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) {
+            console.log("[Curriculum] shutdown requested during grade-advance pause \u2014 stopping.");
+            return { reached: {}, passed, failed };
+          }
+          await new Promise((r) => setTimeout(r, 500));
+        }
+        console.log(`[Curriculum] \u25B6 RESUMED \u2014 advancing to '${nextGrade}'.`);
+        cluster._pausedAt = null;
+        cluster._nextGrade = null;
+      }
     }
     const reached = {};
     for (const s of SUBJECTS) reached[s] = cluster.grades[s] || "pre-K";
@@ -13227,6 +13258,8 @@ var Curriculum = class _Curriculum {
       const dynLetterToMotor = allProjs["letter_to_motor"];
       const semPathAvailable = !!(dynSemToMotor && dynSemToMotor.values && dynSemToMotor.colIdx && dynSemToMotor.rowPtr);
       const letterFallback = !!(dynLetterToMotor && dynLetterToMotor.values && dynLetterToMotor.colIdx && dynLetterToMotor.rowPtr);
+      const _pathMeta = semPathAvailable ? `sem_to_motor ${dynSemToMotor.rows}x${dynSemToMotor.cols} nnz=${dynSemToMotor.nnz}` : letterFallback ? `letter_to_motor ${dynLetterToMotor.rows}x${dynLetterToMotor.cols} nnz=${dynLetterToMotor.nnz}` : "NONE_AVAILABLE";
+      console.log(`[Curriculum][K-DIAG] DYN-PROD pre-loop: semPath=${semPathAvailable} letterFallback=${letterFallback} matrix=${_pathMeta}`);
       if (!semPathAvailable && !letterFallback) {
         console.warn("[Curriculum][K-DIAG] DYN-PROD skipped \u2014 neither sem_to_motor nor letter_to_motor has CPU CSR available.");
         for (const p of wordStartProbes) prodFails.push(`${p.word}\u2192NO_PROJ`);
@@ -13234,86 +13267,95 @@ var Curriculum = class _Curriculum {
         if (!semPathAvailable) {
           console.log("[Curriculum][K-DIAG] DYN-PROD using letter_to_motor fallback (sem_to_motor CPU CSR freed at biological scale).");
         }
-        for (const p of wordStartProbes) {
-          _probeIdx++;
-          const _probeStart = Date.now();
-          const emb = sharedEmbeddings.getEmbedding(p.word);
-          if (!emb || emb.length === 0) {
-            prodFails.push(`${p.word}\u2192NO_EMB`);
-            continue;
-          }
-          if (!semRegion || !motorRegion_) {
-            prodFails.push(`${p.word}\u2192NO_PROJ`);
-            continue;
-          }
-          let motorOutput;
-          if (semPathAvailable) {
-            const gSize = Math.max(1, Math.floor(semSize_ / emb.length));
-            const semPattern = new Float64Array(semSize_);
-            for (let d = 0; d < emb.length; d++) {
-              const startNeuron = d * gSize;
-              const val = emb[d];
-              for (let n = 0; n < gSize; n++) {
-                const idx = startNeuron + n;
-                if (idx >= semSize_) break;
-                semPattern[idx] = val;
+        globalThis._probeWindowPropagate = true;
+        try {
+          for (const p of wordStartProbes) {
+            _probeIdx++;
+            const _probeStart = Date.now();
+            const emb = sharedEmbeddings.getEmbedding(p.word);
+            if (!emb || emb.length === 0) {
+              prodFails.push(`${p.word}\u2192NO_EMB`);
+              console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} SKIP word='${p.word}' reason=NO_EMB`);
+              continue;
+            }
+            if (!semRegion || !motorRegion_) {
+              prodFails.push(`${p.word}\u2192NO_PROJ`);
+              console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} SKIP word='${p.word}' reason=NO_PROJ`);
+              continue;
+            }
+            const _probePath = semPathAvailable ? "sem_to_motor" : "letter_to_motor_fallback";
+            console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} START word='${p.word}' path=${_probePath}`);
+            let motorOutput;
+            if (semPathAvailable) {
+              const gSize = Math.max(1, Math.floor(semSize_ / emb.length));
+              const semPattern = new Float64Array(semSize_);
+              for (let d = 0; d < emb.length; d++) {
+                const startNeuron = d * gSize;
+                const val = emb[d];
+                for (let n = 0; n < gSize; n++) {
+                  const idx = startNeuron + n;
+                  if (idx >= semSize_) break;
+                  semPattern[idx] = val;
+                }
               }
-            }
-            motorOutput = dynSemToMotor.propagate(semPattern);
-          } else {
-            const firstLetter = p.word[0];
-            const letterOneHot = encodeLetter(firstLetter);
-            const letterSize2 = letterRegion ? letterRegion.end - letterRegion.start : letterOneHot.length;
-            const lGSize = Math.max(1, Math.floor(letterSize2 / letterOneHot.length));
-            const letterPat = new Float64Array(letterSize2);
-            for (let d = 0; d < letterOneHot.length; d++) {
-              if (letterOneHot[d] <= 0) continue;
-              const startNeuron = d * lGSize;
-              for (let n = 0; n < lGSize; n++) {
-                const idx = startNeuron + n;
-                if (idx >= letterSize2) break;
-                letterPat[idx] = 1;
+              motorOutput = dynSemToMotor.propagate(semPattern);
+            } else {
+              const firstLetter = p.word[0];
+              const letterOneHot = encodeLetter(firstLetter);
+              const letterSize2 = letterRegion ? letterRegion.end - letterRegion.start : letterOneHot.length;
+              const lGSize = Math.max(1, Math.floor(letterSize2 / letterOneHot.length));
+              const letterPat = new Float64Array(letterSize2);
+              for (let d = 0; d < letterOneHot.length; d++) {
+                if (letterOneHot[d] <= 0) continue;
+                const startNeuron = d * lGSize;
+                for (let n = 0; n < lGSize; n++) {
+                  const idx = startNeuron + n;
+                  if (idx >= letterSize2) break;
+                  letterPat[idx] = 1;
+                }
               }
+              motorOutput = dynLetterToMotor.propagate(letterPat);
             }
-            motorOutput = dynLetterToMotor.propagate(letterPat);
-          }
-          const readoutSize = Math.min(invSize_, LETTER_SLOTS);
-          const motorReadout = new Float64Array(readoutSize);
-          for (let d = 0; d < readoutSize; d++) {
-            let sum = 0;
-            for (let n = 0; n < mGroup_; n++) {
-              const idx = d * mGroup_ + n;
-              if (idx < motorOutput.length) sum += motorOutput[idx];
+            const readoutSize = Math.min(invSize_, LETTER_SLOTS);
+            const motorReadout = new Float64Array(readoutSize);
+            for (let d = 0; d < readoutSize; d++) {
+              let sum = 0;
+              for (let n = 0; n < mGroup_; n++) {
+                const idx = d * mGroup_ + n;
+                if (idx < motorOutput.length) sum += motorOutput[idx];
+              }
+              motorReadout[d] = sum;
             }
-            motorReadout[d] = sum;
-          }
-          let meanM = 0;
-          for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
-          meanM /= readoutSize;
-          for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
-          const decoded = decodeLetter(motorReadout);
-          if (_firstProbeDiag === null) {
-            const topSlots = [];
-            for (let i = 0; i < motorReadout.length; i++) {
-              topSlots.push({ idx: i, val: motorReadout[i] });
+            let meanM = 0;
+            for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
+            meanM /= readoutSize;
+            for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
+            const decoded = decodeLetter(motorReadout);
+            if (_firstProbeDiag === null) {
+              const topSlots = [];
+              for (let i = 0; i < motorReadout.length; i++) {
+                topSlots.push({ idx: i, val: motorReadout[i] });
+              }
+              topSlots.sort((a, b) => b.val - a.val);
+              const invSnap = inventorySnapshot();
+              const topStr = topSlots.slice(0, 5).map((s) => `${invSnap[s.idx] || "?"}(${s.idx}:${s.val.toFixed(3)})`).join(",");
+              const expectedIdx = invSnap.indexOf(p.expected);
+              const expectedVal = expectedIdx >= 0 && expectedIdx < motorReadout.length ? motorReadout[expectedIdx] : NaN;
+              const expectedRank = topSlots.findIndex((s) => s.idx === expectedIdx);
+              _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}\u2192${p.expected}] decoded=${decoded || "\u2205"}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : "NaN"}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
             }
-            topSlots.sort((a, b) => b.val - a.val);
-            const invSnap = inventorySnapshot();
-            const topStr = topSlots.slice(0, 5).map((s) => `${invSnap[s.idx] || "?"}(${s.idx}:${s.val.toFixed(3)})`).join(",");
-            const expectedIdx = invSnap.indexOf(p.expected);
-            const expectedVal = expectedIdx >= 0 && expectedIdx < motorReadout.length ? motorReadout[expectedIdx] : NaN;
-            const expectedRank = topSlots.findIndex((s) => s.idx === expectedIdx);
-            _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}\u2192${p.expected}] decoded=${decoded || "\u2205"}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : "NaN"}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
+            if (decoded === p.expected) {
+              prodPass++;
+            } else {
+              prodFails.push(`${p.word}\u2192${decoded || "?"}`);
+            }
+            const _probeMs = Date.now() - _probeStart;
+            const _slowTag = _probeMs > 1e4 ? " SLOW" : "";
+            console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} DONE${_slowTag} '${p.word}'\u2192'${decoded || "?"}' (expected '${p.expected}') in ${_probeMs}ms \u2014 prodPass=${prodPass}/${_probeIdx} so far`);
+            await new Promise((resolve) => setImmediate(resolve));
           }
-          if (decoded === p.expected) {
-            prodPass++;
-          } else {
-            prodFails.push(`${p.word}\u2192${decoded || "?"}`);
-          }
-          const _probeMs = Date.now() - _probeStart;
-          if (_probeIdx <= 3 || _probeIdx === wordStartProbes.length || _probeMs > 5e3) {
-            console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} '${p.word}'\u2192'${decoded || "?"}' (expected '${p.expected}') in ${_probeMs}ms \u2014 prodPass=${prodPass}/${_probeIdx} so far`);
-          }
+        } finally {
+          globalThis._probeWindowPropagate = false;
         }
       }
       console.log(`[Curriculum][K-DIAG] DYN-PROD probe DONE in ${Date.now() - _dynProdStart}ms \u2014 prodPass=${prodPass}/${wordStartProbes.length}`);

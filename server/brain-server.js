@@ -4192,6 +4192,14 @@ class ServerBrain {
             grades: cortex.grades && typeof cortex.grades === 'object' ? { ...cortex.grades } : null,
             passedCells: Array.isArray(cortex.passedCells) ? [...cortex.passedCells] : null,
             probeHistory: cortex.probeHistory && typeof cortex.probeHistory === 'object' ? { ...cortex.probeHistory } : null,
+            // Grade-advance pause state. When a grade fully passes across
+            // all subjects, the runner sets `_gradeAdvancePaused = true`
+            // and waits for POST /grade-advance. Persist so the pause
+            // survives restart — a passed grade stays paused across
+            // reboots until the operator explicitly advances.
+            gradeAdvancePaused: cortex._gradeAdvancePaused === true,
+            pausedAt: cortex._pausedAt || null,
+            nextGrade: cortex._nextGrade || null,
             // Learned language statistics
             fineTypeTransitions: mapOfMaps(cortex.fineTypeTransitions),
             sentenceFormSchemas: mapOfMapOfMaps(cortex.sentenceFormSchemas),
@@ -4707,6 +4715,15 @@ class ServerBrain {
         if (pending.probeHistory && typeof pending.probeHistory === 'object') {
           cortex.probeHistory = { ...pending.probeHistory };
         }
+        // Grade-advance pause — restore so curriculum walker lands on
+        // the wait-loop at the same grade boundary the prior boot was
+        // paused at. If pause was not set at save time, leave the flags
+        // unset (curriculum defaults to walking continuously).
+        if (pending.gradeAdvancePaused === true) {
+          cortex._gradeAdvancePaused = true;
+          cortex._pausedAt = pending.pausedAt || null;
+          cortex._nextGrade = pending.nextGrade || null;
+        }
         // Rebuild the learned-language Map shapes from JSON objects
         const objToMapOfMaps = (obj) => {
           const m = new Map();
@@ -4919,7 +4936,64 @@ const httpServer = http.createServer((req, res) => {
       passedCells: Array.isArray(brain.cortexCluster?.passedCells) ? [...brain.cortexCluster.passedCells] : [],
       gradeSignoffs: brain._gradeSignoffs || {},
       chatTurnCount: brain._chatTurnCount || 0,
+      // Grade-advance pause state — dashboard shows "Start Next Grade"
+      // button only when paused === true && nextGrade != null. When
+      // nextGrade is null the operator has hit the grade cap (e.g.,
+      // passed K under PRE-K + K ONLY scope) and the button is
+      // replaced by a caveat explaining to use POST /grade-signoff
+      // instead.
+      paused: brain.cortexCluster?._gradeAdvancePaused === true,
+      pausedAt: brain.cortexCluster?._pausedAt || null,
+      nextGrade: brain.cortexCluster?._nextGrade || null,
     }));
+    return;
+  }
+
+  // Grade-advance endpoint. When curriculum pauses after a full grade
+  // pass, the operator clicks "Start Next Grade" on the dashboard which
+  // POSTs here. Flips `cortexCluster._gradeAdvancePaused = false` so
+  // the runner's wait-loop exits and the next grade's cell walk starts.
+  //
+  // Operator-only path — just like /grade-signoff, server code never
+  // auto-advances. The pause is default-on after every grade pass so
+  // chat-testing is clean (no background Hebbian). Persists through
+  // saveWeights() so the advance event survives restart.
+  //
+  // Usage:
+  //   POST /grade-advance   { "subject": "ela", "grade": "kindergarten" }
+  //   → flips pause off, returns {ok, advancedFrom, advancedTo}
+  if (req.url === '/grade-advance' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk.toString(); if (body.length > 10000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const parsed = JSON.parse(body || '{}');
+        const cortex = brain.cortexCluster;
+        if (!cortex) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'cortex cluster not initialized' }));
+          return;
+        }
+        if (cortex._gradeAdvancePaused !== true) {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'not paused', paused: false }));
+          return;
+        }
+        const from = cortex._pausedAt?.grade || null;
+        const to = cortex._nextGrade?.grade || null;
+        cortex._gradeAdvancePaused = false;
+        // _pausedAt + _nextGrade get cleared inside the curriculum
+        // wait-loop when it exits; leave them for now so the next
+        // /milestone poll can show the transition state.
+        brain.saveWeights({ force: true, trigger: `grade-advance:${from}->${to}` });
+        console.log(`[Brain] grade-advance recorded: ${from} → ${to} (operator localhost)`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, advancedFrom: from, advancedTo: to }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
     return;
   }
 

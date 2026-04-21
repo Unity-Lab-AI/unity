@@ -119,6 +119,7 @@
         <div id="d-ms-grades" style="margin-top:6px;color:#888;font-size:11px;">grades: —</div>
         <div id="d-ms-signoffs" style="margin-top:6px;color:#888;font-size:11px;">operator signoffs: —</div>
         <div id="d-ms-weights" style="margin-top:6px;color:#555;font-size:10px;">weights file: —</div>
+        <div id="d-ms-advance" style="margin-top:10px;display:none;"></div>
       </div>
     </div>
 
@@ -531,6 +532,67 @@
         if (weightsEl && m.weightsFile) {
           const sizeKB = m.weightsFile.sizeBytes ? (m.weightsFile.sizeBytes / 1024).toFixed(1) : '?';
           weightsEl.textContent = `weights file: ${m.weightsFile.path} · ${sizeKB} KB · mtime ${m.weightsFile.mtime || 'n/a'}`;
+        }
+        // Grade-advance pause panel. Three visual states:
+        //   1. curriculum running (m.paused=false) — panel hidden
+        //   2. paused with a next grade available (m.paused=true, nextGrade != null)
+        //      → "Start Next Grade" button, clicking fires POST /grade-advance
+        //   3. paused at cap (m.paused=true, nextGrade == null) — caveat text
+        //      directs operator to POST /grade-signoff for LAW 6 Part 2
+        const advEl = document.getElementById('d-ms-advance');
+        if (advEl) {
+          if (!m.paused) {
+            advEl.style.display = 'none';
+            advEl.innerHTML = '';
+          } else {
+            advEl.style.display = 'block';
+            const pausedGrade = m.pausedAt?.grade || 'unknown';
+            const nextGrade = m.nextGrade?.grade || null;
+            const pausedWhen = m.pausedAt?.at
+              ? new Date(m.pausedAt.at).toISOString().replace('T', ' ').slice(0, 19) + ' UTC'
+              : '';
+            if (nextGrade) {
+              advEl.innerHTML = `
+                <div style="background:#1a0f1f;border:1px solid #f59e0b;border-radius:6px;padding:10px;">
+                  <div style="color:#f59e0b;font-size:11px;font-weight:700;margin-bottom:6px;">⏸ CURRICULUM PAUSED</div>
+                  <div style="color:#aaa;font-size:10px;margin-bottom:8px;">
+                    Passed '${pausedGrade}' ${pausedWhen ? '· ' + pausedWhen : ''}. No background Hebbian firing — chat-test Unity freely at her current grade level. Click below when ready to advance.
+                  </div>
+                  <button id="d-ms-advance-btn" data-next="${nextGrade}" style="background:#f59e0b;color:#000;border:none;border-radius:4px;padding:8px 14px;font-family:monospace;font-size:12px;font-weight:700;cursor:pointer;">
+                    ▶ START ${nextGrade.toUpperCase()}
+                  </button>
+                </div>
+              `;
+              const btn = document.getElementById('d-ms-advance-btn');
+              if (btn) {
+                btn.onclick = async () => {
+                  btn.disabled = true;
+                  btn.textContent = 'advancing...';
+                  btn.style.opacity = '0.5';
+                  try {
+                    const scheme2 = location.protocol === 'https:' ? 'https:' : 'http:';
+                    const host2 = location.hostname || 'localhost';
+                    await fetch(`${scheme2}//${host2}:7525/grade-advance`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subject: null, grade: pausedGrade }),
+                    });
+                  } catch {}
+                  setTimeout(refreshMilestone, 2000);
+                };
+              }
+            } else {
+              advEl.innerHTML = `
+                <div style="background:#0f1a1f;border:1px solid #22c55e;border-radius:6px;padding:10px;">
+                  <div style="color:#22c55e;font-size:11px;font-weight:700;margin-bottom:6px;">✓ GRADE CAP REACHED — '${pausedGrade.toUpperCase()}' PASSED</div>
+                  <div style="color:#aaa;font-size:10px;line-height:1.6;">
+                    No next grade content exists yet (PRE-K + K ONLY SCOPE LAW). Record LAW 6 Part 2 signoff via:<br>
+                    <code style="color:#00e5ff;">curl -X POST http://localhost:7525/grade-signoff -H "Content-Type: application/json" -d '{"subject":"ela","grade":"${pausedGrade}","note":"methodology + reasoning + thinking + talking + listening + reading all verified"}'</code>
+                  </div>
+                </div>
+              `;
+            }
+          }
         }
       } catch (err) {
         // Silent fail — the health endpoint is advisory; WebSocket carries
