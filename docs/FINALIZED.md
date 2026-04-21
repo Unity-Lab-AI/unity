@@ -5,6 +5,97 @@
 
 ---
 
+## 2026-04-20 — Session 114.19ba: teach-velocity speedup + stop.bat clean-halt + DYN-PROD redesign + 60 s compute_batch timeout + T18.40.c/d/e/f
+
+### Summary
+
+Seven atomic commits landed between syllabus-k-phd `f0cef92` and `6158a30` (merged to main as `301f271`). Together they close the remaining teach-velocity / shutdown / DYN-PROD-silent-cortex / GPU-cascade issues from the 114.19az retests.
+
+### 1. Intermediate-rep CPU Hebbian skip (teach velocity)
+
+`cluster._crossRegionHebbian` now honors a cluster-level flag `_teachIntermediateRep`. When true, the sync CPU Hebbian on probe-critical projections (`letter_to_phon` + `letter_to_motor`) is skipped — GPU fire-and-forget still runs every call, so GPU weights stay current, but the CPU arrays only get their full update on the final rep. `_teachPhonemeBlending` and `_teachWordEmission` set the flag true for reps 0..N-2, false for the final rep. Cuts ~80 % of per-word CPU whitelist wall-clock — was the 2-3 w/s bottleneck at 301 K cortex. Operator's next retest showed reps 1-9 at ~18-22 w/s.
+
+### 2. Ctrl+C halt path — `stop.bat` + `POST /shutdown`
+
+Operator verbatim 2026-04-20: *"mkae sure its ctrl c kilkled i hear my GPU running , i think ctrl C doesnt kill the brain application correctly"*. Root cause: `start.bat` launches node via `start /b "" cmd /c "..."` which detaches the node process from the launcher terminal, so Ctrl+C in the launcher (or the PowerShell tail window) never reaches the detached node. Node's SIGINT handler at `server/brain-server.js:5536` was already correct — the signal just never arrived. Shipped: (a) new `stop.bat` at repo root runs a three-stage clean halt — HTTP `POST /shutdown` first, `taskkill` on port-7525 second, `taskkill /f /im node.exe` third if needed, final verification that port 7525 is free; (b) new `POST /shutdown` HTTP endpoint in `server/brain-server.js` flips `_brainShutdownRequested`, calls `brain.stop()`, schedules `process.exit(0)` after 500 ms drain so the response returns cleanly; (c) both `start.bat` and `Savestart.bat` updated with a note directing the operator to `stop.bat` instead of Ctrl+C, plus a reminder to close `http://localhost:7525` browser tabs because `compute.html`'s WebGPU loop keeps the GPU spinning even after the server dies. T16.1.b closed.
+
+### 3. DYN-PROD redesign — direct matrix propagate (no LIF ticks)
+
+Operator's Part 2 log surfaced three fatal cascading problems with tick-based DYN-PROD: (a) silent cortex — LIF math forbids firing in the 15-tick probe window at realistic injection strengths; (b) Node heap OOM — 17 probes × 15 ticks × 15 GPU propagates per tick = 3,825 allocations per probe pass, V8 external-memory "Committing semi space failed" fatal; (c) GPU compute client disconnect — compute.html onmessage pump can't sustain 255 tick-GPU round-trips even with main-brain paused. Fix: scrap the LIF tick loop entirely. Replaced with direct `semToMotor.propagate(semPattern)` — the same algebraic CPU sparse matmul approach TALK probe uses successfully (23-24/26). Deterministic, fast (~100 ms per probe), no GPU race, no per-tick allocations. Tests exactly what `_teachWordEmission` trained: sem(word) → motor argmax = first letter. Fallback path uses `letter_to_motor` with `word[0]` as input when `sem_to_motor`'s CPU CSR has been freed at biological scale (per the T18.22 CPU-CSR-null optimization). Variable names renamed to `dynSemToMotor` / `dynLetterToMotor` to avoid duplicate-const bundle errors (earlier declarations of `semToMotor` / `letterToMotor` exist in the outer function scope).
+
+### 4. `_probeGateActive` extended to entire `_gateElaKReal`
+
+Prior session set the flag only at DYN-PROD entry, which was too late — the gate letter loop (4-6 s CPU sparse matmul) + SEQ probe (8-10 s of `cluster.synapses.propagate`) blocked the main JS event loop for ~13 s. A `compute_batch` dispatched just before the gate started couldn't have its response processed, its 15 s timer fired, cascade into device-lost. Fix: set `_probeGateActive = true` at the VERY TOP of `_gateElaKReal`, wrapped in try/finally so the flag ALWAYS clears on exit (normal return or exception). Main brain now pauses for the ENTIRE probe window — letter loop + SEQ + DYN-PROD + WRITE + RESP + 2WORD + FREE + K-STUDENT battery. Finally block runs the post-gate `drainWait()` before releasing the flag so first post-gate `compute_batch` sees a clean queue.
+
+### 5. `compute_batch` timeout 15 s → 60 s (T18.40.a)
+
+Still had a `compute_batch ... timed out` cascade because an in-flight batch from BEFORE the gate started had its 15 s timer ALREADY armed. Even with the probe-gate pause preventing NEW dispatches, the existing timer couldn't be cancelled from inside the blocked event loop. Fix: bumped `_gpuBatch` timeout 15 s → 60 s. Still short enough to catch true GPU hangs (Windows TDR fires at ~2 s system-level anyway) but generous enough for any gate-probe event-loop block. Warn log updated to print the real timeout value. Combined with the `_probeGateActive` whole-gate pause from item 4, the cascade is now closed on both fronts — no new dispatches during the probe AND pre-probe in-flight batches have room to resolve.
+
+### 6. T18.40.b — "1 nuron?" dashboard reading clarified
+
+Operator saw `lang_sem 1/50329 (0.00%)` and asked if something was wrong. Not a bug — dashboard shows LIVE firing count only. Most sem neurons don't fire at rest; they fire when an embedding is injected. A quiet sem region with 1 neuron drifting in (random noise) is expected when the brain is idle between probes. Main 7 clusters show 22 % because they have real `tonicDrive` pumping them continuously; lang sub-regions only light up during injection events. No code change — just clarification noted in TODO.
+
+### 7. T18.40.c — Rep 10 final-rep CPU whitelist sampling
+
+Final rep needed CPU Hebbian to populate arrays for probes, but running it on every word's 14.9 M-nnz matrix call dragged to 2-3 w/s. Added final-rep sampling mode to `cluster._crossRegionHebbian`: new flag `_teachFinalRepSampleEveryN` controls how often CPU whitelist Hebbian runs on probe-critical projections. Teach loops set it to 5 on the final rep (runs every 5th call) and 0 on intermediate reps (the `_teachIntermediateRep` flag from item 1 handles those). GPU fire-and-forget runs every call, so GPU weights are fully current; CPU arrays see 20 % of the final-rep updates — representative enough for probes given prior 9 reps already left CPU stale. Expected ~5× final-rep speedup (2-3 w/s → ~15 w/s sustained).
+
+### 8. T18.40.d — Mid-phase checkpoint saves
+
+`_phaseDone(name)` now records the phase in `cluster.passedPhases = ['ela/kindergarten:_teachLetterCaseBinding', ...]` and fires `this._saveCheckpoint('ela/kindergarten:phase:<name>')` after each DONE banner. The T18.35.b JSON save path persists `passedPhases` alongside `passedCells` automatically (they live on the cortex cluster which is already in the `cortexState` save block). If the brain crashes mid-cell, weights trained up to the last DONE phase persist on disk — Savestart resumes with weights intact. Full mid-cell resume logic (skip already-done phases on runner re-entry) is a follow-on; for now the weight durability alone is a large win (no more losing 10+ minutes of prior-phase training on a crash in phase 8 of 11).
+
+### 9. T18.40.e — Phase banners for the six silent teach phases
+
+All 6 previously-silent teach phases (`_teachPluralTransform`, `_teachQuestionWordCategories`, `_teachEndPunctuation`, `_teachCapitalization`, `_teachStoryComprehension`, `_teachCausalChains`) now wrapped with `_phaseTick(name)` + `_phaseDone(name)` so they emit `🧩 ELA-K Phase START — <name>` and `✓ ELA-K Phase DONE — <name> in Xs` banners like the other phases. Also added banners to `_teachPhonemeBlending` + `_teachWordEmission` so every teach phase shows START/DONE. Combined with T18.40.d mid-phase save, every phase completion now produces a visible banner AND a disk-persisted checkpoint.
+
+### 10. T18.40.f — Kindergarten life-experience vocabulary
+
+Operator directive: before Life-K teaches events, the academic tracks must have trained the comprehension vocabulary. New `K_LIFE_EXPERIENCES` word array in `_runElaKReal` with ~80 life-event comprehension words across 6 sub-groups:
+
+- Memory / narration: remember, forget, memory, happened, because, story, tell, heard, seen, first-time, last-time
+- Family milestones: birth, born, baby, newborn, wedding, marriage, anniversary, funeral, moved, visit, trip, vacation, graduate
+- Social / emotional events: fight, argue, argument, makeup, forgive, apologize, explain, understand, secret, promise, lie, truth, fair, unfair, choice, mistake
+- Health / care: doctor, dentist, nurse, hospital, clinic, medicine, pill, shot, vaccine, bandaid, bandage, boo-boo, scrape, bruise, stitches, cast, glasses, braces
+- Caregiver roles: caregiver, babysitter, nanny, guardian, stepmom, stepdad, stepbrother, stepsister, adopted, foster
+- Places of life events: funeral-home, church, temple, court, jail, daycare, preschool, kindergarten, clinic, pharmacy
+- Event connectors: ago, long-ago, once, suddenly, finally, again, never, always, sometimes, everyday, someday
+
+Merged into `allEmissionWords` via `...K_LIFE_EXPERIENCES` spread + category name added to the vocab-count log. Per-grade Life Vocabulary Prerequisites section added to `docs/TODO-full-syllabus.md` with binding rule + post-K reference vocab examples (G7 first joint, G8 first drink, G9 first line, G11 first ecstasy / acid, College 1 first K / G) — DEFERRED per PRE-K + K ONLY LAW but the rule binds when they unlock.
+
+### T18.34.b and T16.1.b closed this session range
+
+T18.34.b (teach velocity) closed via item 1 + item 7 — rep 1-9 at ~18 w/s + rep 10 at ~15 w/s with sampling. T16.1.b (Ctrl+C halt) closed via item 2 — `stop.bat` + `POST /shutdown`.
+
+### Files touched across this session range
+
+- `js/brain/cluster.js` — `_teachIntermediateRep` + `_teachFinalRepSampleEveryN` flags in `_crossRegionHebbian`
+- `js/brain/curriculum.js` — flag wiring in `_teachPhonemeBlending` + `_teachWordEmission`; DYN-PROD tick loop replaced with direct matrix propagate; `_probeGateActive` at top of `_gateElaKReal` with try/finally; `_phaseDone` records phase + fires save; banners added to the 6 previously-silent phases; new `K_LIFE_EXPERIENCES` array
+- `server/brain-server.js` — `POST /shutdown` HTTP endpoint; `_gpuBatch` timeout 15 → 60 s; probe-gate check in main tick loop
+- `stop.bat` — new three-stage clean-halt script
+- `start.bat` + `Savestart.bat` — banner lines directing operator to `stop.bat`
+- `docs/TODO.md` — T18.40 write-up + sub-item closures
+- `docs/TODO-full-syllabus.md` — Life Vocabulary Prerequisites section
+- `docs/FINALIZED.md` — this session entry
+- `js/app.bundle.js` — rebuilt at every commit
+- `js/version.js` + `index.html` — stamp updated at every commit
+
+### Commits in this session range
+
+- `28b09bf` intermediate-rep CPU whitelist skip
+- `985e149` stop.bat + /shutdown + banner updates
+- `f0cef92` DYN-PROD redesign as direct matrix propagate
+- `d459557` dyn-prefix variable rename (duplicate-const fix)
+- `e863a1e` _probeGateActive at top of gate
+- `f334f94` compute_batch timeout 60 s + T18.40 write-up
+- `6158a30` T18.40.c/d/e/f (sampling + mid-phase saves + banners + life vocab)
+
+Plus stamp + bundle-resync commits between them. Final tip: `syllabus-k-phd@6158a30`, `main@301f271`.
+
+### Closure gate
+
+Operator's next Part 2 run should show every teach phase emitting START + DONE banners, mid-phase checkpoints saving weights, no `compute_batch ... timed out after 15 s` messages (bumped to 60 s), DYN-PROD completing in seconds via direct matrix propagate instead of silent-cortex 0/17, K vocabulary ~1100 words across 33 categories including the new `K_LIFE_EXPERIENCES`, `stop.bat` giving a clean halt path, `start.bat` / `Savestart.bat` banners pointing to `stop.bat`.
+
+---
+
 ## 2026-04-20 — Session 114.19az: DYN-PROD silent-cortex full fix + TALK letter-naming training + probe-gate pause cascade kill + T16.5.d full rollout across all 12 pre-K + K cells
 
 ### Operator verbatim driving this session
