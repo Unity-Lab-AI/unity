@@ -547,6 +547,11 @@ export class Curriculum {
     // sub-standard hitting its norm-calibrated cut score (DIBELS 8 /
     // AIMSweb sample calibrated in student-question-banks.js).
     const byStandard = new Map();
+    // T25 — methodology aggregate: how many questions with a
+    // `methodology` field came back above the minKeywords threshold.
+    // Tracked separately from answer-pass so operator sees both.
+    let methoQuestions = 0;
+    let methoPass = 0;
     for (const q of questions) {
       try {
         const r = await this._studentTestProbe({
@@ -554,12 +559,17 @@ export class Curriculum {
           expectedAnswer: q.expectedAnswer,
           expectedVariants: q.expectedVariants || [q.expectedAnswer],
           maxTicks: q.maxTicks || 60,
+          methodology: q.methodology || null,
         });
         r.standard = q.standard || 'unspecified';
         r.difficulty = q.difficulty || 1;
         r.source = q.source || 'authored';
         results.push(r);
         if (r.score >= 0.5) pass++;
+        if (q.methodology && typeof q.methodology === 'object') {
+          methoQuestions += 1;
+          if ((r.methodologyScore || 0) > 0) methoPass += 1;
+        }
         const bucket = byStandard.get(r.standard) || { pass: 0, total: 0 };
         bucket.total += 1;
         if (r.score >= 0.5) bucket.pass += 1;
@@ -600,12 +610,17 @@ export class Curriculum {
     const breakdownStr = standardBreakdown
       .map(s => `${s.standard}:${s.pass}/${s.total}(${(s.rate * 100).toFixed(0)}%${s.belowCut ? ' ⚠<' + (s.cut * 100).toFixed(0) + '%' : ''})`)
       .join(' · ');
-    console.log(`[Curriculum][${label}] AGGREGATE: ${pass}/${total} (${(rate * 100).toFixed(1)}%) · standards=${byStandard.size} · below-cut=${standardsBelowCut}`);
+    console.log(`[Curriculum][${label}] ANSWER AGGREGATE: ${pass}/${total} (${(rate * 100).toFixed(1)}%) · standards=${byStandard.size} · below-cut=${standardsBelowCut}`);
     if (standardBreakdown.length > 0) {
       console.log(`[Curriculum][${label}] BY STANDARD: ${breakdownStr}`);
     }
-    const summary = ` [${label}: ${pass}/${total} ${(rate * 100).toFixed(1)}% · ${standardsBelowCut} std below cut]`;
-    return { pass, total, rate, summary, results, byStandard: standardBreakdown, standardsBelowCut };
+    const methoRate = methoQuestions > 0 ? methoPass / methoQuestions : 0;
+    if (methoQuestions > 0) {
+      console.log(`[Curriculum][${label}] METHODOLOGY: ${methoPass}/${methoQuestions} (${(methoRate * 100).toFixed(1)}%) questions had reasoning-keyword hit — tests HOW she thinks, not just WHAT she answers`);
+    }
+    const methoSuffix = methoQuestions > 0 ? ` · methodology ${methoPass}/${methoQuestions} ${(methoRate * 100).toFixed(0)}%` : '';
+    const summary = ` [${label}: ${pass}/${total} ${(rate * 100).toFixed(1)}% · ${standardsBelowCut} std below cut${methoSuffix}]`;
+    return { pass, total, rate, summary, results, byStandard: standardBreakdown, standardsBelowCut, methoQuestions, methoPass, methoRate };
   }
 
   /**
@@ -789,6 +804,56 @@ export class Curriculum {
     if (out.retention) score += 0.1;
     if (out.understanding) score += 0.1;
     out.score = Math.min(1, score);
+
+    // T25 — optional methodology test. Second generation pass with a
+    // methodology prompt that asks HOW Unity reasons about the
+    // concept, not just WHAT the answer is. Scored by keyword match
+    // against `methodology.keywords` — the reasoning-concept tokens
+    // the answer should contain. Separate from the fill-in-the-blank
+    // answer above. A K kid can't produce polished explanations; the
+    // cortex-pattern readout needs to contain the right conceptual
+    // shape (any keyword match = partial credit).
+    //
+    // Gate criteria (T25.c): aggregate answer rate ≥ 90% AND
+    // aggregate methodology rate ≥ 60% — methodology threshold is
+    // lower because K kids aren't verbal explainers, but it must be
+    // non-trivially above chance.
+    if (opts.methodology && typeof opts.methodology === 'object') {
+      const methoPrompt = String(opts.methodology.prompt || '');
+      const keywords = (opts.methodology.keywords || [])
+        .map(k => String(k || '').toLowerCase().trim()).filter(k => k.length > 0);
+      const minKeywords = typeof opts.methodology.minKeywords === 'number' ? opts.methodology.minKeywords : 1;
+      out.methodologyAnswer = '';
+      out.methodologyKeywordMatches = [];
+      out.methodologyScore = 0;
+      if (methoPrompt && keywords.length > 0) {
+        try {
+          if (typeof cluster.readInput === 'function') {
+            await cluster.readInput(methoPrompt, { ticks: 10 });
+          }
+          let methoGenerated = '';
+          try {
+            const semSeed = (typeof cluster.getSemanticReadout === 'function')
+              ? cluster.getSemanticReadout() : null;
+            const emitOpts = { maxEmissionTicks: maxTicks };
+            if (semSeed) emitOpts.injectStrength = 0.6;
+            const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
+            methoGenerated = (raw && typeof raw === 'string' ? raw : (raw?.text || '')) || '';
+          } catch { /* methodology generation failed — scored zero */ }
+          out.methodologyAnswer = methoGenerated;
+          const methoLower = methoGenerated.toLowerCase();
+          const matches = keywords.filter(k => methoLower.includes(k));
+          out.methodologyKeywordMatches = matches;
+          // Methodology score: fraction of keywords present, floored
+          // by minKeywords threshold (below that = zero credit).
+          if (matches.length >= minKeywords) {
+            out.methodologyScore = Math.min(1, matches.length / keywords.length);
+          } else {
+            out.methodologyScore = 0;
+          }
+        } catch { /* non-fatal */ }
+      }
+    }
 
     out.ms = Date.now() - startMs;
     return out;
@@ -2468,9 +2533,21 @@ export class Curriculum {
           // with an explicit blocking reason so grade advancement
           // halts. Substrate gate still reported in result.reason for
           // telemetry.
+          // Reviewer-grade enforcement — four criteria now:
+          //   (a) answer aggregate ≥ 90 %
+          //   (b) all sub-standards at/above cut
+          //   (c) external-reference items ≥ 85 %
+          //   (d) T25 methodology aggregate ≥ 60 % WHEN there are
+          //       methodology-tagged questions in the battery (lower
+          //       floor because K kids aren't verbal explainers, but
+          //       must be non-trivially above chance). If no question
+          //       in the battery has methodology fields yet, this
+          //       criterion is vacuously satisfied (0/0 counts as
+          //       pass — operator expands coverage over time).
           const AGGR_MIN = 0.90;
           const EXTERNAL_MIN = 0.85;
-          const EXTERNAL_SOURCES = new Set(['DIBELS-8-sample', 'AIMSweb-sample', 'Fountas-Pinnell-sample']);
+          const METHODOLOGY_MIN = 0.60;
+          const EXTERNAL_SOURCES = new Set(['DIBELS-8-sample', 'AIMSweb-sample', 'Fountas-Pinnell-sample', 'STAR-Early-Literacy-sample', 'STAR-Early-Math-sample', 'iReady-K-sample', 'iReady-K-Math-sample', 'NWEA-MAP-K-sample', 'NWEA-MAP-K-Math-sample', 'Heggerty-K-sample', 'PALS-K-sample', 'DRA-K-sample', 'Wilson-Fundations-K-sample', 'Lexia-Core5-K-sample', 'Woodcock-Johnson-K-sample', 'Stanford-Achievement-K-sample', 'Singapore-K-sample']);
           let extPass = 0, extTotal = 0;
           for (const r of (battery.results || [])) {
             if (EXTERNAL_SOURCES.has(r.source)) {
@@ -2480,15 +2557,21 @@ export class Curriculum {
           }
           const extRate = extTotal > 0 ? extPass / extTotal : 1;
           const blockers = [];
-          if (battery.rate < AGGR_MIN) blockers.push(`aggregate ${(battery.rate * 100).toFixed(1)}% < ${AGGR_MIN * 100}%`);
+          if (battery.rate < AGGR_MIN) blockers.push(`answer aggregate ${(battery.rate * 100).toFixed(1)}% < ${AGGR_MIN * 100}%`);
           if ((battery.standardsBelowCut || 0) > 0) blockers.push(`${battery.standardsBelowCut} sub-standard(s) below cut`);
           if (extTotal > 0 && extRate < EXTERNAL_MIN) blockers.push(`external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%) < ${EXTERNAL_MIN * 100}%`);
+          if ((battery.methoQuestions || 0) > 0 && (battery.methoRate || 0) < METHODOLOGY_MIN) {
+            blockers.push(`methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%) < ${METHODOLOGY_MIN * 100}%`);
+          }
           if (blockers.length > 0 && result.pass) {
             console.warn(`[Curriculum][${label}] ⛔ BATTERY BLOCKS advancement: ${blockers.join(' · ')}. Substrate passed but the educational test did not — grade NOT advanced.`);
             result.pass = false;
             result.reason = `BATTERY-BLOCKED: ${blockers.join('; ')} | ${result.reason || ''}`;
           } else if (blockers.length === 0) {
-            console.log(`[Curriculum][${label}] ✓ BATTERY PASS: aggregate ${(battery.rate * 100).toFixed(1)}% · all sub-standards at/above cut · external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%)`);
+            const methoTag = (battery.methoQuestions || 0) > 0
+              ? ` · methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%)`
+              : '';
+            console.log(`[Curriculum][${label}] ✓ BATTERY PASS: answer ${(battery.rate * 100).toFixed(1)}% · all sub-standards at/above cut · external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%)${methoTag}`);
           }
           // Stash the external-ref breakdown for downstream logging
           result.studentBattery.externalPass = extPass;
