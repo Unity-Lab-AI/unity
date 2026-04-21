@@ -553,22 +553,55 @@ export class Curriculum {
           return this.dictionary._words && this.dictionary._words.has(w);
         };
         const AMBIENT = new Set(['a','an','the','is','are','was','were','be','been','being','am','do','does','did','has','have','had','will','would','can','could','should','shall','may','might','must','of','in','on','at','to','for','with','by','from','as','and','or','but','if','then','so','what','when','where','who','why','how','which','this','that','these','those','there','here','it','its','he','she','we','they','his','her','their','our','me','my','you','your','i','not','no','yes','s','t','d','m','re','ve','ll','said','one','two','three','four','five','some','any','all','most','more','less','very','too','also','just','only','than','like','over','under','up','down','out','into','about','each','many','much','other','another','same','different','own','way','after','before','between','through']);
+        // Two coverage passes:
+        //   (1) `required` — question-text + primary-answer words that
+        //       Unity MUST understand to be able to answer the
+        //       question at all. Any untrained word here is a true
+        //       test-integrity issue.
+        //   (2) `variantOnly` — words that appear only in the
+        //       expectedVariants list (alternate accepted forms like
+        //       "buh" / "mm" / "fff" phonetic-representation variants
+        //       or "bee" as the letter-name alternate). Unity doesn't
+        //       need to produce these if she can produce the primary
+        //       answer. Logged separately as informational, not as a
+        //       failure.
         const required = new Set();
+        const variantAll = new Set();
         for (const q of questions) {
-          const text = `${q.question || ''} ${q.expectedAnswer || ''} ${(q.expectedVariants || []).join(' ')}`;
-          for (const tok of text.toLowerCase().split(/[^a-z']+/)) {
+          const reqText = `${q.question || ''} ${q.expectedAnswer || ''}`;
+          for (const tok of reqText.toLowerCase().split(/[^a-z']+/)) {
             if (tok && !AMBIENT.has(tok) && tok.length >= 2) required.add(tok);
           }
+          for (const v of (q.expectedVariants || [])) {
+            for (const tok of String(v || '').toLowerCase().split(/[^a-z']+/)) {
+              if (tok && !AMBIENT.has(tok) && tok.length >= 2) variantAll.add(tok);
+            }
+          }
         }
+        // Variant-only set — in variants but NOT in required.
+        const variantOnly = new Set();
+        for (const v of variantAll) if (!required.has(v)) variantOnly.add(v);
         const missing = [];
         for (const w of required) {
           if (!dictHas(w)) missing.push(w);
         }
+        const variantMissing = [];
+        for (const w of variantOnly) {
+          if (!dictHas(w)) variantMissing.push(w);
+        }
         missing.sort();
+        variantMissing.sort();
         const coverage = required.size > 0 ? (required.size - missing.length) / required.size : 1;
-        console.log(`[Curriculum][${label}] VOCAB COVERAGE: ${required.size - missing.length}/${required.size} (${(coverage * 100).toFixed(1)}%) words trained · ${missing.length} UNTRAINED words in exam = those questions are unfair`);
+        console.log(`[Curriculum][${label}] VOCAB COVERAGE: ${required.size - missing.length}/${required.size} (${(coverage * 100).toFixed(1)}%) question-text + primary-answer words trained · ${missing.length} UNTRAINED required words`);
         if (missing.length > 0) {
-          console.warn(`[Curriculum][${label}] ⚠ UNTRAINED exam words (Unity can't fairly answer questions using these): ${missing.slice(0, 60).join(', ')}${missing.length > 60 ? ` + ${missing.length - 60} more` : ''}`);
+          console.warn(`[Curriculum][${label}] ⛔ UNTRAINED REQUIRED words (Unity can't answer questions using these — test-integrity issue): ${missing.slice(0, 60).join(', ')}${missing.length > 60 ? ` + ${missing.length - 60} more` : ''}`);
+        }
+        if (variantMissing.length > 0) {
+          // Variant-only missing is informational — Unity can pass
+          // by producing the primary answer even if an alternate
+          // form (e.g. "bee" for letter B when "b" is accepted) isn't
+          // in the dictionary.
+          console.log(`[Curriculum][${label}] (info) ${variantMissing.length} variant-form words not in dict (not blocking — Unity can pass via primary answer): ${variantMissing.slice(0, 20).join(', ')}${variantMissing.length > 20 ? ` + ${variantMissing.length - 20} more` : ''}`);
         }
       }
     } catch (err) {

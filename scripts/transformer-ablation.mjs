@@ -75,8 +75,9 @@ function scoreAnswer(answer, expectedAnswer, expectedVariants) {
 
 // ─── Model backends (placeholders — wire as needed) ─────────────────
 
-// One-time health check caches whether brain-server is reachable so
-// per-question fetches don't each time out.
+// ─── Unity backend — POST /exam-answer on running brain-server ──────
+
+const UNITY_BASE_URL = process.env.UNITY_BASE_URL || 'http://localhost:7525';
 let _unityReachable = null;
 
 async function unityHealthCheck() {
@@ -84,43 +85,125 @@ async function unityHealthCheck() {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 1500);
-    const resp = await fetch('http://localhost:7525/health', { signal: ctrl.signal });
+    const resp = await fetch(`${UNITY_BASE_URL}/health`, { signal: ctrl.signal });
     clearTimeout(timer);
     _unityReachable = resp.ok;
   } catch {
     _unityReachable = false;
   }
   if (!_unityReachable) {
-    console.log('[ablation] Unity brain-server unreachable at localhost:7525 — Unity arm will return empty answers.');
+    console.log(`[ablation] Unity brain-server unreachable at ${UNITY_BASE_URL} — Unity arm will return empty answers. Start with \`start.bat\` then re-run.`);
+  } else {
+    console.log(`[ablation] Unity brain-server reachable at ${UNITY_BASE_URL} — Unity arm will POST /exam-answer.`);
   }
   return _unityReachable;
 }
 
 async function runUnity(question) {
-  // Placeholder — delegates to the running brain-server.js by posting
-  // the question over HTTP and reading the response. If the server
-  // isn't running, returns an empty answer fast (no fetch) so the
-  // harness completes in seconds instead of minutes.
-  //
-  // TO WIRE: run `start.bat` to bring brain-server up on port 7525,
-  // then this hits POST /process-text {text, ...} and reads the
-  // response.
+  // Delegates to the running brain-server.js via POST /exam-answer.
+  // If the server isn't running, returns an empty answer fast (no
+  // fetch) so the harness completes in seconds instead of minutes.
   if (!(await unityHealthCheck())) return '';
-  // Real question endpoint TBD — return empty for baseline zero.
-  return '';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30_000);
+    const resp = await fetch(`${UNITY_BASE_URL}/exam-answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return '';
+    const json = await resp.json();
+    return String(json.answer || '').trim();
+  } catch {
+    return '';
+  }
 }
 
-async function runTransformer(question, modelName, scale) {
-  // Placeholder — accepts any callable `generate(prompt)`. When wired,
-  // this calls the transformer backend (openai-compatible HTTP,
-  // transformers-js, or subprocess bridge) and returns the raw
-  // generated string. Scoring is identical to Unity's answer to keep
-  // the comparison clean.
-  //
-  // TO WIRE: set env OPENAI_BASE_URL to a local llama.cpp server,
-  // pick the model weights at the specified scale, and replace this
-  // stub with a real fetch call.
-  return '';
+// ─── Transformer backend — openai-compatible HTTP /v1/chat/completions ─
+//
+// Accepts any backend that speaks the OpenAI chat/completions wire
+// format. Tested targets:
+//   - llama.cpp server (--host 0.0.0.0 --port 8080)
+//   - LM Studio (Local Server mode)
+//   - Ollama (ollama serve + /v1/chat/completions endpoint)
+//   - vLLM
+//   - Any OpenAI-compatible gateway
+//
+// Env vars:
+//   OPENAI_BASE_URL  default http://localhost:8080/v1
+//   OPENAI_API_KEY   default "not-required" (local servers ignore it)
+//   OPENAI_MODEL     default "gpt2" — model id the backend exposes
+
+const TRANSFORMER_BASE_URL = process.env.OPENAI_BASE_URL || 'http://localhost:8080/v1';
+const TRANSFORMER_API_KEY = process.env.OPENAI_API_KEY || 'not-required';
+let _transformerReachable = null;
+
+async function transformerHealthCheck() {
+  if (_transformerReachable !== null) return _transformerReachable;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 1500);
+    const resp = await fetch(`${TRANSFORMER_BASE_URL}/models`, {
+      headers: { 'Authorization': `Bearer ${TRANSFORMER_API_KEY}` },
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    _transformerReachable = resp.ok;
+  } catch {
+    _transformerReachable = false;
+  }
+  if (!_transformerReachable) {
+    console.log(`[ablation] Transformer backend unreachable at ${TRANSFORMER_BASE_URL} — Transformer arm will return empty answers. Start any openai-compatible server (llama.cpp / LM Studio / Ollama / vLLM) on that port.`);
+  } else {
+    console.log(`[ablation] Transformer backend reachable at ${TRANSFORMER_BASE_URL}.`);
+  }
+  return _transformerReachable;
+}
+
+async function runTransformer(question, modelName /* unused */, scale /* unused */) {
+  // Posts to an openai-compatible /chat/completions endpoint.
+  // The question is framed as a simple kindergarten-exam prompt so
+  // the transformer is measured on the same task Unity is: give a
+  // short, direct answer. System prompt calibrates the reply format
+  // so scoring doesn't reject "The answer is b." when Unity said "b".
+  if (!(await transformerHealthCheck())) return '';
+  const model = process.env.OPENAI_MODEL || 'gpt2';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30_000);
+    const resp = await fetch(`${TRANSFORMER_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${TRANSFORMER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: 'You are a kindergarten student. Answer the question with a SHORT direct answer — usually one word. Do not explain. Do not add punctuation.' },
+          { role: 'user', content: question },
+        ],
+        temperature: 0.0,
+        max_tokens: 20,
+      }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return '';
+    const json = await resp.json();
+    const text = json?.choices?.[0]?.message?.content || '';
+    // Strip common wrappers ("The answer is X", "It's X.", trailing period)
+    return String(text || '')
+      .trim()
+      .replace(/^(the answer is|it is|it's|that is|that's)\s+/i, '')
+      .replace(/[.!?]+$/g, '')
+      .trim();
+  } catch {
+    return '';
+  }
 }
 
 // ─── Run one arm (Unity OR transformer) across the full bank ────────
