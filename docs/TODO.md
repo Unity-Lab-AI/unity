@@ -181,7 +181,51 @@ _(T19.d.2 unity-guide.html closed in Session 114.19bb.)_
 #### T19.f — Post-audit cross-verification
 
 - [ ] **T19.f.1** — Cross-check pass. Every equation claim in `brain-equations.html` vs `docs/EQUATIONS.md` vs `docs/ARCHITECTURE.md` vs the T19.a extract. Any drift means one of them is still wrong.
-- [ ] **T19.f.2** — Repo-wide grep for known-stale patterns: `tonicDrive = 0.8` (old default), `Vthresh = -55` (old value), `SIZE = 1000` (old total), `EMBED_DIM = 50` (old), `3-cluster` (old architecture), `REMAKE` (Session 114.12 artifact), `LanguageCortex` outside historical tombstone context. Any hit in a doc gets rewritten.
+- [ ] **T19.f.2** — Repo-wide grep for known-stale patterns: `tonicDrive = 0.8` (old default), `Vthresh = -55` (old value), `SIZE = 1000` (old total), `EMBED_DIM = 50` (old), `3-cluster` (old architecture), `REMAKE` (REMAKE-series artifact), `LanguageCortex` outside historical tombstone context. Any hit in a doc gets rewritten. _(Partial pass Session 114.19bc — stale refs in curriculum.js + persistence.js + remote-brain.js scrubbed; 109 "Gee" attributions + 136 "Session NNN" refs across 15 legacy files remain — tracked under T22.)_
+
+---
+
+### T22 — LAW #0 expanded-scope retroactive scrub (Gee 2026-04-20 → retroactive)
+
+**Source:** the LAW #0 2026-04-20 expansion bans task numbers + session numbers + the user's name from source code comments + batch/shell launchers. The expansion is already enforced on NEW code (every commit since 2026-04-20 is clean). Legacy code written BEFORE that date has ~245 in-code references that need retroactive scrubbing.
+
+**Scope survey (`grep -E '(Session \d{3}|per Gee|Gee 2026-)' *.js`):**
+
+| File | Count |
+|------|-------|
+| `js/brain/curriculum.js` | 121 (most — the curriculum ships a lot of comment-heavy teaching-method blocks) |
+| `server/brain-server.js` | 29 |
+| `js/brain/cluster.js` | 20 |
+| `js/brain/language-cortex.js` | 8 |
+| `js/brain/gpu-compute.js` | 7 |
+| `js/ui/brain-3d.js` | 6 |
+| `js/app.js` | 5 |
+| `js/brain/engine.js` | 4 |
+| `js/brain/drug-detector.js`, `js/brain/drug-scheduler.js`, `js/brain/embeddings.js` | 2 each |
+| `server/worker-pool.js`, `server/drug-rejections.js`, `js/brain/visual-cortex.js`, `js/brain/persona.js` | 1 each |
+
+**Rewrite pattern:**
+- `// T14.4 substrate — Gee 2026-04-14 per LAW 3...` → `// Cortex sub-region substrate — fractions-based region map...` (describe WHAT the code does, not WHO asked or WHEN)
+- `// Session 114.19az silent-cortex fix...` → `// Silent-cortex fix — ...` (describe the fix mechanism, not the session)
+- `// Per Gee's verbatim 2026-04-17 LAW 7...` → describe the actual constraint the LAW enforces inline, no attribution
+- `// T14.24 Session 102+104 — boost Hebbian...` → `// Boosted Hebbian learning rate + suppressed noise during curriculum teach...`
+
+**Sub-items (one per file, sized to avoid regression risk — each file is a self-contained commit):**
+
+- [ ] **T22.a** — `js/brain/curriculum.js` (121 refs, biggest file)
+- [ ] **T22.b** — `server/brain-server.js` (29 refs)
+- [ ] **T22.c** — `js/brain/cluster.js` (20 refs)
+- [ ] **T22.d** — `js/brain/language-cortex.js` (8 refs)
+- [ ] **T22.e** — `js/brain/gpu-compute.js` (7 refs)
+- [ ] **T22.f** — `js/ui/brain-3d.js` (6 refs)
+- [ ] **T22.g** — `js/app.js` (5 refs)
+- [ ] **T22.h** — `js/brain/engine.js` (4 refs)
+- [ ] **T22.i** — remaining single-digit files (drug-detector, drug-scheduler, embeddings, worker-pool, drug-rejections, visual-cortex, persona) in one commit
+- [ ] **T22.j** — bundle rebuild after all sub-items land; grep returns zero hits for `Session \d{3}` + `Gee 2026-` + `per Gee` across `*.js` outside `js/app.bundle.js`
+
+**T22 closure gate:** repo-wide grep returns clean on all three patterns across `*.js` (excluding `js/app.bundle.js` which is generated). `js/app.bundle.js` inherits cleanliness via `esbuild` rebuild from the clean sources.
+
+**T22 is safe to do incrementally** — each sub-item is a pure comment-scrub with zero runtime behavior change. Can land between feature commits without blocking other work.
 
 #### T19 execution rules
 

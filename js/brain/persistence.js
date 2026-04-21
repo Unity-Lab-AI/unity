@@ -77,16 +77,15 @@ const STORAGE_KEY = 'unity_brain_state';
 // boots clean with curriculum re-run instead of hydrating into an
 // inconsistent state that mixes T13 schema with T14 code.
 //
-// VERSION 5 (Session 114.12, 2026-04-17) — bumped to invalidate all
-// pre-REMAKE saves. Sessions 114.5-114.11 shipped 39 new equational
-// teaching methods + 98 production probes + the _teachHebbian
-// substrate fix + _gateHistory telemetry. Any v4 save has recurrent
-// matrix + cross-projection weights trained against the OLD ELA-K
-// _teachVocabList + _teachSentenceList word-list pattern plus the
-// pre-fix free↔sem broken binding. Loading that state would
-// contaminate the Session 114.6 direct-pattern teaching. V5
-// rejection forces clean boot with full curriculum re-run under the
-// correct equational methods.
+// VERSION 5 — bumped to invalidate older pre-equational-rebuild saves.
+// The equational rebuild shipped 39 new teaching methods + 98
+// production probes + the _teachHebbian substrate fix + _gateHistory
+// telemetry. Any v4 save has recurrent matrix + cross-projection
+// weights trained against the OLD ELA-K _teachVocabList +
+// _teachSentenceList word-list pattern plus the pre-fix free↔sem
+// broken binding. Loading that state would contaminate the current
+// direct-pattern teaching. V5 rejection forces a clean boot with full
+// curriculum re-run under the current equational methods.
 const VERSION = 5;
 
 export class BrainPersistence {

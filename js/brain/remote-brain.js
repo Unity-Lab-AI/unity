@@ -99,13 +99,14 @@ export class RemoteBrain extends EventEmitter {
     // websocket state messages. This cluster is for local-only
     // languageCortex.generate calls (brain-3d commentary popups,
     // /think debug, welcome speech).
-    // T13.7.8 — bumped from 300 → 1500 neurons (browser is more
-    // resource-constrained than server, so smaller than the server's
-    // 2000). 1500 neurons × 15% connectivity = ~340K synapses, deep
-    // enough for measurable Hebbian basins. Language region starts at
-    // halfway = 750, leaves 750 neurons for language with groupSize=15
-    // at EMBED_DIM=50. Hebbian-trained on persona corpus when
-    // trainPersonaHebbian is called below. Exposed via this.clusters.cortex.
+    // Browser-side fallback cortex at 1500 neurons (smaller than the
+    // server's 2000 because the browser is more resource-constrained).
+    // 1500 neurons × 15% connectivity = ~340K synapses, deep enough
+    // for measurable Hebbian basins. Hebbian-trained on persona corpus
+    // when trainPersonaHebbian is called below. Exposed via
+    // this.clusters.cortex. (Server tier runs the full EMBED_DIM=300
+    // GloVe pipeline; the browser fallback uses a smaller groupSize so
+    // the same embedding dim tiles into fewer neurons.)
     const langCortexSize = 1500;
     this._localCortex = new NeuronCluster('cortex', langCortexSize, {
       tonicDrive: 14,
