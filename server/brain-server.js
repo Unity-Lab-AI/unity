@@ -4988,6 +4988,65 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
+  // Exam-answer endpoint. Takes a single question string, runs it
+  // through the brain's question → answer path (same pipeline a chat
+  // message would use, but without episodic memory writes or the
+  // conversation history append), returns just the answer text.
+  // Used by scripts/transformer-ablation.mjs to compare Unity's
+  // gate-probe answers head-to-head against a transformer arm on
+  // identical held-out EXAM_BANKS.
+  //
+  // Usage:
+  //   POST /exam-answer  { "question": "what comes after a?" }
+  //   → { "answer": "b", "ms": 142 }
+  if (req.url === '/exam-answer' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk.toString(); if (body.length > 100000) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const parsed = JSON.parse(body || '{}');
+        const question = typeof parsed.question === 'string' ? parsed.question.trim() : '';
+        if (!question) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'question required' }));
+          return;
+        }
+        const t0 = Date.now();
+        let answer = '';
+        try {
+          if (brain && typeof brain.processAndRespond === 'function') {
+            // Use a synthetic ablation user id so episodic memory
+            // writes from this call get scoped + don't pollute real
+            // user conversation histories.
+            const result = await brain.processAndRespond(question, 'ablation-harness', { suppressEpisode: true });
+            if (result && typeof result === 'object') {
+              answer = result.response || result.text || result.answer || '';
+            } else if (typeof result === 'string') {
+              answer = result;
+            }
+          } else if (brain && brain.innerVoice && brain.innerVoice.languageCortex) {
+            // Fallback: direct languageCortex generate if processAndRespond
+            // isn't available.
+            const emb = brain.sharedEmbeddings ? brain.sharedEmbeddings.getEmbedding(question) : null;
+            if (emb && brain.clusters && brain.clusters.cortex) {
+              brain.clusters.cortex._lastUserInputEmbedding = emb;
+            }
+            answer = brain.innerVoice.languageCortex.generate(brain.dictionary, 0.7, 0.7, { cortexCluster: brain.clusters?.cortex }) || '';
+          }
+        } catch (err) {
+          console.warn('[exam-answer] generation failed:', err?.message || err);
+          answer = '';
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ answer: String(answer || '').trim(), ms: Date.now() - t0 }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
   // Grade-signoff endpoint. When the operator has personally verified
   // the brain passed a grade on localhost via methodology + reasoning
   // + thinking + talking + listening + reading, the operator POSTs to

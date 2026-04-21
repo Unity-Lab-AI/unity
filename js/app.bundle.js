@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "e1e32a2e-2200";
+var BUILD = "495f427d-2ace";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -8290,7 +8290,91 @@ var ELA_KINDERGARTEN_EXAM = [
   { q: "what letter comes before z?", a: "y", variants: ["y"], standard: "K.RF.1d", difficulty: 2, source: "authored" },
   { q: "what is the first letter of the alphabet?", a: "a", variants: ["a"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
   { q: "what is the last letter of the alphabet?", a: "z", variants: ["z"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
-  { q: "how many letters are in the alphabet?", a: "26", variants: ["26", "twenty six", "twenty-six"], standard: "K.RF.1d", difficulty: 2, source: "authored" }
+  { q: "how many letters are in the alphabet?", a: "26", variants: ["26", "twenty six", "twenty-six"], standard: "K.RF.1d", difficulty: 2, source: "authored" },
+  // ═══ External-reference items (T23.a.9 expansion) ═══════════════════
+  // Sample-equivalent items matching the published K-ELA assessment
+  // format at sub-standard level. Not the actual proprietary test
+  // forms — fair-use equivalents testing the same standards at the
+  // same K developmental level. Listed by source org.
+  // STAR Early Literacy (Renaissance Learning) — letter naming + phoneme
+  { q: "name this letter: A", a: "a", variants: ["a"], standard: "K.RF.3a", difficulty: 1, source: "STAR-Early-Literacy-sample" },
+  { q: "name this letter: M", a: "m", variants: ["m"], standard: "K.RF.3a", difficulty: 1, source: "STAR-Early-Literacy-sample" },
+  { q: "name this letter: T", a: "t", variants: ["t"], standard: "K.RF.3a", difficulty: 1, source: "STAR-Early-Literacy-sample" },
+  { q: "name this letter: H", a: "h", variants: ["h"], standard: "K.RF.3a", difficulty: 1, source: "STAR-Early-Literacy-sample" },
+  { q: "name this letter: R", a: "r", variants: ["r"], standard: "K.RF.3a", difficulty: 1, source: "STAR-Early-Literacy-sample" },
+  { q: "tell me the sound of the letter t", a: "t", variants: ["t", "tuh"], standard: "K.RF.3a", difficulty: 1, source: "STAR-Early-Literacy-sample" },
+  { q: "tell me the sound of the letter n", a: "n", variants: ["n", "nuh"], standard: "K.RF.3a", difficulty: 1, source: "STAR-Early-Literacy-sample" },
+  { q: "tell me the sound of the letter r", a: "r", variants: ["r", "ruh"], standard: "K.RF.3a", difficulty: 1, source: "STAR-Early-Literacy-sample" },
+  { q: "tell me the sound of the letter b", a: "b", variants: ["b", "buh"], standard: "K.RF.3a", difficulty: 1, source: "STAR-Early-Literacy-sample" },
+  { q: "what word starts with the same sound as bat: ball or cat?", a: "ball", variants: ["ball"], standard: "K.RF.2d", difficulty: 2, source: "STAR-Early-Literacy-sample" },
+  { q: "what word starts with the same sound as sun: sat or mat?", a: "sat", variants: ["sat"], standard: "K.RF.2d", difficulty: 2, source: "STAR-Early-Literacy-sample" },
+  { q: "read this word: man", a: "man", variants: ["man"], standard: "K.RF.3d", difficulty: 1, source: "STAR-Early-Literacy-sample" },
+  { q: "read this word: fan", a: "fan", variants: ["fan"], standard: "K.RF.3d", difficulty: 1, source: "STAR-Early-Literacy-sample" },
+  { q: "read this word: pig", a: "pig", variants: ["pig"], standard: "K.RF.3d", difficulty: 1, source: "STAR-Early-Literacy-sample" },
+  // iReady K diagnostic (Curriculum Associates) — phonological + phonics
+  { q: "which word rhymes with sit: dog or pit?", a: "pit", variants: ["pit"], standard: "K.RF.2a", difficulty: 1, source: "iReady-K-sample" },
+  { q: "which word rhymes with pan: man or top?", a: "man", variants: ["man"], standard: "K.RF.2a", difficulty: 1, source: "iReady-K-sample" },
+  { q: "which word rhymes with bed: dog or red?", a: "red", variants: ["red"], standard: "K.RF.2a", difficulty: 1, source: "iReady-K-sample" },
+  { q: "clap the syllables in the word butterfly, how many?", a: "three", variants: ["three", "3"], standard: "K.RF.2b", difficulty: 2, source: "iReady-K-sample" },
+  { q: "clap the syllables in the word apple, how many?", a: "two", variants: ["two", "2"], standard: "K.RF.2b", difficulty: 2, source: "iReady-K-sample" },
+  { q: "if I say /b/ /a/ /g/ what word is that?", a: "bag", variants: ["bag"], standard: "K.RF.2e", difficulty: 2, source: "iReady-K-sample" },
+  { q: "if I say /s/ /i/ /t/ what word is that?", a: "sit", variants: ["sit"], standard: "K.RF.2e", difficulty: 2, source: "iReady-K-sample" },
+  { q: "if I say /j/ /o/ /b/ what word is that?", a: "job", variants: ["job"], standard: "K.RF.2e", difficulty: 2, source: "iReady-K-sample" },
+  { q: "what is the middle sound in the word pig?", a: "i", variants: ["i", "ih"], standard: "K.RF.2d", difficulty: 2, source: "iReady-K-sample" },
+  { q: "what is the middle sound in the word cup?", a: "u", variants: ["u", "uh"], standard: "K.RF.2d", difficulty: 2, source: "iReady-K-sample" },
+  { q: "what is the middle sound in the word hot?", a: "o", variants: ["o", "ah"], standard: "K.RF.2d", difficulty: 2, source: "iReady-K-sample" },
+  { q: "read this word: not", a: "not", variants: ["not"], standard: "K.RF.3d", difficulty: 1, source: "iReady-K-sample" },
+  { q: "read this word: let", a: "let", variants: ["let"], standard: "K.RF.3d", difficulty: 1, source: "iReady-K-sample" },
+  { q: "read this word: mud", a: "mud", variants: ["mud"], standard: "K.RF.3d", difficulty: 1, source: "iReady-K-sample" },
+  // NWEA MAP Growth K — letter ID + sight words
+  { q: "what is this letter: j", a: "j", variants: ["j"], standard: "K.RF.3a", difficulty: 1, source: "NWEA-MAP-K-sample" },
+  { q: "what is this letter: w", a: "w", variants: ["w"], standard: "K.RF.3a", difficulty: 1, source: "NWEA-MAP-K-sample" },
+  { q: "what is this letter: q", a: "q", variants: ["q"], standard: "K.RF.3a", difficulty: 2, source: "NWEA-MAP-K-sample" },
+  { q: "read: is", a: "is", variants: ["is"], standard: "K.RF.3c", difficulty: 1, source: "NWEA-MAP-K-sample" },
+  { q: "read: was", a: "was", variants: ["was"], standard: "K.RF.3c", difficulty: 2, source: "NWEA-MAP-K-sample" },
+  { q: "read: are", a: "are", variants: ["are"], standard: "K.RF.3c", difficulty: 2, source: "NWEA-MAP-K-sample" },
+  { q: "read: have", a: "have", variants: ["have"], standard: "K.RF.3c", difficulty: 2, source: "NWEA-MAP-K-sample" },
+  { q: "read: said", a: "said", variants: ["said"], standard: "K.RF.3c", difficulty: 2, source: "NWEA-MAP-K-sample" },
+  // Heggerty Phonemic Awareness K — phoneme isolation + manipulation
+  { q: "say the first sound in mom", a: "m", variants: ["m", "mm"], standard: "K.RF.2d", difficulty: 1, source: "Heggerty-K-sample" },
+  { q: "say the first sound in fan", a: "f", variants: ["f", "fff"], standard: "K.RF.2d", difficulty: 1, source: "Heggerty-K-sample" },
+  { q: "say the first sound in tip", a: "t", variants: ["t", "tuh"], standard: "K.RF.2d", difficulty: 1, source: "Heggerty-K-sample" },
+  { q: "say the last sound in car", a: "r", variants: ["r", "ruh"], standard: "K.RF.2d", difficulty: 2, source: "Heggerty-K-sample" },
+  { q: "say the last sound in bus", a: "s", variants: ["s", "sss"], standard: "K.RF.2d", difficulty: 2, source: "Heggerty-K-sample" },
+  { q: "say the last sound in wish", a: "sh", variants: ["sh", "s"], standard: "K.RF.2d", difficulty: 3, source: "Heggerty-K-sample" },
+  { q: "segment the word cat into sounds", a: "c-a-t", variants: ["c-a-t", "c a t", "k a t"], standard: "K.RF.2e", difficulty: 2, source: "Heggerty-K-sample" },
+  { q: "segment the word sun into sounds", a: "s-u-n", variants: ["s-u-n", "s u n"], standard: "K.RF.2e", difficulty: 2, source: "Heggerty-K-sample" },
+  // PALS-K (Phonological Awareness Literacy Screening) — rhyme + letter
+  { q: "which word does not rhyme with pot: lot, hop, or got?", a: "hop", variants: ["hop"], standard: "K.RF.2a", difficulty: 2, source: "PALS-K-sample" },
+  { q: "which letter is between l and n in the alphabet?", a: "m", variants: ["m"], standard: "K.RF.1d", difficulty: 2, source: "PALS-K-sample" },
+  { q: "which letter is between r and t?", a: "s", variants: ["s"], standard: "K.RF.1d", difficulty: 2, source: "PALS-K-sample" },
+  { q: "which letter comes right before d?", a: "c", variants: ["c"], standard: "K.RF.1d", difficulty: 1, source: "PALS-K-sample" },
+  { q: "which letter comes right after p?", a: "q", variants: ["q"], standard: "K.RF.1d", difficulty: 2, source: "PALS-K-sample" },
+  // DRA K (Developmental Reading Assessment) — emergent reading
+  { q: "what do you call the front of a book?", a: "cover", variants: ["cover", "front cover"], standard: "K.RF.1a", difficulty: 1, source: "DRA-K-sample" },
+  { q: "where do you start reading on a page, at the top or the bottom?", a: "top", variants: ["top"], standard: "K.RF.1a", difficulty: 1, source: "DRA-K-sample" },
+  { q: "what do we call the title of a book?", a: "title", variants: ["title", "name"], standard: "K.RF.1a", difficulty: 2, source: "DRA-K-sample" },
+  // Wilson Fundations K — sight words + CVC
+  { q: "read the word: him", a: "him", variants: ["him"], standard: "K.RF.3c", difficulty: 1, source: "Wilson-Fundations-K-sample" },
+  { q: "read the word: her", a: "her", variants: ["her"], standard: "K.RF.3c", difficulty: 1, source: "Wilson-Fundations-K-sample" },
+  { q: "read the word: on", a: "on", variants: ["on"], standard: "K.RF.3c", difficulty: 1, source: "Wilson-Fundations-K-sample" },
+  { q: "read the word: of", a: "of", variants: ["of"], standard: "K.RF.3c", difficulty: 1, source: "Wilson-Fundations-K-sample" },
+  { q: "read this nonsense word (blend it): jop", a: "jop", variants: ["jop"], standard: "K.RF.3b", difficulty: 2, source: "Wilson-Fundations-K-sample" },
+  { q: "read this nonsense word: vib", a: "vib", variants: ["vib"], standard: "K.RF.3b", difficulty: 2, source: "Wilson-Fundations-K-sample" },
+  { q: "read this nonsense word: ped", a: "ped", variants: ["ped"], standard: "K.RF.3b", difficulty: 2, source: "Wilson-Fundations-K-sample" },
+  // Lexia Core5 K — phonics application
+  { q: "read this word family: bat, cat, hat. what is the same?", a: "at", variants: ["at", "at ending", "at sound"], standard: "K.RF.2c", difficulty: 2, source: "Lexia-Core5-K-sample" },
+  { q: "read this word family: pig, big, dig. what is the same?", a: "ig", variants: ["ig"], standard: "K.RF.2c", difficulty: 2, source: "Lexia-Core5-K-sample" },
+  { q: "read this word family: sun, run, fun. what is the same?", a: "un", variants: ["un"], standard: "K.RF.2c", difficulty: 2, source: "Lexia-Core5-K-sample" },
+  // Expanded Fountas-Pinnell sight words
+  { q: "read this word: at", a: "at", variants: ["at"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: do", a: "do", variants: ["do"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: for", a: "for", variants: ["for"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: am", a: "am", variants: ["am"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: no", a: "no", variants: ["no"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: not", a: "not", variants: ["not"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: yes", a: "yes", variants: ["yes"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: all", a: "all", variants: ["all"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" }
 ];
 var MATH_KINDERGARTEN_EXAM = [
   // K.CC.1 Count to 100 by ones and tens
@@ -8414,7 +8498,70 @@ var MATH_KINDERGARTEN_EXAM = [
   // K.G.5 Model shapes in the world by building them
   { q: "if you put two triangles together, what can you make?", a: "square", variants: ["square", "rectangle", "diamond"], standard: "K.G.5", difficulty: 3, source: "authored" },
   // K.G.6 Compose simple shapes to form larger shapes
-  { q: "what do you get when you put two squares together side by side?", a: "rectangle", variants: ["rectangle"], standard: "K.G.6", difficulty: 3, source: "authored" }
+  { q: "what do you get when you put two squares together side by side?", a: "rectangle", variants: ["rectangle"], standard: "K.G.6", difficulty: 3, source: "authored" },
+  // ═══ External-reference items (T23.a.9 expansion) ═══════════════════
+  // Sample-equivalent items matching the published K-Math assessment
+  // format at sub-standard level. Not the actual proprietary test
+  // forms — fair-use equivalents testing the same standards.
+  // iReady K Math diagnostic (Curriculum Associates)
+  { q: "count these: 1 2 3 4 5 6. what number?", a: "six", variants: ["six", "6"], standard: "K.CC.4", difficulty: 1, source: "iReady-K-Math-sample" },
+  { q: "count these dots: 7 dots. what number?", a: "seven", variants: ["seven", "7"], standard: "K.CC.4", difficulty: 1, source: "iReady-K-Math-sample" },
+  { q: "what number comes right before 4?", a: "three", variants: ["three", "3"], standard: "K.CC.2", difficulty: 1, source: "iReady-K-Math-sample" },
+  { q: "what number comes right before 10?", a: "nine", variants: ["nine", "9"], standard: "K.CC.2", difficulty: 1, source: "iReady-K-Math-sample" },
+  { q: "if you have 2 cookies and eat 1, how many left?", a: "one", variants: ["one", "1"], standard: "K.OA.1", difficulty: 1, source: "iReady-K-Math-sample" },
+  { q: "if you have 4 balloons and 2 pop, how many left?", a: "two", variants: ["two", "2"], standard: "K.OA.1", difficulty: 1, source: "iReady-K-Math-sample" },
+  { q: "if you have 3 birds and 2 more fly to you, how many?", a: "five", variants: ["five", "5"], standard: "K.OA.1", difficulty: 1, source: "iReady-K-Math-sample" },
+  { q: "1 + 2 = ?", a: "three", variants: ["three", "3"], standard: "K.OA.5", difficulty: 1, source: "iReady-K-Math-sample" },
+  { q: "3 + 2 = ?", a: "five", variants: ["five", "5"], standard: "K.OA.5", difficulty: 1, source: "iReady-K-Math-sample" },
+  { q: "4 - 1 = ?", a: "three", variants: ["three", "3"], standard: "K.OA.5", difficulty: 1, source: "iReady-K-Math-sample" },
+  { q: "count by tens: 10, 20, 30. what comes next?", a: "forty", variants: ["forty", "40"], standard: "K.CC.1", difficulty: 2, source: "iReady-K-Math-sample" },
+  // STAR Early Math (Renaissance Learning)
+  { q: "which group has more: 3 or 5?", a: "five", variants: ["five", "5"], standard: "K.CC.6", difficulty: 1, source: "STAR-Early-Math-sample" },
+  { q: "which group has fewer: 2 or 7?", a: "two", variants: ["two", "2"], standard: "K.CC.6", difficulty: 1, source: "STAR-Early-Math-sample" },
+  { q: "how many sides does a triangle have?", a: "three", variants: ["three", "3"], standard: "K.G.4", difficulty: 1, source: "STAR-Early-Math-sample" },
+  { q: "how many corners does a square have?", a: "four", variants: ["four", "4"], standard: "K.G.4", difficulty: 1, source: "STAR-Early-Math-sample" },
+  { q: "how many corners does a triangle have?", a: "three", variants: ["three", "3"], standard: "K.G.4", difficulty: 1, source: "STAR-Early-Math-sample" },
+  { q: "which is longer, a pencil or a crayon?", a: "pencil", variants: ["pencil"], standard: "K.MD.1", difficulty: 2, source: "STAR-Early-Math-sample" },
+  { q: "count by ones to twelve", a: "twelve", variants: ["twelve", "12"], standard: "K.CC.1", difficulty: 2, source: "STAR-Early-Math-sample" },
+  // NWEA MAP Growth K Math
+  { q: "what number is 1 more than 5?", a: "six", variants: ["six", "6"], standard: "K.CC.2", difficulty: 1, source: "NWEA-MAP-K-Math-sample" },
+  { q: "what number is 1 more than 8?", a: "nine", variants: ["nine", "9"], standard: "K.CC.2", difficulty: 1, source: "NWEA-MAP-K-Math-sample" },
+  { q: "what number is 1 less than 6?", a: "five", variants: ["five", "5"], standard: "K.CC.2", difficulty: 1, source: "NWEA-MAP-K-Math-sample" },
+  { q: "what number is 1 less than 10?", a: "nine", variants: ["nine", "9"], standard: "K.CC.2", difficulty: 1, source: "NWEA-MAP-K-Math-sample" },
+  { q: "how many in total: 2 apples + 3 apples?", a: "five", variants: ["five", "5"], standard: "K.OA.1", difficulty: 1, source: "NWEA-MAP-K-Math-sample" },
+  { q: "how many in total: 4 + 3?", a: "seven", variants: ["seven", "7"], standard: "K.OA.1", difficulty: 1, source: "NWEA-MAP-K-Math-sample" },
+  { q: "6 - 2 = ?", a: "four", variants: ["four", "4"], standard: "K.OA.1", difficulty: 1, source: "NWEA-MAP-K-Math-sample" },
+  { q: "7 - 3 = ?", a: "four", variants: ["four", "4"], standard: "K.OA.1", difficulty: 1, source: "NWEA-MAP-K-Math-sample" },
+  { q: "which number sentence shows 5 + 2?", a: "seven", variants: ["seven", "7", "5+2=7"], standard: "K.OA.1", difficulty: 2, source: "NWEA-MAP-K-Math-sample" },
+  // Woodcock-Johnson Achievement K Math
+  { q: "point to the number that shows five things", a: "5", variants: ["5", "five"], standard: "K.CC.3", difficulty: 1, source: "Woodcock-Johnson-K-sample" },
+  { q: "point to the number that shows eight things", a: "8", variants: ["8", "eight"], standard: "K.CC.3", difficulty: 1, source: "Woodcock-Johnson-K-sample" },
+  { q: "write the numeral for ten", a: "10", variants: ["10", "ten"], standard: "K.CC.3", difficulty: 1, source: "Woodcock-Johnson-K-sample" },
+  { q: "write the numeral for twelve", a: "12", variants: ["12", "twelve"], standard: "K.CC.3", difficulty: 2, source: "Woodcock-Johnson-K-sample" },
+  { q: "count backwards from 5", a: "one", variants: ["one", "1", "5 4 3 2 1"], standard: "K.CC.2", difficulty: 2, source: "Woodcock-Johnson-K-sample" },
+  // Expanded AIMSweb Plus K Math
+  { q: "what is 2 plus 2?", a: "four", variants: ["four", "4"], standard: "K.OA.1", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "what is 5 plus 2?", a: "seven", variants: ["seven", "7"], standard: "K.OA.1", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "what is 6 plus 3?", a: "nine", variants: ["nine", "9"], standard: "K.OA.1", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "what is 7 minus 2?", a: "five", variants: ["five", "5"], standard: "K.OA.1", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "what is 9 minus 4?", a: "five", variants: ["five", "5"], standard: "K.OA.1", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "count: one two three four. what comes next?", a: "five", variants: ["five", "5"], standard: "K.CC.2", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "count: six seven eight. what comes next?", a: "nine", variants: ["nine", "9"], standard: "K.CC.2", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "is 3 greater than, less than, or equal to 7?", a: "less", variants: ["less", "less than"], standard: "K.CC.7", difficulty: 2, source: "AIMSweb-sample" },
+  { q: "is 8 greater than, less than, or equal to 5?", a: "greater", variants: ["greater", "greater than", "more"], standard: "K.CC.7", difficulty: 2, source: "AIMSweb-sample" },
+  // Stanford Achievement Test K Math
+  { q: "how many sides does a circle have?", a: "none", variants: ["none", "0", "zero", "no sides"], standard: "K.G.4", difficulty: 2, source: "Stanford-Achievement-K-sample" },
+  { q: "a cube has how many sides?", a: "six", variants: ["six", "6"], standard: "K.G.4", difficulty: 3, source: "Stanford-Achievement-K-sample" },
+  { q: "identify the shape: a round object like a ball", a: "sphere", variants: ["sphere", "circle", "ball", "round"], standard: "K.G.2", difficulty: 2, source: "Stanford-Achievement-K-sample" },
+  { q: "count the dots: 4 dots on one side + 2 on the other", a: "six", variants: ["six", "6"], standard: "K.CC.5", difficulty: 2, source: "Stanford-Achievement-K-sample" },
+  // Numbers & Operations in Base Ten (K.NBT) external
+  { q: "if you have ten and five more, how many do you have?", a: "fifteen", variants: ["fifteen", "15"], standard: "K.NBT.1", difficulty: 2, source: "iReady-K-Math-sample" },
+  { q: "break apart 14 into ten and ones \u2014 how many ones?", a: "four", variants: ["four", "4"], standard: "K.NBT.1", difficulty: 3, source: "iReady-K-Math-sample" },
+  { q: "break apart 17 into ten and ones \u2014 how many ones?", a: "seven", variants: ["seven", "7"], standard: "K.NBT.1", difficulty: 3, source: "iReady-K-Math-sample" },
+  // Word problem sums (K.OA.2 via Singapore + other benchmarks)
+  { q: "ana has 3 stickers and gets 4 more, how many total?", a: "seven", variants: ["seven", "7"], standard: "K.OA.2", difficulty: 2, source: "Singapore-K-sample" },
+  { q: "a boy had 5 marbles and lost 2, how many left?", a: "three", variants: ["three", "3"], standard: "K.OA.2", difficulty: 2, source: "Singapore-K-sample" },
+  { q: "there are 4 red fish and 3 blue fish, how many fish?", a: "seven", variants: ["seven", "7"], standard: "K.OA.2", difficulty: 2, source: "Singapore-K-sample" }
 ];
 var SCIENCE_KINDERGARTEN_EXAM = [
   // K-PS2-1/2 — Motion and stability: forces
@@ -9709,21 +9856,37 @@ var Curriculum = class _Curriculum {
         };
         const AMBIENT = /* @__PURE__ */ new Set(["a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "am", "do", "does", "did", "has", "have", "had", "will", "would", "can", "could", "should", "shall", "may", "might", "must", "of", "in", "on", "at", "to", "for", "with", "by", "from", "as", "and", "or", "but", "if", "then", "so", "what", "when", "where", "who", "why", "how", "which", "this", "that", "these", "those", "there", "here", "it", "its", "he", "she", "we", "they", "his", "her", "their", "our", "me", "my", "you", "your", "i", "not", "no", "yes", "s", "t", "d", "m", "re", "ve", "ll", "said", "one", "two", "three", "four", "five", "some", "any", "all", "most", "more", "less", "very", "too", "also", "just", "only", "than", "like", "over", "under", "up", "down", "out", "into", "about", "each", "many", "much", "other", "another", "same", "different", "own", "way", "after", "before", "between", "through"]);
         const required = /* @__PURE__ */ new Set();
+        const variantAll = /* @__PURE__ */ new Set();
         for (const q of questions) {
-          const text = `${q.question || ""} ${q.expectedAnswer || ""} ${(q.expectedVariants || []).join(" ")}`;
-          for (const tok of text.toLowerCase().split(/[^a-z']+/)) {
+          const reqText = `${q.question || ""} ${q.expectedAnswer || ""}`;
+          for (const tok of reqText.toLowerCase().split(/[^a-z']+/)) {
             if (tok && !AMBIENT.has(tok) && tok.length >= 2) required.add(tok);
           }
+          for (const v of q.expectedVariants || []) {
+            for (const tok of String(v || "").toLowerCase().split(/[^a-z']+/)) {
+              if (tok && !AMBIENT.has(tok) && tok.length >= 2) variantAll.add(tok);
+            }
+          }
         }
+        const variantOnly = /* @__PURE__ */ new Set();
+        for (const v of variantAll) if (!required.has(v)) variantOnly.add(v);
         const missing = [];
         for (const w of required) {
           if (!dictHas(w)) missing.push(w);
         }
+        const variantMissing = [];
+        for (const w of variantOnly) {
+          if (!dictHas(w)) variantMissing.push(w);
+        }
         missing.sort();
+        variantMissing.sort();
         const coverage = required.size > 0 ? (required.size - missing.length) / required.size : 1;
-        console.log(`[Curriculum][${label}] VOCAB COVERAGE: ${required.size - missing.length}/${required.size} (${(coverage * 100).toFixed(1)}%) words trained \xB7 ${missing.length} UNTRAINED words in exam = those questions are unfair`);
+        console.log(`[Curriculum][${label}] VOCAB COVERAGE: ${required.size - missing.length}/${required.size} (${(coverage * 100).toFixed(1)}%) question-text + primary-answer words trained \xB7 ${missing.length} UNTRAINED required words`);
         if (missing.length > 0) {
-          console.warn(`[Curriculum][${label}] \u26A0 UNTRAINED exam words (Unity can't fairly answer questions using these): ${missing.slice(0, 60).join(", ")}${missing.length > 60 ? ` + ${missing.length - 60} more` : ""}`);
+          console.warn(`[Curriculum][${label}] \u26D4 UNTRAINED REQUIRED words (Unity can't answer questions using these \u2014 test-integrity issue): ${missing.slice(0, 60).join(", ")}${missing.length > 60 ? ` + ${missing.length - 60} more` : ""}`);
+        }
+        if (variantMissing.length > 0) {
+          console.log(`[Curriculum][${label}] (info) ${variantMissing.length} variant-form words not in dict (not blocking \u2014 Unity can pass via primary answer): ${variantMissing.slice(0, 20).join(", ")}${variantMissing.length > 20 ? ` + ${variantMissing.length - 20} more` : ""}`);
         }
       }
     } catch (err) {
