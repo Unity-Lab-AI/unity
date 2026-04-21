@@ -1379,18 +1379,139 @@ export const EXAM_BANKS = {
   'life/kindergarten': toProbeShape(LIFE_KINDERGARTEN_EXAM),
 };
 
-// Training-side banks — reserved for future expansion. The current
-// teaching methods in curriculum.js generate their own exposure
-// content from feature-vector combination transforms; as T23.b.2
-// overlap-check gets wired, the TRAIN_BANKS side becomes the
-// authoritative source for any question-format exposure content used
-// during teach. For now, empty lets the held-out check report the
-// right counts.
+// Training-side banks — the LLM-analog curriculum. These Q→A pairs
+// drive `_teachQABinding` in curriculum.js: read the question
+// through the ventral visual→letter→phon→sem path, overwrite motor
+// with the target answer, fire `_teachHebbian` to carve the
+// sem→motor cross-projection. Distinct from EXAM_BANKS — same
+// sub-standards, same patterns, different specific content — so a
+// pass on the held-out exam reflects learned generalization rather
+// than memorization.
+//
+// Structure matches EXAM_BANKS: {q, a, variants, standard} — no
+// methodology field required (training doesn't test reasoning, it
+// carves input→output patterns). Per-cell size ~40-80 training
+// pairs covering the most common K sub-standards. Expansion is
+// ongoing.
+//
+// Overlap check at curriculum startup (`trainExamOverlap`) verifies
+// train ∩ exam = ∅ per cell.
+
+const toTrainShape = (bank) => bank.map(e => ({
+  question: e.q,
+  expectedAnswer: e.a,
+  expectedVariants: e.variants || [e.a],
+  standard: e.standard || 'unspecified',
+}));
+
+// ─── K-ELA training pairs (DISTINCT from ELA_KINDERGARTEN_EXAM) ──────
+
+const ELA_KINDERGARTEN_TRAIN = [
+  // K.RF.1d alphabet sequence — different letters than exam
+  { q: 'what letter comes after c?', a: 'd', variants: ['d'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after d?', a: 'e', variants: ['e'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after e?', a: 'f', variants: ['f'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after f?', a: 'g', variants: ['g'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after g?', a: 'h', variants: ['h'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after h?', a: 'i', variants: ['i'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after i?', a: 'j', variants: ['j'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after j?', a: 'k', variants: ['k'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after k?', a: 'l', variants: ['l'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after n?', a: 'o', variants: ['o'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after o?', a: 'p', variants: ['p'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after p?', a: 'q', variants: ['q'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after q?', a: 'r', variants: ['r'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after r?', a: 's', variants: ['s'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after s?', a: 't', variants: ['t'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after t?', a: 'u', variants: ['u'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after u?', a: 'v', variants: ['v'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after v?', a: 'w', variants: ['w'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after w?', a: 'x', variants: ['x'], standard: 'K.RF.1d' },
+  // K.RF.2a rhyme — different word pairs than exam
+  { q: 'what word rhymes with dog?', a: 'log', variants: ['log', 'fog', 'hog'], standard: 'K.RF.2a' },
+  { q: 'what word rhymes with bed?', a: 'red', variants: ['red', 'head', 'fed'], standard: 'K.RF.2a' },
+  { q: 'what word rhymes with cake?', a: 'lake', variants: ['lake', 'make', 'bake'], standard: 'K.RF.2a' },
+  { q: 'what word rhymes with ring?', a: 'sing', variants: ['sing', 'king', 'wing'], standard: 'K.RF.2a' },
+  { q: 'what word rhymes with pot?', a: 'hot', variants: ['hot', 'dot', 'got'], standard: 'K.RF.2a' },
+  { q: 'what word rhymes with bug?', a: 'hug', variants: ['hug', 'rug', 'mug'], standard: 'K.RF.2a' },
+  { q: 'what word rhymes with tail?', a: 'mail', variants: ['mail', 'sail', 'pail'], standard: 'K.RF.2a' },
+  // K.RF.2d phoneme isolation — different words
+  { q: 'what is the first sound in fish?', a: 'f', variants: ['f', 'fff'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in mouse?', a: 'm', variants: ['m', 'muh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in bug?', a: 'b', variants: ['b', 'buh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in leaf?', a: 'l', variants: ['l', 'luh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in pen?', a: 'p', variants: ['p', 'puh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in hat?', a: 'h', variants: ['h', 'huh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in rat?', a: 'r', variants: ['r', 'ruh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in van?', a: 'v', variants: ['v', 'vuh'], standard: 'K.RF.2d' },
+  // K.RF.2e blending — different syllables
+  { q: 'blend these sounds: s-i-t', a: 'sit', variants: ['sit'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: n-o-t', a: 'not', variants: ['not'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: b-u-g', a: 'bug', variants: ['bug'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: h-e-n', a: 'hen', variants: ['hen'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: l-i-p', a: 'lip', variants: ['lip'], standard: 'K.RF.2e' },
+  // K.RF.3a letter sound — different letter
+  { q: 'what sound does the letter p make?', a: 'p', variants: ['p', 'puh'], standard: 'K.RF.3a' },
+  { q: 'what sound does the letter h make?', a: 'h', variants: ['h', 'huh'], standard: 'K.RF.3a' },
+  { q: 'what sound does the letter t make?', a: 't', variants: ['t', 'tuh'], standard: 'K.RF.3a' },
+  // K.RF.3d CVC reading — different words
+  { q: 'read this cvc word: ten', a: 'ten', variants: ['ten'], standard: 'K.RF.3d' },
+  { q: 'read this cvc word: bag', a: 'bag', variants: ['bag'], standard: 'K.RF.3d' },
+  { q: 'read this cvc word: got', a: 'got', variants: ['got'], standard: 'K.RF.3d' },
+  { q: 'read this cvc word: fun', a: 'fun', variants: ['fun'], standard: 'K.RF.3d' },
+  { q: 'read this cvc word: wet', a: 'wet', variants: ['wet'], standard: 'K.RF.3d' },
+  // K.L.1c plurals — different words
+  { q: 'what is the plural of pig?', a: 'pigs', variants: ['pigs'], standard: 'K.L.1c' },
+  { q: 'what is the plural of fish?', a: 'fish', variants: ['fish', 'fishes'], standard: 'K.L.1c' },
+  { q: 'what is the plural of tree?', a: 'trees', variants: ['trees'], standard: 'K.L.1c' },
+  { q: 'what is the plural of car?', a: 'cars', variants: ['cars'], standard: 'K.L.1c' },
+  // K.L.5b opposites — different word pairs
+  { q: 'what is the opposite of fast?', a: 'slow', variants: ['slow'], standard: 'K.L.5b' },
+  { q: 'what is the opposite of tall?', a: 'short', variants: ['short'], standard: 'K.L.5b' },
+  { q: 'what is the opposite of new?', a: 'old', variants: ['old'], standard: 'K.L.5b' },
+  { q: 'what is the opposite of light?', a: 'dark', variants: ['dark', 'heavy'], standard: 'K.L.5b' },
+  { q: 'what is the opposite of wet?', a: 'dry', variants: ['dry'], standard: 'K.L.5b' },
+];
+
+const MATH_KINDERGARTEN_TRAIN = [
+  // K.CC.2 count-forward — different start numbers than exam
+  { q: 'what comes after six?', a: 'seven', variants: ['seven', '7'], standard: 'K.CC.2' },
+  { q: 'what comes after nine?', a: 'ten', variants: ['ten', '10'], standard: 'K.CC.2' },
+  { q: 'what comes after eleven?', a: 'twelve', variants: ['twelve', '12'], standard: 'K.CC.2' },
+  { q: 'what comes after fifteen?', a: 'sixteen', variants: ['sixteen', '16'], standard: 'K.CC.2' },
+  { q: 'what comes after seventeen?', a: 'eighteen', variants: ['eighteen', '18'], standard: 'K.CC.2' },
+  // K.CC.6 compare — different number pairs
+  { q: 'which is more, two or eight?', a: 'eight', variants: ['eight', '8'], standard: 'K.CC.6' },
+  { q: 'which is more, four or nine?', a: 'nine', variants: ['nine', '9'], standard: 'K.CC.6' },
+  { q: 'which is less, six or one?', a: 'one', variants: ['one', '1'], standard: 'K.CC.6' },
+  { q: 'which is less, four or eight?', a: 'four', variants: ['four', '4'], standard: 'K.CC.6' },
+  // K.OA.1 addition/subtraction — different pairs
+  { q: 'one plus three is?', a: 'four', variants: ['four', '4'], standard: 'K.OA.1' },
+  { q: 'two plus four is?', a: 'six', variants: ['six', '6'], standard: 'K.OA.1' },
+  { q: 'four plus three is?', a: 'seven', variants: ['seven', '7'], standard: 'K.OA.1' },
+  { q: 'five plus two is?', a: 'seven', variants: ['seven', '7'], standard: 'K.OA.1' },
+  { q: 'three plus four is?', a: 'seven', variants: ['seven', '7'], standard: 'K.OA.1' },
+  { q: 'six plus one is?', a: 'seven', variants: ['seven', '7'], standard: 'K.OA.1' },
+  { q: 'three minus two is?', a: 'one', variants: ['one', '1'], standard: 'K.OA.1' },
+  { q: 'seven minus three is?', a: 'four', variants: ['four', '4'], standard: 'K.OA.1' },
+  { q: 'eight minus one is?', a: 'seven', variants: ['seven', '7'], standard: 'K.OA.1' },
+  { q: 'five minus two is?', a: 'three', variants: ['three', '3'], standard: 'K.OA.1' },
+  // K.G.1 shapes — different properties asked
+  { q: 'what shape has no sides?', a: 'circle', variants: ['circle'], standard: 'K.G.1' },
+  { q: 'what shape has eight sides?', a: 'octagon', variants: ['octagon'], standard: 'K.G.1' },
+  { q: 'what shape has two long sides and two short sides?', a: 'rectangle', variants: ['rectangle'], standard: 'K.G.1' },
+];
+
+// Other cells start empty — `_teachQABinding` will skip them with a
+// log line. Expansion pattern: write ~20-60 Q→A training pairs per
+// cell covering that cell's most-tested sub-standards with content
+// DISTINCT from EXAM_BANKS[cellKey].
+
 export const TRAIN_BANKS = {
   'ela/pre-K': [],
-  'ela/kindergarten': [],
+  'ela/kindergarten': toTrainShape(ELA_KINDERGARTEN_TRAIN),
   'math/pre-K': [],
-  'math/kindergarten': [],
+  'math/kindergarten': toTrainShape(MATH_KINDERGARTEN_TRAIN),
   'science/pre-K': [],
   'science/kindergarten': [],
   'social/pre-K': [],

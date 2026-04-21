@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "cc937b79-ff49";
+var BUILD = "6e1b7346-3d36";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -9496,11 +9496,111 @@ var EXAM_BANKS = {
   "life/pre-K": toProbeShape(LIFE_PREK_EXAM),
   "life/kindergarten": toProbeShape(LIFE_KINDERGARTEN_EXAM)
 };
+var toTrainShape = (bank) => bank.map((e) => ({
+  question: e.q,
+  expectedAnswer: e.a,
+  expectedVariants: e.variants || [e.a],
+  standard: e.standard || "unspecified"
+}));
+var ELA_KINDERGARTEN_TRAIN = [
+  // K.RF.1d alphabet sequence — different letters than exam
+  { q: "what letter comes after c?", a: "d", variants: ["d"], standard: "K.RF.1d" },
+  { q: "what letter comes after d?", a: "e", variants: ["e"], standard: "K.RF.1d" },
+  { q: "what letter comes after e?", a: "f", variants: ["f"], standard: "K.RF.1d" },
+  { q: "what letter comes after f?", a: "g", variants: ["g"], standard: "K.RF.1d" },
+  { q: "what letter comes after g?", a: "h", variants: ["h"], standard: "K.RF.1d" },
+  { q: "what letter comes after h?", a: "i", variants: ["i"], standard: "K.RF.1d" },
+  { q: "what letter comes after i?", a: "j", variants: ["j"], standard: "K.RF.1d" },
+  { q: "what letter comes after j?", a: "k", variants: ["k"], standard: "K.RF.1d" },
+  { q: "what letter comes after k?", a: "l", variants: ["l"], standard: "K.RF.1d" },
+  { q: "what letter comes after n?", a: "o", variants: ["o"], standard: "K.RF.1d" },
+  { q: "what letter comes after o?", a: "p", variants: ["p"], standard: "K.RF.1d" },
+  { q: "what letter comes after p?", a: "q", variants: ["q"], standard: "K.RF.1d" },
+  { q: "what letter comes after q?", a: "r", variants: ["r"], standard: "K.RF.1d" },
+  { q: "what letter comes after r?", a: "s", variants: ["s"], standard: "K.RF.1d" },
+  { q: "what letter comes after s?", a: "t", variants: ["t"], standard: "K.RF.1d" },
+  { q: "what letter comes after t?", a: "u", variants: ["u"], standard: "K.RF.1d" },
+  { q: "what letter comes after u?", a: "v", variants: ["v"], standard: "K.RF.1d" },
+  { q: "what letter comes after v?", a: "w", variants: ["w"], standard: "K.RF.1d" },
+  { q: "what letter comes after w?", a: "x", variants: ["x"], standard: "K.RF.1d" },
+  // K.RF.2a rhyme — different word pairs than exam
+  { q: "what word rhymes with dog?", a: "log", variants: ["log", "fog", "hog"], standard: "K.RF.2a" },
+  { q: "what word rhymes with bed?", a: "red", variants: ["red", "head", "fed"], standard: "K.RF.2a" },
+  { q: "what word rhymes with cake?", a: "lake", variants: ["lake", "make", "bake"], standard: "K.RF.2a" },
+  { q: "what word rhymes with ring?", a: "sing", variants: ["sing", "king", "wing"], standard: "K.RF.2a" },
+  { q: "what word rhymes with pot?", a: "hot", variants: ["hot", "dot", "got"], standard: "K.RF.2a" },
+  { q: "what word rhymes with bug?", a: "hug", variants: ["hug", "rug", "mug"], standard: "K.RF.2a" },
+  { q: "what word rhymes with tail?", a: "mail", variants: ["mail", "sail", "pail"], standard: "K.RF.2a" },
+  // K.RF.2d phoneme isolation — different words
+  { q: "what is the first sound in fish?", a: "f", variants: ["f", "fff"], standard: "K.RF.2d" },
+  { q: "what is the first sound in mouse?", a: "m", variants: ["m", "muh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in bug?", a: "b", variants: ["b", "buh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in leaf?", a: "l", variants: ["l", "luh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in pen?", a: "p", variants: ["p", "puh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in hat?", a: "h", variants: ["h", "huh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in rat?", a: "r", variants: ["r", "ruh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in van?", a: "v", variants: ["v", "vuh"], standard: "K.RF.2d" },
+  // K.RF.2e blending — different syllables
+  { q: "blend these sounds: s-i-t", a: "sit", variants: ["sit"], standard: "K.RF.2e" },
+  { q: "blend these sounds: n-o-t", a: "not", variants: ["not"], standard: "K.RF.2e" },
+  { q: "blend these sounds: b-u-g", a: "bug", variants: ["bug"], standard: "K.RF.2e" },
+  { q: "blend these sounds: h-e-n", a: "hen", variants: ["hen"], standard: "K.RF.2e" },
+  { q: "blend these sounds: l-i-p", a: "lip", variants: ["lip"], standard: "K.RF.2e" },
+  // K.RF.3a letter sound — different letter
+  { q: "what sound does the letter p make?", a: "p", variants: ["p", "puh"], standard: "K.RF.3a" },
+  { q: "what sound does the letter h make?", a: "h", variants: ["h", "huh"], standard: "K.RF.3a" },
+  { q: "what sound does the letter t make?", a: "t", variants: ["t", "tuh"], standard: "K.RF.3a" },
+  // K.RF.3d CVC reading — different words
+  { q: "read this cvc word: ten", a: "ten", variants: ["ten"], standard: "K.RF.3d" },
+  { q: "read this cvc word: bag", a: "bag", variants: ["bag"], standard: "K.RF.3d" },
+  { q: "read this cvc word: got", a: "got", variants: ["got"], standard: "K.RF.3d" },
+  { q: "read this cvc word: fun", a: "fun", variants: ["fun"], standard: "K.RF.3d" },
+  { q: "read this cvc word: wet", a: "wet", variants: ["wet"], standard: "K.RF.3d" },
+  // K.L.1c plurals — different words
+  { q: "what is the plural of pig?", a: "pigs", variants: ["pigs"], standard: "K.L.1c" },
+  { q: "what is the plural of fish?", a: "fish", variants: ["fish", "fishes"], standard: "K.L.1c" },
+  { q: "what is the plural of tree?", a: "trees", variants: ["trees"], standard: "K.L.1c" },
+  { q: "what is the plural of car?", a: "cars", variants: ["cars"], standard: "K.L.1c" },
+  // K.L.5b opposites — different word pairs
+  { q: "what is the opposite of fast?", a: "slow", variants: ["slow"], standard: "K.L.5b" },
+  { q: "what is the opposite of tall?", a: "short", variants: ["short"], standard: "K.L.5b" },
+  { q: "what is the opposite of new?", a: "old", variants: ["old"], standard: "K.L.5b" },
+  { q: "what is the opposite of light?", a: "dark", variants: ["dark", "heavy"], standard: "K.L.5b" },
+  { q: "what is the opposite of wet?", a: "dry", variants: ["dry"], standard: "K.L.5b" }
+];
+var MATH_KINDERGARTEN_TRAIN = [
+  // K.CC.2 count-forward — different start numbers than exam
+  { q: "what comes after six?", a: "seven", variants: ["seven", "7"], standard: "K.CC.2" },
+  { q: "what comes after nine?", a: "ten", variants: ["ten", "10"], standard: "K.CC.2" },
+  { q: "what comes after eleven?", a: "twelve", variants: ["twelve", "12"], standard: "K.CC.2" },
+  { q: "what comes after fifteen?", a: "sixteen", variants: ["sixteen", "16"], standard: "K.CC.2" },
+  { q: "what comes after seventeen?", a: "eighteen", variants: ["eighteen", "18"], standard: "K.CC.2" },
+  // K.CC.6 compare — different number pairs
+  { q: "which is more, two or eight?", a: "eight", variants: ["eight", "8"], standard: "K.CC.6" },
+  { q: "which is more, four or nine?", a: "nine", variants: ["nine", "9"], standard: "K.CC.6" },
+  { q: "which is less, six or one?", a: "one", variants: ["one", "1"], standard: "K.CC.6" },
+  { q: "which is less, four or eight?", a: "four", variants: ["four", "4"], standard: "K.CC.6" },
+  // K.OA.1 addition/subtraction — different pairs
+  { q: "one plus three is?", a: "four", variants: ["four", "4"], standard: "K.OA.1" },
+  { q: "two plus four is?", a: "six", variants: ["six", "6"], standard: "K.OA.1" },
+  { q: "four plus three is?", a: "seven", variants: ["seven", "7"], standard: "K.OA.1" },
+  { q: "five plus two is?", a: "seven", variants: ["seven", "7"], standard: "K.OA.1" },
+  { q: "three plus four is?", a: "seven", variants: ["seven", "7"], standard: "K.OA.1" },
+  { q: "six plus one is?", a: "seven", variants: ["seven", "7"], standard: "K.OA.1" },
+  { q: "three minus two is?", a: "one", variants: ["one", "1"], standard: "K.OA.1" },
+  { q: "seven minus three is?", a: "four", variants: ["four", "4"], standard: "K.OA.1" },
+  { q: "eight minus one is?", a: "seven", variants: ["seven", "7"], standard: "K.OA.1" },
+  { q: "five minus two is?", a: "three", variants: ["three", "3"], standard: "K.OA.1" },
+  // K.G.1 shapes — different properties asked
+  { q: "what shape has no sides?", a: "circle", variants: ["circle"], standard: "K.G.1" },
+  { q: "what shape has eight sides?", a: "octagon", variants: ["octagon"], standard: "K.G.1" },
+  { q: "what shape has two long sides and two short sides?", a: "rectangle", variants: ["rectangle"], standard: "K.G.1" }
+];
 var TRAIN_BANKS = {
   "ela/pre-K": [],
-  "ela/kindergarten": [],
+  "ela/kindergarten": toTrainShape(ELA_KINDERGARTEN_TRAIN),
   "math/pre-K": [],
-  "math/kindergarten": [],
+  "math/kindergarten": toTrainShape(MATH_KINDERGARTEN_TRAIN),
   "science/pre-K": [],
   "science/kindergarten": [],
   "social/pre-K": [],
@@ -14765,6 +14865,17 @@ var Curriculum = class _Curriculum {
         ["pronoun", "person"]
       ]);
       _phaseDone("_teachCausalChains");
+      try {
+        const qaPairs = TRAIN_BANKS["ela/kindergarten"] || [];
+        if (qaPairs.length > 0) {
+          _phaseTick("_teachQABinding");
+          await this._teachQABinding(qaPairs, { reps: 10, label: "ELA-K-QA-BINDING" });
+          _phaseDone("_teachQABinding");
+          this._memorySnapshotAndGc("after _teachQABinding");
+        }
+      } catch (err) {
+        console.warn("[Curriculum] ELA-K QA binding failed:", err?.message || err);
+      }
       this._elaKRemakeDone = true;
     }
     return await this._gateElaKReal();
@@ -15526,6 +15637,14 @@ var Curriculum = class _Curriculum {
       await this._teachShapeFeatures(ctx);
       await this._teachShapeCompose(ctx);
       await this._teachMagnitudeToMotor(ctx);
+      try {
+        const qaPairs = TRAIN_BANKS["math/kindergarten"] || [];
+        if (qaPairs.length > 0) {
+          await this._teachQABinding(qaPairs, { reps: 10, label: "MATH-K-QA-BINDING" });
+        }
+      } catch (err) {
+        console.warn("[Curriculum] Math-K QA binding failed:", err?.message || err);
+      }
       this._mathKTransformsDone = true;
     }
     return await this._gateMathKReal();
@@ -17284,6 +17403,84 @@ var Curriculum = class _Curriculum {
       }
       if (allowMicrotask) await _microtask();
     }
+  }
+  // ─── _teachQABinding — LLM-analog question→answer training ────────
+  //
+  // For each {question, answer} pair, carve the sem→motor (and
+  // recurrent intra-cluster) cross-projection so that when the brain
+  // reads the question via the ventral visual→letter→phon→sem path,
+  // the motor region holds the answer pattern by the time generation
+  // reads it out. Equational equivalent of LLM input→target training:
+  //
+  //   1. cluster.readInput(question) — streams characters through
+  //      visual→letter→phon→sem. After N ticks cortex.lastSpikes
+  //      reflects the question-post-read state.
+  //   2. _writeTiledPattern(motor, answerEmb) — OVERWRITE motor region
+  //      with the target answer's GloVe embedding. Now lastSpikes =
+  //      question-state across most regions + target answer in motor.
+  //   3. _teachHebbian(lr) — fires cross-projection Hebbian on the
+  //      paired spike pattern. sem→motor strengthens for the question-
+  //      content → answer pairing. Over N reps this carves a learned
+  //      mapping.
+  //
+  // At probe time, generateSentenceAwait reads input (same ventral
+  // path), ticks the cluster, and motor argmax emerges from the
+  // trained cross-projection weights. If the training set covered
+  // the pattern (same sub-standard, different content) the learned
+  // basins generalize to the held-out EXAM_BANKS questions.
+  //
+  // Persistence: the updated cross-projection weights save via
+  // brain-server.js `_saveBinaryWeights` (streaming binary format,
+  // every cross-projection CSR captured). Restart + Savestart.bat
+  // preserves the learned state across reboots.
+  async _teachQABinding(pairs, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return { trained: 0, skipped: 0 };
+    if (!Array.isArray(pairs) || pairs.length === 0) return { trained: 0, skipped: 0 };
+    const reps = opts.reps ?? 6;
+    const lr = opts.lr ?? cluster.learningRate;
+    const label = opts.label || "QA-BINDING";
+    const motorRegion = cluster.regions && cluster.regions.motor;
+    const semRegion = cluster.regions && cluster.regions.sem;
+    if (!motorRegion || !semRegion) {
+      console.warn(`[Curriculum][${label}] skipped \u2014 motor or sem region not available`);
+      return { trained: 0, skipped: pairs.length };
+    }
+    let trained = 0, skipped = 0;
+    const startMs = Date.now();
+    console.log(`[Curriculum][${label}] START \u2014 ${pairs.length} Q\u2192A pairs \xD7 ${reps} reps`);
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) {
+        console.log(`[Curriculum][${label}] shutdown requested \u2014 stopping at rep ${rep}/${reps}`);
+        break;
+      }
+      for (const pair of pairs) {
+        if (!pair || !pair.question || !pair.expectedAnswer) {
+          skipped++;
+          continue;
+        }
+        const answer = String(pair.expectedAnswer).trim();
+        const answerEmb = answer && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(answer) : null;
+        if (!answerEmb || answerEmb.length === 0) {
+          skipped++;
+          continue;
+        }
+        try {
+          if (typeof cluster.readInput === "function") {
+            await cluster.readInput(String(pair.question), { ticks: 8 });
+          }
+          this._writeTiledPattern(motorRegion, answerEmb, true);
+          await this._teachHebbian(lr);
+          trained++;
+        } catch (err) {
+          skipped++;
+        }
+      }
+      await _microtask();
+    }
+    const elapsedSec = ((Date.now() - startMs) / 1e3).toFixed(1);
+    console.log(`[Curriculum][${label}] DONE \u2014 trained ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})`);
+    return { trained, skipped };
   }
   // ─── internal: tile a feature onto a region of a full-cluster vec ──
   // Same tiling math used by the gate probes and `_writeTiledPattern`;
