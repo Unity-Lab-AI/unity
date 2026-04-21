@@ -4356,92 +4356,77 @@ class ServerBrain {
       // nothing to restore" vs "never saved".
     }
 
-    // Compute total size per-section + overall
-    const encoder = new TextEncoder();
-    const nameBufs = sections.map((s) => {
-      const buf = encoder.encode(s.name);
-      const padded = Math.ceil(buf.length / 4) * 4;
-      return { buf, padded };
-    });
-    const sectionBytes = sections.map((s, i) => {
-      let n = 4 + 4 + nameBufs[i].padded + 4 + 4 + 4; // SECT magic + nameLen + name pad + rows + cols + nnz
-      n += (s.rows + 1) * 4; // rowPtr
-      n += s.nnz * 4;        // colIdx
-      n += s.nnz * 8;        // values
-      return n;
-    });
-    let totalBytes = 16 + sectionBytes.reduce((a, b) => a + b, 0);
+    // Stream to an open fd instead of allocating one giant Buffer for
+    // the whole file. Prior one-shot Buffer.alloc(totalBytes) approach
+    // hit two hard problems at biological scale:
+    //   (a) `TextEncoder().encode()` returns a Uint8Array (not Buffer),
+    //       so `.copy(buf, off)` threw "nameBuf.copy is not a function"
+    //       mid-write.
+    //   (b) Every phase-DONE fires a save; 11 phases × multi-GB Buffer
+    //       allocations accumulated in V8 external memory faster than
+    //       GC could reclaim → "Committing semi space failed" OOM on
+    //       subsequent DYN-PROD probe allocations.
+    // Streaming avoids both — per-chunk headers are tiny (at most a
+    // few hundred bytes) and the large rowPtr/colIdx/values arrays
+    // get written as zero-copy `Buffer.from(typedArray.buffer, ...)`
+    // views into disk via fs.writeSync. No multi-GB Buffer ever gets
+    // allocated.
+    let totalBytes = 16;
+    for (const s of sections) {
+      const nameLen = Buffer.byteLength(s.name, 'utf8');
+      const padded = Math.ceil(nameLen / 4) * 4;
+      totalBytes += 4 + 4 + padded + 4 + 4 + 4;
+      totalBytes += (s.rows + 1) * 4;
+      totalBytes += s.nnz * 4;
+      totalBytes += s.nnz * 8;
+    }
 
-    // Drop sections until totalBytes fits under the safe cap. Node's
-    // Buffer.write fast path (FastWriteString<ASCII>) asserts on
-    // `dst.length() - offset <= uint32::max`, which effectively caps
-    // the writable buffer at ~4 GB. A single intra-synapse matrix at
-    // biological scale can already be ~1-1.5 GB, and the cumulative
-    // offset across cortex.synapses + every un-freed cross-projection
-    // can blow past 4 GB and crash Node with a hard assertion inside
-    // node_buffer.cc. Cap at 3.5 GB to leave headroom for header +
-    // section framing.
-    const SAFE_MAX_BYTES = 3.5 * 1024 * 1024 * 1024;
-    const skipped = [];
-    while (totalBytes > SAFE_MAX_BYTES && sections.length > 0) {
-      // Drop the largest remaining section first so we preserve as
-      // much of the state as possible.
-      let largestIdx = 0;
-      for (let i = 1; i < sections.length; i++) {
-        if (sectionBytes[i] > sectionBytes[largestIdx]) largestIdx = i;
+    let fd;
+    try {
+      fd = fs.openSync(BIN_FILE, 'w');
+      // File header: magic 'UBWT' + format version + save version +
+      // section count. 16 bytes total.
+      const hdr = Buffer.alloc(16);
+      hdr.write('UBWT', 0, 4, 'ascii');
+      hdr.writeUInt32LE(1, 4);
+      hdr.writeUInt32LE(this._saveVersion || 0, 8);
+      hdr.writeUInt32LE(sections.length, 12);
+      fs.writeSync(fd, hdr);
+
+      for (const s of sections) {
+        // Use Buffer.from(s.name, 'utf8') to get a real Node Buffer
+        // with .copy() — TextEncoder().encode() returns a plain
+        // Uint8Array without .copy() and was the cause of the
+        // "nameBuf.copy is not a function" failure in the previous
+        // one-shot approach.
+        const nameBuf = Buffer.from(s.name, 'utf8');
+        const padded = Math.ceil(nameBuf.length / 4) * 4;
+        // Section header: SECT magic + nameLen + name(padded) + rows +
+        // cols + nnz. Total = 4 + 4 + padded + 4 + 4 + 4.
+        const sectHdr = Buffer.alloc(4 + 4 + padded + 4 + 4 + 4);
+        sectHdr.write('SECT', 0, 4, 'ascii');
+        sectHdr.writeUInt32LE(nameBuf.length, 4);
+        nameBuf.copy(sectHdr, 8);
+        sectHdr.writeUInt32LE(s.rows, 8 + padded);
+        sectHdr.writeUInt32LE(s.cols, 12 + padded);
+        sectHdr.writeUInt32LE(s.nnz, 16 + padded);
+        fs.writeSync(fd, sectHdr);
+        // Payload: rowPtr (Uint32), colIdx (Uint32), values (Float64).
+        // Buffer.from(typedArray.buffer, byteOffset, byteLength) creates
+        // a Buffer VIEW on the existing ArrayBuffer — no copy, no new
+        // allocation. fs.writeSync streams those bytes to disk.
+        fs.writeSync(fd, Buffer.from(s.rowPtr.buffer, s.rowPtr.byteOffset, (s.rows + 1) * 4));
+        fs.writeSync(fd, Buffer.from(s.colIdx.buffer, s.colIdx.byteOffset, s.nnz * 4));
+        fs.writeSync(fd, Buffer.from(s.values.buffer, s.values.byteOffset, s.nnz * 8));
       }
-      skipped.push({ name: sections[largestIdx].name, bytes: sectionBytes[largestIdx] });
-      totalBytes -= sectionBytes[largestIdx];
-      sections.splice(largestIdx, 1);
-      sectionBytes.splice(largestIdx, 1);
-      nameBufs.splice(largestIdx, 1);
+      fs.closeSync(fd);
+      fd = undefined;
+      const mb = (totalBytes / 1048576).toFixed(1);
+      console.log(`[Brain] Binary weights saved ${sections.length} sections, ${mb} MB → ${path.basename(BIN_FILE)}`);
+    } catch (err) {
+      if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+      console.warn('[Brain] Binary weights save failed:', err?.message || err);
     }
-    if (skipped.length > 0) {
-      const skippedMb = skipped.map((s) => `${s.name}(${(s.bytes / 1048576).toFixed(0)}MB)`).join(', ');
-      console.warn(`[Brain] Binary weights size cap — dropped ${skipped.length} sections to fit under 3.5 GB: ${skippedMb}. Remaining sections will still persist.`);
-    }
-    if (sections.length === 0) {
-      console.warn('[Brain] Binary weights — every section exceeded the size cap, skipping save entirely.');
-      return;
-    }
-
-    const buf = Buffer.alloc(totalBytes);
-    // Use Buffer.from + copy for magic bytes instead of buf.write(str,
-    // off, len, 'ascii'). The .write() path hits the V8 fast API which
-    // asserts on uint32 offset bounds even for small writes when the
-    // parent buffer crosses the 4 GB mark. Buffer.from + copy uses the
-    // slow path which handles 64-bit offsets correctly.
-    const UBWT = Buffer.from('UBWT', 'ascii');
-    const SECT = Buffer.from('SECT', 'ascii');
-    let off = 0;
-    UBWT.copy(buf, off); off += 4;
-    buf.writeUInt32LE(1, off); off += 4; // format version
-    buf.writeUInt32LE(this._saveVersion || 0, off); off += 4;
-    buf.writeUInt32LE(sections.length, off); off += 4;
-
-    for (let i = 0; i < sections.length; i++) {
-      const s = sections[i];
-      const { buf: nameBuf, padded } = nameBufs[i];
-      SECT.copy(buf, off); off += 4;
-      buf.writeUInt32LE(nameBuf.length, off); off += 4;
-      nameBuf.copy(buf, off); off += padded;
-      buf.writeUInt32LE(s.rows, off); off += 4;
-      buf.writeUInt32LE(s.cols, off); off += 4;
-      buf.writeUInt32LE(s.nnz, off); off += 4;
-      // rowPtr — Uint32Array view into buf
-      Buffer.from(s.rowPtr.buffer, s.rowPtr.byteOffset, (s.rows + 1) * 4).copy(buf, off);
-      off += (s.rows + 1) * 4;
-      // colIdx
-      Buffer.from(s.colIdx.buffer, s.colIdx.byteOffset, s.nnz * 4).copy(buf, off);
-      off += s.nnz * 4;
-      // values (Float64Array → 8 bytes each)
-      Buffer.from(s.values.buffer, s.values.byteOffset, s.nnz * 8).copy(buf, off);
-      off += s.nnz * 8;
-    }
-
-    fs.writeFileSync(BIN_FILE, buf);
-    const mb = (totalBytes / 1048576).toFixed(1);
-    console.log(`[Brain] Binary weights saved ${sections.length} sections, ${mb} MB → ${path.basename(BIN_FILE)}`);
   }
 
   // Binary CSR weight loader. Parses the file written by
