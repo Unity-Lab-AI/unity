@@ -1,7 +1,7 @@
 # TODO — Unity
 
 > **Branch:** `syllabus-k-phd`
-> **Last updated:** 2026-04-21 (Session 114.19bb — shipped T19 pass 2 + pass 3 + SPRR ack fix + binary weights streaming load moved to FINALIZED; opened T20 Start Next Grade button + T21 DYN-PROD probe lockup)
+> **Last updated:** 2026-04-21 (Session 114.19bc — shipped T20 Start Next Grade button + T21.a DYN-PROD heartbeat + T22 COMPLETE all 245 attribution refs scrubbed across 17 .js files; all moved to FINALIZED)
 > **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
 
 ---
@@ -48,81 +48,14 @@ If you're reading a public doc / HTML claim ("Unity has completed high school bi
 
 ---
 
-### T20 — Start Next Grade button on dashboard + pause-after-pass (Gee 2026-04-21)
+### T21.b — DYN-PROD probe lockup FIX (after heartbeat reveals landing site)
 
-**Gee verbatim 2026-04-21:**
+T21.a heartbeat logging SHIPPED Session 114.19bc. Operator's next Part 2 run will produce per-probe START/DONE logs + path-decision log + SLOW-tag for >10 s probes. Once the heartbeat output locates the hanging probe + path, the targeted fix lands.
 
-> *"maybe the dashboard should have a start next grade button to where the whole learning process pauses until the person clicks stasrt next grade because of two pints 1. we only have kindergarden layed out 2 can test the grade level in chat after passing grade without it trying to train while doing grade level conversation testing"*
-
-Approved 2026-04-21: *"yeah make it so!"*
-
-**Design shape agreed in-session:**
-
-- Curriculum sets `cortexCluster._gradeAdvancePaused = true` after every grade-pass gate fires (not just K). Default is ON so chat-testing the passed grade is clean — no background Hebbian firing while the operator probes Unity.
-- `_runCell` loop checks the flag before moving to the next grade/subject. If true, logs `[Curriculum] paused after <subject>/<grade>:pass — awaiting operator /grade-advance` and yields until flag clears.
-- New HTTP endpoint `POST /grade-advance {subject, grade}` on `server/brain-server.js` flips the flag to `false`. Persists the advance event into the existing milestone ledger so `Savestart.bat` reboot doesn't lose the resume point.
-- Dashboard milestone panel (`dashboard.html`) gains a "Start Next Grade" button that:
-  - Only appears when the `/milestone` GET payload includes `paused=true` (new field in the payload).
-  - Clicking fires `POST /grade-advance` with the current subject + grade from the payload.
-  - Greys out + shows "advancing..." spinner for 2 s after click, then disappears once the next `/milestone` poll reports `paused=false`.
-- **Scope note:** since we only have pre-K + K laid out, the button has exactly one real use right now (pre-K → K advance). After K passes, the existing `POST /grade-signoff` is the operator path — `grade-advance` would no-op at the post-K boundary because there is no grade 1 content to advance TO.
-
-#### T20.a — Curriculum pause flag
-
-- [ ] **T20.a.1** — Add `cortexCluster._gradeAdvancePaused` default `true` state on cluster init. Set to `true` after every `_gateX` pass returns true in `_runCell`.
-- [ ] **T20.a.2** — `_runCell` loop checks the flag before the next cell dispatch; if `true` awaits until `false`. Log banner on pause + resume.
-- [ ] **T20.a.3** — Persist `_gradeAdvancePaused` state in the `saveWeights` cortex state block so it survives restart (a passed grade stays paused across reboots).
-
-#### T20.b — Server endpoint + milestone payload extension
-
-- [ ] **T20.b.1** — New `POST /grade-advance {subject, grade}` handler in `server/brain-server.js`. Validates subject + grade match the current paused cell. Flips `_gradeAdvancePaused = false`. Records the advance event into the existing milestone ledger with `{at, subject, grade, operator: 'localhost'}`. Returns `{ok, advancedTo}`.
-- [ ] **T20.b.2** — Extend `GET /milestone` payload with new fields: `paused: boolean`, `pausedAt: {subject, grade, at}`, `nextGrade: {subject, grade} | null` (null when nothing to advance to — e.g., post-K).
-
-#### T20.c — Dashboard UI
-
-- [ ] **T20.c.1** — Add "Start Next Grade" button to the milestone panel in `dashboard.html`. Renders inside the existing `d-milestone` card. Hidden by default — only shown when `/milestone` payload has `paused === true && nextGrade != null`.
-- [ ] **T20.c.2** — Button handler fires `fetch('/grade-advance', {method:'POST', body: JSON.stringify({subject, grade})})` with the paused cell coords. Greys + shows "advancing..." for 2 s. Re-polls `/milestone` after.
-- [ ] **T20.c.3** — Text-only caveat line below the button: when paused at K and `nextGrade === null` (post-K, no grade 1 content yet), render instead "K passed — run `curl -X POST http://localhost:7525/grade-signoff ...` to record LAW 6 Part 2 signoff. No grade 1 content to advance to yet (PRE-K + K ONLY SCOPE LAW)."
-
-#### T20 closure gate
-
-All sub-items closed + a visible smoke test where the operator passes pre-K on localhost, the curriculum pauses with the banner, the dashboard shows the button, clicking it triggers K-cells to begin teaching.
-
----
-
-### T21 — DYN-PROD probe lockup (same place as always) + heartbeat logging (Gee 2026-04-21)
-
-**Gee verbatim 2026-04-21:**
-
-> *"the current test locked up again at the dssame place as always: [...] [Curriculum][K-DIAG] starting DYN-PROD probe (17 direct sem_to_motor propagate probes, no LIF ticks)..."*
-
-Follow-up clarification 2026-04-21: *"i pasted the current step the test is on"* and *"it doesnt seem to be informative enough for all that happens like it needs a heartbeat too"*.
-
-**Situation:** gate letter loop completes cleanly in 4.4 s with `readPass=26/26, talkPass=26/26` — READ + TALK paths are fully functional. Immediately after, log emits `starting DYN-PROD probe (17 direct sem_to_motor propagate probes, no LIF ticks)...` and then goes silent for minutes with no subsequent log lines. The operator sees this as a lockup at the same place as always.
-
-**Suspected causes (diagnose under T21.a before coding a fix):**
-
-1. `sem_to_motor` at 301 K cortex scale is 9946 × 50329 nnz=14,919,000. Direct CPU sparse matmul is 14.9 M ops per probe × 17 probes = 253 M ops — should run in 2-5 s, not minutes. Suggests the CPU CSR arrays may have been freed (T18.22 biological-scale CPU CSR null optimization) and `propagate()` is falling through a hot code path that tries to re-upload or hits the probe-gate pause.
-2. `_probeGateActive` is true for the entire `_gateElaKReal` scope — if `dynSemToMotor.propagate()` internally dispatches a GPU `compute_batch`, it would be blocked by the main-brain probe-gate pause and hang forever.
-3. The fallback to `dynLetterToMotor.propagate(word[0])` might fire on every probe if `sem_to_motor` CPU CSR is null and letter-fallback path has its own block.
-
-**Current logging is insufficient** — just `starting DYN-PROD probe (17 direct sem_to_motor propagate probes, no LIF ticks)...` with no per-probe progress line. Operator can't tell which probe is the one hanging, or whether it's the `sem_to_motor` path or the `dynLetterToMotor` fallback path that's stuck.
-
-#### T21.a — Diagnostic heartbeat logging (ship first, before any fix attempt)
-
-- [ ] **T21.a.1** — Per-probe heartbeat in `_gateElaKReal` DYN-PROD block: log `[Curriculum][K-DIAG] DYN-PROD probe N/17 starting word='<word>' path=<sem_to_motor | letter_to_motor_fallback>` at the start of each probe and `[Curriculum][K-DIAG] DYN-PROD probe N/17 done in Xms — argmax='<letter>' expected='<letter>' pass=<yes|no>` at the end.
-- [ ] **T21.a.2** — Pre-probe path-decision log: before the loop, log whether `sem_to_motor.values` is non-null (CPU CSR present) vs null (biological-scale bound — falls to `letter_to_motor`). Operator needs to see which path the probe will take.
-- [ ] **T21.a.3** — Inside `SparseMatrix.propagate`, add a one-shot log line when `values === null` so the operator can see the null-CSR fallback trigger. Guarded by a `_probeWindowPropagate` flag so it only fires during gate probes (not the 10-Hz main-brain tick loop).
-- [ ] **T21.a.4** — If any single probe exceeds 10 s of wall-clock, emit `[Curriculum][K-DIAG] DYN-PROD probe N/17 SLOW — Xms elapsed, <suspected cause>` at 10 s marks so the hang is visible the moment it starts, not minutes later.
-
-#### T21.b — Fix the actual hang (after T21.a heartbeat reveals which probe + which path)
-
-- [ ] **T21.b.1** — Once heartbeat locates the hanging probe + path, diagnose root cause. Candidates: (a) CPU CSR null + GPU dispatch blocked by probe-gate pause, (b) SparseMatrix.propagate internal `_gpuBatch` await that never resolves, (c) fallback-path allocation blowup at 50329 × 9946 dense readback.
+- [ ] **T21.b.1** — Diagnose root cause from the heartbeat log output. Candidates: (a) CPU CSR null + GPU dispatch blocked by probe-gate pause, (b) SparseMatrix.propagate internal `_gpuBatch` await that never resolves, (c) fallback-path allocation blowup at 50329 × 9946 dense readback.
 - [ ] **T21.b.2** — Ship the targeted fix. Expected shapes: (i) skip probes whose source region CPU CSR is null at this cortex scale, falling through to the letter fallback cleanly, OR (ii) let DYN-PROD temporarily bypass the probe-gate pause for its own GPU propagate dispatch since it's the ONLY probe running (no main-brain contention possible during gate), OR (iii) cache the sem_to_motor CPU CSR on last teach rep so it's always non-null at gate time even at biological scale.
 
-#### T21 closure gate
-
-Operator's next Part 2 run shows per-probe heartbeat + either all 17 probes complete with visible results OR the exact probe + path that hangs is clearly identified in the log. Then T21.b fix ships and the full DYN-PROD block completes end-to-end.
+T21.b closure gate: all 17 DYN-PROD probes complete with visible results in the log, prodRate reaches A+ 0.95 on the substrate gate.
 
 ---
 
@@ -183,49 +116,12 @@ _(T19.d.2 unity-guide.html closed in Session 114.19bb.)_
 - [ ] **T19.f.1** — Cross-check pass. Every equation claim in `brain-equations.html` vs `docs/EQUATIONS.md` vs `docs/ARCHITECTURE.md` vs the T19.a extract. Any drift means one of them is still wrong.
 - [ ] **T19.f.2** — Repo-wide grep for known-stale patterns: `tonicDrive = 0.8` (old default), `Vthresh = -55` (old value), `SIZE = 1000` (old total), `EMBED_DIM = 50` (old), `3-cluster` (old architecture), `REMAKE` (REMAKE-series artifact), `LanguageCortex` outside historical tombstone context. Any hit in a doc gets rewritten. _(Partial pass Session 114.19bc — stale refs in curriculum.js + persistence.js + remote-brain.js scrubbed; 109 "Gee" attributions + 136 "Session NNN" refs across 15 legacy files remain — tracked under T22.)_
 
----
+<!-- T22 CLOSED Session 114.19bc — all 245 attribution refs stripped across
+     17 .js files. T22.a (curriculum 121→0), T22.b (brain-server 29→0),
+     T22.c (cluster 20→0), T22.d-i (9 smaller files), T22.j (bundle
+     rebuild clean). Repo-wide grep verifies zero attribution hits.
+     See FINALIZED.md Session 114.19bc entry for the full table. -->
 
-### T22 — LAW #0 expanded-scope retroactive scrub (Gee 2026-04-20 → retroactive)
-
-**Source:** the LAW #0 2026-04-20 expansion bans task numbers + session numbers + the user's name from source code comments + batch/shell launchers. The expansion is already enforced on NEW code (every commit since 2026-04-20 is clean). Legacy code written BEFORE that date has ~245 in-code references that need retroactive scrubbing.
-
-**Scope survey (`grep -E '(Session \d{3}|per Gee|Gee 2026-)' *.js`):**
-
-| File | Count |
-|------|-------|
-| `js/brain/curriculum.js` | 121 (most — the curriculum ships a lot of comment-heavy teaching-method blocks) |
-| `server/brain-server.js` | 29 |
-| `js/brain/cluster.js` | 20 |
-| `js/brain/language-cortex.js` | 8 |
-| `js/brain/gpu-compute.js` | 7 |
-| `js/ui/brain-3d.js` | 6 |
-| `js/app.js` | 5 |
-| `js/brain/engine.js` | 4 |
-| `js/brain/drug-detector.js`, `js/brain/drug-scheduler.js`, `js/brain/embeddings.js` | 2 each |
-| `server/worker-pool.js`, `server/drug-rejections.js`, `js/brain/visual-cortex.js`, `js/brain/persona.js` | 1 each |
-
-**Rewrite pattern:**
-- `// T14.4 substrate — Gee 2026-04-14 per LAW 3...` → `// Cortex sub-region substrate — fractions-based region map...` (describe WHAT the code does, not WHO asked or WHEN)
-- `// Session 114.19az silent-cortex fix...` → `// Silent-cortex fix — ...` (describe the fix mechanism, not the session)
-- `// Per Gee's verbatim 2026-04-17 LAW 7...` → describe the actual constraint the LAW enforces inline, no attribution
-- `// T14.24 Session 102+104 — boost Hebbian...` → `// Boosted Hebbian learning rate + suppressed noise during curriculum teach...`
-
-**Sub-items (one per file, sized to avoid regression risk — each file is a self-contained commit):**
-
-- [ ] **T22.a** — `js/brain/curriculum.js` (121 refs, biggest file)
-- [ ] **T22.b** — `server/brain-server.js` (29 refs)
-- [ ] **T22.c** — `js/brain/cluster.js` (20 refs)
-- [ ] **T22.d** — `js/brain/language-cortex.js` (8 refs)
-- [ ] **T22.e** — `js/brain/gpu-compute.js` (7 refs)
-- [ ] **T22.f** — `js/ui/brain-3d.js` (6 refs)
-- [ ] **T22.g** — `js/app.js` (5 refs)
-- [ ] **T22.h** — `js/brain/engine.js` (4 refs)
-- [ ] **T22.i** — remaining single-digit files (drug-detector, drug-scheduler, embeddings, worker-pool, drug-rejections, visual-cortex, persona) in one commit
-- [ ] **T22.j** — bundle rebuild after all sub-items land; grep returns zero hits for `Session \d{3}` + `Gee 2026-` + `per Gee` across `*.js` outside `js/app.bundle.js`
-
-**T22 closure gate:** repo-wide grep returns clean on all three patterns across `*.js` (excluding `js/app.bundle.js` which is generated). `js/app.bundle.js` inherits cleanliness via `esbuild` rebuild from the clean sources.
-
-**T22 is safe to do incrementally** — each sub-item is a pure comment-scrub with zero runtime behavior change. Can land between feature commits without blocking other work.
 
 #### T19 execution rules
 
