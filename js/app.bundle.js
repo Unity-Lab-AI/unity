@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "2b4529f4-cb8e";
+var BUILD = "1d3046c7-e706";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -13439,7 +13439,7 @@ var Curriculum = class _Curriculum {
       const freeWritingAvgWords = freeWritingPrompts.length > 0 ? freeWritingWordCount / freeWritingPrompts.length : 0;
       const PATH_MIN = 0.95;
       const PROD_MIN = 0.95;
-      const STUDENT_MIN = 0.6;
+      const STUDENT_MIN = 0.95;
       const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN && prodRate >= PROD_MIN && studentRate >= STUDENT_MIN;
       const pct = (r) => (r * 100).toFixed(0);
       const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
