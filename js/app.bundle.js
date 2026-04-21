@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "ed378a9e-732c";
+var BUILD = "e1e32a2e-2200";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -11363,6 +11363,31 @@ var Curriculum = class _Curriculum {
           result.studentBattery = battery;
           const suffix = ` | STUDENT ${battery.pass}/${battery.total} (${Math.round(battery.rate * 100)}%)${battery.summary}`;
           result.reason = (result.reason || "") + suffix;
+          const AGGR_MIN = 0.9;
+          const EXTERNAL_MIN = 0.85;
+          const EXTERNAL_SOURCES = /* @__PURE__ */ new Set(["DIBELS-8-sample", "AIMSweb-sample", "Fountas-Pinnell-sample"]);
+          let extPass = 0, extTotal = 0;
+          for (const r of battery.results || []) {
+            if (EXTERNAL_SOURCES.has(r.source)) {
+              extTotal += 1;
+              if (r.score >= 0.5) extPass += 1;
+            }
+          }
+          const extRate = extTotal > 0 ? extPass / extTotal : 1;
+          const blockers = [];
+          if (battery.rate < AGGR_MIN) blockers.push(`aggregate ${(battery.rate * 100).toFixed(1)}% < ${AGGR_MIN * 100}%`);
+          if ((battery.standardsBelowCut || 0) > 0) blockers.push(`${battery.standardsBelowCut} sub-standard(s) below cut`);
+          if (extTotal > 0 && extRate < EXTERNAL_MIN) blockers.push(`external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%) < ${EXTERNAL_MIN * 100}%`);
+          if (blockers.length > 0 && result.pass) {
+            console.warn(`[Curriculum][${label}] \u26D4 BATTERY BLOCKS advancement: ${blockers.join(" \xB7 ")}. Substrate passed but the educational test did not \u2014 grade NOT advanced.`);
+            result.pass = false;
+            result.reason = `BATTERY-BLOCKED: ${blockers.join("; ")} | ${result.reason || ""}`;
+          } else if (blockers.length === 0) {
+            console.log(`[Curriculum][${label}] \u2713 BATTERY PASS: aggregate ${(battery.rate * 100).toFixed(1)}% \xB7 all sub-standards at/above cut \xB7 external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%)`);
+          }
+          result.studentBattery.externalPass = extPass;
+          result.studentBattery.externalTotal = extTotal;
+          result.studentBattery.externalRate = extRate;
         }
       } catch (err) {
         if (cluster) cluster._probeGateActive = false;

@@ -2486,6 +2486,49 @@ export class Curriculum {
           result.studentBattery = battery;
           const suffix = ` | STUDENT ${battery.pass}/${battery.total} (${Math.round(battery.rate * 100)}%)${battery.summary}`;
           result.reason = (result.reason || '') + suffix;
+
+          // Reviewer-grade enforcement — aggregate rate alone isn't
+          // enough for a grade signoff to mean something. Block the
+          // advancement unless THREE criteria all hit:
+          //   (a) aggregate rate ≥ 0.90
+          //   (b) every sub-standard at or above its norm-calibrated
+          //       cut score (DIBELS 8 / AIMSweb calibrated per-standard
+          //       in STANDARD_CUT_SCORES)
+          //   (c) external-reference items (DIBELS-8-sample /
+          //       AIMSweb-sample / Fountas-Pinnell-sample) aggregate
+          //       ≥ 0.85 — these are the reviewer-verifiable items
+          //       that matter beyond authored probes.
+          //
+          // If any criterion fails, downgrade result.pass to false
+          // with an explicit blocking reason so grade advancement
+          // halts. Substrate gate still reported in result.reason for
+          // telemetry.
+          const AGGR_MIN = 0.90;
+          const EXTERNAL_MIN = 0.85;
+          const EXTERNAL_SOURCES = new Set(['DIBELS-8-sample', 'AIMSweb-sample', 'Fountas-Pinnell-sample']);
+          let extPass = 0, extTotal = 0;
+          for (const r of (battery.results || [])) {
+            if (EXTERNAL_SOURCES.has(r.source)) {
+              extTotal += 1;
+              if (r.score >= 0.5) extPass += 1;
+            }
+          }
+          const extRate = extTotal > 0 ? extPass / extTotal : 1;
+          const blockers = [];
+          if (battery.rate < AGGR_MIN) blockers.push(`aggregate ${(battery.rate * 100).toFixed(1)}% < ${AGGR_MIN * 100}%`);
+          if ((battery.standardsBelowCut || 0) > 0) blockers.push(`${battery.standardsBelowCut} sub-standard(s) below cut`);
+          if (extTotal > 0 && extRate < EXTERNAL_MIN) blockers.push(`external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%) < ${EXTERNAL_MIN * 100}%`);
+          if (blockers.length > 0 && result.pass) {
+            console.warn(`[Curriculum][${label}] ⛔ BATTERY BLOCKS advancement: ${blockers.join(' · ')}. Substrate passed but the educational test did not — grade NOT advanced.`);
+            result.pass = false;
+            result.reason = `BATTERY-BLOCKED: ${blockers.join('; ')} | ${result.reason || ''}`;
+          } else if (blockers.length === 0) {
+            console.log(`[Curriculum][${label}] ✓ BATTERY PASS: aggregate ${(battery.rate * 100).toFixed(1)}% · all sub-standards at/above cut · external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%)`);
+          }
+          // Stash the external-ref breakdown for downstream logging
+          result.studentBattery.externalPass = extPass;
+          result.studentBattery.externalTotal = extTotal;
+          result.studentBattery.externalRate = extRate;
         }
       } catch (err) {
         if (cluster) cluster._probeGateActive = false;
