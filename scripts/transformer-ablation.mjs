@@ -73,6 +73,27 @@ function scoreAnswer(answer, expectedAnswer, expectedVariants) {
   return { answer: a, expected: exp, match: { exact, startsWith, contains, overall }, score: matchScore };
 }
 
+// T25 — methodology scoring: fraction of reasoning-keyword hits in
+// the second-pass answer. Mirrors _studentTestProbe's methodology
+// scoring in js/brain/curriculum.js: matches.length >= minKeywords
+// is the pass floor, actual score is matches.length / keywords.length.
+function scoreMethodology(methodologyAnswer, methodologySpec) {
+  const result = { answer: String(methodologyAnswer || ''), keywords: [], matches: [], score: 0, pass: false };
+  if (!methodologySpec || !Array.isArray(methodologySpec.keywords) || methodologySpec.keywords.length === 0) {
+    return result;
+  }
+  const keywords = methodologySpec.keywords.map(k => String(k || '').toLowerCase().trim()).filter(k => k.length > 0);
+  const minKeywords = typeof methodologySpec.minKeywords === 'number' ? methodologySpec.minKeywords : 1;
+  const text = result.answer.toLowerCase();
+  const matches = keywords.filter(k => text.includes(k));
+  result.keywords = keywords;
+  result.matches = matches;
+  result.pass = matches.length >= minKeywords;
+  result.score = keywords.length > 0 ? matches.length / keywords.length : 0;
+  if (!result.pass) result.score = 0;
+  return result;
+}
+
 // ─── Model backends (placeholders — wire as needed) ─────────────────
 
 // ─── Unity backend — POST /exam-answer on running brain-server ──────
@@ -214,9 +235,16 @@ async function runArm(armName, generator, examBanks) {
   const perCell = new Map();
   let totalPass = 0;
   let totalCount = 0;
+  // T25 — methodology aggregates alongside answer aggregates. If the
+  // transformer passes the answer but fails the methodology, that's
+  // the reviewer's "GloVe is doing the work" signal in concrete form.
+  let methoPass = 0;
+  let methoCount = 0;
 
   for (const [cellKey, bank] of Object.entries(examBanks)) {
     let cellPass = 0;
+    let cellMethoPass = 0;
+    let cellMethoCount = 0;
     for (const q of bank) {
       const answer = await generator(q.question);
       const r = scoreAnswer(answer, q.expectedAnswer, q.expectedVariants);
@@ -227,7 +255,7 @@ async function runArm(armName, generator, examBanks) {
       const std = q.standard || 'unspecified';
       const src = q.source || 'authored';
       {
-        const b = perStandard.get(std) || { pass: 0, total: 0 };
+        const b = perStandard.get(std) || { pass: 0, total: 0, methoPass: 0, methoCount: 0 };
         b.pass += pass; b.total += 1;
         perStandard.set(std, b);
       }
@@ -236,15 +264,48 @@ async function runArm(armName, generator, examBanks) {
         b.pass += pass; b.total += 1;
         perSource.set(src, b);
       }
+      // T25 — methodology probe. If the question has a methodology
+      // field, run the reasoning prompt through the same backend
+      // and score by keyword match. Pass/count tracked separately.
+      if (q.methodology && Array.isArray(q.methodology.keywords) && q.methodology.keywords.length > 0) {
+        const methoAnswer = await generator(q.methodology.prompt);
+        const mr = scoreMethodology(methoAnswer, q.methodology);
+        methoCount += 1;
+        cellMethoCount += 1;
+        if (mr.pass) {
+          methoPass += 1;
+          cellMethoPass += 1;
+          const b = perStandard.get(std);
+          if (b) b.methoPass = (b.methoPass || 0) + 1;
+        }
+        const b = perStandard.get(std);
+        if (b) b.methoCount = (b.methoCount || 0) + 1;
+      }
     }
-    perCell.set(cellKey, { pass: cellPass, total: bank.length, rate: bank.length > 0 ? cellPass / bank.length : 0 });
+    perCell.set(cellKey, {
+      pass: cellPass,
+      total: bank.length,
+      rate: bank.length > 0 ? cellPass / bank.length : 0,
+      methoPass: cellMethoPass,
+      methoCount: cellMethoCount,
+      methoRate: cellMethoCount > 0 ? cellMethoPass / cellMethoCount : 0,
+    });
   }
 
   return {
     armName,
     aggregate: { pass: totalPass, total: totalCount, rate: totalCount > 0 ? totalPass / totalCount : 0 },
+    methoAggregate: { pass: methoPass, total: methoCount, rate: methoCount > 0 ? methoPass / methoCount : 0 },
     perCell: [...perCell.entries()].map(([k, v]) => ({ cellKey: k, ...v })),
-    perStandard: [...perStandard.entries()].map(([k, v]) => ({ standard: k, pass: v.pass, total: v.total, rate: v.total > 0 ? v.pass / v.total : 0 })),
+    perStandard: [...perStandard.entries()].map(([k, v]) => ({
+      standard: k,
+      pass: v.pass,
+      total: v.total,
+      rate: v.total > 0 ? v.pass / v.total : 0,
+      methoPass: v.methoPass || 0,
+      methoCount: v.methoCount || 0,
+      methoRate: (v.methoCount || 0) > 0 ? (v.methoPass || 0) / v.methoCount : 0,
+    })),
     perSource: [...perSource.entries()].map(([k, v]) => ({ source: k, pass: v.pass, total: v.total, rate: v.total > 0 ? v.pass / v.total : 0 })),
   };
 }
@@ -260,11 +321,23 @@ function printReport(unity, transformer) {
   console.log('TRANSFORMER-vs-RULKOV ABLATION REPORT');
   console.log('═══════════════════════════════════════════════════════════════════');
   console.log('');
-  console.log('AGGREGATE');
+  console.log('AGGREGATE — ANSWER (fill-in-the-blank fidelity)');
   console.log(`  Unity        ${unity.aggregate.pass}/${unity.aggregate.total} = ${pct(unity.aggregate.rate)}`);
   console.log(`  Transformer  ${transformer.aggregate.pass}/${transformer.aggregate.total} = ${pct(transformer.aggregate.rate)}`);
   const delta = unity.aggregate.rate - transformer.aggregate.rate;
   console.log(`  Δ (unity - transformer): ${(delta * 100).toFixed(1)} pp ${delta > 0 ? '(Unity wins)' : delta < 0 ? '(Transformer wins)' : '(tie)'}`);
+  console.log('');
+  // T25 — methodology comparison. This is the critical reviewer
+  // question: a transformer can retrieve answers via GloVe pattern
+  // match without actually REASONING. If Unity's neural sim gives
+  // her methodology scores comparable to or better than the
+  // transformer, that's the signal the Rulkov layer is load-bearing
+  // for reasoning even if not for fill-in-the-blank answers.
+  console.log('AGGREGATE — METHODOLOGY (reasoning-keyword fidelity) [T25]');
+  console.log(`  Unity        ${unity.methoAggregate.pass}/${unity.methoAggregate.total} = ${pct(unity.methoAggregate.rate)}`);
+  console.log(`  Transformer  ${transformer.methoAggregate.pass}/${transformer.methoAggregate.total} = ${pct(transformer.methoAggregate.rate)}`);
+  const methoDelta = unity.methoAggregate.rate - transformer.methoAggregate.rate;
+  console.log(`  Δ (unity - transformer): ${(methoDelta * 100).toFixed(1)} pp ${methoDelta > 0 ? '(Unity reasons better)' : methoDelta < 0 ? '(Transformer reasons better)' : '(tie)'}`);
   console.log('');
   console.log('PER CELL');
   for (const u of unity.perCell) {
@@ -280,17 +353,34 @@ function printReport(unity, transformer) {
   console.log('');
   console.log('INTERPRETATION');
   if (Math.abs(delta) < 0.02) {
-    console.log('  Within 2 pp — architectures computationally equivalent on this task.');
-    console.log('  Rulkov contribution is research novelty (continuous dynamics, Ψ, drug pharmacokinetics) — not task performance.');
+    console.log('  ANSWER: within 2 pp — architectures computationally equivalent on fill-in-the-blank.');
   } else if (delta < -0.05) {
-    console.log('  Transformer beats Unity by > 5 pp. The neural sim layer is decorative on this task.');
-    console.log('  The GloVe embeddings are doing the work — any sequence model on top would match.');
-    console.log('  Suggested pivot: use transformer+GloVe as cognition stack, keep Rulkov sim for visualization / drug-modulation research.');
+    console.log('  ANSWER: Transformer beats Unity by > 5 pp. Neural sim decorative for answer retrieval.');
+    console.log('  GloVe embeddings + sequence model produce the answer; Rulkov adds nothing on this axis.');
   } else if (delta > 0.05) {
-    console.log('  Unity beats transformer by > 5 pp at matched compute. Research-worthy finding — the neural sim provides inductive bias the transformer cannot replicate at comparable param count.');
-    console.log('  Consider writing this up as a research note.');
+    console.log('  ANSWER: Unity beats transformer by > 5 pp. Research-worthy — neural sim provides answer-path inductive bias.');
   } else {
-    console.log('  Marginal difference. Not decisive either direction.');
+    console.log('  ANSWER: marginal difference. Not decisive.');
+  }
+  // T25 — reasoning-specific interpretation. Answer-match is
+  // retrieval; methodology-match is explanation. The reviewer's
+  // critique was specifically about whether the neural sim does
+  // anything the transformer can't — if the transformer answers
+  // right but can't explain, AND Unity answers right AND can
+  // explain, the neural sim has contributed a reasoning-path
+  // capability that GloVe alone doesn't produce.
+  if (unity.methoAggregate.total > 0 || transformer.methoAggregate.total > 0) {
+    if (Math.abs(methoDelta) < 0.02) {
+      console.log('  METHODOLOGY: within 2 pp — both architectures reason about as well / poorly as each other.');
+    } else if (methoDelta < -0.05) {
+      console.log('  METHODOLOGY: Transformer reasons better by > 5 pp. Large language training has exposed the transformer to more explanation patterns.');
+      console.log('  Unity needs more exposure to reasoning-explanation content during curriculum teach to catch up.');
+    } else if (methoDelta > 0.05) {
+      console.log('  METHODOLOGY: Unity reasons better by > 5 pp. This IS the reviewer-critique answer — the neural sim provides reasoning-path capability the transformer cannot replicate from GloVe alone.');
+      console.log('  Load-bearing finding. Write this up.');
+    } else {
+      console.log('  METHODOLOGY: marginal difference. Not decisive.');
+    }
   }
   console.log('');
 }

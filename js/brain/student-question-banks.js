@@ -1196,19 +1196,170 @@ const LIFE_PREK_EXAM = [
 
 // ─── EXPORTS ─────────────────────────────────────────────────────────
 
+// ─── Per-standard methodology templates ─────────────────────────────
+// Each standard's methodology probe: the operator's 2026-04-21
+// directive was "so it telsts mothodoly not fill in the blank" —
+// ASKING HOW Unity reasons about the concept, not just what the
+// answer is. Scored by keyword match against the reasoning tokens
+// that should appear in her explanation. Auto-attached to every
+// question matching a standard by `toProbeShape` below. Any question
+// that already carries an explicit `methodology` field overrides the
+// template; everything else inherits from the table.
+const STANDARD_METHODOLOGY_TEMPLATES = {
+  // ─── K-ELA ────────────────────────────────────────────────────────
+  'K.RF.1a': { prompt: 'how do you know where to start reading on a page?', keywords: ['top', 'start', 'begin', 'first', 'above', 'left'], minKeywords: 1 },
+  'K.RF.1b': { prompt: 'how do you know when a sentence ends?', keywords: ['period', 'end', 'punctuation', 'stop', 'dot', 'mark'], minKeywords: 1 },
+  'K.RF.1c': { prompt: 'how do you tell where one word ends and another begins?', keywords: ['space', 'gap', 'between', 'separate', 'apart'], minKeywords: 1 },
+  'K.RF.1d': { prompt: 'how do you figure out which letter comes next in the alphabet?', keywords: ['alphabet', 'order', 'abc', 'next', 'song', 'sequence', 'memorize'], minKeywords: 1 },
+  'K.RF.2a': { prompt: 'how do you know when two words rhyme?', keywords: ['end', 'same', 'sound', 'ending', 'match', 'last', 'alike'], minKeywords: 1 },
+  'K.RF.2b': { prompt: 'how do you count syllables in a word?', keywords: ['clap', 'parts', 'beats', 'break', 'divide', 'count'], minKeywords: 1 },
+  'K.RF.2c': { prompt: 'how do words in a word family sound alike?', keywords: ['same', 'ending', 'sound', 'share', 'family', 'alike'], minKeywords: 1 },
+  'K.RF.2d': { prompt: 'how do you find the sound at the start or end of a word?', keywords: ['listen', 'first', 'last', 'begin', 'end', 'sound', 'hear'], minKeywords: 1 },
+  'K.RF.2e': { prompt: 'how do you put sounds together or take them apart?', keywords: ['blend', 'together', 'put', 'join', 'connect', 'combine', 'merge'], minKeywords: 1 },
+  'K.RF.3a': { prompt: 'how do you know what sound a letter makes?', keywords: ['learn', 'remember', 'practice', 'hear', 'alphabet', 'say', 'teacher'], minKeywords: 1 },
+  'K.RF.3b': { prompt: 'how do you know if a vowel sound is short or long?', keywords: ['sound', 'short', 'long', 'vowel', 'hear', 'spelling'], minKeywords: 1 },
+  'K.RF.3c': { prompt: 'how do you read a word you already know?', keywords: ['remember', 'recognize', 'seen', 'know', 'learned', 'practice'], minKeywords: 1 },
+  'K.RF.3d': { prompt: 'how do you read a new three-letter word?', keywords: ['sound', 'blend', 'letters', 'read', 'together', 'each'], minKeywords: 1 },
+  'K.RF.4':  { prompt: 'how do you read a sentence smoothly?', keywords: ['word', 'each', 'sound', 'read', 'practice', 'understand'], minKeywords: 1 },
+  'K.RL.3':  { prompt: 'how do you figure out who a story is about and where it happens?', keywords: ['read', 'look', 'character', 'setting', 'place', 'who', 'where', 'story'], minKeywords: 1 },
+  'K.RL.6':  { prompt: 'how do you tell who wrote a book and who made the pictures?', keywords: ['cover', 'author', 'write', 'illustrator', 'pictures', 'name'], minKeywords: 1 },
+  'K.L.1b':  { prompt: 'how do you tell if a word is a thing or an action?', keywords: ['thing', 'action', 'noun', 'verb', 'do', 'name', 'person', 'place'], minKeywords: 1 },
+  'K.L.1c':  { prompt: 'how do you make a word mean more than one?', keywords: ['add', 'more', 'many', 'plural', 'end', 'letter', 's', 'es'], minKeywords: 1 },
+  'K.L.2a':  { prompt: 'how do you know when to use a capital letter?', keywords: ['start', 'beginning', 'sentence', 'name', 'title', 'first'], minKeywords: 1 },
+  'K.L.2c':  { prompt: 'how do you spell a word you do not know?', keywords: ['sound', 'each', 'letter', 'phonics', 'try', 'sounds'], minKeywords: 1 },
+  'K.L.5a':  { prompt: 'how do you tell what category something belongs to?', keywords: ['type', 'kind', 'group', 'similar', 'like', 'same', 'category'], minKeywords: 1 },
+  'K.L.5b':  { prompt: 'how do you find the opposite of a word?', keywords: ['different', 'opposite', 'other', 'not', 'reverse'], minKeywords: 1 },
+  'K.SL.1':  { prompt: 'how do you have a good conversation?', keywords: ['listen', 'talk', 'take', 'turn', 'polite', 'hear', 'wait'], minKeywords: 1 },
+  // ─── K-Math ───────────────────────────────────────────────────────
+  'K.CC.1':  { prompt: 'how do you count to a big number?', keywords: ['one', 'start', 'next', 'add', 'count', 'sequence', 'order'], minKeywords: 1 },
+  'K.CC.2':  { prompt: 'how do you know the next number after any number?', keywords: ['add', 'plus', 'one', 'next', 'count', 'up', 'more'], minKeywords: 1 },
+  'K.CC.3':  { prompt: 'how do you know how to write a number?', keywords: ['shape', 'write', 'form', 'look', 'remember'], minKeywords: 1 },
+  'K.CC.4':  { prompt: 'how do you count things without missing any?', keywords: ['point', 'touch', 'one', 'each', 'count', 'every'], minKeywords: 1 },
+  'K.CC.5':  { prompt: 'how do you find out how many things there are?', keywords: ['count', 'one', 'each', 'total', 'how', 'many'], minKeywords: 1 },
+  'K.CC.6':  { prompt: 'how do you know which number is more or less?', keywords: ['bigger', 'more', 'greater', 'less', 'count', 'higher', 'than'], minKeywords: 1 },
+  'K.CC.7':  { prompt: 'how do you compare two numbers that are written down?', keywords: ['bigger', 'smaller', 'more', 'less', 'compare', 'greater'], minKeywords: 1 },
+  'K.OA.1':  { prompt: 'how do you add or take away?', keywords: ['add', 'plus', 'together', 'take', 'away', 'minus', 'count'], minKeywords: 1 },
+  'K.OA.2':  { prompt: 'how do you solve a math story problem?', keywords: ['read', 'listen', 'add', 'subtract', 'count', 'draw', 'think'], minKeywords: 1 },
+  'K.OA.3':  { prompt: 'how do you break a number into parts?', keywords: ['parts', 'break', 'split', 'pieces', 'smaller', 'decompose'], minKeywords: 1 },
+  'K.OA.4':  { prompt: 'how do you figure out what plus a number makes ten?', keywords: ['add', 'plus', 'count', 'up', 'ten', 'complete', 'fill'], minKeywords: 1 },
+  'K.OA.5':  { prompt: 'how do you add small numbers quickly?', keywords: ['know', 'remember', 'practice', 'quick', 'automatic', 'fast'], minKeywords: 1 },
+  'K.NBT.1': { prompt: 'how do you know a teen number is ten plus something?', keywords: ['ten', 'one', 'more', 'plus', 'extra', 'teen'], minKeywords: 1 },
+  'K.MD.1':  { prompt: 'how do you describe how big something is?', keywords: ['long', 'short', 'tall', 'heavy', 'measure', 'size', 'compare'], minKeywords: 1 },
+  'K.MD.3':  { prompt: 'how do you sort things into groups?', keywords: ['sort', 'group', 'same', 'like', 'different', 'pile', 'category'], minKeywords: 1 },
+  'K.G.1':   { prompt: 'how do you know what shape something is?', keywords: ['sides', 'count', 'corners', 'round', 'straight', 'look'], minKeywords: 1 },
+  'K.G.2':   { prompt: 'how do you know the name of a 3D shape?', keywords: ['sides', 'faces', 'solid', 'round', 'flat', 'hold'], minKeywords: 1 },
+  'K.G.3':   { prompt: 'how do you know if something is flat or solid?', keywords: ['flat', 'solid', '3d', '2d', 'hold', 'dimension', 'thick'], minKeywords: 1 },
+  'K.G.4':   { prompt: 'how do you tell if two shapes are the same or different?', keywords: ['sides', 'corners', 'count', 'same', 'compare', 'look'], minKeywords: 1 },
+  'K.G.5':   { prompt: 'how do you make one shape from other shapes?', keywords: ['together', 'combine', 'put', 'join', 'make', 'build'], minKeywords: 1 },
+  'K.G.6':   { prompt: 'how do you combine simple shapes?', keywords: ['together', 'combine', 'put', 'join', 'make', 'side'], minKeywords: 1 },
+  // ─── K-Science (NGSS) ─────────────────────────────────────────────
+  'K-PS2-1': { prompt: 'how do you make something move?', keywords: ['push', 'pull', 'force', 'touch', 'blow', 'throw'], minKeywords: 1 },
+  'K-PS2-2': { prompt: 'how do you know if something you built works?', keywords: ['test', 'try', 'check', 'look', 'observe'], minKeywords: 1 },
+  'K-PS3-1': { prompt: 'how do you know the sun changes things?', keywords: ['warm', 'hot', 'shine', 'light', 'melt', 'feel'], minKeywords: 1 },
+  'K-PS3-2': { prompt: 'how do you protect something from the sun?', keywords: ['shade', 'cover', 'block', 'umbrella', 'hide'], minKeywords: 1 },
+  'K-PS1':   { prompt: 'how do you know water can change form?', keywords: ['ice', 'steam', 'liquid', 'freeze', 'melt', 'temperature'], minKeywords: 1 },
+  'K-LS1-1': { prompt: 'how do you know what a plant or animal needs?', keywords: ['water', 'food', 'air', 'sun', 'grow', 'alive', 'need'], minKeywords: 1 },
+  'K-ESS2-1': { prompt: 'how do you describe the weather?', keywords: ['look', 'feel', 'temperature', 'clouds', 'outside', 'sky'], minKeywords: 1 },
+  'K-ESS2-2': { prompt: 'how do living things change their surroundings?', keywords: ['build', 'change', 'eat', 'dig', 'move', 'adapt'], minKeywords: 1 },
+  'K-ESS3-1': { prompt: 'how do you know where different animals live?', keywords: ['habitat', 'home', 'environment', 'food', 'live', 'climate'], minKeywords: 1 },
+  'K-ESS3-2': { prompt: 'why do people check the weather?', keywords: ['know', 'prepare', 'plan', 'safe', 'wear', 'dress'], minKeywords: 1 },
+  'K-ESS3-3': { prompt: 'how do people affect nature?', keywords: ['trash', 'pollution', 'save', 'recycle', 'protect', 'hurt'], minKeywords: 1 },
+  // ─── K-Social ─────────────────────────────────────────────────────
+  'K-Social-self':        { prompt: 'how do you describe yourself?', keywords: ['name', 'age', 'family', 'self', 'who', 'am'], minKeywords: 1 },
+  'K-Social-family':      { prompt: 'how do you know who is in your family?', keywords: ['mom', 'dad', 'parent', 'family', 'related', 'home'], minKeywords: 1 },
+  'K-Social-manners':     { prompt: 'why do we say please and thank you?', keywords: ['polite', 'kind', 'respect', 'manners', 'nice', 'good'], minKeywords: 1 },
+  'K-Social-empathy':     { prompt: 'how do you help someone who is sad?', keywords: ['hug', 'listen', 'help', 'comfort', 'ask', 'care'], minKeywords: 1 },
+  'K-Social-community':   { prompt: 'how do community helpers make our lives better?', keywords: ['help', 'safe', 'service', 'community', 'job', 'protect'], minKeywords: 1 },
+  'K-Social-safety':      { prompt: 'how do you stay safe?', keywords: ['look', 'stop', 'listen', 'careful', 'adult', 'ask'], minKeywords: 1 },
+  'K-Social-symbols':     { prompt: 'what do the parts of the flag mean?', keywords: ['flag', 'stars', 'stripes', 'country', 'america', 'red', 'white', 'blue'], minKeywords: 1 },
+  'K-Social-holidays':    { prompt: 'why do we celebrate holidays?', keywords: ['remember', 'celebrate', 'family', 'tradition', 'important'], minKeywords: 1 },
+  'K-Social-time':        { prompt: 'how do you keep track of time?', keywords: ['clock', 'calendar', 'day', 'week', 'month', 'count'], minKeywords: 1 },
+  'K-Social-geography':   { prompt: 'how do you know where things are?', keywords: ['map', 'direction', 'look', 'find', 'place', 'location'], minKeywords: 1 },
+  'K-Social-citizenship': { prompt: 'how do you be a good citizen?', keywords: ['rules', 'follow', 'help', 'kind', 'share', 'honest'], minKeywords: 1 },
+  // ─── K-Arts ───────────────────────────────────────────────────────
+  'K-Art-color-naming':   { prompt: 'how do you tell one color from another?', keywords: ['look', 'see', 'compare', 'eyes', 'different', 'name'], minKeywords: 1 },
+  'K-Art-primary':        { prompt: 'what makes a color a primary color?', keywords: ['base', 'main', 'red', 'blue', 'yellow', 'not', 'mixed'], minKeywords: 1 },
+  'K-Art-color-mixing':   { prompt: 'how do you make a new color?', keywords: ['mix', 'combine', 'blend', 'add', 'together', 'stir'], minKeywords: 1 },
+  'K-Art-warm-cool':      { prompt: 'how do you tell if a color is warm or cool?', keywords: ['hot', 'cold', 'fire', 'water', 'feel', 'sun'], minKeywords: 1 },
+  'K-Art-shapes':         { prompt: 'how do you tell one shape from another?', keywords: ['sides', 'corners', 'count', 'round', 'straight'], minKeywords: 1 },
+  'K-Art-patterns':       { prompt: 'how do you know something is a pattern?', keywords: ['repeat', 'same', 'again', 'order', 'predict'], minKeywords: 1 },
+  'K-Art-tools':          { prompt: 'how do you pick the right art tool?', keywords: ['draw', 'paint', 'cut', 'stick', 'color'], minKeywords: 1 },
+  'K-Art-nature':         { prompt: 'how do you show nature in art?', keywords: ['look', 'color', 'shape', 'outside', 'observe'], minKeywords: 1 },
+  'K-Art-music':          { prompt: 'how do you make music?', keywords: ['sing', 'play', 'beat', 'rhythm', 'instrument', 'sound'], minKeywords: 1 },
+  'K-Art-elements':       { prompt: 'what makes art interesting?', keywords: ['color', 'shape', 'line', 'texture', 'feeling'], minKeywords: 1 },
+  // ─── K-Life ───────────────────────────────────────────────────────
+  'K-Life-identity':      { prompt: 'how do you know who you are?', keywords: ['name', 'feel', 'remember', 'think', 'self', 'am'], minKeywords: 1 },
+  'K-Life-age':           { prompt: 'how do you know your age?', keywords: ['birthday', 'year', 'remember', 'born', 'number'], minKeywords: 1 },
+  'K-Life-grade':         { prompt: 'how do you know what grade you are in?', keywords: ['school', 'teacher', 'class', 'grade', 'year'], minKeywords: 1 },
+  'K-Life-feelings':      { prompt: 'how do you know what you are feeling?', keywords: ['inside', 'body', 'heart', 'think', 'notice', 'feel'], minKeywords: 1 },
+  'K-Life-preference':    { prompt: 'how do you know what you like?', keywords: ['feel', 'enjoy', 'fun', 'happy', 'choose', 'pick'], minKeywords: 1 },
+  'K-Life-routine':       { prompt: 'how do you remember your daily routine?', keywords: ['morning', 'night', 'order', 'every', 'always', 'habit'], minKeywords: 1 },
+  'K-Life-body':          { prompt: 'how do you know what your body can do?', keywords: ['move', 'feel', 'try', 'practice', 'use'], minKeywords: 1 },
+  'K-Life-family':        { prompt: 'how do you know who is in your family?', keywords: ['live', 'love', 'care', 'together', 'home'], minKeywords: 1 },
+  'K-Life-friends':       { prompt: 'how do you make a friend?', keywords: ['play', 'share', 'kind', 'talk', 'nice'], minKeywords: 1 },
+  'K-Life-memory':        { prompt: 'how do you remember something that happened?', keywords: ['think', 'happened', 'before', 'recall', 'past'], minKeywords: 1 },
+  'K-Life-selfcare':      { prompt: 'how do you take care of yourself?', keywords: ['wash', 'clean', 'eat', 'sleep', 'healthy'], minKeywords: 1 },
+  'K-Life-unity-bio':     { prompt: 'how do you know about your own life?', keywords: ['remember', 'happened', 'mom', 'dad', 'grow'], minKeywords: 1 },
+  'K-Life-safety':        { prompt: 'how do you stay safe?', keywords: ['adult', 'trust', 'stop', 'tell', 'careful'], minKeywords: 1 },
+  // ─── Pre-K (developmental) ────────────────────────────────────────
+  'preK-letter-ID':       { prompt: 'how do you know what letter this is?', keywords: ['shape', 'remember', 'name', 'learn', 'see'], minKeywords: 1 },
+  'preK-phoneme':         { prompt: 'how do you know what sound a letter makes?', keywords: ['hear', 'sound', 'learn', 'say', 'listen'], minKeywords: 1 },
+  'preK-vocab':           { prompt: 'how do you know what word to use?', keywords: ['hear', 'learn', 'remember', 'see', 'name'], minKeywords: 1 },
+  'preK-rhyme':           { prompt: 'how do you know when words sound alike?', keywords: ['same', 'sound', 'end', 'alike', 'listen'], minKeywords: 1 },
+  'preK-directions':      { prompt: 'how do you know which way is up?', keywords: ['sky', 'head', 'above', 'top', 'opposite'], minKeywords: 1 },
+  'preK-comprehension':   { prompt: 'how do you understand a story?', keywords: ['listen', 'look', 'pictures', 'think', 'words'], minKeywords: 1 },
+  'preK-counting':        { prompt: 'how do you count things?', keywords: ['point', 'one', 'each', 'number', 'say'], minKeywords: 1 },
+  'preK-sequence':        { prompt: 'how do you know what number comes next?', keywords: ['add', 'one', 'count', 'next', 'more'], minKeywords: 1 },
+  'preK-comparison':      { prompt: 'how do you know which is bigger?', keywords: ['size', 'look', 'compare', 'bigger', 'more'], minKeywords: 1 },
+  'preK-shapes':          { prompt: 'how do you know what shape something is?', keywords: ['round', 'sides', 'look', 'corners'], minKeywords: 1 },
+  'preK-simple-add':      { prompt: 'how do you add a few things together?', keywords: ['count', 'more', 'plus', 'put', 'together'], minKeywords: 1 },
+  'preK-animals':         { prompt: 'how do you know what animal something is?', keywords: ['look', 'sound', 'see', 'legs', 'ears'], minKeywords: 1 },
+  'preK-observation':     { prompt: 'how do you learn about things around you?', keywords: ['look', 'see', 'watch', 'observe', 'notice'], minKeywords: 1 },
+  'preK-plants':          { prompt: 'how do plants grow?', keywords: ['water', 'sun', 'soil', 'seed', 'dirt'], minKeywords: 1 },
+  'preK-weather':         { prompt: 'how do you know what the weather is?', keywords: ['look', 'feel', 'outside', 'sky', 'clouds'], minKeywords: 1 },
+  'preK-senses':          { prompt: 'how do you learn about your body?', keywords: ['eyes', 'ears', 'nose', 'mouth', 'touch'], minKeywords: 1 },
+  'preK-time':            { prompt: 'how do you know if it is day or night?', keywords: ['sun', 'dark', 'moon', 'light', 'sky'], minKeywords: 1 },
+  'preK-family':          { prompt: 'how do you know your family?', keywords: ['mom', 'dad', 'love', 'home', 'together'], minKeywords: 1 },
+  'preK-empathy':         { prompt: 'how do you know your friend is sad?', keywords: ['cry', 'face', 'look', 'ask', 'sad'], minKeywords: 1 },
+  'preK-greeting':        { prompt: 'how do you say hello to someone?', keywords: ['wave', 'smile', 'say', 'hi', 'voice'], minKeywords: 1 },
+  'preK-manners':         { prompt: 'why do you say thank you?', keywords: ['nice', 'polite', 'kind', 'manners'], minKeywords: 1 },
+  'preK-community':       { prompt: 'how do community helpers help you?', keywords: ['help', 'job', 'safe', 'teach', 'care'], minKeywords: 1 },
+  'preK-safety':          { prompt: 'how do you stay safe?', keywords: ['look', 'careful', 'adult', 'ask', 'stop'], minKeywords: 1 },
+  'preK-friends':         { prompt: 'how do you make a friend?', keywords: ['share', 'play', 'kind', 'nice', 'talk'], minKeywords: 1 },
+  'preK-self':            { prompt: 'how do you know who you are?', keywords: ['name', 'age', 'family', 'body'], minKeywords: 1 },
+  'preK-colors':          { prompt: 'how do you tell colors apart?', keywords: ['look', 'eyes', 'see', 'different'], minKeywords: 1 },
+  'preK-tools':           { prompt: 'how do you pick a tool to make art?', keywords: ['draw', 'color', 'stick', 'paint', 'cut'], minKeywords: 1 },
+  'preK-music':           { prompt: 'how do you make music?', keywords: ['sing', 'hit', 'play', 'sound', 'voice'], minKeywords: 1 },
+  'preK-body':            { prompt: 'how do you learn what your body parts do?', keywords: ['move', 'feel', 'use', 'try', 'practice'], minKeywords: 1 },
+  'preK-feelings':        { prompt: 'how do you know how you feel?', keywords: ['inside', 'heart', 'face', 'notice', 'body'], minKeywords: 1 },
+  'preK-routine':         { prompt: 'how do you remember what to do every day?', keywords: ['morning', 'night', 'order', 'always'], minKeywords: 1 },
+  'preK-preference':      { prompt: 'how do you know what you like?', keywords: ['feel', 'happy', 'enjoy', 'choose'], minKeywords: 1 },
+  'preK-identity':        { prompt: 'how do you know who you are?', keywords: ['name', 'body', 'feel', 'think'], minKeywords: 1 },
+  'preK-age':             { prompt: 'how do you know how old you are?', keywords: ['birthday', 'number', 'year', 'mom', 'tell'], minKeywords: 1 },
+};
+
 // Convert the compact {q,a,variants,...} shape to the probe-expected
 // {question, expectedAnswer, expectedVariants, ...} shape used by
-// `_studentTestProbe`. Keeps the source data compact while matching
-// the existing probe contract.
+// `_studentTestProbe`. Auto-attaches methodology from the per-
+// standard template table when a question doesn't carry its own
+// explicit methodology field. This scales methodology coverage from
+// the 17 hand-tagged questions to the full 899-Q bank without
+// per-question maintenance.
 function toProbeShape(bank) {
-  return bank.map(entry => ({
-    question: entry.q,
-    expectedAnswer: entry.a,
-    expectedVariants: entry.variants || [entry.a],
-    standard: entry.standard || 'unspecified',
-    difficulty: entry.difficulty || 1,
-    source: entry.source || 'authored',
-  }));
+  return bank.map(entry => {
+    const standard = entry.standard || 'unspecified';
+    const methodology = entry.methodology || STANDARD_METHODOLOGY_TEMPLATES[standard] || null;
+    const out = {
+      question: entry.q,
+      expectedAnswer: entry.a,
+      expectedVariants: entry.variants || [entry.a],
+      standard,
+      difficulty: entry.difficulty || 1,
+      source: entry.source || 'authored',
+    };
+    if (methodology) out.methodology = methodology;
+    return out;
+  });
 }
 
 // Held-out exam banks — what `_runStudentBattery` pulls for gate eval.
