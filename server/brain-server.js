@@ -4436,60 +4436,97 @@ class ServerBrain {
   _loadBinaryWeights() {
     const BIN_FILE = WEIGHTS_FILE.replace(/\.json$/, '.bin');
     if (!fs.existsSync(BIN_FILE)) return;
+    let fd = -1;
     try {
-      const buf = fs.readFileSync(BIN_FILE);
-      if (buf.length < 16) {
+      const stat = fs.statSync(BIN_FILE);
+      if (stat.size < 16) {
         console.warn('[Brain] Binary weights file too small, skipping');
         return;
       }
-      const magic = buf.toString('ascii', 0, 4);
+      fd = fs.openSync(BIN_FILE, 'r');
+
+      // Streaming read — single readFileSync caps at Node's 2 GiB Buffer
+      // limit and blows up on 9 GB save files. All reads go through a
+      // pair of helpers that fill Buffer/typed-array views by absolute
+      // file offset so no single allocation crosses the 2 GiB line.
+      let filePos = 0;
+      const readIntoBuffer = (len) => {
+        const out = Buffer.allocUnsafe(len);
+        let got = 0;
+        while (got < len) {
+          const n = fs.readSync(fd, out, got, len - got, filePos + got);
+          if (n <= 0) throw new Error(`short read at offset ${filePos + got}, expected ${len - got} more bytes`);
+          got += n;
+        }
+        filePos += len;
+        return out;
+      };
+      const readIntoTypedArray = (ta) => {
+        const view = Buffer.from(ta.buffer, ta.byteOffset, ta.byteLength);
+        let got = 0;
+        while (got < view.length) {
+          // fs.readSync takes up to ~2 GiB per call — chunk at 512 MiB
+          // so we never bump the underlying Buffer binding ceiling.
+          const chunk = Math.min(view.length - got, 512 * 1024 * 1024);
+          const n = fs.readSync(fd, view, got, chunk, filePos + got);
+          if (n <= 0) throw new Error(`short read at offset ${filePos + got}, expected ${chunk} more bytes`);
+          got += n;
+        }
+        filePos += view.length;
+      };
+
+      const header = readIntoBuffer(16);
+      const magic = header.toString('ascii', 0, 4);
       if (magic !== 'UBWT') {
         console.warn(`[Brain] Binary weights magic mismatch (got '${magic}'), skipping`);
+        fs.closeSync(fd); fd = -1;
         return;
       }
-      const formatVersion = buf.readUInt32LE(4);
-      const saveVersion = buf.readUInt32LE(8);
-      const sectionCount = buf.readUInt32LE(12);
+      const formatVersion = header.readUInt32LE(4);
+      const saveVersion = header.readUInt32LE(8);
+      const sectionCount = header.readUInt32LE(12);
       if (formatVersion !== 1) {
         console.warn(`[Brain] Binary weights format version ${formatVersion} unsupported (expected 1)`);
+        fs.closeSync(fd); fd = -1;
         return;
       }
-      let off = 16;
       const decoder = new TextDecoder();
       const sections = [];
       for (let i = 0; i < sectionCount; i++) {
-        if (buf.toString('ascii', off, off + 4) !== 'SECT') {
+        const sectHeader = readIntoBuffer(4);
+        if (sectHeader.toString('ascii', 0, 4) !== 'SECT') {
           console.warn(`[Brain] Binary weights section ${i} magic mismatch, aborting`);
+          fs.closeSync(fd); fd = -1;
           return;
         }
-        off += 4;
-        const nameLen = buf.readUInt32LE(off); off += 4;
-        const name = decoder.decode(buf.subarray(off, off + nameLen));
+        const nameLenBuf = readIntoBuffer(4);
+        const nameLen = nameLenBuf.readUInt32LE(0);
         const padded = Math.ceil(nameLen / 4) * 4;
-        off += padded;
-        const rows = buf.readUInt32LE(off); off += 4;
-        const cols = buf.readUInt32LE(off); off += 4;
-        const nnz = buf.readUInt32LE(off); off += 4;
-        const rowPtrBytes = (rows + 1) * 4;
-        const colIdxBytes = nnz * 4;
-        const valuesBytes = nnz * 8;
-        // Copy bytes into fresh typed arrays so the Buffer can be GC'd.
+        const nameBuf = readIntoBuffer(padded);
+        const name = decoder.decode(nameBuf.subarray(0, nameLen));
+        const dims = readIntoBuffer(12);
+        const rows = dims.readUInt32LE(0);
+        const cols = dims.readUInt32LE(4);
+        const nnz = dims.readUInt32LE(8);
+        // Allocate typed arrays directly and stream file bytes into them.
+        // Each array backs its own ArrayBuffer so the 2 GiB Buffer cap
+        // only constrains per-call read size, not total per-array size.
         const rowPtr = new Uint32Array(rows + 1);
-        Buffer.from(rowPtr.buffer, rowPtr.byteOffset, rowPtrBytes).set(buf.subarray(off, off + rowPtrBytes));
-        off += rowPtrBytes;
+        readIntoTypedArray(rowPtr);
         const colIdx = new Uint32Array(nnz);
-        Buffer.from(colIdx.buffer, colIdx.byteOffset, colIdxBytes).set(buf.subarray(off, off + colIdxBytes));
-        off += colIdxBytes;
+        readIntoTypedArray(colIdx);
         const values = new Float64Array(nnz);
-        Buffer.from(values.buffer, values.byteOffset, valuesBytes).set(buf.subarray(off, off + valuesBytes));
-        off += valuesBytes;
+        readIntoTypedArray(values);
         sections.push({ name, rows, cols, nnz, rowPtr, colIdx, values });
       }
+      fs.closeSync(fd); fd = -1;
       this._pendingCortexWeights = { saveVersion, sections };
-      const mb = (buf.length / 1048576).toFixed(1);
+      const mb = (stat.size / 1048576).toFixed(1);
       console.log(`[Brain] Binary weights queued for apply — ${sectionCount} sections, ${mb} MB (saveVersion=${saveVersion})`);
     } catch (err) {
       console.warn('[Brain] Binary weights load failed:', err?.message || err);
+    } finally {
+      if (fd !== -1) { try { fs.closeSync(fd); } catch { /* ignore */ } }
     }
   }
 
@@ -5177,7 +5214,7 @@ wss.on('connection', (ws, req) => {
     // T17.3.e — binary WebSocket frames for sparse matrix responses.
     // Client sends "SPRR" magic + type + reqId + payload. Decode and
     // route to the matching pending promise.
-    if (Buffer.isBuffer(data) && data.length >= 12 && data.slice(0, 4).toString('ascii') === 'SPRR') {
+    if (Buffer.isBuffer(data) && data.length >= 9 && data.slice(0, 4).toString('ascii') === 'SPRR') {
       const typeByte = data[4];
       // SPRR header layout (16 bytes for propagate, 9 bytes for
       // upload_ack/hebbian_ack):
