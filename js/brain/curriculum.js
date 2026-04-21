@@ -4774,6 +4774,25 @@ export class Curriculum {
       ]);
       _phaseDone('_teachCausalChains');
 
+      // LLM-analog question→answer binding. Carves sem→motor +
+      // recurrent intra-cluster Hebbian on paired spike patterns
+      // from TRAIN_BANKS['ela/kindergarten'] (held-out-disjoint from
+      // EXAM_BANKS). Pairs share sub-standard + structure with the
+      // exam questions but use different specific content, so a
+      // pass on the held-out exam reflects learned generalization
+      // rather than memorization.
+      try {
+        const qaPairs = TRAIN_BANKS['ela/kindergarten'] || [];
+        if (qaPairs.length > 0) {
+          _phaseTick('_teachQABinding');
+          await this._teachQABinding(qaPairs, { reps: 10, label: 'ELA-K-QA-BINDING' });
+          _phaseDone('_teachQABinding');
+          this._memorySnapshotAndGc('after _teachQABinding');
+        }
+      } catch (err) {
+        console.warn('[Curriculum] ELA-K QA binding failed:', err?.message || err);
+      }
+
       this._elaKRemakeDone = true;
     }
 
@@ -5978,6 +5997,20 @@ export class Curriculum {
       // in motor emission. Required for production probes that test
       // numeric answers through sem→motor tick-driven emission.
       await this._teachMagnitudeToMotor(ctx);
+
+      // LLM-analog question→answer binding for Math-K. Same equational
+      // Hebbian carve as ELA-K — read question via ventral path,
+      // overwrite motor with target answer, fire _teachHebbian.
+      // Training pairs distinct from math/kindergarten EXAM.
+      try {
+        const qaPairs = TRAIN_BANKS['math/kindergarten'] || [];
+        if (qaPairs.length > 0) {
+          await this._teachQABinding(qaPairs, { reps: 10, label: 'MATH-K-QA-BINDING' });
+        }
+      } catch (err) {
+        console.warn('[Curriculum] Math-K QA binding failed:', err?.message || err);
+      }
+
       this._mathKTransformsDone = true;
     }
 
@@ -7652,6 +7685,89 @@ export class Curriculum {
       }
       if (allowMicrotask) await _microtask();
     }
+  }
+
+  // ─── _teachQABinding — LLM-analog question→answer training ────────
+  //
+  // For each {question, answer} pair, carve the sem→motor (and
+  // recurrent intra-cluster) cross-projection so that when the brain
+  // reads the question via the ventral visual→letter→phon→sem path,
+  // the motor region holds the answer pattern by the time generation
+  // reads it out. Equational equivalent of LLM input→target training:
+  //
+  //   1. cluster.readInput(question) — streams characters through
+  //      visual→letter→phon→sem. After N ticks cortex.lastSpikes
+  //      reflects the question-post-read state.
+  //   2. _writeTiledPattern(motor, answerEmb) — OVERWRITE motor region
+  //      with the target answer's GloVe embedding. Now lastSpikes =
+  //      question-state across most regions + target answer in motor.
+  //   3. _teachHebbian(lr) — fires cross-projection Hebbian on the
+  //      paired spike pattern. sem→motor strengthens for the question-
+  //      content → answer pairing. Over N reps this carves a learned
+  //      mapping.
+  //
+  // At probe time, generateSentenceAwait reads input (same ventral
+  // path), ticks the cluster, and motor argmax emerges from the
+  // trained cross-projection weights. If the training set covered
+  // the pattern (same sub-standard, different content) the learned
+  // basins generalize to the held-out EXAM_BANKS questions.
+  //
+  // Persistence: the updated cross-projection weights save via
+  // brain-server.js `_saveBinaryWeights` (streaming binary format,
+  // every cross-projection CSR captured). Restart + Savestart.bat
+  // preserves the learned state across reboots.
+  async _teachQABinding(pairs, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return { trained: 0, skipped: 0 };
+    if (!Array.isArray(pairs) || pairs.length === 0) return { trained: 0, skipped: 0 };
+    const reps = opts.reps ?? 6;
+    const lr = opts.lr ?? cluster.learningRate;
+    const label = opts.label || 'QA-BINDING';
+    const motorRegion = cluster.regions && cluster.regions.motor;
+    const semRegion = cluster.regions && cluster.regions.sem;
+    if (!motorRegion || !semRegion) {
+      console.warn(`[Curriculum][${label}] skipped — motor or sem region not available`);
+      return { trained: 0, skipped: pairs.length };
+    }
+    let trained = 0, skipped = 0;
+    const startMs = Date.now();
+    console.log(`[Curriculum][${label}] START — ${pairs.length} Q→A pairs × ${reps} reps`);
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) {
+        console.log(`[Curriculum][${label}] shutdown requested — stopping at rep ${rep}/${reps}`);
+        break;
+      }
+      for (const pair of pairs) {
+        if (!pair || !pair.question || !pair.expectedAnswer) { skipped++; continue; }
+        const answer = String(pair.expectedAnswer).trim();
+        const answerEmb = (answer && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function')
+          ? sharedEmbeddings.getEmbedding(answer) : null;
+        if (!answerEmb || answerEmb.length === 0) { skipped++; continue; }
+        try {
+          // 1. Read the question through the ventral path so cortex
+          //    settles into its question-post-read representation.
+          if (typeof cluster.readInput === 'function') {
+            await cluster.readInput(String(pair.question), { ticks: 8 });
+          }
+          // 2. Overwrite motor region with the target answer pattern.
+          //    Answer GloVe is the target representation the learned
+          //    weights need to produce when the question input is
+          //    present downstream.
+          this._writeTiledPattern(motorRegion, answerEmb, true);
+          // 3. Fire Hebbian on the paired spike pattern. Both cross-
+          //    region projections (14 of them) AND the intra-cluster
+          //    recurrent matrix get carved on the paired state.
+          await this._teachHebbian(lr);
+          trained++;
+        } catch (err) {
+          skipped++;
+        }
+      }
+      await _microtask();
+    }
+    const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1);
+    console.log(`[Curriculum][${label}] DONE — trained ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})`);
+    return { trained, skipped };
   }
 
   // ─── internal: tile a feature onto a region of a full-cluster vec ──
