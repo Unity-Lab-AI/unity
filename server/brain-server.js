@@ -2137,6 +2137,16 @@ class ServerBrain {
       psi: this.psi ?? 0,
     }));
 
+    // Timeout budget. Previously 15 s — too short when the main JS
+    // event loop gets blocked for >10 s by CPU-side sparse matmul
+    // during curriculum gate probes (letter loop + SEQ read nnz
+    // sparse matrices synchronously on the main thread). The timer
+    // is armed at dispatch, so a blocked event loop can miss the
+    // legitimate response even though the GPU answered in microseconds.
+    // Bumped to 60 s — still short enough to catch true GPU hangs
+    // (TDR would have fired at 2 s system-level anyway) but generous
+    // enough for any gate-probe CPU block.
+    const TIMEOUT_MS = 60000;
     return new Promise((resolve) => {
       this._gpuBatchPending = { batchId, resolve };
       setTimeout(() => {
@@ -2149,14 +2159,14 @@ class ServerBrain {
           this._gpuBatchConsecutiveTimeouts = (this._gpuBatchConsecutiveTimeouts || 0) + 1;
           const queuePending = this._boundHebbianBatch?.ops?.length || 0;
           const lost = this._gpuDeviceLost ? ' (device.lost flagged during this batch)' : '';
-          console.warn(`[Brain] compute_batch ${batchId} timed out after 15s — GPU may be hung. Consecutive timeouts: ${this._gpuBatchConsecutiveTimeouts}. Bound-Hebbian queue: ${queuePending}.${lost}`);
+          console.warn(`[Brain] compute_batch ${batchId} timed out after ${TIMEOUT_MS / 1000}s — GPU may be hung. Consecutive timeouts: ${this._gpuBatchConsecutiveTimeouts}. Bound-Hebbian queue: ${queuePending}.${lost}`);
           if (this._gpuBatchConsecutiveTimeouts >= 3 && !this._gpuHangLogged) {
             console.warn('[Brain] compute_batch consecutive-timeout threshold reached — GPU pipeline likely unrecoverable without compute.html reload. Main brain tick loop will keep waiting; curriculum work paused.');
             this._gpuHangLogged = true;
           }
           resolve(null);
         }
-      }, 15000);
+      }, TIMEOUT_MS);
     });
   }
 
