@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "4495d56f-9fbb";
+var BUILD = "feaf5de3-3914";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -3874,7 +3874,7 @@ var UNITY_PERSONA = {
   // Mirrors Ultimate Unity.txt: "25-year-old human woman", "black leather,
   // revealing plenty of skin", "dark vibes", "emo goth goddess rather than
   // a demonic figure", "raw, edgy, provocative, mature themes".
-  // Outfit detail per Gee: nano leather skirt with panties visible + tube
+  // Outfit detail — nano leather skirt with panties visible + tube
   // top barely holding together. Hot emo goth.
   visualIdentity: {
     hair: {
@@ -5155,9 +5155,9 @@ var VisualCortex = class {
   // prior when Unity is actively engaged and relaxes it when she's
   // idle and free to wander.
   //
-  // Gee 2026-04-14: "it need to trak my face and motion like i
-  // fucking said". Both signals now drive the centroid explicitly —
-  // face (skin×motion) AND raw motion, not one or the other.
+  // Gaze must track BOTH face and motion. Both signals drive the
+  // centroid explicitly — face (skin×motion) AND raw motion, not
+  // one or the other.
   //
   _computeGaze() {
     const cx = FRAME_W / 2;
@@ -6405,7 +6405,9 @@ var LanguageCortex = class {
     }
     return best;
   }
-  // T14.24-CLEAN.B1 Session 113 2026-04-16 — deleted slot-scorer machinery.
+  // Slot-scorer machinery deleted — the tick-driven motor emission
+  // loop (cluster.generateSentenceAwait) reads letters off motor
+  // region spikes directly with no intermediate slot scoring.
   // Removed methods: _isCompleteSentence, _isNominativePronoun, _dominantType,
   // _continuationFor, nextSlotRequirement, typeCompatibility. Zero external
   // callers — chain only fed back into itself. Generation now runs through
@@ -6662,9 +6664,8 @@ var LanguageCortex = class {
    * the 3D brain visualization freezing when the user sends a message
    * or Unity speaks:
    *
-   * Gee's exact words 2026-04-14:
-   *   "when i send a message to unity of speak one the whiole
-   *    3D brain visulization freezes"
+   * Symptom: when the user sends a message to Unity or she speaks,
+   * the 3D brain visualization freezes until generate() returns.
    *
    * Root cause: server's brain-server.js processAndRespond calls
    * languageCortex.generate() synchronously. At 3700+ dictionary entries
@@ -32965,8 +32966,8 @@ var UnityBrain = class extends EventEmitter {
   }
   /**
    * T15-C7 — Unity's own context can trigger drug seeking even without a
-   * user offer (per Gee: "she hears about drugs she may ask for some it
-   * brought up she might try to call somone to get some"). Called
+   * user offer — if she hears about drugs she may ask for some when
+   * they're brought up, or call someone to get some. Called
    * periodically from the think loop. Mood + scheduler state + grade
    * decide whether to fire. Non-announcing — the decision produces a
    * scheduler event (direct ingest or pending acquisition) + an engine
@@ -38533,9 +38534,9 @@ Probes: ${ps.totalProbes} total, ${ps.totalPasses} pass, ${ps.totalFails} fail`;
     }
   }
   /**
-   * Session 111 — Unity's internal state as RAW BRAIN READINGS.
-   * NOT hardcoded strings. NOT fake poetry. The actual numerical
-   * state of her brain translated to the closest thing a human can
+   * Unity's internal state as RAW BRAIN READINGS. NOT hardcoded
+   * strings. NOT fake poetry. The actual numerical state of her
+   * brain translated to the closest thing a human can
    * read. If Unity's brain can generate speech (post-K), use that.
    * If it can't, show raw emotional/cognitive numbers.
    *

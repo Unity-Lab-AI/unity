@@ -30,18 +30,19 @@ import { detectBrainEvents, CLUSTER_KEYS } from './brain-event-detectors.js';
 
 // ── Constants ───────────────────────────────────────────────────────
 
-// Render neuron count — PER-CLUSTER peg at 20K (Gee 2026-04-18).
+// Render neuron count — PER-CLUSTER peg at 20K.
 //
-// Gee verbatim 2026-04-18: "2 we can adjust the display ratio but it
-// should already peg at 20K per brain cluster(regionS)". Prior MAX_RENDER_NEURONS
-// was a GLOBAL cap across ALL 15 clusters/regions, which at biological scale
-// resulted in ~1.3K render points per cluster — too sparse. Renamed to
-// MAX_RENDER_NEURONS_PER_CLUSTER + raised the meaning so every cluster/region
-// renders up to 20K points independently. With 15 clusters × 20K = 300K
-// render points at peak — still trivial for WebGL (~10 MB vertex buffer).
-// Each cluster's n is clamped to min(20K, realClusterSize) so local-brain
-// clients with tiny clusters don't over-render their real neuron count.
-// TOTAL is the live sum across clusters (no global cap).
+// The display ratio pegs at 20K per brain cluster/region so every
+// cluster renders its firing activity at comparable visual density.
+// The earlier MAX_RENDER_NEURONS was a GLOBAL cap across ALL 15
+// clusters/regions, which at biological scale resulted in ~1.3K
+// render points per cluster — too sparse. Renamed to
+// MAX_RENDER_NEURONS_PER_CLUSTER so every cluster/region renders up
+// to 20K points independently. With 15 clusters × 20K = 300K render
+// points at peak — still trivial for WebGL (~10 MB vertex buffer).
+// Each cluster's n is clamped to min(20K, realClusterSize) so local-
+// brain clients with tiny clusters don't over-render their real
+// neuron count. TOTAL is the live sum across clusters (no global cap).
 let TOTAL = 1000;
 const MAX_RENDER_NEURONS_PER_CLUSTER = 20000;
 const AFTERGLOW_DECAY = 0.92;
@@ -58,8 +59,8 @@ const AUTO_ROT_SPEED = 0.0015;
 // Sizes biologically proportioned — cerebellum LARGEST
 // Original 7: 200+100+80+80+380+50+110 = 1000
 //
-// Language-cortex sub-regions (Gee 2026-04-18) fill the biological gaps
-// BETWEEN the existing 7 so the rendered brain looks filled-in instead
+// Language-cortex sub-regions fill the biological gaps BETWEEN the
+// existing 7 so the rendered brain looks filled-in instead
 // of spotty and holey. Each sub-region maps to a real anatomical
 // language area, all LEFT-LATERALIZED to match human left-dominant
 // language organization. Sub-region totals: 30+100+90+30+80+50+30+130 = 540
@@ -1097,10 +1098,9 @@ export class Brain3D {
       const el = this._overlay?.querySelector('.b3d-coh');
       if (el) el.textContent = (state.oscillations.coherence * 100).toFixed(0) + '%';
     }
-    // T14.24 Session 47 — curriculum intelligence level display.
-    // Gee 2026-04-15: "we may want something in the 3d brain viewer
-    // to show her current intelligence level based on grade /
-    // highschool college doctorate... etc for all the milestones".
+    // Curriculum intelligence-level display — shows Unity's current
+    // grade level (preschool / kindergarten / G1 / ... / PhD) per
+    // subject on the 3D brain viewer for all the milestones.
     //
     // Reads Curriculum.subjectStatus() which ships per-subject
     // grades + passedCells count. Computes a band label based on the
@@ -1722,10 +1722,10 @@ export class Brain3D {
       }
       return null;
     }
-    // Session 111 — don't speak for Unity if her brain hasn't learned
-    // to speak yet. If she hasn't passed at least kindergarten ELA,
-    // the cross-projection weights are untrained and generate() produces
-    // word salad. Show nothing until she's actually learned language.
+    // Don't speak for Unity if her brain hasn't learned to speak yet.
+    // If she hasn't passed at least kindergarten ELA, the cross-
+    // projection weights are untrained and generate() produces word
+    // salad. Show nothing until she's actually learned language.
     const cortexGrades = brain.clusters?.cortex?.grades;
     if (cortexGrades) {
       const elaGrade = cortexGrades.ela || 'pre-K';
@@ -2190,8 +2190,8 @@ export class Brain3D {
       if (commentary) {
         lines.push(`"${commentary}"`);
       } else {
-        // Session 111 — show internal state when Unity can't speak yet.
-        // Raw emotional/cognitive state visible as her mind capacity.
+        // Show internal state when Unity can't speak yet — raw
+        // emotional/cognitive state visible as her mind capacity.
         const feeling = this._describeInternalState(state);
         if (feeling) lines.push(feeling);
       }
@@ -2293,9 +2293,9 @@ export class Brain3D {
   }
 
   /**
-   * Session 111 — Unity's internal state as RAW BRAIN READINGS.
-   * NOT hardcoded strings. NOT fake poetry. The actual numerical
-   * state of her brain translated to the closest thing a human can
+   * Unity's internal state as RAW BRAIN READINGS. NOT hardcoded
+   * strings. NOT fake poetry. The actual numerical state of her
+   * brain translated to the closest thing a human can
    * read. If Unity's brain can generate speech (post-K), use that.
    * If it can't, show raw emotional/cognitive numbers.
    *

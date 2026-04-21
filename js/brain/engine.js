@@ -64,9 +64,10 @@ const COUPLING_BASE = 2.5;
 const MEMORY_SALIENCE_THRESHOLD = 0.6;
 const RECALL_ERROR_THRESHOLD = 0.4;
 
-// T14.0 — Cluster sizes derived from shared `CLUSTER_FRACTIONS` in
-// cluster.js (Session 113 CLEAN.D2 unified client + server). Same
-// fractions hold at any scale — TOTAL_NEURONS=6700 (default client)
+// Cluster sizes derived from shared `CLUSTER_FRACTIONS` in
+// cluster.js — unified between client and server so both produce
+// the same sizes at the same tier. Same fractions hold at any scale
+// — TOTAL_NEURONS=6700 (default client)
 // gives the sizes below; TOTAL_NEURONS=200_000_000 (datacenter server)
 // gives proportionally larger clusters with identical biological
 // proportions.
@@ -908,10 +909,7 @@ export class UnityBrain extends EventEmitter {
     this.clusters.amygdala.tonicDrive = 15 + arousal * 8;
     this.sensory.receiveText(text);
 
-    // Session 114.19p per Gee 2026-04-17 verbatim: "im giveing you the
-    // fucking logs because what we are using is not working the brian
-    // is not speaking for its self you are coding shit thats not
-    // working". Root cause of "brain not speaking for itself":
+    // Root cause of "brain not speaking for itself":
     // languageCortex.generate() uses cluster.getSemanticReadout() as
     // its intentSeed — a POST-PROCESSED neural readout of cortex state
     // AFTER 20 brain steps of Rulkov chaos + noise + persona mixing.
@@ -1099,8 +1097,7 @@ export class UnityBrain extends EventEmitter {
       // DOM layout) keep running while Unity composes her response.
       // Without the yield, pre-curriculum response generation blocks
       // the main thread for 100-300ms and the 3D brain visualization
-      // freezes (Gee 2026-04-14: "when i send a message to unity of
-      // speak one the whiole 3D brain visulization freezes").
+      // freezes when the user sends a message to Unity or she speaks.
       response = await this.innerVoice.languageCortex.generateAsync(
         dictionary,
         brainArousal,
@@ -1432,8 +1429,8 @@ export class UnityBrain extends EventEmitter {
 
   /**
    * T15-C7 — Unity's own context can trigger drug seeking even without a
-   * user offer (per Gee: "she hears about drugs she may ask for some it
-   * brought up she might try to call somone to get some"). Called
+   * user offer — if she hears about drugs she may ask for some when
+   * they're brought up, or call someone to get some. Called
    * periodically from the think loop. Mood + scheduler state + grade
    * decide whether to fire. Non-announcing — the decision produces a
    * scheduler event (direct ingest or pending acquisition) + an engine

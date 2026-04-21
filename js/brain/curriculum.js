@@ -4117,12 +4117,12 @@ export class Curriculum {
     // boot — buried above Phase 2 heartbeats. This one lands inline.
     this._memorySnapshotAndGc('between Phase 2 and _teachLetterCaseBinding');
 
-    // Session 114.6 REMAKE per Gee 2026-04-17 LAW 3 + LAW 7 binding —
-    // replace the pre-T114.6 _teachVocabList / _teachSentenceList data-
-    // array pattern with real equational teaching methods landing via
-    // _teachCombination + direct-pattern Hebbian through the recurrent
-    // matrix. Every ELA-K TODO concept gets a dedicated method, every
-    // test phrasing gets a production probe in _gateElaKReal.
+    // ELA-K equational teaching methods — replaces the older
+    // _teachVocabList / _teachSentenceList data-array pattern with
+    // real equational teaching methods landing via _teachCombination
+    // + direct-pattern Hebbian through the recurrent matrix. Every
+    // ELA-K concept gets a dedicated method, every test phrasing gets
+    // a production probe in _gateElaKReal.
     if (!this._elaKRemakeDone) {
       // T18.16.a — Phase-start banners for each K.RF foundational-skill
       // teach method. Each of these methods runs equational teach loops
@@ -6199,11 +6199,11 @@ export class Curriculum {
     // above stay as precursors; these are the actual LAW 6 Part 1
     // qualifier per LAW 7.
     //
-    // Scope note: REMAKE-0 production probes cover Math-K concepts
-    // that emit as SINGLE-DIGIT numeric answers via the
-    // _teachMagnitudeToMotor bridge. Object-name answers (K.MD
-    // crayon/pencil, K.G cylinder/cube word emission) defer to
-    // ELA-K REMAKE-1 which ships word-level motor emission training.
+    // Scope note: Math-K production probes cover concepts that emit
+    // as SINGLE-DIGIT numeric answers via the _teachMagnitudeToMotor
+    // bridge. Object-name answers (K.MD crayon/pencil, K.G cylinder/
+    // cube word emission) defer to the ELA-K track which ships word-
+    // level motor emission training.
     // ═════════════════════════════════════════════════════════════════
     const mathKProductionSamples = [
       // K.CC successor (TODO: "What number comes after 7?" → 8)
@@ -9620,8 +9620,8 @@ export class Curriculum {
     await this._teachClassification();
     await this._teachStatesOfMatter();
 
-    // Session 114.7 REMAKE — equational NGSS K teaching replacing
-    // banned _teachVocabList + _teachSentenceList data-array pattern
+    // Equational NGSS K teaching — replaces the banned
+    // _teachVocabList + _teachSentenceList data-array pattern.
     if (!this._sciKRemakeDone) {
       // K-PS2 Forces and Interactions
       await this._teachForceMotionK(ctx);
@@ -9894,7 +9894,7 @@ export class Curriculum {
     // Session 56 — family-role concept lattice with kinship features
     await this._teachFamilyRoles();
 
-    // Session 114.8 REMAKE — equational Core Knowledge K teaching
+    // Equational Core Knowledge K teaching.
     if (!this._socKRemakeDone) {
       await this._teachCommunityHelpers(ctx);
       await this._teachNeedsVsWants(ctx);
@@ -10138,7 +10138,7 @@ export class Curriculum {
     await this._teachBasicShapes();
     await this._teachSimpleSongs();
 
-    // Session 114.9 REMAKE — equational Arts-K teaching
+    // Equational Arts-K teaching.
     if (!this._artKRemakeDone) {
       await this._teachColorMixingK(ctx);
       await this._teachWarmCoolColors(ctx);
@@ -20561,10 +20561,9 @@ export class Curriculum {
       { situation: 'yell', emotion: new Float64Array([0,1,0,0.5,0.5,0,0,0]), label: 'scared' },
     ]);
 
-    // Session 114.10 REMAKE — biographical facts for TODO Life Pre-K +
-    // Life-K test phrasings. Equational concept→answer binding via
-    // _teachCombination. Augments existing _conceptTeach +
-    // _teachEmotionalInference (kept — already equational per Law 3).
+    // Biographical facts for Life Pre-K + Life-K test phrasings.
+    // Equational concept→answer binding via _teachCombination.
+    // Augments existing _conceptTeach + _teachEmotionalInference.
     if (!this._lifeKRemakeDone) {
       await this._teachBiographicalFacts([
         // Pre-K core identity facts
