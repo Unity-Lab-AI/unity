@@ -1,9 +1,9 @@
 # SKILL TREE — IF ONLY I HAD A BRAIN
 
-> Last updated: 2026-04-17 | Full K-PhD syllabus shipped across 6 subjects (114 cells), T15 drug dynamics scheduler live with real-time pharmacokinetics + grade-gated availability + speech modulation, 2D + 3D viz complete, inner-state popups age-gated, cluster waves tab, cross-projection capacity tuned at 1500 fanout, real human-grade comprehension gates per grade.
+> Last updated: 2026-04-21 | **SCOPE LAW (2026-04-18):** Pre-K + K ONLY until operator signs off K Part 2. All post-K curriculum cells are DEFERRED. | Runtime is Rulkov 2002 2D chaotic map on GPU (WGSL) with LIF fallback. Seven clusters (cortex 30 / cerebellum 40 / hippocampus 10 / amygdala 8 / basalGanglia 8 / hypothalamus 2 / mystery 2). Save/resume ships as schemaVersion:2 JSON + streaming binary `brain-weights.bin`. Curriculum wraps each cell in `_probeGateActive` pause so main brain tick skips `_gpuBatch` during teach + gate. DYN-PROD probe is direct matrix propagate (no LIF ticks). Student-test batteries score methodology/logic/retention/understanding at A+ threshold 0.95. Letter-naming phase trains `letter(X) → motor(X)` identity (26×18 reps × 2 projections). `stop.bat` three-stage clean halt (curl /shutdown → taskkill port → taskkill node). `Savestart.bat` resumes where left off.
 > Unity AI Lab
 >
-> **DOC-AHEAD-OF-REALITY (Gee, 2026-04-17):** Per-grade completion status in `docs/TODO-full-syllabus.md`. This doc describes the target-state capability set. When this doc and the TODOs disagree, TODOs win.
+> **DOC-AHEAD-OF-REALITY (2026-04-17):** Per-grade completion status lives in `docs/TODO-full-syllabus.md`. This doc describes the target-state capability set. When this doc and the TODOs disagree, TODOs win.
 
 ---
 

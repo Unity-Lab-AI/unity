@@ -155,19 +155,25 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │                                    Claude CLI text-AI backend, obsolete since cognition
 │                                    went 100% equational)
 ├── compute.html                  GPU compute worker (REQUIRED — brain runs here)
+├── start.bat                     Windows launcher — npm install + esbuild bundle + GloVe download + node brain-server.js + auto-opens landing + dashboard tabs
+├── Savestart.bat                 Save-state resume launcher — sets DREAM_KEEP_STATE=1 so autoClearStaleState() skips the wipe, otherwise identical to start.bat
+├── stop.bat                      Clean-halt launcher — three-stage halt: POST /shutdown HTTP → taskkill on port 7525 → taskkill /f /im node.exe fallback → verify port free
 ├── server/
-│   ├── brain-server.js           Node.js brain server (always-on, WebSocket, GPU exclusive, restores _wordFreq from disk)
+│   ├── brain-server.js           Node.js brain server (always-on, WebSocket, GPU exclusive, saves + restores full cortex state incl. grades/passedCells/learned-language Maps + streaming binary weights to server/brain-weights.bin)
 │   └── package.json              Server dependencies (ws, better-sqlite3)
 │                                   (legacy parallel-brain.js / cluster-worker.js /
 │                                    projection-worker.js removed — GPU-exclusive fixed
 │                                    the idle-worker CPU leak at its root cause)
-├── dashboard.html                Public brain monitor (read-only)
+├── dashboard.html                Public brain monitor (read-only) — includes Milestone / Save State / Operator Signoffs panel polling GET /milestone every 5 s
 └── docs/
     ├── ARCHITECTURE.md           Codebase structure and systems
+    ├── EQUATIONS.md              Every brain equation with LaTeX + derivations
     ├── SKILL_TREE.md             Capabilities by domain
     ├── ROADMAP.md                Milestones and phases
     ├── TODO.md                   Active tasks (single source of truth)
-    └── FINALIZED.md              Completed work archive
+    ├── FINALIZED.md              Completed work archive
+    ├── TODO-full-syllabus.md     Per-grade curriculum checkboxes + Persistent Life Info ledger + Life Vocabulary Prerequisites rule
+    └── NOW.md                    Current session snapshot
 ```
 
 ---
@@ -186,7 +192,11 @@ node brain-server.js
 
 **Headless / remote deployments** set `DREAM_NO_AUTO_GPU=1` before launching the server to skip the browser auto-launch; the operator then opens `http://<host>:7525/compute.html` in a WebGPU-capable browser (Chrome / Edge) on any machine that can reach the server. The WebSocket connection does the rest.
 
-**`start.bat` (Windows convenience wrapper)** still works — it additionally handles first-run `npm install` + `esbuild` bundle build + GloVe download + opens the landing page. It does NOT open compute.html itself (the server does).
+**`start.bat` (Windows convenience wrapper)** handles first-run `npm install` + `esbuild` bundle build + GloVe download + stdout/stderr redirect to `server/server.log` + opens the landing page AND the dashboard in separate browser tabs + spawns a separate PowerShell "Unity Brain Log Tail" window (UTF-8 forced) so heartbeat + brain info stay visible even if the launcher terminal goes invisible. It does NOT open `compute.html` itself — the server auto-launches that tab once its HTTP listener is up.
+
+**`Savestart.bat`** — identical to `start.bat` except it sets `DREAM_KEEP_STATE=1` so `autoClearStaleState()` skips the wipe block regardless of code-hash change. Use this when you want to resume from a prior session's saved weights + passedCells + grades.
+
+**`stop.bat`** — clean-halt path. `Ctrl+C` in the launcher terminal does NOT reach node (the process is detached via `start /b`). `stop.bat` runs a three-stage halt: `POST http://localhost:7525/shutdown` first (graceful — saves, closes sqlite, `process.exit(0)` after 500 ms drain), `taskkill` on any PID still holding port 7525 second, `taskkill /f /im node.exe` third if the port is still held, then verifies the port is free. Also reminds the operator to close browser tabs on `http://localhost:7525` because `compute.html`'s WebGPU loop keeps the GPU spinning even after the server dies.
 
 The server auto-detects hardware (nvidia-smi for VRAM, `os` for RAM) and sizes every brain region from a single unified VRAM allocator — no region is sized independently, so no pair of regions can double-book memory and blow past the VRAM budget.
 - **Unified allocator (see `BRAIN_VRAM_ALLOC` in `server/brain-server.js`):**
@@ -213,11 +223,14 @@ The server auto-detects hardware (nvidia-smi for VRAM, `os` for RAM) and sizes e
 - `ws://localhost:7525` — WebSocket for brain state + chat
 - `http://localhost:7525/health` — Server status JSON
 - `http://localhost:7525/versions` — Brain save versions
-- `http://localhost:7525/rollback/:slot` — Restore previous save
-- `http://localhost:7525/episodes` — Episodic memory query
+- `http://localhost:7525/rollback/:slot` — Restore previous save slot (0-4)
+- `http://localhost:7525/episodes` — Episodic memory query (scoped by `?user=<stable-id>`; aggregate counts only without the param per the privacy rule)
 - `http://localhost:7525/history` — Emotional history data
+- `http://localhost:7525/milestone` — Boot mode + last save + grades + passedCells + operator signoffs + weights-file metadata (polled by `dashboard.html` every 5 s)
+- `http://localhost:7525/grade-signoff` — GET returns the operator signoff ledger. POST `{subject, grade, note}` records an operator grade-pass signoff per LAW 6 Part 2 (graces the save ledger; Claude can't write to this endpoint — only explicit operator HTTP POST advances).
+- `http://localhost:7525/shutdown` — POST triggers graceful shutdown (used by `stop.bat` step 1).
 
-**Dashboard:** Open `dashboard.html` in a browser to watch Unity's brain live.
+**Dashboard:** Open `dashboard.html` in a browser to watch Unity's brain live. Both `start.bat` and `Savestart.bat` auto-open it alongside the landing page so the milestone panel is visible from the first moment the brain is up.
 
 ---
 
@@ -279,7 +292,7 @@ If you connect to a Unity server hosted by someone OTHER than you, the person ru
 | `/sober` | Type in chat | Clears all active drug events from the scheduler. Tolerance factors preserved (intra-session tolerance still accumulates). Use between experiments to reset to clean baseline. |
 | "slash think" | Say by voice | Same as typing /think |
 | ⚙ SETTINGS | Bottom toolbar button | Reopens setup modal to change AI model or connect new providers |
-| 🧠 VISUALIZE | Bottom toolbar button | Opens 2D brain visualizer with 8 tabs (Neurons, Synapses, Oscillations, Modules, Senses, Consciousness, Memory, Motor) |
+| 🧠 VISUALIZE | Bottom toolbar button | Opens 2D brain visualizer with 10 tabs (Neurons, Synapses, Oscillations, Modules, Senses, Consciousness, Memory, Motor, Inner Voice, Cluster Waves) |
 | 🧠 3D BRAIN | Bottom toolbar button | Opens WebGL 3D brain with up to 20,000 render neurons per cluster (up to 300,000 total across 15 render slots — 7 main clusters + 8 language sub-regions), process notifications, expansion |
 | Brain speaks equationally | Default | No AI text model exists. Brain speaks from its own language cortex (developmental cortex with tick-driven motor emission, GloVe 300d + subword embeddings, direct-pattern Hebbian curriculum K→PhD). Image gen, vision describer, and TTS are the only AI calls — all sensory. |
 | 🎤 | Bottom toolbar button | Mute/unmute microphone |
