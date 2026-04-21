@@ -78,8 +78,8 @@ const LIF_SHADER = /* wgsl */`
   // index falls outside every registered region, gate defaults to
   // 1.0 (homogeneous-cortex neurons outside language sub-regions).
   //
-  // Mystery psi binding constraint (Gee 2026-04-18): the shader's
-  // per-neuron drive is modulated by neuronDrive * regionGate
+  // Mystery psi binding constraint: the shader's per-neuron drive
+  // is modulated by neuronDrive * regionGate
   // so psi is woven into the main equation at the firing-decision
   // level, not just in the global gainMultiplier already baked into
   // effectiveDrive. Two psi factors — one global (gainMultiplier),
@@ -268,7 +268,7 @@ const PLASTICITY_SHADER = /* wgsl */`
 // `currents[i]` is populated by SYNAPSE_PROPAGATE_SHADER (and optional
 // CPU-side `writeExternalCurrents` upload). So a dedicated "write drive
 // + noise" kernel is redundant. Keeping it around with no pipeline
-// bound would be textbook vestigial organ code per Gee's directive.
+// bound would be textbook vestigial organ code.
 
 // T18.4.c — Voltage mean reduction. Atomic accumulator over the
 // Rulkov x-component of every neuron's (x, y) state. WebGPU atomics
@@ -536,8 +536,8 @@ export class GPUCompute {
     // the browser tab is the same but the server re-sends gpu_init.
     // Without this guard, biological-scale re-init orphans ~6.3 GB of
     // VRAM per reconnect cycle (all 7 clusters' voltages + spikes +
-    // currents + synapse CSR) → device.lost → Windows TDR → NDIS cascade
-    // → whole PC loses internet (Gee 2026-04-19).
+    // currents + synapse CSR) → device.lost → Windows TDR → NDIS
+    // cascade → whole PC loses internet.
     this._destroyClusterBuffers(this._buffers[name]);
 
     // Params uniform
@@ -600,11 +600,11 @@ export class GPUCompute {
     // layout left main-brain neurons with zero synaptic coupling —
     // SYNAPSE_PROPAGATE_SHADER was never dispatched in fullStep, and
     // LIF_SHADER's inline drive didn't honor per-neuron currents even
-    // when it was. Per Gee 2026-04-18 "does it fully do all we need
-    // for the main brain equation and all sub equations in totality":
-    // the answer was no. This restores the buffer + wires the full
-    // dispatch (clearBuffer → propagate → LIF reads currents[i]) so
-    // intra-cluster recurrence is actually live on GPU.
+    // when it was. The main brain equation and all sub-equations
+    // require intra-cluster recurrence to be live. This restores the
+    // buffer + wires the full dispatch (clearBuffer → propagate →
+    // LIF reads currents[i]) so intra-cluster recurrence is actually
+    // live on GPU.
     const buffers = {
       params: device.createBuffer({
         size: 48,
@@ -669,9 +669,9 @@ export class GPUCompute {
     //
     // Side defaults to 'bilateral' if the caller doesn't specify one,
     // which matches today's behavior (no hemispheric lateralization) so
-    // existing code doesn't regress. Phase B wires the actual L/R gate
-    // into LIF via a Ψ-modulated hemisphere binding coefficient per
-    // Gee 2026-04-18 "main equation mystery cant not have it involved".
+    // existing code doesn't regress. Phase B wires the actual L/R
+    // gate into LIF via a Ψ-modulated hemisphere binding coefficient
+    // — mystery Ψ must remain involved in the main equation.
     const VALID_SIDES = new Set(['left', 'right', 'bilateral', 'center']);
     if (regions && typeof regions === 'object') {
       const validated = {};
@@ -789,8 +789,8 @@ export class GPUCompute {
    * the server (current assembly) and Phase B shader dispatches read
    * the same formula.
    *
-   * Per Gee 2026-04-18: *"remmebr the main equation mystery cant not
-   * have it involved"*. Ψ is non-optional in this equation.
+   * Ψ is non-optional in this equation — mystery Ψ must remain
+   * involved in the main brain equation.
    *
    * Formula: `gate = 0.5 + 0.5 · sigmoid(Ψ · k)` where k = 4.0 tunes
    * the sensitivity. Low Ψ → gate trends 0.5 → hemispheric divergence
@@ -1663,7 +1663,7 @@ export class GPUCompute {
     // NVIDIA drivers cap at ~65K concurrent handles + Windows imposes
     // its own per-process limits on top; after one ELA-K pass the table
     // exhausts → device.lost → Windows TDR → NDIS/WinSock cascade →
-    // whole PC loses internet (Gee 2026-04-19 cascade). Destruction
+    // whole PC loses internet. Destruction
     // after queue.submit() is legal per WebGPU spec: the GPU can still
     // use the buffer's contents from the already-submitted command
     // buffer until the work completes; destroy() releases the handle
@@ -1994,7 +1994,7 @@ export class GPUCompute {
     // calls in compute.html, which fixed the crash but cost 7x
     // parallelism — 7 clusters ran sequentially instead of
     // concurrently, turning ~50ms/substep into ~350ms/substep
-    // (500x slower wall-clock perf at Gee's 677M-neuron scale).
+    // (500x slower wall-clock at 677M-neuron biological scale).
     //
     // Real fix: per-call readback buffer. 4 bytes, disposable,
     // freed immediately after unmap. Concurrent calls for the

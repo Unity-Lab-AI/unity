@@ -1,12 +1,11 @@
 /**
- * T18.4.e — Worker pool manager for CPU sparse-matmul parallelization.
+ * Worker pool manager for CPU sparse-matmul parallelization.
  *
- * Gee 2026-04-18 runtime report showed `Mode: Single Thread` +
- * `Parallel Workers: 0` on a 16-core 5800X. Curriculum teach's sparse
- * matmul loops run on one core while 15 sit idle. This pool fixes that:
- * partition the row range of a sparse matmul across N workers, each
- * running in its own thread, reading shared CSR arrays + writing
- * disjoint row-range slices of a shared output buffer.
+ * Without a worker pool, curriculum teach's sparse matmul loops run
+ * on one core while the other cores sit idle. This pool partitions
+ * the row range of a sparse matmul across N workers, each running in
+ * its own thread, reading shared CSR arrays + writing disjoint
+ * row-range slices of a shared output buffer.
  *
  * Usage:
  *   const pool = new SparseMatmulPool();  // sized to os.cpus().length - 1

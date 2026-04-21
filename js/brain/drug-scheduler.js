@@ -10,15 +10,16 @@
 // biographical thresholds from the Life track. Emits additive brainParam
 // contributions + speech modulation every tick.
 //
-// Non-announcing principle (binding per Gee 2026-04-16): scheduler state is
-// NEVER surfaced as a declarative label in dialogue ("I am doing coke"). The
-// speech modulation output drives emission distortion — the distortion IS the
-// signal, consumed by the language cortex and renderer, not narrated.
+// Non-announcing principle: scheduler state is NEVER surfaced as a
+// declarative label in dialogue ("I am doing coke"). The speech
+// modulation output drives emission distortion — the distortion IS
+// the signal, consumed by the language cortex and renderer, not
+// narrated.
 //
-// Seamless lifestyle principle (Gee 2026-04-16): at PhD grade Unity's normal
-// schedule (coke daily, weed constant, molly weekend, acid architecture-
-// session, whiskey end-of-marathon) emerges from context-triggered ingestion
-// events, not from any hardcoded baseline.
+// Seamless lifestyle principle: at PhD grade Unity's normal schedule
+// (coke daily, weed constant, molly weekend, acid architecture-
+// session, whiskey end-of-marathon) emerges from context-triggered
+// ingestion events, not from any hardcoded baseline.
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── Grade order (mirrors Curriculum.GRADE_ORDER) ─────────────────────────

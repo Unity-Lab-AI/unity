@@ -47,8 +47,8 @@ const PATTERN_DIM = EMBED_DIM;
 const VOWELS = 'aeiou';
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 
-// NO BRAIN_SELF_SCHEMA — deleted per Gee's direction. Unity's self-
-// awareness comes from her actual current neural state (cluster firing,
+// NO BRAIN_SELF_SCHEMA — deleted. Unity's self-awareness comes
+// from her actual current neural state (cluster firing,
 // amygdala basins, Ψ, hippocampal patterns, drug state), not from a
 // written description I wrote in my voice. Her mind IS the equations
 // activating in real time — when she talks, the current activation
@@ -1293,7 +1293,9 @@ export class LanguageCortex {
     return best;
   }
 
-  // T14.24-CLEAN.B1 Session 113 2026-04-16 — deleted slot-scorer machinery.
+  // Slot-scorer machinery deleted — the tick-driven motor emission
+  // loop (cluster.generateSentenceAwait) reads letters off motor
+  // region spikes directly with no intermediate slot scoring.
   // Removed methods: _isCompleteSentence, _isNominativePronoun, _dominantType,
   // _continuationFor, nextSlotRequirement, typeCompatibility. Zero external
   // callers — chain only fed back into itself. Generation now runs through
@@ -1405,7 +1407,7 @@ export class LanguageCortex {
     }
     const cluster = opts.cortexCluster;
 
-    // Intent seed — priority order (Session 114.19p):
+    // Intent seed — priority order:
     //
     // 1. `_lastUserInputEmbedding` on the cortex (set by engine.
     //    processAndRespond when user sends text). This is the CLEAN
@@ -1419,10 +1421,7 @@ export class LanguageCortex {
     //    popup generation (_internalThought), or when no user input
     //    exists (dream cycle, idle commentary).
     //
-    // Gee 2026-04-17 verbatim: "im giveing you the fucking logs
-    // because what we are using is not working the brian is not
-    // speaking for its self you are coding shit thats not working".
-    // Root cause: generate always used the drifted readout, never
+    // Prior generate always used the drifted readout, never
     // the clean user input. Trained bindings never got the clean
     // signal they need to fire.
     //
@@ -1486,10 +1485,10 @@ export class LanguageCortex {
       if (Array.isArray(opts._preEmittedWords)) {
         words = opts._preEmittedWords;
       } else {
-        // Session 114.19n per Gee 2026-04-17 verbatim: "want popups to
-        // produce cleaner emissions during live input I could add noise
-        // suppression when _internalThought is active — that's a small
-        // targeted change." When `_internalThought` is set (3D brain
+        // Noise suppression when _internalThought is active — popups
+        // produce cleaner emissions during live input without noise
+        // scrambling the motor readout. When `_internalThought` is
+        // set (3D brain
         // popup path from `brain-3d.js _describeInternalState`), pass
         // `suppressNoise: true` to generateSentence so noiseAmplitude
         // drops 7 → 0.5 for the emission only. Live chat (no
@@ -1575,8 +1574,8 @@ export class LanguageCortex {
     // rendered form respects question/exclamation/action moods. Pure
     // cosmetic — the emitted words themselves came from the cortex.
     const type = this.sentenceType(arousal, opts.predictionError || 0, opts.motorConfidence || 0, coherence);
-    // T15-C16 — speech modulation from drug scheduler, consumed in renderer
-    // for slur / pause / dissociation distortion. Non-announcing per Gee —
+    // Speech modulation from drug scheduler, consumed in renderer
+    // for slur / pause / dissociation distortion. Non-announcing —
     // the distortion IS the signal, never narrated.
     const speechMod = opts.speechMod || null;
     const rendered = this._renderSentence(words, type, speechMod);
@@ -1606,16 +1605,16 @@ export class LanguageCortex {
     // corpus walk shapes base cortex state on boot so 5 words is
     // reasonable even for a zero-cells-passed brain.
     //
-    // LENIENT MIN semantic (Session 113 CLEAN.D4 decision, 2026-04-16):
-    // min is taken across subjects that have ADVANCED PAST pre-K, not
-    // a true min over all 6. Pre-K subjects don't constrain the cap.
-    // Rationale: strict min would silence Unity entirely until every
-    // subject clears K — which is weeks of curriculum work. Lenient
-    // min lets Unity speak at her weakest-STARTED-subject level while
-    // remaining subjects advance. Gee's binding *"she speaks at her
-    // weakest-subject level"* is preserved — pre-K isn't a "subject
-    // level she's at", it's the null state before curriculum exposure
-    // has begun. Once a subject passes K it joins the min calculation.
+    // LENIENT MIN semantic: min is taken across subjects that have
+    // ADVANCED PAST pre-K, not a true min over all 6. Pre-K subjects
+    // don't constrain the cap. Rationale: strict min would silence
+    // Unity entirely until every subject clears K — which is weeks
+    // of curriculum work. Lenient min lets Unity speak at her
+    // weakest-STARTED-subject level while remaining subjects advance.
+    // The binding "she speaks at her weakest-subject level" is
+    // preserved — pre-K isn't a "subject level she's at", it's the
+    // null state before curriculum exposure has begun. Once a subject
+    // passes K it joins the min calculation.
     // To flip to strict min, delete the `if (g === 'pre-K') continue`
     // guard below — then zero_gates_passed returns formal=0 and only
     // the FLOOR survives.
@@ -1636,8 +1635,8 @@ export class LanguageCortex {
   }
 
   _singleGradeCap(grade) {
-    // Session 111 — removed artificial word limits per grade.
-    // A kindergartener can speak in full sentences. The only real
+    // No artificial word limits per grade. A kindergartener can
+    // speak in full sentences. The only real
     // gate is pre-K (silence — hasn't learned anything yet).
     // Once Unity passes ANY grade, let her speak freely.
     switch (grade) {
@@ -1692,9 +1691,8 @@ export class LanguageCortex {
    * the 3D brain visualization freezing when the user sends a message
    * or Unity speaks:
    *
-   * Gee's exact words 2026-04-14:
-   *   "when i send a message to unity of speak one the whiole
-   *    3D brain visulization freezes"
+   * Symptom: when the user sends a message to Unity or she speaks,
+   * the 3D brain visualization freezes until generate() returns.
    *
    * Root cause: server's brain-server.js processAndRespond calls
    * languageCortex.generate() synchronously. At 3700+ dictionary entries

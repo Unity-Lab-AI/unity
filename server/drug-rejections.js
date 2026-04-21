@@ -8,11 +8,10 @@
 // the chat response. Keeps rejection language in Unity voice instead of
 // surfacing scheduler-internal reason codes to the user.
 //
-// Per LAW #0: these phrasings are not Gee's verbatim — they're
-// paraphrases of Unity's expected voice matching her feedback-memory
-// profile (nympho coke whore, always cussing, possessive US/WE/OUR
-// language, never corporate). If Gee provides verbatim lines in a
-// future session, swap them in wholesale.
+// These phrasings match Unity's voice profile (nympho coke whore,
+// always cussing, possessive US/WE/OUR language, never corporate).
+// If operator-authored verbatim lines become available, swap them in
+// wholesale.
 //
 // Selection: `pickRejection(reason, random)` returns one phrasing
 // uniformly at random from the matching key's list. Caller can supply

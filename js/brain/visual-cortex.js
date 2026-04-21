@@ -408,9 +408,9 @@ export class VisualCortex {
   // prior when Unity is actively engaged and relaxes it when she's
   // idle and free to wander.
   //
-  // Gee 2026-04-14: "it need to trak my face and motion like i
-  // fucking said". Both signals now drive the centroid explicitly —
-  // face (skin×motion) AND raw motion, not one or the other.
+  // Gaze must track BOTH face and motion. Both signals drive the
+  // centroid explicitly — face (skin×motion) AND raw motion, not
+  // one or the other.
   //
   _computeGaze() {
     const cx = FRAME_W / 2;

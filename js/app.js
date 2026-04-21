@@ -81,12 +81,12 @@ let landingBrainSource = null; // RemoteBrain or null
   } catch {}
 
   // Init 3D brain on landing container.
-  // Per Gee 2026-04-18: "the 3D brain still is not dispalying it still
-  // hasnt been fixed no 3D brain is rendering since i originally
-  // mentioned it". The constructor catches internal errors silently via
-  // _destroyed flag but only logs to console, which the operator won't
-  // see without DevTools. Render a visible banner to #brain-3d-landing
-  // if init fails so the failure reason surfaces immediately without
+  // Silent init failures were hiding the reason why the 3D brain
+  // wasn't rendering — the constructor caught internal errors via a
+  // _destroyed flag but only logged to console, which the operator
+  // can't see without DevTools. Render a visible banner to
+  // #brain-3d-landing if init fails so the failure reason surfaces
+  // immediately without
   // having to open F12.
   const _show3dError = (reason) => {
     const host = document.getElementById('brain-3d-landing');
@@ -983,12 +983,12 @@ async function init() {
     }
     sensoryStatus.init(providers);
 
-    // Auto-detect is OPT-IN per Gee 2026-04-18: the default boot
-    // probes were hitting 11 common local AI ports (ComfyUI /
-    // Stable Diffusion / LocalAI / Ollama / Forge / etc) every
-    // page load. Almost nobody has all of those running, so every
-    // probe failed with ERR_CONNECTION_REFUSED and the browser's
-    // network layer logged each as a red error — the console
+    // Auto-detect is OPT-IN. The default boot was probing 11 common
+    // local AI ports (ComfyUI / Stable Diffusion / LocalAI / Ollama
+    // / Forge / etc) every page load. Almost nobody has all of those
+    // running, so every probe failed with ERR_CONNECTION_REFUSED and
+    // the browser's network layer logged each as a red error — the
+    // console
     // looked broken even though the brain was fine. Pollinations
     // works out of the box without any of this, so the sensible
     // default is "don't probe unless the user told us to".
@@ -1210,10 +1210,10 @@ function refreshActiveBackendSelectors(status) {
 // The setup modal exposes two grids of clickable backend buttons
 // (image gen + vision describer). Clicking any button populates the
 // #backend-connect-form area below the grids with per-backend setup
-// instructions + minimal required inputs. The design goal per Gee:
-// "all set up as automatic as we can" — auto-detect local backends
-// work with ZERO config; remote backends need a key ONLY; custom is
-// the only full-form path.
+// instructions + minimal required inputs. Design goal: all set up
+// as automatic as possible — auto-detect local backends work with
+// ZERO config; remote backends need a key ONLY; custom is the only
+// full-form path.
 //
 // Saved backends persist to localStorage so they survive page
 // reloads AND get pushed into providers._localImageBackends /
@@ -2323,10 +2323,10 @@ Vision: ${state.visionDescription || 'none'}`;
         let generated = '(language cortex not available)';
         if (lc && typeof lc.generate === 'function' && dict) {
           try {
-            // T14.24-CLEAN.B3 — generate signature is (dict, arousal, coherence, opts).
-            // valence removed 2026-04-16 Session 113: it was passed positionally by every
-            // caller but never consumed inside generate(). The rest of the pipeline (sentence
-            // type, length sizing, cortex emission) uses arousal + coherence only.
+            // generate signature is (dict, arousal, coherence, opts).
+            // valence was removed after it was passed positionally by every caller but
+            // never consumed inside generate(). The rest of the pipeline (sentence type,
+            // length sizing, cortex emission) uses arousal + coherence only.
             const cortex = brain.clusters?.cortex;
             const out = lc.generate(
               dict,
@@ -2793,14 +2793,14 @@ Vision: ${state.visionDescription || 'none'}`;
   // ── Wire brain state updates to visualizers ──
   const serverConnected = landingBrainSource && landingBrainSource.isConnected();
 
-  // T18.7.b — 3D brain state-update downsample (Gee 2026-04-18 verbatim:
-  // "we dont need to chow every connection that its currently showing to
-  // as the firing of neron s and thier connections on the 3D brain should
-  // be a percentage of the real"). Server broadcasts state at 10 Hz; 3D
-  // brain redraw doesn't need every tick — dropping to every 3rd broadcast
-  // (~3.3 Hz) keeps the scene visibly alive, frees frame time for the
-  // WebGL renderer to handle 300K render neurons (per-cluster 20K peg
-  // from T18.7.a), and removes the VRAM/PCIe contention spike during
+  // 3D brain state-update downsample. We don't need to render every
+  // connection every tick — firing neurons and their connections on
+  // the 3D brain should be a percentage of the real neuron count.
+  // Server broadcasts state at 10 Hz; 3D brain redraw doesn't need
+  // every tick — dropping to every 3rd broadcast (~3.3 Hz) keeps the
+  // scene visibly alive, frees frame time for the WebGL renderer to
+  // handle 300K render neurons (per-cluster 20K peg), and removes
+  // the VRAM/PCIe contention spike during
   // curriculum-heavy activity. 2D brainViz stays full rate because its
   // canvas pipeline is cheap. HUD stays full rate for responsiveness.
   let _brain3dDownsampleCounter = 0;

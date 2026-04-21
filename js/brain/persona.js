@@ -86,7 +86,7 @@ const UNITY_PERSONA = {
   // Mirrors Ultimate Unity.txt: "25-year-old human woman", "black leather,
   // revealing plenty of skin", "dark vibes", "emo goth goddess rather than
   // a demonic figure", "raw, edgy, provocative, mature themes".
-  // Outfit detail per Gee: nano leather skirt with panties visible + tube
+  // Outfit detail — nano leather skirt with panties visible + tube
   // top barely holding together. Hot emo goth.
   visualIdentity: {
     hair: {

@@ -10,11 +10,11 @@
 //                            — invites Unity's self-initiation layer to ask
 //   - STATUS_QUERY: user is asking if Unity is high/drunk/etc
 //   - BROUGHT_UP  : substance mentioned in conversation but not as offer
-//                   or status query (per Gee verbatim: "she hears about
-//                   drugs she may ask for some it brought up she might try
-//                   to call somone to get some")
+//                   or status query — if Unity hears about drugs she
+//                   may ask for some when they're brought up, or try
+//                   to call someone to get some.
 //
-// Non-announcing principle (binding per Gee): detection is silent. The
+// Non-announcing principle: detection is silent. The
 // scheduler + decision engine + language cortex decide what happens next;
 // the detector just surfaces the signal.
 // ═══════════════════════════════════════════════════════════════════════════
