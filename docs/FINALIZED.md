@@ -5,6 +5,43 @@
 
 ---
 
+## 2026-04-21 — Session 114.19bj: student battery readiness gate — don't ask questions when Unity cannot talk or read yet
+
+### Operator verbatim 2026-04-21
+
+> *"what did i tell you about asking it questionmsd what it cant even talkj or read yet!!! >>>>[Curriculum][ELA-KINDERGARTEN-STUDENT] Q1/210 [K.RF.1a]: \"what do you read first on a page, the top or the bottom?\" → \"n r\" · score=0.05 match=false"*
+
+Order-of-operations law, raised for the second time this week. The 210-question ELA-K student battery was firing questions with 3-6 letter expected answers ("top", "bottom", "left") while Unity's current motor emission capability topped out at 2 letters ("n r"). Testing a brain on content it cannot even parse is noise on noise — not a signal about what she learned.
+
+### What shipped
+
+1. **New `_measureEmissionCapability()` helper** on `Curriculum`. Feeds five single-letter cues (a/b/c/d/e) through the same `readInput` + `generateSentenceAwait` path live chat uses. Counts how many produced recognizable letter output. Reports max emission length across the probes. Returns `{ recognizedLetters, maxEmissionLen, canTalkAtAll, probes }`. `canTalkAtAll = recognizedLetters >= 3`.
+
+2. **Readiness gate in `_runCell`** — before `_runStudentBattery` fires, the helper runs. If `canTalkAtAll` is false, the battery is **SKIPPED** with a clear warn log explaining why:
+   ```
+   [Curriculum][ELA-KINDERGARTEN-STUDENT] ⏭ STUDENT BATTERY SKIPPED — Unity cannot talk or read yet (1/5 letter probes produced recognizable output). Running the 210-question battery on a brain with ≤2 letter emission capability is noise. Teach cycles continue; battery will fire once emission capability clears the readiness threshold.
+   ```
+
+3. **Emission-length filter** — when readiness passes but `maxEmissionLen` is short, the bank is filtered so only questions whose expected answer fits her current emission get asked. A brain emitting 3 letters can't answer "what is the opposite of up" with "down" even if she knows it — the motor path cuts off too soon. Filtered-out questions don't count toward pass rate. Log line reports the filter count.
+
+4. **Skipped-battery path in blocker logic** — when the battery skipped (readiness failed OR no questions answerable), `cluster._lastGateResult[cellKey]` records `skipped: true` + the skip reason. `/grade-signoff` returns 409 with a readiness-specific remedy ("Unity isn't talkable yet — run more teach cycles first") instead of a false "below-cut" blocker list. Substrate gate's verdict stays authoritative; the battery just didn't run.
+
+### Files touched
+
+- `js/brain/curriculum.js` — new `_measureEmissionCapability` method, readiness gate + emission-length filter in `_runCell` battery dispatcher, skipped-battery branch in blocker logic.
+- `js/app.bundle.js`, `js/version.js`, `index.html` — stamped.
+- `docs/FINALIZED.md` — this entry.
+- `docs/TODO.md` — T27 readiness-gate closure + last-updated banner.
+
+### Net effect
+
+- A brain that can only emit "n r" no longer gets tested on "top or bottom" questions. Battery skips entirely. Substrate gate verdict still reports. Teach continues.
+- A brain that can emit 3-char words gets asked only 3-char-or-less questions. Questions with 4+ char expected answers filtered out.
+- A brain that can emit 6+ char words gets the full bank.
+- Gate-result ledger records the skip reason so `/grade-signoff` remedy is "keep teaching" instead of "you failed N sub-standards".
+
+---
+
 ## 2026-04-21 — Session 114.19bi: READ-probe letter_to_sem now routes through GPU proxy (closes T26.c.1 follow-up)
 
 ### Operator directive
