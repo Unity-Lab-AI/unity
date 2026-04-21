@@ -566,12 +566,7 @@ export class Curriculum {
         r.source = q.source || 'authored';
         results.push(r);
         if (r.score >= 0.5) pass++;
-        if (q.methodology && typeof q.methodology === 'object' && !r.methodologySkipped) {
-          // Methodology probe actually ran (answer score > 0.1 so the
-          // second-pass generation was attempted). Skipped probes
-          // don't enter the denominator — otherwise a cell with
-          // zero-score answers would drag the methodology rate to
-          // zero twice over and double-penalize partial-teach state.
+        if (q.methodology && typeof q.methodology === 'object') {
           methoQuestions += 1;
           if ((r.methodologyScore || 0) > 0) methoPass += 1;
         }
@@ -810,22 +805,15 @@ export class Curriculum {
     if (out.understanding) score += 0.1;
     out.score = Math.min(1, score);
 
-    // T25 — optional methodology test. Second generation pass with a
-    // methodology prompt that asks HOW Unity reasons about the
-    // concept, not just WHAT the answer is. Scored by keyword match
-    // against `methodology.keywords`.
-    //
-    // Gate criteria: aggregate answer rate ≥ 90% AND aggregate
-    // methodology rate ≥ 60%. K threshold is lower because K kids
-    // aren't verbal explainers.
-    //
-    // Early-bailout: skip methodology probe when the answer probe
-    // already scored zero. No point asking "how do you reason about
-    // X" when Unity can't even produce X — halves per-cell work at
-    // partial-teach state without changing pass criteria. At a
-    // full-pass state Unity answers everything so methodology still
-    // runs on every question.
-    if (opts.methodology && typeof opts.methodology === 'object' && out.score > 0.1) {
+    // Methodology probe — second generation pass with a methodology
+    // prompt that asks HOW Unity reasons about the concept. Scored
+    // by keyword match against `methodology.keywords`. Runs on
+    // every methodology-tagged question at full tick budget — same
+    // equational path as the answer probe, no bailouts, no reduced
+    // budgets. If this is slow at biological scale the fix is in
+    // the cortex tick infrastructure (GPU dispatch / propagate
+    // pipeline), not in skipping parts of the test.
+    if (opts.methodology && typeof opts.methodology === 'object') {
       const methoPrompt = String(opts.methodology.prompt || '');
       const keywords = (opts.methodology.keywords || [])
         .map(k => String(k || '').toLowerCase().trim()).filter(k => k.length > 0);
@@ -833,28 +821,16 @@ export class Curriculum {
       out.methodologyAnswer = '';
       out.methodologyKeywordMatches = [];
       out.methodologyScore = 0;
-      out.methodologySkipped = false;
       if (methoPrompt && keywords.length > 0) {
         try {
           if (typeof cluster.readInput === 'function') {
-            // Shorter read-in ticks for methodology — the question's
-            // already been established by the answer probe's readInput
-            // above, we just need to shift sem focus to the methodology
-            // prompt.
-            await cluster.readInput(methoPrompt, { ticks: 5 });
+            await cluster.readInput(methoPrompt, { ticks: 10 });
           }
           let methoGenerated = '';
           try {
             const semSeed = (typeof cluster.getSemanticReadout === 'function')
               ? cluster.getSemanticReadout() : null;
-            // Methodology probe uses a tighter tick budget — 60-tick
-            // max for answer + 60-tick max for methodology = 120 ticks
-            // per question, × 210+ questions per cell = hours on CPU-
-            // only paths. Methodology probe runs on half the tick
-            // budget since it's a secondary readout and methodology
-            // scoring is forgiving (any keyword hit = partial credit).
-            const methoMaxTicks = Math.max(20, Math.floor(maxTicks / 2));
-            const emitOpts = { maxEmissionTicks: methoMaxTicks };
+            const emitOpts = { maxEmissionTicks: maxTicks };
             if (semSeed) emitOpts.injectStrength = 0.6;
             const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
             methoGenerated = (raw && typeof raw === 'string' ? raw : (raw?.text || '')) || '';
@@ -863,8 +839,6 @@ export class Curriculum {
           const methoLower = methoGenerated.toLowerCase();
           const matches = keywords.filter(k => methoLower.includes(k));
           out.methodologyKeywordMatches = matches;
-          // Methodology score: fraction of keywords present, floored
-          // by minKeywords threshold (below that = zero credit).
           if (matches.length >= minKeywords) {
             out.methodologyScore = Math.min(1, matches.length / keywords.length);
           } else {
@@ -872,12 +846,6 @@ export class Curriculum {
           }
         } catch { /* non-fatal */ }
       }
-    } else if (opts.methodology && typeof opts.methodology === 'object') {
-      // Methodology probe skipped because answer probe scored zero.
-      // Mark for aggregate tracking so the methoRate denominator
-      // only counts questions where a methodology probe actually ran.
-      out.methodologySkipped = true;
-      out.methodologyScore = 0;
     }
 
     out.ms = Date.now() - startMs;

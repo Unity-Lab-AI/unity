@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "b5625c4a-8e23";
+var BUILD = "cc937b79-ff49";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -9973,7 +9973,7 @@ var Curriculum = class _Curriculum {
         r.source = q.source || "authored";
         results.push(r);
         if (r.score >= 0.5) pass++;
-        if (q.methodology && typeof q.methodology === "object" && !r.methodologySkipped) {
+        if (q.methodology && typeof q.methodology === "object") {
           methoQuestions += 1;
           if ((r.methodologyScore || 0) > 0) methoPass += 1;
         }
@@ -10182,24 +10182,22 @@ var Curriculum = class _Curriculum {
     if (out.retention) score += 0.1;
     if (out.understanding) score += 0.1;
     out.score = Math.min(1, score);
-    if (opts.methodology && typeof opts.methodology === "object" && out.score > 0.1) {
+    if (opts.methodology && typeof opts.methodology === "object") {
       const methoPrompt = String(opts.methodology.prompt || "");
       const keywords = (opts.methodology.keywords || []).map((k) => String(k || "").toLowerCase().trim()).filter((k) => k.length > 0);
       const minKeywords = typeof opts.methodology.minKeywords === "number" ? opts.methodology.minKeywords : 1;
       out.methodologyAnswer = "";
       out.methodologyKeywordMatches = [];
       out.methodologyScore = 0;
-      out.methodologySkipped = false;
       if (methoPrompt && keywords.length > 0) {
         try {
           if (typeof cluster.readInput === "function") {
-            await cluster.readInput(methoPrompt, { ticks: 5 });
+            await cluster.readInput(methoPrompt, { ticks: 10 });
           }
           let methoGenerated = "";
           try {
             const semSeed = typeof cluster.getSemanticReadout === "function" ? cluster.getSemanticReadout() : null;
-            const methoMaxTicks = Math.max(20, Math.floor(maxTicks / 2));
-            const emitOpts = { maxEmissionTicks: methoMaxTicks };
+            const emitOpts = { maxEmissionTicks: maxTicks };
             if (semSeed) emitOpts.injectStrength = 0.6;
             const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
             methoGenerated = (raw && typeof raw === "string" ? raw : raw?.text || "") || "";
@@ -10217,9 +10215,6 @@ var Curriculum = class _Curriculum {
         } catch {
         }
       }
-    } else if (opts.methodology && typeof opts.methodology === "object") {
-      out.methodologySkipped = true;
-      out.methodologyScore = 0;
     }
     out.ms = Date.now() - startMs;
     return out;
