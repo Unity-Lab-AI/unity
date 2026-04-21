@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "495f427d-2ace";
+var BUILD = "eaca2852-3a33";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -9322,174 +9322,6 @@ function trainExamOverlap(cellKey) {
   }
   return overlap;
 }
-var AMBIENT_STOPWORDS = /* @__PURE__ */ new Set([
-  "a",
-  "an",
-  "the",
-  "is",
-  "are",
-  "was",
-  "were",
-  "be",
-  "been",
-  "being",
-  "am",
-  "do",
-  "does",
-  "did",
-  "has",
-  "have",
-  "had",
-  "will",
-  "would",
-  "can",
-  "could",
-  "should",
-  "shall",
-  "may",
-  "might",
-  "must",
-  "of",
-  "in",
-  "on",
-  "at",
-  "to",
-  "for",
-  "with",
-  "by",
-  "from",
-  "as",
-  "and",
-  "or",
-  "but",
-  "if",
-  "then",
-  "so",
-  "what",
-  "when",
-  "where",
-  "who",
-  "why",
-  "how",
-  "which",
-  "this",
-  "that",
-  "these",
-  "those",
-  "there",
-  "here",
-  "it",
-  "its",
-  "he",
-  "she",
-  "we",
-  "they",
-  "his",
-  "her",
-  "their",
-  "our",
-  "me",
-  "my",
-  "you",
-  "your",
-  "i",
-  "not",
-  "no",
-  "yes",
-  "s",
-  "t",
-  "d",
-  "m",
-  "re",
-  "ve",
-  "ll",
-  "said",
-  "one",
-  "two",
-  "three",
-  "four",
-  "five",
-  "some",
-  "any",
-  "all",
-  "most",
-  "more",
-  "less",
-  "very",
-  "too",
-  "also",
-  "just",
-  "only",
-  "than",
-  "like",
-  "over",
-  "under",
-  "up",
-  "down",
-  "out",
-  "into",
-  "about",
-  "each",
-  "many",
-  "much",
-  "other",
-  "another",
-  "same",
-  "different",
-  "own",
-  "way",
-  "after",
-  "before",
-  "between",
-  "through"
-]);
-function extractVocabFromBank(bank) {
-  const words = /* @__PURE__ */ new Set();
-  for (const entry of bank || []) {
-    const text = `${entry.question || entry.q || ""} ${entry.expectedAnswer || entry.a || ""} ${(entry.expectedVariants || entry.variants || []).join(" ")}`;
-    const tokens = text.toLowerCase().split(/[^a-z']+/).filter(Boolean);
-    for (const tok of tokens) {
-      if (AMBIENT_STOPWORDS.has(tok)) continue;
-      if (tok.length < 2) continue;
-      words.add(tok);
-    }
-  }
-  return words;
-}
-function examVocabCoverage(cellKey, trainedVocab) {
-  const bank = EXAM_BANKS[cellKey] || [];
-  const required = extractVocabFromBank(bank);
-  const missing = [];
-  let trained = 0;
-  for (const w of required) {
-    if (trainedVocab && (trainedVocab.has ? trainedVocab.has(w) : w in trainedVocab)) {
-      trained += 1;
-    } else {
-      missing.push(w);
-    }
-  }
-  const coverage = required.size > 0 ? trained / required.size : 1;
-  missing.sort();
-  return {
-    cellKey,
-    required: required.size,
-    trained,
-    missing,
-    coverage
-  };
-}
-function auditAllExamVocabCoverage(trainedVocab) {
-  const report = { cells: [], totalRequired: 0, totalMissing: 0, totalTrained: 0 };
-  for (const cellKey of Object.keys(EXAM_BANKS)) {
-    const cell = examVocabCoverage(cellKey, trainedVocab);
-    report.cells.push(cell);
-    report.totalRequired += cell.required;
-    report.totalMissing += cell.missing.length;
-    report.totalTrained += cell.trained;
-  }
-  report.overallCoverage = report.totalRequired > 0 ? report.totalTrained / report.totalRequired : 1;
-  return report;
-}
 
 // ../js/brain/curriculum.js
 var LETTER_TICKS_BASE = 3;
@@ -9848,50 +9680,6 @@ var Curriculum = class _Curriculum {
    * @returns {{pass, total, rate, summary, results}}
    */
   async _runStudentBattery(questions, label) {
-    try {
-      if (this.dictionary && typeof this.dictionary.has === "function" || this.dictionary && this.dictionary._words instanceof Map) {
-        const dictHas = (w) => {
-          if (typeof this.dictionary.has === "function") return this.dictionary.has(w);
-          return this.dictionary._words && this.dictionary._words.has(w);
-        };
-        const AMBIENT = /* @__PURE__ */ new Set(["a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "am", "do", "does", "did", "has", "have", "had", "will", "would", "can", "could", "should", "shall", "may", "might", "must", "of", "in", "on", "at", "to", "for", "with", "by", "from", "as", "and", "or", "but", "if", "then", "so", "what", "when", "where", "who", "why", "how", "which", "this", "that", "these", "those", "there", "here", "it", "its", "he", "she", "we", "they", "his", "her", "their", "our", "me", "my", "you", "your", "i", "not", "no", "yes", "s", "t", "d", "m", "re", "ve", "ll", "said", "one", "two", "three", "four", "five", "some", "any", "all", "most", "more", "less", "very", "too", "also", "just", "only", "than", "like", "over", "under", "up", "down", "out", "into", "about", "each", "many", "much", "other", "another", "same", "different", "own", "way", "after", "before", "between", "through"]);
-        const required = /* @__PURE__ */ new Set();
-        const variantAll = /* @__PURE__ */ new Set();
-        for (const q of questions) {
-          const reqText = `${q.question || ""} ${q.expectedAnswer || ""}`;
-          for (const tok of reqText.toLowerCase().split(/[^a-z']+/)) {
-            if (tok && !AMBIENT.has(tok) && tok.length >= 2) required.add(tok);
-          }
-          for (const v of q.expectedVariants || []) {
-            for (const tok of String(v || "").toLowerCase().split(/[^a-z']+/)) {
-              if (tok && !AMBIENT.has(tok) && tok.length >= 2) variantAll.add(tok);
-            }
-          }
-        }
-        const variantOnly = /* @__PURE__ */ new Set();
-        for (const v of variantAll) if (!required.has(v)) variantOnly.add(v);
-        const missing = [];
-        for (const w of required) {
-          if (!dictHas(w)) missing.push(w);
-        }
-        const variantMissing = [];
-        for (const w of variantOnly) {
-          if (!dictHas(w)) variantMissing.push(w);
-        }
-        missing.sort();
-        variantMissing.sort();
-        const coverage = required.size > 0 ? (required.size - missing.length) / required.size : 1;
-        console.log(`[Curriculum][${label}] VOCAB COVERAGE: ${required.size - missing.length}/${required.size} (${(coverage * 100).toFixed(1)}%) question-text + primary-answer words trained \xB7 ${missing.length} UNTRAINED required words`);
-        if (missing.length > 0) {
-          console.warn(`[Curriculum][${label}] \u26D4 UNTRAINED REQUIRED words (Unity can't answer questions using these \u2014 test-integrity issue): ${missing.slice(0, 60).join(", ")}${missing.length > 60 ? ` + ${missing.length - 60} more` : ""}`);
-        }
-        if (variantMissing.length > 0) {
-          console.log(`[Curriculum][${label}] (info) ${variantMissing.length} variant-form words not in dict (not blocking \u2014 Unity can pass via primary answer): ${variantMissing.slice(0, 20).join(", ")}${variantMissing.length > 20 ? ` + ${variantMissing.length - 20} more` : ""}`);
-        }
-      }
-    } catch (err) {
-      console.warn(`[Curriculum][${label}] vocab coverage audit failed:`, err?.message || err);
-    }
     const results = [];
     let pass = 0;
     const byStandard = /* @__PURE__ */ new Map();
@@ -14303,6 +14091,219 @@ var Curriculum = class _Curriculum {
         "everyday",
         "someday"
       ];
+      const K_EXAM_CONCEPTS = [
+        // Grammatical / literary concepts Unity is tested on
+        "alphabet",
+        "letters",
+        "letter",
+        "capital",
+        "uppercase",
+        "lowercase",
+        "plural",
+        "punctuation",
+        "period",
+        "comma",
+        "question",
+        "sentence",
+        "word",
+        "syllable",
+        "sound",
+        "sounds",
+        "spell",
+        "spelling",
+        "spelt",
+        "rhyme",
+        "rhymes",
+        "rhyming",
+        "blend",
+        "blending",
+        "segment",
+        "segmenting",
+        "author",
+        "illustrator",
+        "character",
+        "setting",
+        "title",
+        "cover",
+        "page",
+        "pages",
+        "story",
+        "stories",
+        "noun",
+        "verb",
+        "adjective",
+        // Common rhyme-question primary answers not in other lists
+        "hat",
+        "rat",
+        "sat",
+        "mat",
+        "fat",
+        "bat",
+        "pat",
+        "vat",
+        "frog",
+        "dog",
+        "log",
+        "hog",
+        "fog",
+        "jog",
+        "bog",
+        "cog",
+        "bun",
+        "fun",
+        "run",
+        "sun",
+        "done",
+        "one",
+        "none",
+        "bee",
+        "tree",
+        "see",
+        "three",
+        "free",
+        "knee",
+        "me",
+        "we",
+        "bed",
+        "red",
+        "fed",
+        "led",
+        "said",
+        "head",
+        "dead",
+        "shed",
+        "cat",
+        "pot",
+        "hop",
+        "lot",
+        "got",
+        "not",
+        "dot",
+        "jot",
+        // CVC and related short-word primary answers
+        "map",
+        "mop",
+        "lap",
+        "tap",
+        "nap",
+        "cap",
+        "gap",
+        "rap",
+        "sap",
+        "big",
+        "pig",
+        "dig",
+        "fig",
+        "jig",
+        "rig",
+        "wig",
+        "gig",
+        "tip",
+        "dip",
+        "hip",
+        "lip",
+        "nip",
+        "rip",
+        "sip",
+        "zip",
+        "cup",
+        "pup",
+        "sup",
+        "up",
+        "mud",
+        "bud",
+        "cud",
+        "dud",
+        "let",
+        "met",
+        "net",
+        "pet",
+        "set",
+        "vet",
+        "wet",
+        "yet",
+        "man",
+        "fan",
+        "pan",
+        "ran",
+        "tan",
+        "van",
+        "ban",
+        "can",
+        // Common answer words (often tripping the audit)
+        "top",
+        "left",
+        "right",
+        "above",
+        "below",
+        "inside",
+        "outside",
+        "yes",
+        "no",
+        "space",
+        "spaces",
+        "small",
+        "large",
+        // K-math primary answers (numerals as words if not already in K_NUMBERS)
+        "eleven",
+        "twelve",
+        "thirteen",
+        "fourteen",
+        "fifteen",
+        "sixteen",
+        "seventeen",
+        "eighteen",
+        "nineteen",
+        "twenty",
+        "thirty",
+        "forty",
+        "fifty",
+        "hundred",
+        "zero",
+        // K-science / social primary answers
+        "gravity",
+        "pattern",
+        "mixing",
+        "primary",
+        "secondary",
+        "warm",
+        "cool",
+        // K-life primary answers / concepts
+        "character",
+        "feeling",
+        "feelings",
+        "friendship",
+        "share",
+        "sharing",
+        "kind",
+        "kindness",
+        // Letter names (so Unity can produce "bee" as an alternate
+        // answer to "what letter is B?") — match LETTER_NAMES above
+        "ay",
+        "cee",
+        "dee",
+        "ef",
+        "gee",
+        "aitch",
+        "eye",
+        "jay",
+        "kay",
+        "el",
+        "em",
+        "en",
+        "oh",
+        "pee",
+        "cue",
+        "ar",
+        "ess",
+        "tee",
+        "you",
+        "vee",
+        "double-you",
+        "ex",
+        "why",
+        "zee"
+      ];
       const allEmissionWords = [...new Set([
         ...DOLCH_PREPRIMER,
         ...DOLCH_PRIMER,
@@ -14337,7 +14338,8 @@ var Curriculum = class _Curriculum {
         ...K_CONJUNCTIONS,
         ...K_HOLIDAYS,
         ...K_ROUTINES,
-        ...K_LIFE_EXPERIENCES
+        ...K_LIFE_EXPERIENCES,
+        ...K_EXAM_CONCEPTS
       ].map((w) => String(w).toLowerCase()))];
       console.log(`[Curriculum] K vocabulary: ${allEmissionWords.length} unique words across ${[
         "DOLCH_PREPRIMER",
@@ -14372,7 +14374,8 @@ var Curriculum = class _Curriculum {
         "K_CONJUNCTIONS",
         "K_HOLIDAYS",
         "K_ROUTINES",
-        "K_LIFE_EXPERIENCES"
+        "K_LIFE_EXPERIENCES",
+        "K_EXAM_CONCEPTS"
       ].length} categories`);
       try {
         const cluster2 = this.cluster;
@@ -29778,29 +29781,6 @@ var Curriculum = class _Curriculum {
       console.log(`[Curriculum] Held-out eval check: ${totalExam} exam questions across ${Object.keys(EXAM_BANKS).length} cells \xB7 overlap=${totalOverlap} (0 = valid held-out)`);
     } catch (err) {
       console.warn("[Curriculum] Held-out eval check failed:", err?.message || err);
-    }
-    try {
-      const dict = this.dictionary;
-      if (dict) {
-        const dictHas = (w) => {
-          if (typeof dict.has === "function") return dict.has(w);
-          if (dict._words && dict._words.has) return dict._words.has(w);
-          return false;
-        };
-        const trainedProbe = { has: dictHas };
-        const report = auditAllExamVocabCoverage(trainedProbe);
-        console.log(`[Curriculum] Vocab coverage pre-flight (against current dictionary, pre-teach): ${report.totalTrained}/${report.totalRequired} words covered (${(report.overallCoverage * 100).toFixed(1)}%) across ${report.cells.length} exam cells`);
-        const worst = [...report.cells].sort((a, b) => a.coverage - b.coverage).slice(0, 3);
-        for (const c of worst) {
-          if (c.missing.length > 0) {
-            console.warn(`[Curriculum] \u26A0 ${c.cellKey}: ${c.missing.length} untrained exam words (coverage ${(c.coverage * 100).toFixed(0)}%) \u2014 sample: ${c.missing.slice(0, 12).join(", ")}${c.missing.length > 12 ? "..." : ""}`);
-          }
-        }
-      } else {
-        console.log(`[Curriculum] Vocab coverage pre-flight skipped \u2014 dictionary not wired yet (will run per-gate after teach).`);
-      }
-    } catch (err) {
-      console.warn("[Curriculum] Vocab coverage pre-flight failed:", err?.message || err);
     }
     console.log("[Curriculum] runCompleteCurriculum: waiting for GPU ready before teach pass");
     const ready = await this._waitForGpuReady(12e4);

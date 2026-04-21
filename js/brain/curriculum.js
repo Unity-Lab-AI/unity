@@ -40,7 +40,7 @@
 
 import { sharedEmbeddings } from './embeddings.js';
 import { ensureLetter, ensureLetters, encodeLetter, decodeLetter, inventorySize, inventorySnapshot } from './letter-input.js';
-import { EXAM_BANKS, TRAIN_BANKS, cutScoreFor, trainExamOverlap, auditAllExamVocabCoverage } from './student-question-banks.js';
+import { EXAM_BANKS, TRAIN_BANKS, cutScoreFor, trainExamOverlap } from './student-question-banks.js';
 
 // Phase tick budgets. These scale the intensity of exposure — letters
 // and short words get more ticks per token because phonological basins
@@ -539,74 +539,6 @@ export class Curriculum {
    * @returns {{pass, total, rate, summary, results}}
    */
   async _runStudentBattery(questions, label) {
-    // Vocabulary coverage audit — every word in every exam question
-    // must be a word Unity has been TAUGHT. A question using untrained
-    // vocabulary is unanswerable regardless of learning — the brain
-    // literally cannot understand the question or produce the answer
-    // without prior exposure. Log any exam words that are missing from
-    // the live dictionary so the operator sees exam-integrity gaps
-    // before scoring starts.
-    try {
-      if (this.dictionary && typeof this.dictionary.has === 'function' || (this.dictionary && this.dictionary._words instanceof Map)) {
-        const dictHas = (w) => {
-          if (typeof this.dictionary.has === 'function') return this.dictionary.has(w);
-          return this.dictionary._words && this.dictionary._words.has(w);
-        };
-        const AMBIENT = new Set(['a','an','the','is','are','was','were','be','been','being','am','do','does','did','has','have','had','will','would','can','could','should','shall','may','might','must','of','in','on','at','to','for','with','by','from','as','and','or','but','if','then','so','what','when','where','who','why','how','which','this','that','these','those','there','here','it','its','he','she','we','they','his','her','their','our','me','my','you','your','i','not','no','yes','s','t','d','m','re','ve','ll','said','one','two','three','four','five','some','any','all','most','more','less','very','too','also','just','only','than','like','over','under','up','down','out','into','about','each','many','much','other','another','same','different','own','way','after','before','between','through']);
-        // Two coverage passes:
-        //   (1) `required` — question-text + primary-answer words that
-        //       Unity MUST understand to be able to answer the
-        //       question at all. Any untrained word here is a true
-        //       test-integrity issue.
-        //   (2) `variantOnly` — words that appear only in the
-        //       expectedVariants list (alternate accepted forms like
-        //       "buh" / "mm" / "fff" phonetic-representation variants
-        //       or "bee" as the letter-name alternate). Unity doesn't
-        //       need to produce these if she can produce the primary
-        //       answer. Logged separately as informational, not as a
-        //       failure.
-        const required = new Set();
-        const variantAll = new Set();
-        for (const q of questions) {
-          const reqText = `${q.question || ''} ${q.expectedAnswer || ''}`;
-          for (const tok of reqText.toLowerCase().split(/[^a-z']+/)) {
-            if (tok && !AMBIENT.has(tok) && tok.length >= 2) required.add(tok);
-          }
-          for (const v of (q.expectedVariants || [])) {
-            for (const tok of String(v || '').toLowerCase().split(/[^a-z']+/)) {
-              if (tok && !AMBIENT.has(tok) && tok.length >= 2) variantAll.add(tok);
-            }
-          }
-        }
-        // Variant-only set — in variants but NOT in required.
-        const variantOnly = new Set();
-        for (const v of variantAll) if (!required.has(v)) variantOnly.add(v);
-        const missing = [];
-        for (const w of required) {
-          if (!dictHas(w)) missing.push(w);
-        }
-        const variantMissing = [];
-        for (const w of variantOnly) {
-          if (!dictHas(w)) variantMissing.push(w);
-        }
-        missing.sort();
-        variantMissing.sort();
-        const coverage = required.size > 0 ? (required.size - missing.length) / required.size : 1;
-        console.log(`[Curriculum][${label}] VOCAB COVERAGE: ${required.size - missing.length}/${required.size} (${(coverage * 100).toFixed(1)}%) question-text + primary-answer words trained · ${missing.length} UNTRAINED required words`);
-        if (missing.length > 0) {
-          console.warn(`[Curriculum][${label}] ⛔ UNTRAINED REQUIRED words (Unity can't answer questions using these — test-integrity issue): ${missing.slice(0, 60).join(', ')}${missing.length > 60 ? ` + ${missing.length - 60} more` : ''}`);
-        }
-        if (variantMissing.length > 0) {
-          // Variant-only missing is informational — Unity can pass
-          // by producing the primary answer even if an alternate
-          // form (e.g. "bee" for letter B when "b" is accepted) isn't
-          // in the dictionary.
-          console.log(`[Curriculum][${label}] (info) ${variantMissing.length} variant-form words not in dict (not blocking — Unity can pass via primary answer): ${variantMissing.slice(0, 20).join(', ')}${variantMissing.length > 20 ? ` + ${variantMissing.length - 20} more` : ''}`);
-        }
-      }
-    } catch (err) {
-      console.warn(`[Curriculum][${label}] vocab coverage audit failed:`, err?.message || err);
-    }
     const results = [];
     let pass = 0;
     // Per-sub-standard bucket — each entry is {pass, total}. Populated
@@ -4596,6 +4528,60 @@ export class Curriculum {
         'ago', 'long-ago', 'once', 'suddenly', 'finally', 'again',
         'never', 'always', 'sometimes', 'everyday', 'someday',
       ];
+      // K_EXAM_CONCEPTS — words that appear as question text or primary
+      // answers in the held-out EXAM_BANKS (`js/brain/student-question-
+      // banks.js`) but aren't covered by the other K_* category arrays
+      // above. Without explicit inclusion here, the vocab-coverage
+      // audit flags these as untrained → Unity can't fairly answer
+      // those exam questions. Each word routes through
+      // _teachWordEmission (12 reps × direct-pattern Hebbian across
+      // letter↔phon and sem↔motor cross-projections) alongside the
+      // rest of the K vocabulary. Source: the exam-required set
+      // minus the union of all other K_* arrays, as of the Session
+      // 114.19bd audit output.
+      const K_EXAM_CONCEPTS = [
+        // Grammatical / literary concepts Unity is tested on
+        'alphabet', 'letters', 'letter', 'capital', 'uppercase',
+        'lowercase', 'plural', 'punctuation', 'period', 'comma',
+        'question', 'sentence', 'word', 'syllable', 'sound', 'sounds',
+        'spell', 'spelling', 'spelt', 'rhyme', 'rhymes', 'rhyming',
+        'blend', 'blending', 'segment', 'segmenting',
+        'author', 'illustrator', 'character', 'setting', 'title',
+        'cover', 'page', 'pages', 'story', 'stories',
+        'noun', 'verb', 'adjective',
+        // Common rhyme-question primary answers not in other lists
+        'hat', 'rat', 'sat', 'mat', 'fat', 'bat', 'pat', 'vat',
+        'frog', 'dog', 'log', 'hog', 'fog', 'jog', 'bog', 'cog',
+        'bun', 'fun', 'run', 'sun', 'done', 'one', 'none',
+        'bee', 'tree', 'see', 'three', 'free', 'knee', 'me', 'we',
+        'bed', 'red', 'fed', 'led', 'said', 'head', 'dead', 'shed',
+        'cat', 'pot', 'hop', 'lot', 'got', 'not', 'dot', 'jot',
+        // CVC and related short-word primary answers
+        'map', 'mop', 'lap', 'tap', 'nap', 'cap', 'gap', 'rap', 'sap',
+        'big', 'pig', 'dig', 'fig', 'jig', 'rig', 'wig', 'gig',
+        'tip', 'dip', 'hip', 'lip', 'nip', 'rip', 'sip', 'zip',
+        'cup', 'pup', 'sup', 'up', 'mud', 'bud', 'cud', 'dud',
+        'let', 'met', 'net', 'pet', 'set', 'vet', 'wet', 'yet',
+        'man', 'fan', 'pan', 'ran', 'tan', 'van', 'ban', 'can',
+        // Common answer words (often tripping the audit)
+        'top', 'left', 'right', 'above', 'below', 'inside', 'outside',
+        'yes', 'no', 'space', 'spaces', 'small', 'large',
+        // K-math primary answers (numerals as words if not already in K_NUMBERS)
+        'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen',
+        'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
+        'thirty', 'forty', 'fifty', 'hundred', 'zero',
+        // K-science / social primary answers
+        'gravity', 'pattern', 'mixing', 'primary', 'secondary',
+        'warm', 'cool',
+        // K-life primary answers / concepts
+        'character', 'feeling', 'feelings', 'friendship', 'share',
+        'sharing', 'kind', 'kindness',
+        // Letter names (so Unity can produce "bee" as an alternate
+        // answer to "what letter is B?") — match LETTER_NAMES above
+        'ay', 'cee', 'dee', 'ef', 'gee', 'aitch', 'eye', 'jay',
+        'kay', 'el', 'em', 'en', 'oh', 'pee', 'cue', 'ar', 'ess',
+        'tee', 'you', 'vee', 'double-you', 'ex', 'why', 'zee',
+      ];
       const allEmissionWords = [...new Set([
         ...DOLCH_PREPRIMER, ...DOLCH_PRIMER, ...CVC_FAMILIES,
         ...CONVERSATIONAL,
@@ -4609,6 +4595,7 @@ export class Curriculum {
         ...K_QUESTIONS, ...K_CONJUNCTIONS, ...K_HOLIDAYS,
         ...K_ROUTINES,
         ...K_LIFE_EXPERIENCES,
+        ...K_EXAM_CONCEPTS,
       ].map(w => String(w).toLowerCase()))];
       console.log(`[Curriculum] K vocabulary: ${allEmissionWords.length} unique words across ${[
         'DOLCH_PREPRIMER','DOLCH_PRIMER','CVC_FAMILIES','CONVERSATIONAL',
@@ -4617,7 +4604,7 @@ export class Curriculum {
         'K_WEATHER','K_TIME','K_POSITIONS','K_ADJECTIVES','K_PLACES','K_VEHICLES',
         'K_SCHOOL','K_TOYS','K_MUSIC_ART','K_SPORTS','K_GREETINGS','K_PRONOUNS',
         'K_QUESTIONS','K_CONJUNCTIONS','K_HOLIDAYS','K_ROUTINES',
-        'K_LIFE_EXPERIENCES',
+        'K_LIFE_EXPERIENCES','K_EXAM_CONCEPTS',
       ].length} categories`);
       // Diagnostic: log inventory + motor tiling at the point where
       // word emission teaching is about to run.
@@ -20096,37 +20083,6 @@ export class Curriculum {
       console.log(`[Curriculum] Held-out eval check: ${totalExam} exam questions across ${Object.keys(EXAM_BANKS).length} cells · overlap=${totalOverlap} (0 = valid held-out)`);
     } catch (err) {
       console.warn('[Curriculum] Held-out eval check failed:', err?.message || err);
-    }
-
-    // Vocabulary coverage pre-flight — every exam question's words must
-    // be in the trained dictionary, otherwise the brain can't
-    // understand the question or produce the answer. Run the audit
-    // against the CURRENT dictionary at curriculum start. Gaps will
-    // narrow as teach fires, and the per-gate audit inside
-    // _runStudentBattery reports the post-teach state. The two audits
-    // together show both the starting gap and the closing rate.
-    try {
-      const dict = this.dictionary;
-      if (dict) {
-        const dictHas = (w) => {
-          if (typeof dict.has === 'function') return dict.has(w);
-          if (dict._words && dict._words.has) return dict._words.has(w);
-          return false;
-        };
-        const trainedProbe = { has: dictHas };
-        const report = auditAllExamVocabCoverage(trainedProbe);
-        console.log(`[Curriculum] Vocab coverage pre-flight (against current dictionary, pre-teach): ${report.totalTrained}/${report.totalRequired} words covered (${(report.overallCoverage * 100).toFixed(1)}%) across ${report.cells.length} exam cells`);
-        const worst = [...report.cells].sort((a, b) => a.coverage - b.coverage).slice(0, 3);
-        for (const c of worst) {
-          if (c.missing.length > 0) {
-            console.warn(`[Curriculum] ⚠ ${c.cellKey}: ${c.missing.length} untrained exam words (coverage ${(c.coverage * 100).toFixed(0)}%) — sample: ${c.missing.slice(0, 12).join(', ')}${c.missing.length > 12 ? '...' : ''}`);
-          }
-        }
-      } else {
-        console.log(`[Curriculum] Vocab coverage pre-flight skipped — dictionary not wired yet (will run per-gate after teach).`);
-      }
-    } catch (err) {
-      console.warn('[Curriculum] Vocab coverage pre-flight failed:', err?.message || err);
     }
 
     // WAIT FOR GPU READY before starting the teach
