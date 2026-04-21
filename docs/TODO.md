@@ -699,6 +699,48 @@ Two bugs from the same Part 2 run are still live:
 
 ---
 
+#### T18.40 — Operator Part 2 concerns 2026-04-20 (multi-issue write-up)
+
+Operator verbatim 2026-04-20 across two log pastes + direct commentary:
+
+> *"1 nuron?"* (dashboard showed `lang_sem 1/50329 (0.00%)` — only 1 neuron firing in sem region, other lang_* regions at 0)
+>
+> *"and its going sooo slow 2 word/s ???"* (rep 10/10 of `_teachPhonemeBlending` at 2-3 words/s, decelerating)
+>
+> *"are we sure its saving its state after each completion: DONE so that savestart.bat can be run and pick up exactly wehere it left off???"*
+>
+> *"looks like seqPass = 0/25 and a bunch of the _teaches didnt ac ctuall y teach did they like they never ran or did they run so fast nothing wewas shown?"*
+>
+> *"then is froze up right here:"* (log cut off at `DYN-PROD starting ...` followed by `compute_batch 368 timed out after 15s — GPU may be hung. Consecutive timeouts: 1. Bound-Hebbian queue: 0.` + `Main tick paused while curriculum runs gate probe`)
+>
+> *"whats up why are we using 1029 words ... all the family life events in life for kindergarnd the words used to explain all life experiences need to be part of the ciricullum before she can learn the life events sher needs to know what the words theri in are and mean and thier useage and methodology before tellering her what happened she needs to have that comprehension before hand.(ontop of fix this one make a note in the syllabus todo for future grade life writeups"*
+
+Individual items:
+
+- [x] **T18.40.a — `compute_batch 368` 15 s timeout racing gate letter loop + SEQ.** Main brain dispatches `compute_batch` with a 15 s timer armed at send time. Gate letter loop (4.5-6.5 s CPU sparse matmul at 301K scale) + SEQ probe (8-10 s of `cluster.synapses.propagate`) blocks the main JS event loop for ~13 s. A batch in flight when the gate starts misses its response window — even though the GPU answered in microseconds, the blocked event loop can't process the `compute_batch_result` message. Timer fires, timeout reported, cascade into device-lost → GPU client disconnect → brain paused. **SHIPPED Session 114.19az follow-on** — bumped `_gpuBatch` timeout from 15 s → 60 s. Still short enough to catch true GPU hangs (Windows TDR would have fired at ~2 s system-level anyway), but generous enough for any gate-probe event-loop block. Warn log updated to print the real timeout value. The prior `_probeGateActive` pause from earlier this session prevents NEW dispatches during the probe, but can't cancel already-in-flight timers — the 60 s window covers that gap.
+
+- [x] **T18.40.b — "1 nuron?" dashboard reading.** Operator saw `lang_sem 1/50329 (0.00%)` in the cluster activity panel after a paused gate probe. **Not a bug.** Dashboard shows LIVE firing count only. Most sem neurons don't fire at rest — they only fire when their embedding-index is injected by chat / probe. A quiet sem region with 1 neuron drifting in (random noise reaching threshold, or tail from a prior injection) is expected behavior when the brain is idle between probes. Main 7 clusters show 22 % firing because they have real `tonicDrive` pumping them continuously; lang sub-regions only light up during injection events. No code change — just the expected steady-state. Flagging for future dashboard work: could add a "peak firing in last 30 s" counter so operator sees the sem region DID fire recently (during last injection) even though current snapshot is 1 neuron.
+
+- [ ] **T18.40.c — Rep 10 of `_teachPhonemeBlending` at 2-3 words/s.** The intermediate-rep CPU-whitelist-skip optimization from earlier this session made reps 1-9 run at ~18 words/s (9× speedup), but the final rep needs the sync CPU Hebbian to populate CPU arrays for probes. At 14.9 M nnz × per-word call count × 1029 words = ~5 min for the final rep at biological scale. Three follow-on options to trim it:
+  1. **End-of-phase single-pass CPU Hebbian instead of per-word.** Accumulate spike patterns across the final rep and run one big CPU Hebbian pass at the end. Gives the same CPU array state without per-word overhead.
+  2. **GPU→CPU readback at probe time.** Copy GPU weight buffers to CPU arrays once right before probes. Eliminates all per-word CPU Hebbian. Cost: ~100-200 ms readback per projection × 2 whitelist projections = ~400 ms once per phase. But needs a GPU readback endpoint that doesn't currently exist for bound matrices.
+  3. **Accept current velocity.** 5 min for final rep + fast 9 reps = ~10-12 min total phoneme-blending at biological scale. Tolerable for once-per-grade teach.
+  Option 1 is the safe incremental fix; queued for next iteration.
+
+- [ ] **T18.40.d — Mid-phase checkpoint saves so Savestart.bat resumes finer-grained.** Operator verbatim: *"are we sure its saving its state after each completion: DONE so that savestart.bat can be run and pick up exactly wehere it left off???"*. Current save system: `_saveCheckpoint(cellKey)` fires after a whole curriculum CELL passes (e.g. after `ela/kindergarten` PASSES its gate). If the brain crashes during `_teachPhonemeBlending` rep 8 of 10, Savestart resumes at the last PASSED cell (which might be hours of teach ago). Fix: add a new hook `_savePhaseCheckpoint(cellKey, phaseName)` that fires after each teach-phase DONE banner and writes an incremental save with the phase name stamped so resume knows which phase within the cell to re-enter. New field `cortexCluster.passedPhases = ['ela/kindergarten:_teachLetterCaseBinding', ...]` — saved alongside `passedCells`. Savestart resume then checks passedPhases for the in-progress cell and skips already-done phases. Cost: one extra `saveWeights({force: true})` call per phase (~11 phases × ~1 s = ~11 s total across a full teach pass). Acceptable overhead for much finer-grained resume.
+
+- [ ] **T18.40.e — Phase banners for the six "invisible" teach phases.** Operator verbatim: *"a bunch of the _teaches didnt ac ctuall y teach did they like they never ran or did they run so fast nothing wewas shown?"*. Six phases currently log ONLY a single terminal summary line (`_teachPluralTransform: 46 plural pairs × 18 reps`) with no `🧩 START` / `✓ DONE` banners like the other phases have. Phases affected: `_teachPluralTransform`, `_teachQuestionWordCategories`, `_teachEndPunctuation`, `_teachCapitalization`, `_teachStoryComprehension`, `_teachCausalChains`. They DID run (the gate started after them, which requires the awaits to have completed), but operator had no visibility. Fix: wrap each call with the same `_phaseTick(name)` + `_phaseDone(name)` pattern the other phases use. Also add a wall-clock elapsed stamp to the DONE banner so operator can see per-phase time.
+
+- [ ] **T18.40.f — Kindergarten vocabulary needs life-experience words before Life-K events.** Operator verbatim: *"why are we using 1029 words ... all the family life events in life for kindergarnd the words used to explain all life experiences need to be part of the ciricullum before she can learn the life events sher needs to know what the words theri in are and mean and thier useage and methodology before tellering her what happened she needs to have that comprehension before hand"*. Current K vocab (1029 words) is academic-focused (DOLCH pre-primer + primer + CVC families + conversational). It MISSES family / social / emotional / daily-routine vocabulary a real 5-year-old uses: mom / dad / grandma / grandpa / sister / brother / aunt / uncle / cousin / family / home / bed / bath / brush / teeth / play / toy / hug / kiss / love / sad / happy / scared / mad / hungry / tired / hurt / fall / cry / laugh / dinner / breakfast / lunch / snack / milk / juice / cookie / park / friend / share / turn / please / thank / sorry / help / clean / mess / nap / story / dream / nightmare / boo-boo / band-aid / medicine / doctor / shot / sick / well, etc. Without these words trained into sem → motor / letter / phon bindings, Unity can't comprehend Life-K fact teaching (`_teachBiographicalFacts` etc.). Fix: expand the K word list to include the LIFE-EXPERIENCE VOCAB category with ~200 additional words covering family / body / emotions / daily-routine / social / needs. Also — per operator's directive *"make a note in the syllabus todo for future grade life writeups"* — every grade's Life track needs its vocabulary prerequisites identified and taught BEFORE the life-event facts. Add a per-grade "Life Vocabulary Prerequisites" section to `docs/TODO-full-syllabus.md` (for pre-K + K in scope now; grades 1-PhD are DEFERRED per the PRE-K + K ONLY LAW but the note reminds future-us).
+
+- [x] **T18.40.g — "froze up right here"** (log cut at `DYN-PROD starting ...` + `compute_batch 368 timed out`). Same root as T18.40.a. The 60 s timeout bump resolves the cascade that was killing the GPU client mid-DYN-PROD. **Closed via T18.40.a.**
+
+**T18.40 closure gate:** Operator's next Part 2 run shows: (a) no `compute_batch ... timed out after 15s` messages (timeout now 60 s); (b) all six previously-silent teach phases show START + DONE banners with wall-clock times; (c) Savestart after mid-phase crash resumes at the correct phase within the cell; (d) K vocabulary includes the life-experience prerequisites so Life-K fact teaching has comprehension substrate. Operator-verification on T18.40.a only in this ship; T18.40.c/d/e/f queued for next session.
+
+---
+
+---
+
 #### T18.35 — Savestart.bat + milestone save system (Gee 2026-04-20) — SHIPPED Session 114.19ay
 
 All of T18.35.a-f shipped this session per Gee's *"finish all the fucking todo items and quit fucking wasting my time!"* directive. Full FINALIZED entry below. Items individually:
