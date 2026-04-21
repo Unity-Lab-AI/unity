@@ -2134,39 +2134,44 @@ export class NeuronCluster {
             // (browser-only standalone mode) still runs with its own
             // CPU arrays because hint.resolve returns null for those
             // and the freeing branch doesn't execute.
-            // T18.23 — log per-projection free bytes for verification.
-            // Prior silent nulling still OOM'd on retest, so we need
-            // concrete evidence the frees fire.
             const _freedValuesBytes = proj.values ? proj.values.byteLength : 0;
             const _freedColIdxBytes = proj.colIdx ? proj.colIdx.byteLength : 0;
             const _freedRowPtrBytes = proj.rowPtr ? proj.rowPtr.byteLength : 0;
             const _freedMB = ((_freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes) / (1024 * 1024)).toFixed(1);
-            // T18.27 — DISABLED: proj.values = null; proj.colIdx = null; proj.rowPtr = null;
-            // Science-K + other post-ELA-K teach paths read these via
-            // helpers that access proj.values[0] etc. Keeping arrays
-            // intact. V8 auto-gc handles memory pressure on its own
-            // schedule per T18.25's evidence.
             if (!this._t1822TotalFreedBytes) this._t1822TotalFreedBytes = 0;
-            this._t1822TotalFreedBytes += _freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes;
-            // T18.27 — DISABLED T18.22 CPU-array free (variable now logs
-            // bytes that would have been freed but keeps arrays intact).
-            // science/kindergarten threw "Cannot read properties of
-            // null (reading '0')" 1720+ times in a retry loop after
-            // ELA-K completed successfully. Some
-            // teach path in runSciKReal reads proj.values or
-            // proj.colIdx or proj.rowPtr for a bound cross-projection
-            // AFTER T18.22 set them to null at initGpu. Rather than
-            // hunt the specific caller (could be any of ~20 teach
-            // helpers across science/math/social/art/life K cells),
-            // revert to keeping CPU CSR arrays intact. Per T18.25's
-            // findings, V8 auto-gc was already doing the reclaim
-            // between T18.22's nulls and the diagnostic log (external
-            // memory was 2.5 GB, not 9.4 GB) — the null-assignments
-            // weren't helping memory pressure, they were just removing
-            // legitimately-read state. T18.25's sync path + T18.26's
-            // WebSocket backpressure already handle the pressure without
-            // touching the CSR arrays.
-            console.log(`[T18.27] bound projection ${key} uploaded to GPU: would free ${(_freedValuesBytes/1024/1024).toFixed(1)}MB values + ${(_freedColIdxBytes/1024/1024).toFixed(1)}MB colIdx + ${(_freedRowPtrBytes/1024/1024).toFixed(1)}MB rowPtr = ${_freedMB}MB total, but KEEPING arrays intact (T18.22 reverted — science-K regression). Cumulative bytes left resident: ${(this._t1822TotalFreedBytes/1024/1024).toFixed(1)}MB.`);
+            // Probe-critical whitelist — these projections are read via
+            // CPU SparseMatrix.propagate() during gate probes, so their
+            // CPU CSR must stay live. Everything else is GPU-bound +
+            // the SparseMatrix.propagate null-CSR guard returns a zero
+            // vector for stale reads, so accidental CPU reads on freed
+            // projections yield empty results instead of crashing.
+            //
+            // Memory impact: at 301K cortex scale, 14 cross-projections
+            // averaging 75M nnz × 12 bytes CSR = ~13 GB external. The
+            // whitelist keeps ~3 of the 14 (letter_to_phon,
+            // letter_to_motor, sem_to_motor) plus intra-synapses (not
+            // processed in this loop) — drops external from ~14.5 GB
+            // to ~3-4 GB, clearing the V8 external-memory pressure
+            // that caused the DYN-PROD event-loop freeze.
+            const PROBE_CRITICAL_CPU_CSR = new Set([
+              'letter_to_phon',   // READ probe reads phon via CPU propagate
+              'letter_to_motor',  // TALK probe + DYN-PROD letter fallback
+              'sem_to_motor',     // DYN-PROD primary path
+            ]);
+            if (PROBE_CRITICAL_CPU_CSR.has(key)) {
+              console.log(`[CPU-CSR-free] keeping probe-critical ${key} CPU arrays resident (${_freedMB}MB) — needed for READ/TALK/DYN-PROD gate probes.`);
+            } else {
+              // Free the CPU CSR. `SparseMatrix.propagate` has a
+              // null-CSR guard that returns a zero vector for any stale
+              // read, so code paths that accidentally hit a freed
+              // matrix get empty-but-correct-shape output instead of
+              // "Cannot read properties of null" crashes.
+              proj.values = null;
+              proj.colIdx = null;
+              proj.rowPtr = null;
+              this._t1822TotalFreedBytes += _freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes;
+              console.log(`[CPU-CSR-free] freed ${key} CPU arrays: ${(_freedValuesBytes/1024/1024).toFixed(1)}MB values + ${(_freedColIdxBytes/1024/1024).toFixed(1)}MB colIdx + ${(_freedRowPtrBytes/1024/1024).toFixed(1)}MB rowPtr = ${_freedMB}MB · cumulative freed ${(this._t1822TotalFreedBytes/1024/1024).toFixed(1)}MB.`);
+            }
           }
         } else {
           console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);

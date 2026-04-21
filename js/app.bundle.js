@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "edeccbba-d62c";
+var BUILD = "3b6b2a19-1550";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2653,8 +2653,23 @@ var NeuronCluster = class {
             const _freedRowPtrBytes = proj.rowPtr ? proj.rowPtr.byteLength : 0;
             const _freedMB = ((_freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes) / (1024 * 1024)).toFixed(1);
             if (!this._t1822TotalFreedBytes) this._t1822TotalFreedBytes = 0;
-            this._t1822TotalFreedBytes += _freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes;
-            console.log(`[T18.27] bound projection ${key} uploaded to GPU: would free ${(_freedValuesBytes / 1024 / 1024).toFixed(1)}MB values + ${(_freedColIdxBytes / 1024 / 1024).toFixed(1)}MB colIdx + ${(_freedRowPtrBytes / 1024 / 1024).toFixed(1)}MB rowPtr = ${_freedMB}MB total, but KEEPING arrays intact (T18.22 reverted \u2014 science-K regression). Cumulative bytes left resident: ${(this._t1822TotalFreedBytes / 1024 / 1024).toFixed(1)}MB.`);
+            const PROBE_CRITICAL_CPU_CSR = /* @__PURE__ */ new Set([
+              "letter_to_phon",
+              // READ probe reads phon via CPU propagate
+              "letter_to_motor",
+              // TALK probe + DYN-PROD letter fallback
+              "sem_to_motor"
+              // DYN-PROD primary path
+            ]);
+            if (PROBE_CRITICAL_CPU_CSR.has(key)) {
+              console.log(`[CPU-CSR-free] keeping probe-critical ${key} CPU arrays resident (${_freedMB}MB) \u2014 needed for READ/TALK/DYN-PROD gate probes.`);
+            } else {
+              proj.values = null;
+              proj.colIdx = null;
+              proj.rowPtr = null;
+              this._t1822TotalFreedBytes += _freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes;
+              console.log(`[CPU-CSR-free] freed ${key} CPU arrays: ${(_freedValuesBytes / 1024 / 1024).toFixed(1)}MB values + ${(_freedColIdxBytes / 1024 / 1024).toFixed(1)}MB colIdx + ${(_freedRowPtrBytes / 1024 / 1024).toFixed(1)}MB rowPtr = ${_freedMB}MB \xB7 cumulative freed ${(this._t1822TotalFreedBytes / 1024 / 1024).toFixed(1)}MB.`);
+            }
           }
         } else {
           console.warn(`[Cluster ${this.name}] GPU upload failed for ${key}:`, ack && ack.error);
