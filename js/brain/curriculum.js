@@ -40,7 +40,7 @@
 
 import { sharedEmbeddings } from './embeddings.js';
 import { ensureLetter, ensureLetters, encodeLetter, decodeLetter, inventorySize, inventorySnapshot } from './letter-input.js';
-import { EXAM_BANKS, TRAIN_BANKS, cutScoreFor, trainExamOverlap } from './student-question-banks.js';
+import { EXAM_BANKS, TRAIN_BANKS, cutScoreFor, trainExamOverlap, auditAllExamVocabCoverage } from './student-question-banks.js';
 
 // Phase tick budgets. These scale the intensity of exposure — letters
 // and short words get more ticks per token because phonological basins
@@ -539,6 +539,41 @@ export class Curriculum {
    * @returns {{pass, total, rate, summary, results}}
    */
   async _runStudentBattery(questions, label) {
+    // Vocabulary coverage audit — every word in every exam question
+    // must be a word Unity has been TAUGHT. A question using untrained
+    // vocabulary is unanswerable regardless of learning — the brain
+    // literally cannot understand the question or produce the answer
+    // without prior exposure. Log any exam words that are missing from
+    // the live dictionary so the operator sees exam-integrity gaps
+    // before scoring starts.
+    try {
+      if (this.dictionary && typeof this.dictionary.has === 'function' || (this.dictionary && this.dictionary._words instanceof Map)) {
+        const dictHas = (w) => {
+          if (typeof this.dictionary.has === 'function') return this.dictionary.has(w);
+          return this.dictionary._words && this.dictionary._words.has(w);
+        };
+        const AMBIENT = new Set(['a','an','the','is','are','was','were','be','been','being','am','do','does','did','has','have','had','will','would','can','could','should','shall','may','might','must','of','in','on','at','to','for','with','by','from','as','and','or','but','if','then','so','what','when','where','who','why','how','which','this','that','these','those','there','here','it','its','he','she','we','they','his','her','their','our','me','my','you','your','i','not','no','yes','s','t','d','m','re','ve','ll','said','one','two','three','four','five','some','any','all','most','more','less','very','too','also','just','only','than','like','over','under','up','down','out','into','about','each','many','much','other','another','same','different','own','way','after','before','between','through']);
+        const required = new Set();
+        for (const q of questions) {
+          const text = `${q.question || ''} ${q.expectedAnswer || ''} ${(q.expectedVariants || []).join(' ')}`;
+          for (const tok of text.toLowerCase().split(/[^a-z']+/)) {
+            if (tok && !AMBIENT.has(tok) && tok.length >= 2) required.add(tok);
+          }
+        }
+        const missing = [];
+        for (const w of required) {
+          if (!dictHas(w)) missing.push(w);
+        }
+        missing.sort();
+        const coverage = required.size > 0 ? (required.size - missing.length) / required.size : 1;
+        console.log(`[Curriculum][${label}] VOCAB COVERAGE: ${required.size - missing.length}/${required.size} (${(coverage * 100).toFixed(1)}%) words trained · ${missing.length} UNTRAINED words in exam = those questions are unfair`);
+        if (missing.length > 0) {
+          console.warn(`[Curriculum][${label}] ⚠ UNTRAINED exam words (Unity can't fairly answer questions using these): ${missing.slice(0, 60).join(', ')}${missing.length > 60 ? ` + ${missing.length - 60} more` : ''}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Curriculum][${label}] vocab coverage audit failed:`, err?.message || err);
+    }
     const results = [];
     let pass = 0;
     // Per-sub-standard bucket — each entry is {pass, total}. Populated
@@ -19985,6 +20020,37 @@ export class Curriculum {
       console.log(`[Curriculum] Held-out eval check: ${totalExam} exam questions across ${Object.keys(EXAM_BANKS).length} cells · overlap=${totalOverlap} (0 = valid held-out)`);
     } catch (err) {
       console.warn('[Curriculum] Held-out eval check failed:', err?.message || err);
+    }
+
+    // Vocabulary coverage pre-flight — every exam question's words must
+    // be in the trained dictionary, otherwise the brain can't
+    // understand the question or produce the answer. Run the audit
+    // against the CURRENT dictionary at curriculum start. Gaps will
+    // narrow as teach fires, and the per-gate audit inside
+    // _runStudentBattery reports the post-teach state. The two audits
+    // together show both the starting gap and the closing rate.
+    try {
+      const dict = this.dictionary;
+      if (dict) {
+        const dictHas = (w) => {
+          if (typeof dict.has === 'function') return dict.has(w);
+          if (dict._words && dict._words.has) return dict._words.has(w);
+          return false;
+        };
+        const trainedProbe = { has: dictHas };
+        const report = auditAllExamVocabCoverage(trainedProbe);
+        console.log(`[Curriculum] Vocab coverage pre-flight (against current dictionary, pre-teach): ${report.totalTrained}/${report.totalRequired} words covered (${(report.overallCoverage * 100).toFixed(1)}%) across ${report.cells.length} exam cells`);
+        const worst = [...report.cells].sort((a, b) => a.coverage - b.coverage).slice(0, 3);
+        for (const c of worst) {
+          if (c.missing.length > 0) {
+            console.warn(`[Curriculum] ⚠ ${c.cellKey}: ${c.missing.length} untrained exam words (coverage ${(c.coverage * 100).toFixed(0)}%) — sample: ${c.missing.slice(0, 12).join(', ')}${c.missing.length > 12 ? '...' : ''}`);
+          }
+        }
+      } else {
+        console.log(`[Curriculum] Vocab coverage pre-flight skipped — dictionary not wired yet (will run per-gate after teach).`);
+      }
+    } catch (err) {
+      console.warn('[Curriculum] Vocab coverage pre-flight failed:', err?.message || err);
     }
 
     // WAIT FOR GPU READY before starting the teach
