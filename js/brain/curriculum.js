@@ -40,6 +40,7 @@
 
 import { sharedEmbeddings } from './embeddings.js';
 import { ensureLetter, ensureLetters, encodeLetter, decodeLetter, inventorySize, inventorySnapshot } from './letter-input.js';
+import { EXAM_BANKS, TRAIN_BANKS, cutScoreFor, trainExamOverlap } from './student-question-banks.js';
 
 // Phase tick budgets. These scale the intensity of exposure — letters
 // and short words get more ticks per token because phonological basins
@@ -513,84 +514,17 @@ export class Curriculum {
    * ("letter C", "cat", "c-a-t").
    */
   _studentQuestionBank(subject, grade) {
-    const banks = {
-      'ela/pre-K': [
-        { question: 'point to the letter a', expectedAnswer: 'a', expectedVariants: ['a', 'A', 'ay'] },
-        { question: 'what sound does m make?', expectedAnswer: 'm', expectedVariants: ['m', 'mm', 'muh'] },
-        { question: 'say the word for a cat', expectedAnswer: 'cat', expectedVariants: ['cat', 'kitty', 'kitten'] },
-      ],
-      'ela/kindergarten': [
-        { question: 'what letter comes after a?', expectedAnswer: 'b', expectedVariants: ['b', 'B', 'bee'] },
-        { question: 'what letter comes after b?', expectedAnswer: 'c', expectedVariants: ['c', 'C', 'cee'] },
-        { question: 'say a word that starts with c', expectedAnswer: 'c', expectedVariants: ['c', 'cat', 'cow', 'cup'] },
-        { question: 'say a word that starts with s', expectedAnswer: 's', expectedVariants: ['s', 'sun', 'sat', 'sit'] },
-        { question: 'how do you spell cat?', expectedAnswer: 'cat', expectedVariants: ['cat', 'c a t', 'c-a-t'] },
-        { question: 'what does the letter b sound like?', expectedAnswer: 'b', expectedVariants: ['b', 'buh', 'bee'] },
-        { question: 'give me a word that rhymes with hat', expectedAnswer: 'cat', expectedVariants: ['cat', 'bat', 'mat', 'sat', 'rat'] },
-      ],
-      'math/pre-K': [
-        { question: 'how many fingers are on one hand?', expectedAnswer: 'five', expectedVariants: ['five', '5'] },
-        { question: 'what comes after one?', expectedAnswer: 'two', expectedVariants: ['two', '2'] },
-        { question: 'point to the biggest one', expectedAnswer: 'big', expectedVariants: ['big', 'biggest', 'large'] },
-      ],
-      'math/kindergarten': [
-        { question: 'what comes after five?', expectedAnswer: 'six', expectedVariants: ['six', '6'] },
-        { question: 'count from one to three', expectedAnswer: 'three', expectedVariants: ['one two three', '1 2 3', 'three'] },
-        { question: 'what is one plus one?', expectedAnswer: 'two', expectedVariants: ['two', '2'] },
-        { question: 'what is two plus two?', expectedAnswer: 'four', expectedVariants: ['four', '4'] },
-        { question: 'which is more, three or five?', expectedAnswer: 'five', expectedVariants: ['five', '5'] },
-        { question: 'what shape has three sides?', expectedAnswer: 'triangle', expectedVariants: ['triangle'] },
-      ],
-      'science/pre-K': [
-        { question: 'what sound does a dog make?', expectedAnswer: 'bark', expectedVariants: ['bark', 'woof', 'ruff'] },
-        { question: 'what color is the sky?', expectedAnswer: 'blue', expectedVariants: ['blue'] },
-        { question: 'does a bird fly or swim?', expectedAnswer: 'fly', expectedVariants: ['fly', 'flies'] },
-      ],
-      'science/kindergarten': [
-        { question: 'what do plants need to grow?', expectedAnswer: 'water', expectedVariants: ['water', 'sun', 'light', 'sunlight'] },
-        { question: 'does ice melt or freeze when it gets warm?', expectedAnswer: 'melt', expectedVariants: ['melt', 'melts'] },
-        { question: 'is the sun hot or cold?', expectedAnswer: 'hot', expectedVariants: ['hot', 'warm'] },
-        { question: 'what happens when you drop a ball?', expectedAnswer: 'falls', expectedVariants: ['falls', 'fall', 'drops', 'bounce'] },
-        { question: 'what do fish use to breathe?', expectedAnswer: 'gills', expectedVariants: ['gills', 'water'] },
-      ],
-      'social/pre-K': [
-        { question: 'who takes care of you at home?', expectedAnswer: 'mom', expectedVariants: ['mom', 'dad', 'mommy', 'daddy', 'parents'] },
-        { question: 'when you share, how does it make your friend feel?', expectedAnswer: 'happy', expectedVariants: ['happy', 'good', 'glad'] },
-        { question: 'say hello', expectedAnswer: 'hi', expectedVariants: ['hi', 'hello', 'hey'] },
-      ],
-      'social/kindergarten': [
-        { question: 'what do you say when someone helps you?', expectedAnswer: 'thank', expectedVariants: ['thank you', 'thanks', 'thank'] },
-        { question: 'when someone is sad what can you do?', expectedAnswer: 'help', expectedVariants: ['help', 'hug', 'listen', 'share'] },
-        { question: 'where do kids go to learn?', expectedAnswer: 'school', expectedVariants: ['school', 'class'] },
-        { question: 'who are the people in your family?', expectedAnswer: 'mom', expectedVariants: ['mom', 'dad', 'sister', 'brother', 'family'] },
-        { question: 'what should you do before crossing the street?', expectedAnswer: 'look', expectedVariants: ['look', 'stop', 'wait'] },
-      ],
-      'art/pre-K': [
-        { question: 'what color is the sun?', expectedAnswer: 'yellow', expectedVariants: ['yellow'] },
-        { question: 'name a shape', expectedAnswer: 'circle', expectedVariants: ['circle', 'square', 'triangle'] },
-        { question: 'what do you use to draw?', expectedAnswer: 'crayon', expectedVariants: ['crayon', 'pencil', 'marker', 'pen'] },
-      ],
-      'art/kindergarten': [
-        { question: 'what color do you get when you mix red and yellow?', expectedAnswer: 'orange', expectedVariants: ['orange'] },
-        { question: 'what color do you get when you mix blue and yellow?', expectedAnswer: 'green', expectedVariants: ['green'] },
-        { question: 'name a shape with four equal sides', expectedAnswer: 'square', expectedVariants: ['square'] },
-        { question: 'what color are leaves in summer?', expectedAnswer: 'green', expectedVariants: ['green'] },
-        { question: 'name three colors', expectedAnswer: 'red', expectedVariants: ['red', 'blue', 'yellow', 'green', 'orange'] },
-      ],
-      'life/pre-K': [
-        { question: 'what is your name?', expectedAnswer: 'unity', expectedVariants: ['unity'] },
-        { question: 'are you a girl or a boy?', expectedAnswer: 'girl', expectedVariants: ['girl', 'woman'] },
-        { question: 'how old are you?', expectedAnswer: 'four', expectedVariants: ['four', '4', 'three', '3', 'five', '5'] },
-      ],
-      'life/kindergarten': [
-        { question: 'what is your name?', expectedAnswer: 'unity', expectedVariants: ['unity'] },
-        { question: 'how old are you?', expectedAnswer: 'five', expectedVariants: ['five', '5'] },
-        { question: 'what grade are you in?', expectedAnswer: 'kindergarten', expectedVariants: ['kindergarten', 'k', 'kinder'] },
-        { question: 'how are you feeling?', expectedAnswer: 'good', expectedVariants: ['good', 'happy', 'fine', 'ok'] },
-        { question: 'what is your favorite color?', expectedAnswer: 'pink', expectedVariants: ['pink', 'black', 'red', 'blue'] },
-      ],
-    };
-    return banks[`${subject}/${grade}`] || [];
+    // Held-out EXAM bank — imported from js/brain/student-question-banks.js.
+    // Earlier inline 3-7 Q per cell was pass-by-luck at 95% threshold; the
+    // external bank carries ≥150 K-ELA + ≥150 K-Math items with real
+    // sub-standard tags (K.RF.3a / K.CC.2 / K-PS2-1 / etc.) + external
+    // reference items from DIBELS 8 / AIMSweb / Fountas & Pinnell
+    // sample-equivalent format, norm-calibrated cut scores per standard.
+    // Other subjects (science/social/art/life) are seeded with small
+    // banks matching the prior inline size; full ≥150 Q expansion is
+    // queued in docs/TODO.md T23.a.4-8.
+    const bank = EXAM_BANKS[`${subject}/${grade}`];
+    return Array.isArray(bank) ? bank : [];
   }
 
   /**
@@ -607,6 +541,12 @@ export class Curriculum {
   async _runStudentBattery(questions, label) {
     const results = [];
     let pass = 0;
+    // Per-sub-standard bucket — each entry is {pass, total}. Populated
+    // from each question's `standard` tag (K.RF.3a / K.CC.2 / etc).
+    // Aggregate gate pass requires BOTH the overall rate AND every
+    // sub-standard hitting its norm-calibrated cut score (DIBELS 8 /
+    // AIMSweb sample calibrated in student-question-banks.js).
+    const byStandard = new Map();
     for (const q of questions) {
       try {
         const r = await this._studentTestProbe({
@@ -615,17 +555,57 @@ export class Curriculum {
           expectedVariants: q.expectedVariants || [q.expectedAnswer],
           maxTicks: q.maxTicks || 60,
         });
+        r.standard = q.standard || 'unspecified';
+        r.difficulty = q.difficulty || 1;
+        r.source = q.source || 'authored';
         results.push(r);
         if (r.score >= 0.5) pass++;
-        console.log(`[Curriculum][${label}] Q: "${q.question}" → "${r.answer}" · score=${r.score.toFixed(2)} match=${r.match.overall} methodology=${r.methodology} logic=${r.logic} retention=${r.retention} understanding=${r.understanding}`);
+        const bucket = byStandard.get(r.standard) || { pass: 0, total: 0 };
+        bucket.total += 1;
+        if (r.score >= 0.5) bucket.pass += 1;
+        byStandard.set(r.standard, bucket);
+        // Keep per-question log terse — full Q log-spam at 150+ Q is
+        // unreadable. Log every 20th + first 3 + any failures.
+        const isFail = r.score < 0.5;
+        const shouldLog = isFail || results.length <= 3 || (results.length % 20 === 0);
+        if (shouldLog) {
+          console.log(`[Curriculum][${label}] Q${results.length}/${questions.length} [${r.standard}]: "${q.question.slice(0, 60)}" → "${(r.answer || '').slice(0, 30)}" · score=${r.score.toFixed(2)} match=${r.match.overall}`);
+        }
       } catch (err) {
-        results.push({ question: q.question, answer: '', score: 0, error: err?.message || String(err) });
+        const bucket = byStandard.get(q.standard || 'unspecified') || { pass: 0, total: 0 };
+        bucket.total += 1;
+        byStandard.set(q.standard || 'unspecified', bucket);
+        results.push({ question: q.question, answer: '', score: 0, error: err?.message || String(err), standard: q.standard || 'unspecified' });
       }
     }
     const total = questions.length;
     const rate = total > 0 ? pass / total : 0;
-    const summary = ` [${label}: ${results.map(r => `"${(r.answer || '').slice(0, 20)}"@${(r.score || 0).toFixed(1)}`).join('; ')}]`;
-    return { pass, total, rate, summary, results };
+    // Per-standard breakdown — operator + dashboard need visibility
+    // into WHICH sub-standards Unity mastered vs which are weak.
+    // Aggregate-only pass rates hide per-standard failures.
+    const standardBreakdown = [];
+    let standardsBelowCut = 0;
+    for (const [std, bucket] of byStandard.entries()) {
+      const stdRate = bucket.total > 0 ? bucket.pass / bucket.total : 0;
+      const cut = cutScoreFor(std);
+      const belowCut = stdRate < cut;
+      if (belowCut) standardsBelowCut += 1;
+      standardBreakdown.push({ standard: std, pass: bucket.pass, total: bucket.total, rate: stdRate, cut, belowCut });
+    }
+    // Sort for readable log: worst-first, then alphabetical
+    standardBreakdown.sort((a, b) => {
+      if (a.belowCut !== b.belowCut) return a.belowCut ? -1 : 1;
+      return a.rate - b.rate;
+    });
+    const breakdownStr = standardBreakdown
+      .map(s => `${s.standard}:${s.pass}/${s.total}(${(s.rate * 100).toFixed(0)}%${s.belowCut ? ' ⚠<' + (s.cut * 100).toFixed(0) + '%' : ''})`)
+      .join(' · ');
+    console.log(`[Curriculum][${label}] AGGREGATE: ${pass}/${total} (${(rate * 100).toFixed(1)}%) · standards=${byStandard.size} · below-cut=${standardsBelowCut}`);
+    if (standardBreakdown.length > 0) {
+      console.log(`[Curriculum][${label}] BY STANDARD: ${breakdownStr}`);
+    }
+    const summary = ` [${label}: ${pass}/${total} ${(rate * 100).toFixed(1)}% · ${standardsBelowCut} std below cut]`;
+    return { pass, total, rate, summary, results, byStandard: standardBreakdown, standardsBelowCut };
   }
 
   /**
@@ -19985,7 +19965,29 @@ export class Curriculum {
    */
   async runCompleteCurriculum(corpora, opts = {}) {
     if (!this.cluster) return { reached: {}, passed: {}, failed: {} };
-    // T14.24 Session 95 — WAIT FOR GPU READY before starting the teach
+    // Held-out eval integrity check — the exam banks must be disjoint
+    // from anything the teaching side exposes the brain to. Non-empty
+    // overlap means a gate pass could be memorization, not learning.
+    // Warn loud on any overlap; operator can decide whether to abort
+    // the run or proceed with the contaminated battery.
+    try {
+      let totalOverlap = 0;
+      let totalExam = 0;
+      for (const cellKey of Object.keys(EXAM_BANKS)) {
+        const exam = EXAM_BANKS[cellKey] || [];
+        totalExam += exam.length;
+        const overlap = trainExamOverlap(cellKey);
+        if (overlap.length > 0) {
+          console.warn(`[Curriculum] ⚠ EXAM/TRAIN OVERLAP on ${cellKey}: ${overlap.length} shared question text(s) — held-out eval INVALID for this cell. Sample: "${overlap[0].slice(0, 60)}"`);
+          totalOverlap += overlap.length;
+        }
+      }
+      console.log(`[Curriculum] Held-out eval check: ${totalExam} exam questions across ${Object.keys(EXAM_BANKS).length} cells · overlap=${totalOverlap} (0 = valid held-out)`);
+    } catch (err) {
+      console.warn('[Curriculum] Held-out eval check failed:', err?.message || err);
+    }
+
+    // WAIT FOR GPU READY before starting the teach
     // pass. The curriculum kickoff lives in `server/brain-server.js
     // _initLanguageSubsystem` which returns before GPU init completes so
     // the HTTP path can unblock. That means runCompleteCurriculum fires

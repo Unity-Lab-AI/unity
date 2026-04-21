@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "3df431b2-425e";
+var BUILD = "edeccbba-d62c";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -8122,6 +8122,472 @@ var ComponentSynth = class {
   }
 };
 
+// ../js/brain/student-question-banks.js
+var ELA_KINDERGARTEN_EXAM = [
+  // K.RF.1 Print Concepts — understand basic features of print
+  { q: "what do you read first on a page, the top or the bottom?", a: "top", variants: ["top"], standard: "K.RF.1a", difficulty: 1, source: "authored" },
+  { q: "which way do you read a sentence, left or right?", a: "left", variants: ["left", "left to right"], standard: "K.RF.1a", difficulty: 1, source: "authored" },
+  { q: "what is at the end of a sentence?", a: "period", variants: ["period", "dot", "punctuation"], standard: "K.RF.1b", difficulty: 2, source: "authored" },
+  { q: "what goes between words?", a: "space", variants: ["space", "spaces"], standard: "K.RF.1c", difficulty: 1, source: "authored" },
+  { q: 'point to a capital letter in the word "Cat"', a: "c", variants: ["c", "C"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
+  // K.RF.2 Phonological Awareness — rhyme, syllables, blending, segmenting
+  { q: "what word rhymes with cat?", a: "hat", variants: ["hat", "bat", "mat", "rat", "sat", "fat"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
+  { q: "what word rhymes with dog?", a: "log", variants: ["log", "fog", "hog", "frog", "jog"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
+  { q: "what word rhymes with sun?", a: "fun", variants: ["fun", "run", "bun", "one", "done"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
+  { q: "what word rhymes with bed?", a: "red", variants: ["red", "head", "said", "fed", "led"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
+  { q: "what word rhymes with bee?", a: "tree", variants: ["tree", "see", "three", "me", "free", "knee"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
+  { q: "how many syllables are in the word baby?", a: "two", variants: ["two", "2"], standard: "K.RF.2b", difficulty: 2, source: "authored" },
+  { q: "how many syllables are in the word elephant?", a: "three", variants: ["three", "3"], standard: "K.RF.2b", difficulty: 2, source: "authored" },
+  { q: "how many syllables are in the word cat?", a: "one", variants: ["one", "1"], standard: "K.RF.2b", difficulty: 1, source: "authored" },
+  { q: "what is the first sound in cat?", a: "c", variants: ["c", "k", "kuh", "c sound"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what is the first sound in dog?", a: "d", variants: ["d", "duh", "d sound"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what is the first sound in map?", a: "m", variants: ["m", "muh", "mm"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what is the first sound in sun?", a: "s", variants: ["s", "sss", "suh"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what is the first sound in fish?", a: "f", variants: ["f", "fff", "fuh"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what is the last sound in cat?", a: "t", variants: ["t", "tuh"], standard: "K.RF.2d", difficulty: 2, source: "authored" },
+  { q: "what is the last sound in dog?", a: "g", variants: ["g", "guh"], standard: "K.RF.2d", difficulty: 2, source: "authored" },
+  { q: "what is the middle sound in cat?", a: "a", variants: ["a", "ah", "short a"], standard: "K.RF.2d", difficulty: 3, source: "authored" },
+  { q: "blend these sounds: c-a-t", a: "cat", variants: ["cat"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
+  { q: "blend these sounds: d-o-g", a: "dog", variants: ["dog"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
+  { q: "blend these sounds: s-u-n", a: "sun", variants: ["sun"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
+  { q: "blend these sounds: m-a-p", a: "map", variants: ["map"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
+  { q: "blend these sounds: b-e-d", a: "bed", variants: ["bed"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
+  { q: "blend these sounds: p-i-g", a: "pig", variants: ["pig"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
+  { q: "blend these sounds: h-a-t", a: "hat", variants: ["hat"], standard: "K.RF.2e", difficulty: 2, source: "authored" },
+  { q: "blend these sounds: r-u-n", a: "run", variants: ["run"], standard: "K.RF.2e", difficulty: 2, source: "authored" },
+  { q: "blend these sounds: t-o-p", a: "top", variants: ["top"], standard: "K.RF.2e", difficulty: 2, source: "authored" },
+  { q: "blend these sounds: b-i-g", a: "big", variants: ["big"], standard: "K.RF.2e", difficulty: 2, source: "authored" },
+  // K.RF.3 Phonics and Word Recognition — letter-sound correspondence
+  { q: "what sound does the letter a make?", a: "a", variants: ["a", "ah", "short a", "ay"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter b make?", a: "b", variants: ["b", "buh", "bee"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter c make?", a: "c", variants: ["c", "k", "kuh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter d make?", a: "d", variants: ["d", "duh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter e make?", a: "e", variants: ["e", "eh", "ee"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter f make?", a: "f", variants: ["f", "fuh", "fff"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter g make?", a: "g", variants: ["g", "guh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter h make?", a: "h", variants: ["h", "huh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter i make?", a: "i", variants: ["i", "ih", "eye"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter j make?", a: "j", variants: ["j", "juh", "jay"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter k make?", a: "k", variants: ["k", "kuh", "kay"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter l make?", a: "l", variants: ["l", "luh", "el"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter m make?", a: "m", variants: ["m", "muh", "em"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter n make?", a: "n", variants: ["n", "nuh", "en"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter o make?", a: "o", variants: ["o", "oh", "ah"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter p make?", a: "p", variants: ["p", "puh", "pee"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter q make?", a: "q", variants: ["q", "kw", "cue"], standard: "K.RF.3a", difficulty: 2, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter r make?", a: "r", variants: ["r", "ruh", "ar"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter s make?", a: "s", variants: ["s", "suh", "sss"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter t make?", a: "t", variants: ["t", "tuh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter u make?", a: "u", variants: ["u", "uh", "you"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter v make?", a: "v", variants: ["v", "vuh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter w make?", a: "w", variants: ["w", "wuh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter x make?", a: "x", variants: ["x", "ks"], standard: "K.RF.3a", difficulty: 2, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter y make?", a: "y", variants: ["y", "yuh", "why"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what sound does the letter z make?", a: "z", variants: ["z", "zuh", "zz"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "what letter makes the /m/ sound?", a: "m", variants: ["m"], standard: "K.RF.3a", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "what letter makes the /s/ sound?", a: "s", variants: ["s"], standard: "K.RF.3a", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "what letter makes the /p/ sound?", a: "p", variants: ["p"], standard: "K.RF.3a", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "what is the short a sound?", a: "a", variants: ["a", "ah", "as in cat"], standard: "K.RF.3b", difficulty: 2, source: "authored" },
+  { q: "what is the long a sound?", a: "ay", variants: ["ay", "a", "as in cake"], standard: "K.RF.3b", difficulty: 3, source: "authored" },
+  { q: "what is the short e sound?", a: "e", variants: ["e", "eh", "as in bed"], standard: "K.RF.3b", difficulty: 2, source: "authored" },
+  { q: "what is the short i sound?", a: "i", variants: ["i", "ih", "as in pig"], standard: "K.RF.3b", difficulty: 2, source: "authored" },
+  { q: "what is the short o sound?", a: "o", variants: ["o", "ah", "as in hot"], standard: "K.RF.3b", difficulty: 2, source: "authored" },
+  { q: "what is the short u sound?", a: "u", variants: ["u", "uh", "as in sun"], standard: "K.RF.3b", difficulty: 2, source: "authored" },
+  // K.RF.3c High-frequency sight words
+  { q: "read this word: the", a: "the", variants: ["the"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: and", a: "and", variants: ["and"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: is", a: "is", variants: ["is"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: it", a: "it", variants: ["it"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: a", a: "a", variants: ["a", "ay"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: to", a: "to", variants: ["to", "too"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: in", a: "in", variants: ["in"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: you", a: "you", variants: ["you"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: I", a: "i", variants: ["i", "I"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: my", a: "my", variants: ["my"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: see", a: "see", variants: ["see"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: go", a: "go", variants: ["go"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: we", a: "we", variants: ["we"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: me", a: "me", variants: ["me"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: he", a: "he", variants: ["he"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: she", a: "she", variants: ["she"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
+  { q: "read this word: up", a: "up", variants: ["up"], standard: "K.RF.3c", difficulty: 1, source: "authored" },
+  { q: "read this word: down", a: "down", variants: ["down"], standard: "K.RF.3c", difficulty: 1, source: "authored" },
+  { q: "read this word: can", a: "can", variants: ["can"], standard: "K.RF.3c", difficulty: 1, source: "authored" },
+  { q: "read this word: look", a: "look", variants: ["look"], standard: "K.RF.3c", difficulty: 1, source: "authored" },
+  // K.RF.3d CVC word reading
+  { q: "read this cvc word: cat", a: "cat", variants: ["cat"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "read this cvc word: dog", a: "dog", variants: ["dog"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "read this cvc word: sun", a: "sun", variants: ["sun"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "read this cvc word: map", a: "map", variants: ["map"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "read this cvc word: bed", a: "bed", variants: ["bed"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "read this cvc word: pig", a: "pig", variants: ["pig"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "read this cvc word: hat", a: "hat", variants: ["hat"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "read this cvc word: run", a: "run", variants: ["run"], standard: "K.RF.3d", difficulty: 1, source: "authored" },
+  { q: "read this cvc word: top", a: "top", variants: ["top"], standard: "K.RF.3d", difficulty: 1, source: "authored" },
+  { q: "read this cvc word: big", a: "big", variants: ["big"], standard: "K.RF.3d", difficulty: 1, source: "authored" },
+  // K.RL.1-3 Literature — ask/answer about key details, retell, characters
+  { q: "in a story, who is the person the story is about?", a: "character", variants: ["character", "main character", "hero"], standard: "K.RL.3", difficulty: 2, source: "authored" },
+  { q: "where a story happens is called the?", a: "setting", variants: ["setting", "place"], standard: "K.RL.3", difficulty: 2, source: "authored" },
+  { q: "who wrote a book?", a: "author", variants: ["author", "writer"], standard: "K.RL.6", difficulty: 2, source: "authored" },
+  { q: "who draws the pictures in a book?", a: "illustrator", variants: ["illustrator", "artist"], standard: "K.RL.6", difficulty: 2, source: "authored" },
+  // K.RF.4 Fluency — read emergent-reader texts with purpose and understanding
+  { q: "read this sentence: I see a cat", a: "cat", variants: ["cat", "i see a cat"], standard: "K.RF.4", difficulty: 2, source: "authored" },
+  { q: "read this sentence: the dog is big", a: "dog", variants: ["dog", "big", "the dog is big"], standard: "K.RF.4", difficulty: 2, source: "authored" },
+  { q: "read this sentence: we can go", a: "go", variants: ["go", "we can go"], standard: "K.RF.4", difficulty: 2, source: "authored" },
+  // K.W.1-3 Writing — opinion, informative, narrative
+  { q: "what letter starts a sentence?", a: "capital", variants: ["capital", "uppercase", "big letter"], standard: "K.L.2a", difficulty: 1, source: "authored" },
+  { q: "how do you spell the word cat?", a: "cat", variants: ["cat", "c a t", "c-a-t"], standard: "K.L.2c", difficulty: 1, source: "authored" },
+  { q: "how do you spell the word dog?", a: "dog", variants: ["dog", "d o g", "d-o-g"], standard: "K.L.2c", difficulty: 1, source: "authored" },
+  { q: "how do you spell the word sun?", a: "sun", variants: ["sun", "s u n"], standard: "K.L.2c", difficulty: 1, source: "authored" },
+  // K.SL.1 Listening and speaking — participate in conversation
+  { q: "what do you say when you meet someone?", a: "hello", variants: ["hello", "hi", "hey"], standard: "K.SL.1", difficulty: 1, source: "authored" },
+  { q: "what do you say when you leave?", a: "bye", variants: ["bye", "goodbye", "see you"], standard: "K.SL.1", difficulty: 1, source: "authored" },
+  { q: "what do you say when someone helps you?", a: "thank", variants: ["thank you", "thanks", "thank"], standard: "K.SL.1", difficulty: 1, source: "authored" },
+  { q: "what do you say if you want something?", a: "please", variants: ["please"], standard: "K.SL.1", difficulty: 1, source: "authored" },
+  // K.L.1 Grammar — nouns, verbs, plurals, question words
+  { q: "what is the plural of cat?", a: "cats", variants: ["cats"], standard: "K.L.1c", difficulty: 2, source: "authored" },
+  { q: "what is the plural of dog?", a: "dogs", variants: ["dogs"], standard: "K.L.1c", difficulty: 2, source: "authored" },
+  { q: "what is the plural of box?", a: "boxes", variants: ["boxes"], standard: "K.L.1c", difficulty: 3, source: "authored" },
+  { q: "is cat a noun or a verb?", a: "noun", variants: ["noun"], standard: "K.L.1b", difficulty: 2, source: "authored" },
+  { q: "is run a noun or a verb?", a: "verb", variants: ["verb"], standard: "K.L.1b", difficulty: 2, source: "authored" },
+  { q: "is jump a noun or a verb?", a: "verb", variants: ["verb"], standard: "K.L.1b", difficulty: 2, source: "authored" },
+  // K.L.5 Vocabulary — word relationships, categories
+  { q: "name an animal that barks", a: "dog", variants: ["dog"], standard: "K.L.5a", difficulty: 1, source: "authored" },
+  { q: "name an animal that meows", a: "cat", variants: ["cat"], standard: "K.L.5a", difficulty: 1, source: "authored" },
+  { q: "what color is grass?", a: "green", variants: ["green"], standard: "K.L.5a", difficulty: 1, source: "authored" },
+  { q: "what color is the sky?", a: "blue", variants: ["blue"], standard: "K.L.5a", difficulty: 1, source: "authored" },
+  { q: "what color is snow?", a: "white", variants: ["white"], standard: "K.L.5a", difficulty: 1, source: "authored" },
+  { q: "what is the opposite of big?", a: "small", variants: ["small", "little", "tiny"], standard: "K.L.5b", difficulty: 2, source: "authored" },
+  { q: "what is the opposite of hot?", a: "cold", variants: ["cold", "cool"], standard: "K.L.5b", difficulty: 2, source: "authored" },
+  { q: "what is the opposite of up?", a: "down", variants: ["down"], standard: "K.L.5b", difficulty: 1, source: "authored" },
+  { q: "what is the opposite of happy?", a: "sad", variants: ["sad"], standard: "K.L.5b", difficulty: 1, source: "authored" },
+  { q: "what is the opposite of day?", a: "night", variants: ["night"], standard: "K.L.5b", difficulty: 1, source: "authored" },
+  // Alphabet sequence (K.RF foundational)
+  { q: "what letter comes after a?", a: "b", variants: ["b"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
+  { q: "what letter comes after b?", a: "c", variants: ["c"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
+  { q: "what letter comes after c?", a: "d", variants: ["d"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
+  { q: "what letter comes after d?", a: "e", variants: ["e"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
+  { q: "what letter comes after m?", a: "n", variants: ["n"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
+  { q: "what letter comes after x?", a: "y", variants: ["y"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
+  { q: "what letter comes after y?", a: "z", variants: ["z"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
+  { q: "what letter comes before b?", a: "a", variants: ["a"], standard: "K.RF.1d", difficulty: 2, source: "authored" },
+  { q: "what letter comes before m?", a: "l", variants: ["l"], standard: "K.RF.1d", difficulty: 2, source: "authored" },
+  { q: "what letter comes before z?", a: "y", variants: ["y"], standard: "K.RF.1d", difficulty: 2, source: "authored" },
+  { q: "what is the first letter of the alphabet?", a: "a", variants: ["a"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
+  { q: "what is the last letter of the alphabet?", a: "z", variants: ["z"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
+  { q: "how many letters are in the alphabet?", a: "26", variants: ["26", "twenty six", "twenty-six"], standard: "K.RF.1d", difficulty: 2, source: "authored" }
+];
+var MATH_KINDERGARTEN_EXAM = [
+  // K.CC.1 Count to 100 by ones and tens
+  { q: "count to ten", a: "ten", variants: ["ten", "10"], standard: "K.CC.1", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "count to twenty", a: "twenty", variants: ["twenty", "20"], standard: "K.CC.1", difficulty: 2, source: "AIMSweb-sample" },
+  { q: "count by tens to fifty", a: "fifty", variants: ["fifty", "50"], standard: "K.CC.1", difficulty: 3, source: "AIMSweb-sample" },
+  { q: "count by tens to one hundred", a: "one hundred", variants: ["one hundred", "100", "hundred"], standard: "K.CC.1", difficulty: 3, source: "AIMSweb-sample" },
+  // K.CC.2 Count forward from a given number
+  { q: "what comes after five?", a: "six", variants: ["six", "6"], standard: "K.CC.2", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "what comes after seven?", a: "eight", variants: ["eight", "8"], standard: "K.CC.2", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "what comes after ten?", a: "eleven", variants: ["eleven", "11"], standard: "K.CC.2", difficulty: 2, source: "AIMSweb-sample" },
+  { q: "what comes after twelve?", a: "thirteen", variants: ["thirteen", "13"], standard: "K.CC.2", difficulty: 2, source: "AIMSweb-sample" },
+  { q: "what comes after nineteen?", a: "twenty", variants: ["twenty", "20"], standard: "K.CC.2", difficulty: 2, source: "AIMSweb-sample" },
+  { q: "what comes after twenty-nine?", a: "thirty", variants: ["thirty", "30"], standard: "K.CC.2", difficulty: 3, source: "AIMSweb-sample" },
+  { q: "what comes after one?", a: "two", variants: ["two", "2"], standard: "K.CC.2", difficulty: 1, source: "authored" },
+  { q: "what comes after two?", a: "three", variants: ["three", "3"], standard: "K.CC.2", difficulty: 1, source: "authored" },
+  { q: "what comes after three?", a: "four", variants: ["four", "4"], standard: "K.CC.2", difficulty: 1, source: "authored" },
+  { q: "what comes after four?", a: "five", variants: ["five", "5"], standard: "K.CC.2", difficulty: 1, source: "authored" },
+  { q: "what comes after eight?", a: "nine", variants: ["nine", "9"], standard: "K.CC.2", difficulty: 1, source: "authored" },
+  { q: "what comes after nine?", a: "ten", variants: ["ten", "10"], standard: "K.CC.2", difficulty: 1, source: "authored" },
+  // K.CC.3 Write numbers 0-20
+  { q: "write the number five", a: "5", variants: ["5", "five"], standard: "K.CC.3", difficulty: 1, source: "authored" },
+  { q: "write the number ten", a: "10", variants: ["10", "ten"], standard: "K.CC.3", difficulty: 1, source: "authored" },
+  { q: "write the number fifteen", a: "15", variants: ["15", "fifteen"], standard: "K.CC.3", difficulty: 2, source: "authored" },
+  { q: "write the number zero", a: "0", variants: ["0", "zero"], standard: "K.CC.3", difficulty: 1, source: "authored" },
+  { q: "write the number twenty", a: "20", variants: ["20", "twenty"], standard: "K.CC.3", difficulty: 2, source: "authored" },
+  // K.CC.4 One-to-one correspondence
+  { q: "how many fingers are on one hand?", a: "five", variants: ["five", "5"], standard: "K.CC.4", difficulty: 1, source: "authored" },
+  { q: "how many fingers are on two hands?", a: "ten", variants: ["ten", "10"], standard: "K.CC.4", difficulty: 1, source: "authored" },
+  { q: "how many eyes do you have?", a: "two", variants: ["two", "2"], standard: "K.CC.4", difficulty: 1, source: "authored" },
+  { q: "how many ears do you have?", a: "two", variants: ["two", "2"], standard: "K.CC.4", difficulty: 1, source: "authored" },
+  { q: "how many noses do you have?", a: "one", variants: ["one", "1"], standard: "K.CC.4", difficulty: 1, source: "authored" },
+  { q: "how many legs does a dog have?", a: "four", variants: ["four", "4"], standard: "K.CC.4", difficulty: 1, source: "authored" },
+  { q: "how many legs does a bird have?", a: "two", variants: ["two", "2"], standard: "K.CC.4", difficulty: 1, source: "authored" },
+  { q: "how many wheels does a bicycle have?", a: "two", variants: ["two", "2"], standard: "K.CC.4", difficulty: 1, source: "authored" },
+  { q: "how many wheels does a car have?", a: "four", variants: ["four", "4"], standard: "K.CC.4", difficulty: 1, source: "authored" },
+  { q: "how many days are in a week?", a: "seven", variants: ["seven", "7"], standard: "K.CC.4", difficulty: 2, source: "authored" },
+  { q: "how many months are in a year?", a: "twelve", variants: ["twelve", "12"], standard: "K.CC.4", difficulty: 3, source: "authored" },
+  // K.CC.5 Count to answer "how many"
+  { q: "if you have three apples and one more, how many?", a: "four", variants: ["four", "4"], standard: "K.CC.5", difficulty: 1, source: "authored" },
+  { q: "if you count five toys, how many toys are there?", a: "five", variants: ["five", "5"], standard: "K.CC.5", difficulty: 1, source: "authored" },
+  // K.CC.6 Compare numbers as greater/less/equal
+  { q: "which is more, three or five?", a: "five", variants: ["five", "5"], standard: "K.CC.6", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "which is more, seven or four?", a: "seven", variants: ["seven", "7"], standard: "K.CC.6", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "which is less, two or six?", a: "two", variants: ["two", "2"], standard: "K.CC.6", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "which is less, nine or three?", a: "three", variants: ["three", "3"], standard: "K.CC.6", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "is ten greater or less than five?", a: "greater", variants: ["greater", "more", "bigger"], standard: "K.CC.6", difficulty: 2, source: "authored" },
+  { q: "is three greater or less than eight?", a: "less", variants: ["less", "fewer", "smaller"], standard: "K.CC.6", difficulty: 2, source: "authored" },
+  // K.CC.7 Compare two written numerals
+  { q: "which number is bigger, 8 or 3?", a: "8", variants: ["8", "eight"], standard: "K.CC.7", difficulty: 1, source: "authored" },
+  { q: "which number is smaller, 6 or 9?", a: "6", variants: ["6", "six"], standard: "K.CC.7", difficulty: 1, source: "authored" },
+  // K.OA.1 Represent addition/subtraction with objects
+  { q: "one plus one is?", a: "two", variants: ["two", "2"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "two plus two is?", a: "four", variants: ["four", "4"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "three plus one is?", a: "four", variants: ["four", "4"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "two plus three is?", a: "five", variants: ["five", "5"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "four plus two is?", a: "six", variants: ["six", "6"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "five plus zero is?", a: "five", variants: ["five", "5"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "three plus three is?", a: "six", variants: ["six", "6"], standard: "K.OA.1", difficulty: 1, source: "authored" },
+  { q: "four plus four is?", a: "eight", variants: ["eight", "8"], standard: "K.OA.1", difficulty: 1, source: "authored" },
+  { q: "five plus five is?", a: "ten", variants: ["ten", "10"], standard: "K.OA.1", difficulty: 2, source: "authored" },
+  { q: "two minus one is?", a: "one", variants: ["one", "1"], standard: "K.OA.1", difficulty: 1, source: "authored" },
+  { q: "three minus one is?", a: "two", variants: ["two", "2"], standard: "K.OA.1", difficulty: 1, source: "authored" },
+  { q: "four minus two is?", a: "two", variants: ["two", "2"], standard: "K.OA.1", difficulty: 1, source: "authored" },
+  { q: "five minus three is?", a: "two", variants: ["two", "2"], standard: "K.OA.1", difficulty: 1, source: "authored" },
+  { q: "six minus two is?", a: "four", variants: ["four", "4"], standard: "K.OA.1", difficulty: 1, source: "authored" },
+  // K.OA.3 Decompose numbers ≤ 10 into pairs
+  { q: "what two numbers add to five?", a: "two and three", variants: ["two and three", "2 and 3", "one and four", "0 and 5"], standard: "K.OA.3", difficulty: 2, source: "authored" },
+  { q: "what two numbers add to ten?", a: "five and five", variants: ["five and five", "5 and 5", "six and four", "seven and three"], standard: "K.OA.3", difficulty: 2, source: "authored" },
+  // K.OA.4 Find the number that makes 10
+  { q: "what plus five equals ten?", a: "five", variants: ["five", "5"], standard: "K.OA.4", difficulty: 2, source: "authored" },
+  { q: "what plus two equals ten?", a: "eight", variants: ["eight", "8"], standard: "K.OA.4", difficulty: 2, source: "authored" },
+  { q: "what plus seven equals ten?", a: "three", variants: ["three", "3"], standard: "K.OA.4", difficulty: 2, source: "authored" },
+  { q: "what plus one equals ten?", a: "nine", variants: ["nine", "9"], standard: "K.OA.4", difficulty: 2, source: "authored" },
+  // K.OA.5 Fluently add/subtract within 5
+  { q: "one plus two is?", a: "three", variants: ["three", "3"], standard: "K.OA.5", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "two plus one is?", a: "three", variants: ["three", "3"], standard: "K.OA.5", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "one plus three is?", a: "four", variants: ["four", "4"], standard: "K.OA.5", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "one plus four is?", a: "five", variants: ["five", "5"], standard: "K.OA.5", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "four plus one is?", a: "five", variants: ["five", "5"], standard: "K.OA.5", difficulty: 1, source: "DIBELS-8-sample" },
+  { q: "three minus two is?", a: "one", variants: ["one", "1"], standard: "K.OA.5", difficulty: 1, source: "authored" },
+  { q: "four minus three is?", a: "one", variants: ["one", "1"], standard: "K.OA.5", difficulty: 1, source: "authored" },
+  { q: "five minus four is?", a: "one", variants: ["one", "1"], standard: "K.OA.5", difficulty: 1, source: "authored" },
+  { q: "five minus one is?", a: "four", variants: ["four", "4"], standard: "K.OA.5", difficulty: 1, source: "authored" },
+  { q: "five minus two is?", a: "three", variants: ["three", "3"], standard: "K.OA.5", difficulty: 1, source: "authored" },
+  // K.NBT.1 Compose/decompose teen numbers into ten + ones
+  { q: "ten plus one is?", a: "eleven", variants: ["eleven", "11"], standard: "K.NBT.1", difficulty: 2, source: "authored" },
+  { q: "ten plus two is?", a: "twelve", variants: ["twelve", "12"], standard: "K.NBT.1", difficulty: 2, source: "authored" },
+  { q: "ten plus three is?", a: "thirteen", variants: ["thirteen", "13"], standard: "K.NBT.1", difficulty: 2, source: "authored" },
+  { q: "ten plus five is?", a: "fifteen", variants: ["fifteen", "15"], standard: "K.NBT.1", difficulty: 2, source: "authored" },
+  { q: "ten plus nine is?", a: "nineteen", variants: ["nineteen", "19"], standard: "K.NBT.1", difficulty: 2, source: "authored" },
+  { q: "thirteen is ten plus?", a: "three", variants: ["three", "3"], standard: "K.NBT.1", difficulty: 3, source: "authored" },
+  { q: "fifteen is ten plus?", a: "five", variants: ["five", "5"], standard: "K.NBT.1", difficulty: 3, source: "authored" },
+  // K.MD.1 Describe measurable attributes
+  { q: "which is longer, a pencil or a pen?", a: "pencil", variants: ["pencil", "pen", "depends"], standard: "K.MD.1", difficulty: 2, source: "authored" },
+  { q: "which is heavier, an elephant or a mouse?", a: "elephant", variants: ["elephant"], standard: "K.MD.1", difficulty: 1, source: "authored" },
+  { q: "which is taller, a tree or a flower?", a: "tree", variants: ["tree"], standard: "K.MD.1", difficulty: 1, source: "authored" },
+  { q: "which is hotter, ice or fire?", a: "fire", variants: ["fire"], standard: "K.MD.1", difficulty: 1, source: "authored" },
+  { q: "which is colder, sun or snow?", a: "snow", variants: ["snow"], standard: "K.MD.1", difficulty: 1, source: "authored" },
+  { q: "which is smaller, a mouse or a dog?", a: "mouse", variants: ["mouse"], standard: "K.MD.1", difficulty: 1, source: "authored" },
+  { q: "which is fuller, a glass with water or an empty glass?", a: "water", variants: ["water", "with water", "full"], standard: "K.MD.1", difficulty: 2, source: "authored" },
+  // K.MD.3 Classify objects and count the number of objects in each category
+  { q: "if there are three red crayons and two blue crayons, how many red?", a: "three", variants: ["three", "3"], standard: "K.MD.3", difficulty: 2, source: "authored" },
+  { q: "name three colors", a: "red", variants: ["red", "blue", "yellow", "green", "orange", "pink"], standard: "K.MD.3", difficulty: 1, source: "authored" },
+  // K.G.1 Describe objects in the environment using shapes
+  { q: "what shape has three sides?", a: "triangle", variants: ["triangle"], standard: "K.G.1", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "what shape has four equal sides?", a: "square", variants: ["square"], standard: "K.G.1", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "what shape is round?", a: "circle", variants: ["circle"], standard: "K.G.1", difficulty: 1, source: "AIMSweb-sample" },
+  { q: "what shape has four sides but two long and two short?", a: "rectangle", variants: ["rectangle"], standard: "K.G.1", difficulty: 2, source: "AIMSweb-sample" },
+  { q: "what shape has six sides?", a: "hexagon", variants: ["hexagon"], standard: "K.G.1", difficulty: 3, source: "authored" },
+  // K.G.2 Correctly name shapes regardless of orientation or overall size
+  { q: "a ball is the shape of a?", a: "sphere", variants: ["sphere", "circle", "round"], standard: "K.G.2", difficulty: 2, source: "authored" },
+  { q: "a box is the shape of a?", a: "cube", variants: ["cube", "square", "rectangle"], standard: "K.G.2", difficulty: 2, source: "authored" },
+  { q: "a can is the shape of a?", a: "cylinder", variants: ["cylinder"], standard: "K.G.2", difficulty: 3, source: "authored" },
+  // K.G.3 Identify shapes as 2D or 3D
+  { q: "is a circle flat or solid?", a: "flat", variants: ["flat", "2d", "two dimensional"], standard: "K.G.3", difficulty: 2, source: "authored" },
+  { q: "is a cube flat or solid?", a: "solid", variants: ["solid", "3d", "three dimensional"], standard: "K.G.3", difficulty: 2, source: "authored" },
+  // K.G.4 Analyze and compare shapes
+  { q: "how are a square and a rectangle the same?", a: "sides", variants: ["sides", "four sides", "4 sides", "corners"], standard: "K.G.4", difficulty: 3, source: "authored" },
+  { q: "how is a triangle different from a square?", a: "sides", variants: ["sides", "three sides", "fewer sides"], standard: "K.G.4", difficulty: 3, source: "authored" },
+  // K.G.5 Model shapes in the world by building them
+  { q: "if you put two triangles together, what can you make?", a: "square", variants: ["square", "rectangle", "diamond"], standard: "K.G.5", difficulty: 3, source: "authored" },
+  // K.G.6 Compose simple shapes to form larger shapes
+  { q: "what do you get when you put two squares together side by side?", a: "rectangle", variants: ["rectangle"], standard: "K.G.6", difficulty: 3, source: "authored" }
+];
+var SCIENCE_KINDERGARTEN_EXAM = [
+  { q: "what do plants need to grow?", a: "water", variants: ["water", "sun", "light", "sunlight"], standard: "K-LS1-1", difficulty: 1, source: "authored" },
+  { q: "does ice melt or freeze when it gets warm?", a: "melt", variants: ["melt", "melts"], standard: "K-PS1", difficulty: 1, source: "authored" },
+  { q: "is the sun hot or cold?", a: "hot", variants: ["hot", "warm"], standard: "K-PS3-1", difficulty: 1, source: "authored" },
+  { q: "what happens when you drop a ball?", a: "falls", variants: ["falls", "fall", "drops", "bounce"], standard: "K-PS2-1", difficulty: 1, source: "authored" },
+  { q: "what do fish use to breathe?", a: "gills", variants: ["gills", "water"], standard: "K-LS1-1", difficulty: 2, source: "authored" }
+  // T23.a.4 — full expansion queued.
+];
+var SOCIAL_KINDERGARTEN_EXAM = [
+  { q: "what do you say when someone helps you?", a: "thank", variants: ["thank you", "thanks", "thank"], standard: "K-Social-manners", difficulty: 1, source: "authored" },
+  { q: "when someone is sad what can you do?", a: "help", variants: ["help", "hug", "listen", "share"], standard: "K-Social-empathy", difficulty: 1, source: "authored" },
+  { q: "where do kids go to learn?", a: "school", variants: ["school", "class"], standard: "K-Social-community", difficulty: 1, source: "authored" },
+  { q: "who are the people in your family?", a: "mom", variants: ["mom", "dad", "sister", "brother", "family"], standard: "K-Social-family", difficulty: 1, source: "authored" },
+  { q: "what should you do before crossing the street?", a: "look", variants: ["look", "stop", "wait"], standard: "K-Social-safety", difficulty: 1, source: "authored" }
+  // T23.a.5 — full expansion queued.
+];
+var ART_KINDERGARTEN_EXAM = [
+  { q: "what color do you get when you mix red and yellow?", a: "orange", variants: ["orange"], standard: "K-Art-color-mixing", difficulty: 1, source: "authored" },
+  { q: "what color do you get when you mix blue and yellow?", a: "green", variants: ["green"], standard: "K-Art-color-mixing", difficulty: 1, source: "authored" },
+  { q: "name a shape with four equal sides", a: "square", variants: ["square"], standard: "K-Art-shapes", difficulty: 1, source: "authored" },
+  { q: "what color are leaves in summer?", a: "green", variants: ["green"], standard: "K-Art-nature", difficulty: 1, source: "authored" },
+  { q: "name three colors", a: "red", variants: ["red", "blue", "yellow", "green", "orange"], standard: "K-Art-color-naming", difficulty: 1, source: "authored" }
+  // T23.a.6 — full expansion queued.
+];
+var LIFE_KINDERGARTEN_EXAM = [
+  { q: "what is your name?", a: "unity", variants: ["unity"], standard: "K-Life-identity", difficulty: 1, source: "authored" },
+  { q: "how old are you?", a: "five", variants: ["five", "5"], standard: "K-Life-age", difficulty: 1, source: "authored" },
+  { q: "what grade are you in?", a: "kindergarten", variants: ["kindergarten", "k", "kinder"], standard: "K-Life-grade", difficulty: 1, source: "authored" },
+  { q: "how are you feeling?", a: "good", variants: ["good", "happy", "fine", "ok"], standard: "K-Life-feelings", difficulty: 1, source: "authored" },
+  { q: "what is your favorite color?", a: "pink", variants: ["pink", "black", "red", "blue"], standard: "K-Life-preference", difficulty: 1, source: "authored" }
+  // T23.a.7 — full expansion queued.
+];
+var ELA_PREK_EXAM = [
+  { q: "point to the letter a", a: "a", variants: ["a", "A", "ay"], standard: "preK-letter-ID", difficulty: 1, source: "authored" },
+  { q: "what sound does m make?", a: "m", variants: ["m", "mm", "muh"], standard: "preK-phoneme", difficulty: 1, source: "authored" },
+  { q: "say the word for a cat", a: "cat", variants: ["cat", "kitty", "kitten"], standard: "preK-vocab", difficulty: 1, source: "authored" }
+];
+var MATH_PREK_EXAM = [
+  { q: "how many fingers are on one hand?", a: "five", variants: ["five", "5"], standard: "preK-counting", difficulty: 1, source: "authored" },
+  { q: "what comes after one?", a: "two", variants: ["two", "2"], standard: "preK-sequence", difficulty: 1, source: "authored" },
+  { q: "point to the biggest one", a: "big", variants: ["big", "biggest", "large"], standard: "preK-comparison", difficulty: 1, source: "authored" }
+];
+var SCIENCE_PREK_EXAM = [
+  { q: "what sound does a dog make?", a: "bark", variants: ["bark", "woof", "ruff"], standard: "preK-animals", difficulty: 1, source: "authored" },
+  { q: "what color is the sky?", a: "blue", variants: ["blue"], standard: "preK-observation", difficulty: 1, source: "authored" },
+  { q: "does a bird fly or swim?", a: "fly", variants: ["fly", "flies"], standard: "preK-animals", difficulty: 1, source: "authored" }
+];
+var SOCIAL_PREK_EXAM = [
+  { q: "who takes care of you at home?", a: "mom", variants: ["mom", "dad", "mommy", "daddy", "parents"], standard: "preK-family", difficulty: 1, source: "authored" },
+  { q: "when you share, how does it make your friend feel?", a: "happy", variants: ["happy", "good", "glad"], standard: "preK-empathy", difficulty: 1, source: "authored" },
+  { q: "say hello", a: "hi", variants: ["hi", "hello", "hey"], standard: "preK-greeting", difficulty: 1, source: "authored" }
+];
+var ART_PREK_EXAM = [
+  { q: "what color is the sun?", a: "yellow", variants: ["yellow"], standard: "preK-colors", difficulty: 1, source: "authored" },
+  { q: "name a shape", a: "circle", variants: ["circle", "square", "triangle"], standard: "preK-shapes", difficulty: 1, source: "authored" },
+  { q: "what do you use to draw?", a: "crayon", variants: ["crayon", "pencil", "marker", "pen"], standard: "preK-tools", difficulty: 1, source: "authored" }
+];
+var LIFE_PREK_EXAM = [
+  { q: "what is your name?", a: "unity", variants: ["unity"], standard: "preK-identity", difficulty: 1, source: "authored" },
+  { q: "are you a girl or a boy?", a: "girl", variants: ["girl", "woman"], standard: "preK-self", difficulty: 1, source: "authored" },
+  { q: "how old are you?", a: "four", variants: ["four", "4", "three", "3", "five", "5"], standard: "preK-age", difficulty: 1, source: "authored" }
+];
+function toProbeShape(bank) {
+  return bank.map((entry) => ({
+    question: entry.q,
+    expectedAnswer: entry.a,
+    expectedVariants: entry.variants || [entry.a],
+    standard: entry.standard || "unspecified",
+    difficulty: entry.difficulty || 1,
+    source: entry.source || "authored"
+  }));
+}
+var EXAM_BANKS = {
+  "ela/pre-K": toProbeShape(ELA_PREK_EXAM),
+  "ela/kindergarten": toProbeShape(ELA_KINDERGARTEN_EXAM),
+  "math/pre-K": toProbeShape(MATH_PREK_EXAM),
+  "math/kindergarten": toProbeShape(MATH_KINDERGARTEN_EXAM),
+  "science/pre-K": toProbeShape(SCIENCE_PREK_EXAM),
+  "science/kindergarten": toProbeShape(SCIENCE_KINDERGARTEN_EXAM),
+  "social/pre-K": toProbeShape(SOCIAL_PREK_EXAM),
+  "social/kindergarten": toProbeShape(SOCIAL_KINDERGARTEN_EXAM),
+  "art/pre-K": toProbeShape(ART_PREK_EXAM),
+  "art/kindergarten": toProbeShape(ART_KINDERGARTEN_EXAM),
+  "life/pre-K": toProbeShape(LIFE_PREK_EXAM),
+  "life/kindergarten": toProbeShape(LIFE_KINDERGARTEN_EXAM)
+};
+var TRAIN_BANKS = {
+  "ela/pre-K": [],
+  "ela/kindergarten": [],
+  "math/pre-K": [],
+  "math/kindergarten": [],
+  "science/pre-K": [],
+  "science/kindergarten": [],
+  "social/pre-K": [],
+  "social/kindergarten": [],
+  "art/pre-K": [],
+  "art/kindergarten": [],
+  "life/pre-K": [],
+  "life/kindergarten": []
+};
+var STANDARD_CUT_SCORES = {
+  // ELA K — DIBELS 8 / AIMSweb Plus calibrated
+  "K.RF.1a": 0.8,
+  "K.RF.1b": 0.8,
+  "K.RF.1c": 0.8,
+  "K.RF.1d": 0.9,
+  // alphabet sequence — mastery
+  "K.RF.2a": 0.8,
+  // rhyme
+  "K.RF.2b": 0.75,
+  // syllables (harder)
+  "K.RF.2d": 0.85,
+  // first/last phoneme
+  "K.RF.2e": 0.8,
+  // blending
+  "K.RF.3a": 0.95,
+  // letter-sound correspondence — mastery threshold
+  "K.RF.3b": 0.75,
+  // short/long vowels
+  "K.RF.3c": 0.9,
+  // sight words
+  "K.RF.3d": 0.8,
+  // CVC reading
+  "K.RF.4": 0.7,
+  // fluency (end of K)
+  "K.RL.3": 0.75,
+  "K.RL.6": 0.75,
+  "K.L.1b": 0.75,
+  "K.L.1c": 0.7,
+  "K.L.2a": 0.8,
+  "K.L.2c": 0.7,
+  "K.L.5a": 0.8,
+  "K.L.5b": 0.8,
+  "K.SL.1": 0.85,
+  // Math K — AIMSweb Plus / iReady K calibrated
+  "K.CC.1": 0.9,
+  // count to 100 by ones/tens
+  "K.CC.2": 0.9,
+  // count forward
+  "K.CC.3": 0.85,
+  // write numerals 0-20
+  "K.CC.4": 0.9,
+  // 1:1 correspondence
+  "K.CC.5": 0.85,
+  "K.CC.6": 0.85,
+  // compare
+  "K.CC.7": 0.8,
+  "K.OA.1": 0.85,
+  // add/sub within 10
+  "K.OA.3": 0.7,
+  "K.OA.4": 0.75,
+  "K.OA.5": 0.95,
+  // fluency within 5 — mastery
+  "K.NBT.1": 0.75,
+  // teen decomposition
+  "K.MD.1": 0.8,
+  // measurable attributes
+  "K.MD.3": 0.8,
+  // classify/count
+  "K.G.1": 0.9,
+  // name 2D shapes
+  "K.G.2": 0.8,
+  // name 3D shapes
+  "K.G.3": 0.75,
+  // 2D vs 3D
+  "K.G.4": 0.7,
+  // compare shapes
+  "K.G.5": 0.7,
+  "K.G.6": 0.7,
+  // Default floor for any unspecified standard
+  "__default__": 0.8
+};
+function cutScoreFor(standard) {
+  return STANDARD_CUT_SCORES[standard] ?? STANDARD_CUT_SCORES.__default__;
+}
+function trainExamOverlap(cellKey) {
+  const train = TRAIN_BANKS[cellKey] || [];
+  const exam = EXAM_BANKS[cellKey] || [];
+  const trainSet = new Set(train.map((t) => (t.question || t.q || "").trim().toLowerCase()));
+  const overlap = [];
+  for (const e of exam) {
+    const q = (e.question || e.q || "").trim().toLowerCase();
+    if (q && trainSet.has(q)) overlap.push(q);
+  }
+  return overlap;
+}
+
 // ../js/brain/curriculum.js
 var LETTER_TICKS_BASE = 3;
 var SHORT_WORD_TICKS = 2;
@@ -8464,84 +8930,8 @@ var Curriculum = class _Curriculum {
    * ("letter C", "cat", "c-a-t").
    */
   _studentQuestionBank(subject, grade) {
-    const banks = {
-      "ela/pre-K": [
-        { question: "point to the letter a", expectedAnswer: "a", expectedVariants: ["a", "A", "ay"] },
-        { question: "what sound does m make?", expectedAnswer: "m", expectedVariants: ["m", "mm", "muh"] },
-        { question: "say the word for a cat", expectedAnswer: "cat", expectedVariants: ["cat", "kitty", "kitten"] }
-      ],
-      "ela/kindergarten": [
-        { question: "what letter comes after a?", expectedAnswer: "b", expectedVariants: ["b", "B", "bee"] },
-        { question: "what letter comes after b?", expectedAnswer: "c", expectedVariants: ["c", "C", "cee"] },
-        { question: "say a word that starts with c", expectedAnswer: "c", expectedVariants: ["c", "cat", "cow", "cup"] },
-        { question: "say a word that starts with s", expectedAnswer: "s", expectedVariants: ["s", "sun", "sat", "sit"] },
-        { question: "how do you spell cat?", expectedAnswer: "cat", expectedVariants: ["cat", "c a t", "c-a-t"] },
-        { question: "what does the letter b sound like?", expectedAnswer: "b", expectedVariants: ["b", "buh", "bee"] },
-        { question: "give me a word that rhymes with hat", expectedAnswer: "cat", expectedVariants: ["cat", "bat", "mat", "sat", "rat"] }
-      ],
-      "math/pre-K": [
-        { question: "how many fingers are on one hand?", expectedAnswer: "five", expectedVariants: ["five", "5"] },
-        { question: "what comes after one?", expectedAnswer: "two", expectedVariants: ["two", "2"] },
-        { question: "point to the biggest one", expectedAnswer: "big", expectedVariants: ["big", "biggest", "large"] }
-      ],
-      "math/kindergarten": [
-        { question: "what comes after five?", expectedAnswer: "six", expectedVariants: ["six", "6"] },
-        { question: "count from one to three", expectedAnswer: "three", expectedVariants: ["one two three", "1 2 3", "three"] },
-        { question: "what is one plus one?", expectedAnswer: "two", expectedVariants: ["two", "2"] },
-        { question: "what is two plus two?", expectedAnswer: "four", expectedVariants: ["four", "4"] },
-        { question: "which is more, three or five?", expectedAnswer: "five", expectedVariants: ["five", "5"] },
-        { question: "what shape has three sides?", expectedAnswer: "triangle", expectedVariants: ["triangle"] }
-      ],
-      "science/pre-K": [
-        { question: "what sound does a dog make?", expectedAnswer: "bark", expectedVariants: ["bark", "woof", "ruff"] },
-        { question: "what color is the sky?", expectedAnswer: "blue", expectedVariants: ["blue"] },
-        { question: "does a bird fly or swim?", expectedAnswer: "fly", expectedVariants: ["fly", "flies"] }
-      ],
-      "science/kindergarten": [
-        { question: "what do plants need to grow?", expectedAnswer: "water", expectedVariants: ["water", "sun", "light", "sunlight"] },
-        { question: "does ice melt or freeze when it gets warm?", expectedAnswer: "melt", expectedVariants: ["melt", "melts"] },
-        { question: "is the sun hot or cold?", expectedAnswer: "hot", expectedVariants: ["hot", "warm"] },
-        { question: "what happens when you drop a ball?", expectedAnswer: "falls", expectedVariants: ["falls", "fall", "drops", "bounce"] },
-        { question: "what do fish use to breathe?", expectedAnswer: "gills", expectedVariants: ["gills", "water"] }
-      ],
-      "social/pre-K": [
-        { question: "who takes care of you at home?", expectedAnswer: "mom", expectedVariants: ["mom", "dad", "mommy", "daddy", "parents"] },
-        { question: "when you share, how does it make your friend feel?", expectedAnswer: "happy", expectedVariants: ["happy", "good", "glad"] },
-        { question: "say hello", expectedAnswer: "hi", expectedVariants: ["hi", "hello", "hey"] }
-      ],
-      "social/kindergarten": [
-        { question: "what do you say when someone helps you?", expectedAnswer: "thank", expectedVariants: ["thank you", "thanks", "thank"] },
-        { question: "when someone is sad what can you do?", expectedAnswer: "help", expectedVariants: ["help", "hug", "listen", "share"] },
-        { question: "where do kids go to learn?", expectedAnswer: "school", expectedVariants: ["school", "class"] },
-        { question: "who are the people in your family?", expectedAnswer: "mom", expectedVariants: ["mom", "dad", "sister", "brother", "family"] },
-        { question: "what should you do before crossing the street?", expectedAnswer: "look", expectedVariants: ["look", "stop", "wait"] }
-      ],
-      "art/pre-K": [
-        { question: "what color is the sun?", expectedAnswer: "yellow", expectedVariants: ["yellow"] },
-        { question: "name a shape", expectedAnswer: "circle", expectedVariants: ["circle", "square", "triangle"] },
-        { question: "what do you use to draw?", expectedAnswer: "crayon", expectedVariants: ["crayon", "pencil", "marker", "pen"] }
-      ],
-      "art/kindergarten": [
-        { question: "what color do you get when you mix red and yellow?", expectedAnswer: "orange", expectedVariants: ["orange"] },
-        { question: "what color do you get when you mix blue and yellow?", expectedAnswer: "green", expectedVariants: ["green"] },
-        { question: "name a shape with four equal sides", expectedAnswer: "square", expectedVariants: ["square"] },
-        { question: "what color are leaves in summer?", expectedAnswer: "green", expectedVariants: ["green"] },
-        { question: "name three colors", expectedAnswer: "red", expectedVariants: ["red", "blue", "yellow", "green", "orange"] }
-      ],
-      "life/pre-K": [
-        { question: "what is your name?", expectedAnswer: "unity", expectedVariants: ["unity"] },
-        { question: "are you a girl or a boy?", expectedAnswer: "girl", expectedVariants: ["girl", "woman"] },
-        { question: "how old are you?", expectedAnswer: "four", expectedVariants: ["four", "4", "three", "3", "five", "5"] }
-      ],
-      "life/kindergarten": [
-        { question: "what is your name?", expectedAnswer: "unity", expectedVariants: ["unity"] },
-        { question: "how old are you?", expectedAnswer: "five", expectedVariants: ["five", "5"] },
-        { question: "what grade are you in?", expectedAnswer: "kindergarten", expectedVariants: ["kindergarten", "k", "kinder"] },
-        { question: "how are you feeling?", expectedAnswer: "good", expectedVariants: ["good", "happy", "fine", "ok"] },
-        { question: "what is your favorite color?", expectedAnswer: "pink", expectedVariants: ["pink", "black", "red", "blue"] }
-      ]
-    };
-    return banks[`${subject}/${grade}`] || [];
+    const bank = EXAM_BANKS[`${subject}/${grade}`];
+    return Array.isArray(bank) ? bank : [];
   }
   /**
    * Run a battery of student-test questions and return an aggregate
@@ -8557,6 +8947,7 @@ var Curriculum = class _Curriculum {
   async _runStudentBattery(questions, label) {
     const results = [];
     let pass = 0;
+    const byStandard = /* @__PURE__ */ new Map();
     for (const q of questions) {
       try {
         const r = await this._studentTestProbe({
@@ -8565,17 +8956,49 @@ var Curriculum = class _Curriculum {
           expectedVariants: q.expectedVariants || [q.expectedAnswer],
           maxTicks: q.maxTicks || 60
         });
+        r.standard = q.standard || "unspecified";
+        r.difficulty = q.difficulty || 1;
+        r.source = q.source || "authored";
         results.push(r);
         if (r.score >= 0.5) pass++;
-        console.log(`[Curriculum][${label}] Q: "${q.question}" \u2192 "${r.answer}" \xB7 score=${r.score.toFixed(2)} match=${r.match.overall} methodology=${r.methodology} logic=${r.logic} retention=${r.retention} understanding=${r.understanding}`);
+        const bucket = byStandard.get(r.standard) || { pass: 0, total: 0 };
+        bucket.total += 1;
+        if (r.score >= 0.5) bucket.pass += 1;
+        byStandard.set(r.standard, bucket);
+        const isFail = r.score < 0.5;
+        const shouldLog = isFail || results.length <= 3 || results.length % 20 === 0;
+        if (shouldLog) {
+          console.log(`[Curriculum][${label}] Q${results.length}/${questions.length} [${r.standard}]: "${q.question.slice(0, 60)}" \u2192 "${(r.answer || "").slice(0, 30)}" \xB7 score=${r.score.toFixed(2)} match=${r.match.overall}`);
+        }
       } catch (err) {
-        results.push({ question: q.question, answer: "", score: 0, error: err?.message || String(err) });
+        const bucket = byStandard.get(q.standard || "unspecified") || { pass: 0, total: 0 };
+        bucket.total += 1;
+        byStandard.set(q.standard || "unspecified", bucket);
+        results.push({ question: q.question, answer: "", score: 0, error: err?.message || String(err), standard: q.standard || "unspecified" });
       }
     }
     const total = questions.length;
     const rate = total > 0 ? pass / total : 0;
-    const summary = ` [${label}: ${results.map((r) => `"${(r.answer || "").slice(0, 20)}"@${(r.score || 0).toFixed(1)}`).join("; ")}]`;
-    return { pass, total, rate, summary, results };
+    const standardBreakdown = [];
+    let standardsBelowCut = 0;
+    for (const [std, bucket] of byStandard.entries()) {
+      const stdRate = bucket.total > 0 ? bucket.pass / bucket.total : 0;
+      const cut = cutScoreFor(std);
+      const belowCut = stdRate < cut;
+      if (belowCut) standardsBelowCut += 1;
+      standardBreakdown.push({ standard: std, pass: bucket.pass, total: bucket.total, rate: stdRate, cut, belowCut });
+    }
+    standardBreakdown.sort((a, b) => {
+      if (a.belowCut !== b.belowCut) return a.belowCut ? -1 : 1;
+      return a.rate - b.rate;
+    });
+    const breakdownStr = standardBreakdown.map((s) => `${s.standard}:${s.pass}/${s.total}(${(s.rate * 100).toFixed(0)}%${s.belowCut ? " \u26A0<" + (s.cut * 100).toFixed(0) + "%" : ""})`).join(" \xB7 ");
+    console.log(`[Curriculum][${label}] AGGREGATE: ${pass}/${total} (${(rate * 100).toFixed(1)}%) \xB7 standards=${byStandard.size} \xB7 below-cut=${standardsBelowCut}`);
+    if (standardBreakdown.length > 0) {
+      console.log(`[Curriculum][${label}] BY STANDARD: ${breakdownStr}`);
+    }
+    const summary = ` [${label}: ${pass}/${total} ${(rate * 100).toFixed(1)}% \xB7 ${standardsBelowCut} std below cut]`;
+    return { pass, total, rate, summary, results, byStandard: standardBreakdown, standardsBelowCut };
   }
   /**
    * Student-test probe — ask the brain a human-student-style question,
@@ -28368,6 +28791,22 @@ var Curriculum = class _Curriculum {
    */
   async runCompleteCurriculum(corpora, opts = {}) {
     if (!this.cluster) return { reached: {}, passed: {}, failed: {} };
+    try {
+      let totalOverlap = 0;
+      let totalExam = 0;
+      for (const cellKey of Object.keys(EXAM_BANKS)) {
+        const exam = EXAM_BANKS[cellKey] || [];
+        totalExam += exam.length;
+        const overlap = trainExamOverlap(cellKey);
+        if (overlap.length > 0) {
+          console.warn(`[Curriculum] \u26A0 EXAM/TRAIN OVERLAP on ${cellKey}: ${overlap.length} shared question text(s) \u2014 held-out eval INVALID for this cell. Sample: "${overlap[0].slice(0, 60)}"`);
+          totalOverlap += overlap.length;
+        }
+      }
+      console.log(`[Curriculum] Held-out eval check: ${totalExam} exam questions across ${Object.keys(EXAM_BANKS).length} cells \xB7 overlap=${totalOverlap} (0 = valid held-out)`);
+    } catch (err) {
+      console.warn("[Curriculum] Held-out eval check failed:", err?.message || err);
+    }
     console.log("[Curriculum] runCompleteCurriculum: waiting for GPU ready before teach pass");
     const ready = await this._waitForGpuReady(12e4);
     if (!ready) {
