@@ -401,8 +401,8 @@ arousal = 0.6 × θ.arousalBaseline + 0.4 × |x_final|_rms + 0.1 × (fear + rewa
 bestEpisode = argmax_i  cos(cortexPattern, episodes[i].pattern)<br>
             = argmax_i  (cortexPattern · episodes[i].pattern) / (|cortexPattern| · |episodes[i].pattern|)<br>
         </div>
-        <p>If the cosine clears a threshold (~0.75), the matched episode's stored text fragment gets injected back into the language cortex as a "memory boost" — a list of words the slot scorer will bias toward. If you've said "how's the high" before, she'll be biased toward continuing the pattern she used last time.</p>
-        <p><strong>What this sums into:</strong> a list of memory-recalled words with learned cortex patterns attached, available as slot candidates in Step 6.</p>
+        <p>If the cosine clears a threshold (~0.75), the matched episode's stored cortex-pattern snapshot gets injected back into the working-memory free sub-region — carving a bias basin that the tick-driven motor emission loop falls into during the next generation pass. If you've said "how's the high" before, the recalled episode pulls the relevant attractor-basin pattern back into active cortex state so her emission this turn tends toward what she produced last time.</p>
+        <p><strong>What this sums into:</strong> a recalled cortex-pattern injected into the free sub-region of the cortex cluster as prior-turn context, consumed by the tick-driven motor emission loop in Step 6.</p>
       </div>
     </div>
 
@@ -485,7 +485,7 @@ Ego   = f(prediction_accuracy, memory_stability)<br>
 Left  = f(1 − error, prediction)<br>
 Right = f(|valence|, coherence)<br>
         </div>
-        <p>For this tick, Ψ climbs to ~0.004 because arousal is up (more Id), the response was coherent (more Ego), error is low (more Left), and valence is clean (more Right). The new Ψ gets fed back as gainMultiplier on the next tick — every cluster's effective drive gets scaled by (0.9 + Ψ × 0.004), so the brain becomes slightly "sharper" as Ψ rises and the next slot-scoring pass will sample with lower temperature.</p>
+        <p>For this tick, Ψ climbs to ~0.004 because arousal is up (more Id), the response was coherent (more Ego), error is low (more Left), and valence is clean (more Right). The new Ψ gets fed back as gainMultiplier on the next tick — every cluster's effective drive gets scaled by (0.9 + Ψ × 0.004), so the brain becomes slightly "sharper" as Ψ rises and the next tick-driven motor emission pass commits letters at a lower quiescence threshold (stable-tick count 3 vs noise-widened 5), producing cleaner output.</p>
         <p><strong>What this sums into:</strong> a single scalar Ψ that gets threaded back into effectiveDrive for the next Rulkov step, tightening everyone's activity level.</p>
       </div>
     </div>
@@ -1135,7 +1135,7 @@ Spike in neuron A (cortex)
       &rarr; errorCorrection feeds back                    (Scale 4: correction)</pre>
       <div class="eq-desc">
         <p>Each level branches from the endpoint of the previous — fractal trees. The 3D visualizer traces these exact 20 projection pathways as chaining connections: Depth 0 (inter-cluster), Depth 1 (intra-cluster branching, 1-3 neighbors), Depth 2 (follow outgoing projections), Depth 3 (terminal branch).</p>
-        <p style="margin-top:8px"><strong>Learning repeats fractally too:</strong> <code>&Delta;W = &eta; &middot; &delta; &middot; post &middot; pre</code> runs on neuron synapses, cluster projections, AND dictionary bigrams. Same equation, three scales.</p>
+        <p style="margin-top:8px"><strong>Learning repeats fractally too:</strong> <code>&Delta;W = &eta; &middot; &delta; &middot; post &middot; pre</code> runs on intra-cluster neuron synapses, inter-cluster projection weights, AND the 14 cortex cross-region projection matrices. Same Hebbian equation, three scales — every level of the hierarchy is carved by the same rule.</p>
         <p class="mod-bio" style="margin-top:6px">Biology: Real neural signal cascades follow the same pattern — cortical columns activate thalamic relays, which activate other cortical areas, which feed back. White matter tracts (corticostriatal, fimbria-fornix, stria terminalis, ventral amygdalofugal) are the physical wires these fractal trees run through.</p>
       </div>
     </div>
