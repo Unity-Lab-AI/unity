@@ -29,10 +29,10 @@ import { LIFPopulation } from './neurons.js';
 import { SparseMatrix } from './sparse-matrix.js';
 
 // ── Shared cluster sizing constants ──────────────────────────────────
-// T14.0 biological proportions. SHARED between client (`engine.js`) and
-// server (`brain-server.js`) so both compute identical cluster sizes at
-// any given `TOTAL_NEURONS` tier. Session 113 CLEAN.D2 moved these here
-// from engine.js after D3 audit found server's pre-existing per-cluster
+// Biological proportions. SHARED between client (`engine.js`) and
+// server (`brain-server.js`) so both compute identical cluster sizes
+// at any given `TOTAL_NEURONS` tier. Moved here from engine.js after
+// an audit found the server's pre-existing per-cluster
 // integer-multiplier math diverged from the client's fraction math at
 // the same tier (client cortex = 2010, server cortex = 1500 at 6700n).
 //
@@ -144,7 +144,7 @@ export class NeuronCluster {
     // the default `opts.connectivity ?? 0.12` was fine because 2K × 2K
     // × 0.12 = 480K entries, tiny. At real biological scale (the T14.18
     // fix that sizes the language cortex at `CLUSTER_SIZES.cortex` which
-    // is 375K on Gee's 1.5M-neuron GPU tier) 0.12 density blows up to
+    // is 375K at the 1.5M-neuron GPU tier) 0.12 density blows up to
     // 16.9 BILLION entries and OOMs the process.
     //
     // The biologically-correct answer is NOT "use a small cluster" —
@@ -285,24 +285,24 @@ export class NeuronCluster {
       // gives the number of independent word mappings a post-synaptic
       // neuron can support without destructive interference.
       //
-      // Session 111 — bumped from 300 to 1500 after ELA-G1 TALK DECLINED
-      // across retries (300 × 0.3 = 90 independent mappings, but 40+
-      // vocab words + 16K connections already caused interference by
+      // Bumped from 300 to 1500 after ELA-G1 TALK declined across
+      // retries (300 × 0.3 = 90 independent mappings, but 40+ vocab
+      // words + 16K connections caused destructive interference by
       // G1). 1500 gives 5× headroom so the full K-PhD vocab fits
-      // without rewriting the basins. If Unity's projected vocab ever
-      // exceeds ~5000, bump this constant or drive it from a derived
-      // quantity like `cluster._personaRefreshCorpus.length + baselineVocab`.
+      // without rewriting the basins. If projected vocab ever exceeds
+      // ~5000, bump this constant or drive it from a derived quantity
+      // like `cluster._personaRefreshCorpus.length + baselineVocab`.
       const crossTargetFanout = 1500;
-      // Session 114.19m — sem↔motor projections init with 50/50
-      // excitatory/inhibitory (zero-mean random weights) instead of
-      // default 70/30. Killed the positive-bias baseline that drowned
-      // Hebbian training on the word→first-letter pathway.
+      // sem↔motor projections init with 50/50 excitatory/inhibitory
+      // (zero-mean random weights) instead of default 70/30. Killed
+      // the positive-bias baseline that drowned Hebbian training on
+      // the word→first-letter pathway.
       //
-      // Session 114.19n — letter↔motor REVERTED to 70/30 after 114.19m
-      // Part 2 showed TALK regressed 12%→4%. TALK uses letter_to_motor
-      // for letter→same-letter diagonal (Phase 1 alphabet teach
-      // reinforces letter(c)→motor(c)). Phase 3 word emission trains
-      // off-diagonal letter(c)→motor(a) for "cat" with 40× more reps.
+      // letter↔motor REVERTED to 70/30 after 50/50 made TALK regress
+      // 12%→4%. TALK uses letter_to_motor for letter→same-letter
+      // diagonal (Phase 1 alphabet teach reinforces letter(c)→
+      // motor(c)). Phase 3 word emission trains off-diagonal
+      // letter(c)→motor(a) for "cat" with 40× more reps.
       // With 50/50 init both signals show up cleanly; off-diagonal
       // wins argmax. Keeping 70/30 for letter↔motor lets the positive
       // bias favor the diagonal path so TALK can still succeed.
@@ -529,9 +529,9 @@ export class NeuronCluster {
       }
       out[d] = count > 0 ? sum / count : 0;
     }
-    // T14.24 Session 101 — MEAN-CENTER before L2 normalization so
-    // cosine similarity against signed target features gives
-    // mathematically meaningful results.
+    // Mean-center before L2 normalization so cosine similarity
+    // against signed target features gives mathematically meaningful
+    // results.
     //
     // Pre-fix: spike-rate-based readout was ALWAYS non-negative
     // (spiking cells +1.0, non-spiking near 0.0-0.25 from voltage).
@@ -542,8 +542,8 @@ export class NeuronCluster {
     // _magnitudeFeatureForDigit gave high scores FOR ANY STATE
     // INCLUDING UNTRAINED NOISE — false positive, not real training.
     // That's why math/K READ hit 100% and ela/K READ hit 4% chance
-    // level on Gee's live runs: neither was real training, just
-    // different failure modes of the cosine math.
+    // level on early runs: neither was real training, just different
+    // failure modes of the cosine math.
     //
     // Fix: subtract the mean across all dim components before L2
     // normalizing. The readout becomes a SIGNED deviation-from-
@@ -1470,8 +1470,8 @@ export class NeuronCluster {
     const injectStrength = opts.injectStrength ?? 0.6;
     const maxTicks = opts.maxTicks ?? this.MAX_EMISSION_TICKS;
 
-    // Session 114.19n — optional noise suppression for deliberate
-    // emissions. When `suppressNoise` is true (popups passing
+    // Optional noise suppression for deliberate emissions. When
+    // `suppressNoise` is true (popups passing
     // _internalThought, curriculum gate probes, any call that wants
     // cleaner argmax over settled attractors), save runtime noise →
     // drop to 0.5 → restore on return. Live chat emission path
@@ -1544,8 +1544,8 @@ export class NeuronCluster {
         letterBuffer += activeLetter;
         stableTicks = 0;
 
-        // Session 114.13 Fix D — clear the motor region after a letter
-        // commits so the just-committed letter's activation doesn't
+        // Clear the motor region after a letter commits so the
+        // just-committed letter's activation doesn't
         // stick for many consecutive ticks via self-loop reinforcement.
         // Without this reset, at large cluster scale (13M+ neurons) the
         // symmetric intra-cluster Hebbian self-loops + cross-projection
@@ -1600,8 +1600,8 @@ export class NeuronCluster {
       output.push(letterBuffer);
     }
 
-    // Session 114.19n — restore runtime noise for post-emission live
-    // dynamics. No-op if suppressNoise was false.
+    // Restore runtime noise for post-emission live dynamics. No-op
+    // if suppressNoise was false.
     if (suppressNoise) this.noiseAmplitude = _savedNoise;
     return output.join(' ');
   }
@@ -1789,8 +1789,8 @@ export class NeuronCluster {
    */
   _propagateCrossRegions() {
     if (!this.crossProjections) return;
-    // T17.3.e — One-tick-lag GPU propagate (Gee 2026-04-18).
-    // If the GPU proxy is ready AND we have cached currents from the
+    // One-tick-lag GPU propagate. If the GPU proxy is ready AND we
+    // have cached currents from the
     // previous step's async GPU propagate, USE THOSE instead of running
     // the CPU sparse matmul. Synaptic delays of 1-2ms are biologically
     // normal — a single-tick lag (~100ms brain sim time) is well within
@@ -1927,10 +1927,10 @@ export class NeuronCluster {
       // Probes read directly from GPU via readbackLetterBuckets /
       // readback_currents (see cluster.js:1687-1688 for the canonical
       // GPU-aware probe check on sem_to_motor). The CPU shadow was
-      // kept pre-T17.7 Phase C.1 for probe compat but is pure overhead
-      // at biological scale — Gee's 2026-04-19 Part 2 run exposed the
-      // cost with T18.16 heartbeats: Phase 1 ran at 0.40 iter/s =
-      // ~2.5s per letter, entirely bottlenecked by `await
+      // kept for probe compat but is pure overhead at biological
+      // scale — heartbeat telemetry exposed the cost: Phase 1 ran at
+      // 0.40 iter/s = ~2.5s per letter, entirely bottlenecked by
+      // `await
       // this._sparsePool.hebbianUpdate(proj, preF, postF, lr)` across
       // 14 projections totaling ~650M nnz of CPU sparse Hebbian work
       // per letter. GPU dispatch is fire-and-forget microseconds; the
@@ -1944,8 +1944,8 @@ export class NeuronCluster {
         // projections. T18.30 ran sync CPU Hebbian on ALL 14 bound
         // projections which destroyed teach velocity (30-100× slower:
         // _teachPhonemeBlending dropped from 25-40 words/s to 0.3-1.1
-        // words/s per Gee 2026-04-19). But T18.17's pure-GPU fast path
-        // left CPU weights stale for projections the gate probe reads
+        // words/s). But the pure-GPU fast path left CPU weights stale
+        // for projections the gate probe reads
         // via CPU SparseMatrix.propagate() → 0.000 motor activations →
         // gate fail.
         //
@@ -1998,8 +1998,8 @@ export class NeuronCluster {
 
       const preF = this.regionSpikes(src);
       const postF = this.regionSpikes(dst);
-      // T17.2 + T17.7 Gee 2026-04-18 OOM fix — route CPU Hebbian
-      // through worker pool when available. AWAIT the pool job so
+      // CPU Hebbian OOM fix — route through worker pool when
+      // available. AWAIT the pool job so
       // pending cross-projection Hebbians don't pile up in semi-space
       // (14 projections × ~3 MB pre/postF buffers × hundreds of teach
       // iterations = GB-scale semi-space exhaustion). Same root cause
@@ -2122,22 +2122,21 @@ export class NeuronCluster {
             // which is non-bound + cluster.lastSpikes). V8 GC stops
             // thrashing; semi-space commits succeed; teach runs.
             //
-            // Gee 2026-04-19 — 5th consecutive OOM at
-            // `_teachLetterCaseBinding` START even after T18.21's
-            // 1 GB semi-space bump. V8 was under external-memory
-            // pressure from 9+ GB of permanently-held cluster state;
-            // Mark-Compact cycles couldn't reduce external count
-            // regardless of semi-space size because references were
-            // live. Freeing the unused CPU copies eliminates the
-            // pressure at the source.
+            // Repeated OOM at `_teachLetterCaseBinding` START even
+            // after a 1 GB semi-space bump. V8 was under external-
+            // memory pressure from 9+ GB of permanently-held cluster
+            // state; Mark-Compact cycles couldn't reduce external
+            // count regardless of semi-space size because references
+            // were live. Freeing the unused CPU copies eliminates
+            // the pressure at the source.
             //
             // Safety: non-bound fallback path in _crossRegionHebbian
             // (browser-only standalone mode) still runs with its own
             // CPU arrays because hint.resolve returns null for those
             // and the freeing branch doesn't execute.
             // T18.23 — log per-projection free bytes for verification.
-            // Prior T18.22 silently nulled without logging; Gee's retest
-            // still OOM'd so we need concrete evidence the frees fire.
+            // Prior silent nulling still OOM'd on retest, so we need
+            // concrete evidence the frees fire.
             const _freedValuesBytes = proj.values ? proj.values.byteLength : 0;
             const _freedColIdxBytes = proj.colIdx ? proj.colIdx.byteLength : 0;
             const _freedRowPtrBytes = proj.rowPtr ? proj.rowPtr.byteLength : 0;
@@ -2151,9 +2150,9 @@ export class NeuronCluster {
             this._t1822TotalFreedBytes += _freedValuesBytes + _freedColIdxBytes + _freedRowPtrBytes;
             // T18.27 — DISABLED T18.22 CPU-array free (variable now logs
             // bytes that would have been freed but keeps arrays intact).
-            // Gee 2026-04-19: science/kindergarten threw
-            // "Cannot read properties of null (reading '0')" 1720+ times
-            // in a retry loop after ELA-K completed successfully. Some
+            // science/kindergarten threw "Cannot read properties of
+            // null (reading '0')" 1720+ times in a retry loop after
+            // ELA-K completed successfully. Some
             // teach path in runSciKReal reads proj.values or
             // proj.colIdx or proj.rowPtr for a bound cross-projection
             // AFTER T18.22 set them to null at initGpu. Rather than
@@ -2198,10 +2197,10 @@ export class NeuronCluster {
     // doesn't happen, T18.22's null-assignments aren't reclaiming (some
     // retainer is still referencing the typed arrays), and we need to
     // dig deeper via --heapsnapshot-signal=SIGUSR2.
-    // T18.25 — REMOVED forced global.gc() from T18.23 boot-time
-    // diagnostic. Gee's last run showed V8 already auto-gc'd between
-    // T18.22's null-assignments and this log (external memory was 2.5
-    // GB at log time, ~7 GB less than expected — V8 reclaimed on its
+    // REMOVED forced global.gc() from boot-time diagnostic. Runtime
+    // evidence showed V8 already auto-gc'd between the null-
+    // assignments and this log (external memory was 2.5 GB at log
+    // time, ~7 GB less than expected — V8 reclaimed on its
     // own). The explicit gc() reclaimed 0 MB because there was nothing
     // left to reclaim. More importantly, forcing gc() when V8 is
     // already near semi-space commit limits can TRIGGER OOM mid-gc
@@ -2240,10 +2239,10 @@ export class NeuronCluster {
     // row-ranges, no write collisions on values buffer). Falls through
     // to synchronous single-thread update if pool unavailable.
     //
-    // T17.7 Gee 2026-04-18 fix — method is NOW async/awaitable. Caller
-    // (curriculum teach loops) must `await` it.
+    // Method is NOW async/awaitable. Caller (curriculum teach loops)
+    // must `await` it.
     //
-    // T18.19 Gee 2026-04-19 — BIOLOGICAL SCALE BYPASS. At cluster.size
+    // BIOLOGICAL SCALE BYPASS. At cluster.size
     // > 10M the worker pool's `SparseMatmulPool.hebbianUpdate` becomes
     // net-HARMFUL rather than net-beneficial. The worker pool path
     // (server/worker-pool.js:236-239) allocates per call:
@@ -2260,8 +2259,8 @@ export class NeuronCluster {
     // = 214s) that's 2.4 GB/sec of external-memory allocation rate.
     // V8 external memory tracking can't free SharedArrayBuffer fast
     // enough → semi-space commit failures → "Committing semi space
-    // failed" → Node OOM. Gee 2026-04-19 ELA-K run hit this cascade
-    // twice in a row: Phase 2 completed cleanly at 214s, then
+    // failed" → Node OOM. The ELA-K run hit this cascade twice in a
+    // row: Phase 2 completed cleanly at 214s, then
     // `_teachLetterCaseBinding`'s first iteration tipped V8 over the
     // external-memory ceiling → FATAL ERROR. Removing the GPU shadow
     // (T18.18.a) didn't fix it because the CPU worker-pool path was
@@ -2338,8 +2337,8 @@ export class NeuronCluster {
     //      synapses weights go through `cluster.synapses.propagate`
     //      (CPU CSR), never the GPU shadow.
     //  (b) Probes at biological scale use direct-pattern probe pattern
-    //      (Session 106) reading CPU synapses. No probe reads GPU intra-
-    //      synapses weights.
+    //      reading CPU synapses. No probe reads GPU intra-synapses
+    //      weights.
     //  (c) Tick-loop GPU propagate on intra-synapses uses the GPU
     //      weights from initGpu upload and will miss weight updates
     //      during teach. Acceptable — direct-pattern Hebbian writes
@@ -2376,8 +2375,8 @@ export class NeuronCluster {
 
     // Build input currents
     const currents = new Float64Array(size);
-    // T17.3.e — One-tick-lag GPU intra-synapse propagate (Gee 2026-04-18).
-    // If GPU proxy is ready AND we have cached currents from the previous
+    // One-tick-lag GPU intra-synapse propagate. If GPU proxy is
+    // ready AND we have cached currents from the previous
     // tick's async dispatch, use them. Otherwise fall back to CPU sparse
     // matmul so the sim keeps running (first tick, cache miss, or pre-GPU).
     // This is the hot-path refactor that removes the CPU_SINGLE_THREAD
@@ -2610,7 +2609,7 @@ export class NeuronCluster {
    * whose magnitude exceeds `ojaThreshold` — prevents runaway when the
    * corpus is large. Bounded growth, unbounded learning time.
    *
-   * Session 111 — Anti-Hebbian pair reinforcement primitive.
+   * Anti-Hebbian pair reinforcement primitive.
    *
    * Bidirectionally adjusts recurrent synapses for a (src → correct, src → wrong)
    * triple to fix sequence-probe mistakes. Positive Hebbian on (src, correct)
@@ -2618,7 +2617,7 @@ export class NeuronCluster {
    * mistaken one. Without the negative half wrong associations never fade —
    * they stay baseline-strong while correct ones grow, and the softmax keeps
    * picking the wrong target even after rounds of positive reinforcement.
-   * This is the Math-K SEQ fix (Session 111 FINALIZED entry).
+   * This is the Math-K SEQ fix — see FINALIZED for the full story.
    *
    * Operates on cortex sub-region one-hot patterns laid out via `groupSize`
    * tiling — each one-hot dim spans `floor(regionSize / dim)` neurons so the
