@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-04-21 — Session 114.19bi: READ-probe letter_to_sem now routes through GPU proxy (closes T26.c.1 follow-up)
+
+### Operator directive
+
+> *"1 open task cant test it yet"*
+
+Only open task from the post-revert session was the letter_to_sem GPU-proxy route. Operator didn't want to test until it landed. Shipped now so the next run has both memory safety (T26.c.1 reverted, external stays in ~3 GB) AND real READ probe output for pre-K + K cells that use `_gateVocabList` / `_gateSentenceList` / `_gateComprehension`.
+
+### What shipped
+
+1. **New async helper** `_probePropagate(projName, srcVec)` on `Curriculum`:
+   - CPU fast path when `proj.values` is non-null (whitelist: `letter_to_phon` + `letter_to_motor` + `sem_to_motor`)
+   - GPU proxy fallback (`cluster._gpuProxy.propagate(key, pSpikes)` awaited) for freed-CSR projections
+   - Zero-vector last resort matching null-CSR guard shape
+
+2. **Three shared gate helpers + `_autoFinal` + `_gateConceptTeach` flipped to `async`**:
+   - `_gateVocabList` (pre-K + many post-K cells)
+   - `_gateSentenceList` (post-K grade sentence gates)
+   - `_gateComprehension` (Life-K + post-K grade comprehension gates)
+   - `_autoFinal` (post-K auto-generated final exam)
+   - `_gateConceptTeach` (concept-teach gate)
+   Every caller updated to `await` — 40+ call sites bulk-converted, bundle verified clean.
+
+3. **Five `letterToSem.propagate(letterPat)` call sites** swapped to `await this._probePropagate('letter_to_sem', letterPat)`:
+   - `_gateElaKReal` TALK fallback (line 5123)
+   - `_gateVocabList` READ probe (line 9779)
+   - second gate helper READ path (line 11432)
+   - third gate helper READ path (line 13142)
+   - Life-K gate letter→sem READ (line 22434)
+
+4. **Files touched**:
+   - `js/brain/curriculum.js` — helper added, 5 helpers flipped async, all call sites awaited
+   - `js/app.bundle.js`, `js/version.js`, `index.html` — stamped `0.1.0+ba4e8634-1be4` → `0.1.0+ba4e8634-d6c8`
+   - `docs/FINALIZED.md` / `docs/TODO.md` — this entry + T26.c.1 re-closed as the GPU-proxy follow-up landed
+
+### Net effect
+
+- Memory stays in T24.a territory (~3 GB external). No regression on the ELA-K Phase 1 freeze.
+- READ probes that previously got zero-vector fallbacks (pre-K `_gateVocabList`, post-K `_gateSentenceList`, all-grade `_gateComprehension`) now get real GPU-propagate output. Pre-K gate pass rates should reflect actual learned weights instead of the null-CSR guard's zeros.
+- GPU proxy propagate has its own 30 s timeout + backpressure gate (`_gpuSparseFlowOk`) already in place in `brain-server.js`; no new failure modes introduced.
+
+---
+
 ## 2026-04-21 — Session 114.19bh: T26.c.1 whitelist expansion REVERTED — re-introduced 14 GB external-memory stall that froze ELA-K Phase 1
 
 ### Operator verbatim 2026-04-21
