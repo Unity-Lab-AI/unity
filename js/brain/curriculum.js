@@ -3144,12 +3144,18 @@ export class Curriculum {
     let _t18_13_opsSinceHb = 0;
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      // Skip CPU whitelist Hebbian on intermediate reps — GPU weights
+      // stay current via fire-and-forget, CPU arrays get their full
+      // update on the final rep which is what probes read. Major
+      // speedup (80% of per-word wall-clock was the CPU whitelist
+      // Hebbian on letter_to_phon + letter_to_motor at ~14.9 M nnz).
+      cluster._teachIntermediateRep = (rep < reps - 1);
       let _wordIdx = 0;
       for (const word of wordList) {
         const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ''));
         _wordIdx++;
         _t18_13_opsSinceHb++;
-        // T18.13.c heartbeat
+        // Heartbeat
         const _nowHb = Date.now();
         if (_nowHb - _t18_13_lastHbMs > 5000) {
           const totalElapsed = ((_nowHb - _t18_13_startMs) / 1000).toFixed(1);
@@ -3224,6 +3230,7 @@ export class Curriculum {
       }
       await _microtask();
     }
+    cluster._teachIntermediateRep = false;
     console.log(`[Curriculum] _teachWordEmission DONE: ${wordList.length} words × ${reps} reps`);
   }
 
@@ -3676,13 +3683,21 @@ export class Curriculum {
     ensureLetters(Array.from(uniqueLetters));
 
     console.log(`[Curriculum] _teachPhonemeBlending START: ${wordList.length} words × ${reps} reps (phoneme-sequence Hebbian)`);
-    // T18.13.c — time-based heartbeat (see _teachWordEmission above for
-    // rationale). 5 s cadence lets Gee see teach progress live.
+    // Time-based heartbeat. 5 s cadence lets the operator see teach
+    // progress live.
     const _t18_13_startMs = Date.now();
     let _t18_13_lastHbMs = _t18_13_startMs;
     let _t18_13_opsSinceHb = 0;
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      // Skip CPU whitelist Hebbian on letter_to_phon + letter_to_motor
+      // for all reps except the final one. GPU fire-and-forget still
+      // runs every rep so GPU weights stay current; CPU arrays get
+      // their full update once per phase (the final rep). Probes run
+      // AFTER teach completes and read CPU arrays populated by the
+      // final-rep pass. Cuts 80% of CPU Hebbian wall-clock — was the
+      // 2-3 words/s bottleneck at 301K cortex.
+      cluster._teachIntermediateRep = (rep < reps - 1);
       let _wordIdx = 0;
       for (const word of wordList) {
         const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ''));
@@ -3744,6 +3759,7 @@ export class Curriculum {
       }
       await _microtask();
     }
+    cluster._teachIntermediateRep = false;
     console.log(`[Curriculum] _teachPhonemeBlending DONE: ${wordList.length} words × ${reps} reps`);
   }
 

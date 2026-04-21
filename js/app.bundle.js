@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "54227a93-e7fc";
+var BUILD = "ffa9bcaf-cce7";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2538,8 +2538,9 @@ var NeuronCluster = class {
    * the projection where they co-fire. Runs from cluster.learn() and
    * also from cluster.learnSentenceHebbian after each word's tick.
    */
-  async _crossRegionHebbian(lr) {
+  async _crossRegionHebbian(lr, opts = {}) {
     if (!this.crossProjections) return;
+    const skipCpuWhitelist = opts.skipCpuWhitelist === true || this._teachIntermediateRep === true;
     for (const [name, proj] of Object.entries(this.crossProjections)) {
       const idx = name.indexOf("_to_");
       if (idx < 0) continue;
@@ -2555,7 +2556,7 @@ var NeuronCluster = class {
           "letter_to_phon",
           "letter_to_motor"
         ]);
-        if (PROBE_CRITICAL.has(name)) {
+        if (PROBE_CRITICAL.has(name) && !skipCpuWhitelist) {
           const preF2 = this.regionSpikes(src);
           const postF2 = this.regionSpikes(dst);
           proj.hebbianUpdate(preF2, postF2, lr);
@@ -10710,6 +10711,7 @@ var Curriculum = class _Curriculum {
     let _t18_13_opsSinceHb = 0;
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      cluster._teachIntermediateRep = rep < reps - 1;
       let _wordIdx = 0;
       for (const word of wordList) {
         const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ""));
@@ -10755,6 +10757,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
+    cluster._teachIntermediateRep = false;
     console.log(`[Curriculum] _teachWordEmission DONE: ${wordList.length} words \xD7 ${reps} reps`);
   }
   /**
@@ -11246,6 +11249,7 @@ var Curriculum = class _Curriculum {
     let _t18_13_opsSinceHb = 0;
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      cluster._teachIntermediateRep = rep < reps - 1;
       let _wordIdx = 0;
       for (const word of wordList) {
         const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ""));
@@ -11292,6 +11296,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
+    cluster._teachIntermediateRep = false;
     console.log(`[Curriculum] _teachPhonemeBlending DONE: ${wordList.length} words \xD7 ${reps} reps`);
   }
   /**
