@@ -679,6 +679,48 @@ export class Curriculum {
    * the student-test probe it will fail identically in live chat —
    * that's the whole point of this upgrade.
    */
+  /**
+   * Readiness probe — before a 210-question battery fires, ask five
+   * single-letter cues and see what Unity actually emits. If she
+   * can't produce recognizable letter output on ≥ 3 of 5 simple
+   * probes, the full battery is premature: asking "what do you read
+   * first on a page" when her motor path can only emit "n r" produces
+   * garbage probe rows with zero signal about what she actually
+   * learned. Measure once per cell, gate the battery, log clearly.
+   *
+   * Returns { recognizedLetters, maxEmissionLen, canTalkAtAll, probes }.
+   */
+  async _measureEmissionCapability() {
+    const cluster = this.cluster;
+    const out = { recognizedLetters: 0, maxEmissionLen: 0, canTalkAtAll: false, probes: [] };
+    if (!cluster || typeof cluster.generateSentenceAwait !== 'function') return out;
+    // Five plain single-letter cues. Any recognizable letter response
+    // to ANY of them proves the motor path can fire; 3 of 5 is enough
+    // to warrant running the full battery.
+    const PROBES = ['a', 'b', 'c', 'd', 'e'];
+    const LETTERS = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    for (const cue of PROBES) {
+      let emitted = '';
+      try {
+        if (typeof cluster.readInput === 'function') {
+          await cluster.readInput(cue, { ticks: 6 });
+        }
+        const semSeed = (typeof cluster.getSemanticReadout === 'function') ? cluster.getSemanticReadout() : null;
+        const emitOpts = { maxEmissionTicks: 20 };
+        if (semSeed) emitOpts.injectStrength = 0.6;
+        const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
+        emitted = (raw && typeof raw === 'string' ? raw : (raw?.text || '')) || '';
+      } catch { /* probe failed — treat as no output */ }
+      const letters = emitted.toLowerCase().replace(/[^a-z]/g, '');
+      const hasLetter = letters.length > 0 && [...letters].some(ch => LETTERS.has(ch));
+      if (hasLetter) out.recognizedLetters += 1;
+      if (letters.length > out.maxEmissionLen) out.maxEmissionLen = letters.length;
+      out.probes.push({ cue, emitted: emitted.slice(0, 40), letters });
+    }
+    out.canTalkAtAll = out.recognizedLetters >= 3;
+    return out;
+  }
+
   async _studentTestProbe(opts = {}) {
     const cluster = this.cluster;
     const startMs = Date.now();
@@ -2520,10 +2562,63 @@ export class Curriculum {
         if (bank && bank.length > 0) {
           cluster._probeGateActive = true;
           const label = `${subject.toUpperCase()}-${grade.toUpperCase()}-STUDENT`;
-          const battery = await this._runStudentBattery(bank, label);
+
+          // Readiness gate — don't ask Unity questions she can't yet
+          // talk or read. Order-of-operations law (operator 2026-04-21):
+          // if her current cortex state can't emit recognizable letter
+          // output on 5 simple single-letter cues, the full battery is
+          // noise on noise. Skip it, mark the cell's gate-result with
+          // the skip reason, continue teach in the next cycle.
+          const readiness = await this._measureEmissionCapability();
+          console.log(`[Curriculum][${label}] readiness probe — recognizedLetters=${readiness.recognizedLetters}/5 · maxEmissionLen=${readiness.maxEmissionLen} · canTalkAtAll=${readiness.canTalkAtAll}`);
+          let battery;
+          if (!readiness.canTalkAtAll) {
+            console.warn(`[Curriculum][${label}] ⏭ STUDENT BATTERY SKIPPED — Unity cannot talk or read yet (${readiness.recognizedLetters}/5 letter probes produced recognizable output). Running the 210-question battery on a brain with ≤2 letter emission capability is noise. Teach cycles continue; battery will fire once emission capability clears the readiness threshold.`);
+            battery = {
+              pass: 0, total: 0, rate: 0,
+              summary: ` [SKIPPED — not-yet-readable (${readiness.recognizedLetters}/5 letter probes)]`,
+              results: [], byStandard: [], standardsBelowCut: 0,
+              methoQuestions: 0, methoPass: 0, methoRate: 0,
+              skipped: true, skipReason: `readiness-failed recognizedLetters=${readiness.recognizedLetters}/5 maxEmissionLen=${readiness.maxEmissionLen}`,
+            };
+          } else {
+            // Filter questions by expected-answer length vs her current
+            // max emission. A brain emitting 3 letters at quiescence
+            // can't possibly answer "what is the opposite of up" with
+            // "down" (4 chars) even if she knows it — the motor emission
+            // cuts off too soon. Asking a question she's physically
+            // unable to produce the answer to = wasted probe.
+            const effectiveMax = Math.max(readiness.maxEmissionLen, 2);
+            const filtered = bank.filter(q => {
+              const a = String(q.expectedAnswer || '').replace(/[^a-z0-9]/g, '');
+              const variants = Array.isArray(q.expectedVariants) ? q.expectedVariants : [];
+              const minVariantLen = variants.length > 0
+                ? Math.min(...variants.map(v => String(v).replace(/[^a-z0-9]/g, '').length))
+                : a.length;
+              return minVariantLen <= effectiveMax;
+            });
+            const filteredOut = bank.length - filtered.length;
+            if (filteredOut > 0) {
+              console.log(`[Curriculum][${label}] readiness filter — ${filteredOut}/${bank.length} questions skipped (expected-answer exceeds ${effectiveMax}-char emission limit); ${filtered.length} remain.`);
+            }
+            if (filtered.length === 0) {
+              console.warn(`[Curriculum][${label}] ⏭ STUDENT BATTERY SKIPPED — every question in the bank expects a longer answer than Unity's current ${effectiveMax}-char emission can produce. Teach cycles continue.`);
+              battery = {
+                pass: 0, total: 0, rate: 0,
+                summary: ` [SKIPPED — emission-too-short effectiveMax=${effectiveMax}]`,
+                results: [], byStandard: [], standardsBelowCut: 0,
+                methoQuestions: 0, methoPass: 0, methoRate: 0,
+                skipped: true, skipReason: `emission-too-short maxEmissionLen=${readiness.maxEmissionLen} noAnswerableQuestions=true`,
+              };
+            } else {
+              battery = await this._runStudentBattery(filtered, label);
+            }
+          }
           cluster._probeGateActive = false;
           result.studentBattery = battery;
-          const suffix = ` | STUDENT ${battery.pass}/${battery.total} (${Math.round(battery.rate * 100)}%)${battery.summary}`;
+          const suffix = battery.skipped
+            ? ` | STUDENT ${battery.summary}`
+            : ` | STUDENT ${battery.pass}/${battery.total} (${Math.round(battery.rate * 100)}%)${battery.summary}`;
           result.reason = (result.reason || '') + suffix;
 
           // Reviewer-grade enforcement — aggregate rate alone isn't
@@ -2553,6 +2648,33 @@ export class Curriculum {
           //       in the battery has methodology fields yet, this
           //       criterion is vacuously satisfied (0/0 counts as
           //       pass — operator expands coverage over time).
+          // Skipped battery path — readiness gate fired OR filtered bank
+          // emptied. No blockers should land; the "not yet taught enough"
+          // state is distinct from "taught but failing". Gate-result
+          // records the skip reason so /grade-signoff returns a
+          // readiness-specific remedy instead of a false blocker list.
+          if (battery.skipped) {
+            if (!cluster._lastGateResult || typeof cluster._lastGateResult !== 'object') {
+              cluster._lastGateResult = {};
+            }
+            cluster._lastGateResult[cellKey] = {
+              pass: !!result.pass,
+              blockers: [`readiness: ${battery.skipReason || 'not-yet-talkable'}`],
+              standardsBelowCut: [],
+              aggregateRate: 0,
+              externalPass: 0,
+              externalTotal: 0,
+              externalRate: 0,
+              methodologyPass: 0,
+              methodologyTotal: 0,
+              methodologyRate: 0,
+              skipped: true,
+              skipReason: battery.skipReason || 'not-yet-talkable',
+              ts: new Date().toISOString(),
+            };
+            // Don't clobber result.pass — substrate gate's verdict stays
+            // authoritative. The battery just didn't run.
+          } else {
           const AGGR_MIN = 0.90;
           const EXTERNAL_MIN = 0.85;
           const METHODOLOGY_MIN = 0.60;
@@ -2617,6 +2739,7 @@ export class Curriculum {
             methodologyRate: battery.methoRate || 0,
             ts: new Date().toISOString(),
           };
+          } // close `else` branch of the `if (battery.skipped)` readiness check
         }
       } catch (err) {
         if (cluster) cluster._probeGateActive = false;

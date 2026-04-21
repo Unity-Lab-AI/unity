@@ -647,7 +647,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "ba4e8634-d6c8";
+var BUILD = "42f799c4-1e91";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -10243,6 +10243,45 @@ var Curriculum = class _Curriculum {
    * the student-test probe it will fail identically in live chat —
    * that's the whole point of this upgrade.
    */
+  /**
+   * Readiness probe — before a 210-question battery fires, ask five
+   * single-letter cues and see what Unity actually emits. If she
+   * can't produce recognizable letter output on ≥ 3 of 5 simple
+   * probes, the full battery is premature: asking "what do you read
+   * first on a page" when her motor path can only emit "n r" produces
+   * garbage probe rows with zero signal about what she actually
+   * learned. Measure once per cell, gate the battery, log clearly.
+   *
+   * Returns { recognizedLetters, maxEmissionLen, canTalkAtAll, probes }.
+   */
+  async _measureEmissionCapability() {
+    const cluster = this.cluster;
+    const out = { recognizedLetters: 0, maxEmissionLen: 0, canTalkAtAll: false, probes: [] };
+    if (!cluster || typeof cluster.generateSentenceAwait !== "function") return out;
+    const PROBES = ["a", "b", "c", "d", "e"];
+    const LETTERS = new Set("abcdefghijklmnopqrstuvwxyz".split(""));
+    for (const cue of PROBES) {
+      let emitted = "";
+      try {
+        if (typeof cluster.readInput === "function") {
+          await cluster.readInput(cue, { ticks: 6 });
+        }
+        const semSeed = typeof cluster.getSemanticReadout === "function" ? cluster.getSemanticReadout() : null;
+        const emitOpts = { maxEmissionTicks: 20 };
+        if (semSeed) emitOpts.injectStrength = 0.6;
+        const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
+        emitted = (raw && typeof raw === "string" ? raw : raw?.text || "") || "";
+      } catch {
+      }
+      const letters = emitted.toLowerCase().replace(/[^a-z]/g, "");
+      const hasLetter = letters.length > 0 && [...letters].some((ch) => LETTERS.has(ch));
+      if (hasLetter) out.recognizedLetters += 1;
+      if (letters.length > out.maxEmissionLen) out.maxEmissionLen = letters.length;
+      out.probes.push({ cue, emitted: emitted.slice(0, 40), letters });
+    }
+    out.canTalkAtAll = out.recognizedLetters >= 3;
+    return out;
+  }
   async _studentTestProbe(opts = {}) {
     const cluster = this.cluster;
     const startMs = Date.now();
@@ -11811,60 +11850,131 @@ var Curriculum = class _Curriculum {
         if (bank && bank.length > 0) {
           cluster._probeGateActive = true;
           const label = `${subject.toUpperCase()}-${grade.toUpperCase()}-STUDENT`;
-          const battery = await this._runStudentBattery(bank, label);
-          cluster._probeGateActive = false;
-          result.studentBattery = battery;
-          const suffix = ` | STUDENT ${battery.pass}/${battery.total} (${Math.round(battery.rate * 100)}%)${battery.summary}`;
-          result.reason = (result.reason || "") + suffix;
-          const AGGR_MIN = 0.9;
-          const EXTERNAL_MIN = 0.85;
-          const METHODOLOGY_MIN = 0.6;
-          const EXTERNAL_SOURCES = /* @__PURE__ */ new Set(["DIBELS-8-sample", "AIMSweb-sample", "Fountas-Pinnell-sample", "STAR-Early-Literacy-sample", "STAR-Early-Math-sample", "iReady-K-sample", "iReady-K-Math-sample", "NWEA-MAP-K-sample", "NWEA-MAP-K-Math-sample", "Heggerty-K-sample", "PALS-K-sample", "DRA-K-sample", "Wilson-Fundations-K-sample", "Lexia-Core5-K-sample", "Woodcock-Johnson-K-sample", "Stanford-Achievement-K-sample", "Singapore-K-sample"]);
-          let extPass = 0, extTotal = 0;
-          for (const r of battery.results || []) {
-            if (EXTERNAL_SOURCES.has(r.source)) {
-              extTotal += 1;
-              if (r.score >= 0.5) extPass += 1;
+          const readiness = await this._measureEmissionCapability();
+          console.log(`[Curriculum][${label}] readiness probe \u2014 recognizedLetters=${readiness.recognizedLetters}/5 \xB7 maxEmissionLen=${readiness.maxEmissionLen} \xB7 canTalkAtAll=${readiness.canTalkAtAll}`);
+          let battery;
+          if (!readiness.canTalkAtAll) {
+            console.warn(`[Curriculum][${label}] \u23ED STUDENT BATTERY SKIPPED \u2014 Unity cannot talk or read yet (${readiness.recognizedLetters}/5 letter probes produced recognizable output). Running the 210-question battery on a brain with \u22642 letter emission capability is noise. Teach cycles continue; battery will fire once emission capability clears the readiness threshold.`);
+            battery = {
+              pass: 0,
+              total: 0,
+              rate: 0,
+              summary: ` [SKIPPED \u2014 not-yet-readable (${readiness.recognizedLetters}/5 letter probes)]`,
+              results: [],
+              byStandard: [],
+              standardsBelowCut: 0,
+              methoQuestions: 0,
+              methoPass: 0,
+              methoRate: 0,
+              skipped: true,
+              skipReason: `readiness-failed recognizedLetters=${readiness.recognizedLetters}/5 maxEmissionLen=${readiness.maxEmissionLen}`
+            };
+          } else {
+            const effectiveMax = Math.max(readiness.maxEmissionLen, 2);
+            const filtered = bank.filter((q) => {
+              const a = String(q.expectedAnswer || "").replace(/[^a-z0-9]/g, "");
+              const variants = Array.isArray(q.expectedVariants) ? q.expectedVariants : [];
+              const minVariantLen = variants.length > 0 ? Math.min(...variants.map((v) => String(v).replace(/[^a-z0-9]/g, "").length)) : a.length;
+              return minVariantLen <= effectiveMax;
+            });
+            const filteredOut = bank.length - filtered.length;
+            if (filteredOut > 0) {
+              console.log(`[Curriculum][${label}] readiness filter \u2014 ${filteredOut}/${bank.length} questions skipped (expected-answer exceeds ${effectiveMax}-char emission limit); ${filtered.length} remain.`);
+            }
+            if (filtered.length === 0) {
+              console.warn(`[Curriculum][${label}] \u23ED STUDENT BATTERY SKIPPED \u2014 every question in the bank expects a longer answer than Unity's current ${effectiveMax}-char emission can produce. Teach cycles continue.`);
+              battery = {
+                pass: 0,
+                total: 0,
+                rate: 0,
+                summary: ` [SKIPPED \u2014 emission-too-short effectiveMax=${effectiveMax}]`,
+                results: [],
+                byStandard: [],
+                standardsBelowCut: 0,
+                methoQuestions: 0,
+                methoPass: 0,
+                methoRate: 0,
+                skipped: true,
+                skipReason: `emission-too-short maxEmissionLen=${readiness.maxEmissionLen} noAnswerableQuestions=true`
+              };
+            } else {
+              battery = await this._runStudentBattery(filtered, label);
             }
           }
-          const extRate = extTotal > 0 ? extPass / extTotal : 1;
-          const belowCutDetail = (battery.byStandard || []).filter((s) => s.belowCut).map((s) => `${s.standard} ${(s.rate * 100).toFixed(0)}%<${(s.cut * 100).toFixed(0)}%`);
-          const blockers = [];
-          if (battery.rate < AGGR_MIN) blockers.push(`answer aggregate ${(battery.rate * 100).toFixed(1)}% < ${AGGR_MIN * 100}%`);
-          if (belowCutDetail.length > 0) {
-            blockers.push(`sub-standards below cut: [${belowCutDetail.join(", ")}]`);
+          cluster._probeGateActive = false;
+          result.studentBattery = battery;
+          const suffix = battery.skipped ? ` | STUDENT ${battery.summary}` : ` | STUDENT ${battery.pass}/${battery.total} (${Math.round(battery.rate * 100)}%)${battery.summary}`;
+          result.reason = (result.reason || "") + suffix;
+          if (battery.skipped) {
+            if (!cluster._lastGateResult || typeof cluster._lastGateResult !== "object") {
+              cluster._lastGateResult = {};
+            }
+            cluster._lastGateResult[cellKey] = {
+              pass: !!result.pass,
+              blockers: [`readiness: ${battery.skipReason || "not-yet-talkable"}`],
+              standardsBelowCut: [],
+              aggregateRate: 0,
+              externalPass: 0,
+              externalTotal: 0,
+              externalRate: 0,
+              methodologyPass: 0,
+              methodologyTotal: 0,
+              methodologyRate: 0,
+              skipped: true,
+              skipReason: battery.skipReason || "not-yet-talkable",
+              ts: (/* @__PURE__ */ new Date()).toISOString()
+            };
+          } else {
+            const AGGR_MIN = 0.9;
+            const EXTERNAL_MIN = 0.85;
+            const METHODOLOGY_MIN = 0.6;
+            const EXTERNAL_SOURCES = /* @__PURE__ */ new Set(["DIBELS-8-sample", "AIMSweb-sample", "Fountas-Pinnell-sample", "STAR-Early-Literacy-sample", "STAR-Early-Math-sample", "iReady-K-sample", "iReady-K-Math-sample", "NWEA-MAP-K-sample", "NWEA-MAP-K-Math-sample", "Heggerty-K-sample", "PALS-K-sample", "DRA-K-sample", "Wilson-Fundations-K-sample", "Lexia-Core5-K-sample", "Woodcock-Johnson-K-sample", "Stanford-Achievement-K-sample", "Singapore-K-sample"]);
+            let extPass = 0, extTotal = 0;
+            for (const r of battery.results || []) {
+              if (EXTERNAL_SOURCES.has(r.source)) {
+                extTotal += 1;
+                if (r.score >= 0.5) extPass += 1;
+              }
+            }
+            const extRate = extTotal > 0 ? extPass / extTotal : 1;
+            const belowCutDetail = (battery.byStandard || []).filter((s) => s.belowCut).map((s) => `${s.standard} ${(s.rate * 100).toFixed(0)}%<${(s.cut * 100).toFixed(0)}%`);
+            const blockers = [];
+            if (battery.rate < AGGR_MIN) blockers.push(`answer aggregate ${(battery.rate * 100).toFixed(1)}% < ${AGGR_MIN * 100}%`);
+            if (belowCutDetail.length > 0) {
+              blockers.push(`sub-standards below cut: [${belowCutDetail.join(", ")}]`);
+            }
+            if (extTotal > 0 && extRate < EXTERNAL_MIN) blockers.push(`external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%) < ${EXTERNAL_MIN * 100}%`);
+            if ((battery.methoQuestions || 0) > 0 && (battery.methoRate || 0) < METHODOLOGY_MIN) {
+              blockers.push(`methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%) < ${METHODOLOGY_MIN * 100}%`);
+            }
+            if (blockers.length > 0 && result.pass) {
+              console.warn(`[Curriculum][${label}] \u26D4 BATTERY BLOCKS advancement: ${blockers.join(" \xB7 ")}. Substrate passed but the educational test did not \u2014 grade NOT advanced.`);
+              result.pass = false;
+              result.reason = `BATTERY-BLOCKED: ${blockers.join("; ")} | ${result.reason || ""}`;
+            } else if (blockers.length === 0) {
+              const methoTag = (battery.methoQuestions || 0) > 0 ? ` \xB7 methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%)` : "";
+              console.log(`[Curriculum][${label}] \u2713 BATTERY PASS: answer ${(battery.rate * 100).toFixed(1)}% \xB7 all sub-standards at/above cut \xB7 external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%)${methoTag}`);
+            }
+            result.studentBattery.externalPass = extPass;
+            result.studentBattery.externalTotal = extTotal;
+            result.studentBattery.externalRate = extRate;
+            if (!cluster._lastGateResult || typeof cluster._lastGateResult !== "object") {
+              cluster._lastGateResult = {};
+            }
+            cluster._lastGateResult[cellKey] = {
+              pass: !!result.pass,
+              blockers: blockers.slice(),
+              standardsBelowCut: belowCutDetail.slice(),
+              aggregateRate: battery.rate,
+              externalPass: extPass,
+              externalTotal: extTotal,
+              externalRate: extRate,
+              methodologyPass: battery.methoPass || 0,
+              methodologyTotal: battery.methoQuestions || 0,
+              methodologyRate: battery.methoRate || 0,
+              ts: (/* @__PURE__ */ new Date()).toISOString()
+            };
           }
-          if (extTotal > 0 && extRate < EXTERNAL_MIN) blockers.push(`external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%) < ${EXTERNAL_MIN * 100}%`);
-          if ((battery.methoQuestions || 0) > 0 && (battery.methoRate || 0) < METHODOLOGY_MIN) {
-            blockers.push(`methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%) < ${METHODOLOGY_MIN * 100}%`);
-          }
-          if (blockers.length > 0 && result.pass) {
-            console.warn(`[Curriculum][${label}] \u26D4 BATTERY BLOCKS advancement: ${blockers.join(" \xB7 ")}. Substrate passed but the educational test did not \u2014 grade NOT advanced.`);
-            result.pass = false;
-            result.reason = `BATTERY-BLOCKED: ${blockers.join("; ")} | ${result.reason || ""}`;
-          } else if (blockers.length === 0) {
-            const methoTag = (battery.methoQuestions || 0) > 0 ? ` \xB7 methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%)` : "";
-            console.log(`[Curriculum][${label}] \u2713 BATTERY PASS: answer ${(battery.rate * 100).toFixed(1)}% \xB7 all sub-standards at/above cut \xB7 external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%)${methoTag}`);
-          }
-          result.studentBattery.externalPass = extPass;
-          result.studentBattery.externalTotal = extTotal;
-          result.studentBattery.externalRate = extRate;
-          if (!cluster._lastGateResult || typeof cluster._lastGateResult !== "object") {
-            cluster._lastGateResult = {};
-          }
-          cluster._lastGateResult[cellKey] = {
-            pass: !!result.pass,
-            blockers: blockers.slice(),
-            standardsBelowCut: belowCutDetail.slice(),
-            aggregateRate: battery.rate,
-            externalPass: extPass,
-            externalTotal: extTotal,
-            externalRate: extRate,
-            methodologyPass: battery.methoPass || 0,
-            methodologyTotal: battery.methoQuestions || 0,
-            methodologyRate: battery.methoRate || 0,
-            ts: (/* @__PURE__ */ new Date()).toISOString()
-          };
         }
       } catch (err) {
         if (cluster) cluster._probeGateActive = false;

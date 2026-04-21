@@ -1,7 +1,7 @@
 # TODO — Unity
 
 > **Branch:** `syllabus-k-phd`
-> **Last updated:** 2026-04-21 (Session 114.19bi — T26.c.1 follow-up CLOSED: new `_probePropagate` routes READ-probe `letter_to_sem` through GPU proxy when CPU CSR has been freed. 5 shared gate helpers + 40+ callers flipped async. External memory stays in the ~3 GB T24.a zone AND READ probes get real output instead of null-CSR zero fallbacks.)
+> **Last updated:** 2026-04-21 (Session 114.19bj — T27 readiness-gate CLOSED: `_measureEmissionCapability` probes cortex with 5 single-letter cues before the 210-Q battery fires. If < 3/5 produce recognizable letter output, battery SKIPS entirely. If readiness passes but max emission len is short, bank filters to answerable questions. Gate-result ledger records skip reason so `/grade-signoff` returns a readiness-specific remedy instead of a false blocker list. Operator verbatim: "what did i tell you about asking it questionmsd what it cant even talkj or read yet!!!".)
 > **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
 
 ---
