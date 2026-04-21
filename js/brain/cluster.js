@@ -1900,6 +1900,25 @@ export class NeuronCluster {
    */
   async _crossRegionHebbian(lr, opts = {}) {
     if (!this.crossProjections) return;
+    // One-shot diagnostic — fires only the FIRST time this method is
+    // called after cluster init. Reports which path every projection
+    // is taking so a hang in the first Phase 1 iter has attributable
+    // provenance instead of silent stdout.
+    if (!this._crossRegionHebbianDiagLogged) {
+      this._crossRegionHebbianDiagLogged = true;
+      try {
+        const gpuReady = !!this._gpuProxyReady;
+        const hasProxy = !!(this._gpuProxy && this._gpuProxy.hebbianBound);
+        const poolReady = !!(this._sparsePool && this._sparsePool.ready);
+        const paths = [];
+        for (const [name, proj] of Object.entries(this.crossProjections)) {
+          const gpuFast = !!(proj._gpuBound && gpuReady && hasProxy);
+          const cpuAlive = !!(proj.values && proj.colIdx && proj.rowPtr);
+          paths.push(`${name}:${gpuFast ? 'GPU-fast' : (cpuAlive ? 'CPU' : 'NULL')}`);
+        }
+        console.log(`[Cluster ${this.name}] _crossRegionHebbian first-call diag — gpuReady=${gpuReady} proxy=${hasProxy} pool=${poolReady} · paths: ${paths.join(' ')}`);
+      } catch { /* non-fatal */ }
+    }
     // opts.skipCpuWhitelist — when true, skip the sync CPU Hebbian on
     // probe-critical projections (letter_to_phon + letter_to_motor).
     // Curriculum teach loops set this for all reps except the final
@@ -1996,6 +2015,24 @@ export class NeuronCluster {
         continue;
       }
 
+      // Null-CSR guard — when T24.a selective-free has nulled this
+      // projection's CPU arrays AND the GPU fast path wasn't hit above
+      // (e.g. `_gpuProxyReady === false` because compute.html is gone
+      // OR `proj._gpuBound === false` because the bind step missed),
+      // CPU Hebbian would crash on null `values[k]` access OR the
+      // worker pool would hang trying to transfer null typed-arrays.
+      // Both failure modes freeze the teach loop with no log. Skip the
+      // projection with a one-shot warn instead — GPU weights are
+      // already fire-and-forget updated above when possible, and the
+      // Hebbian signal for this specific projection just doesn't land
+      // this iter. Better a weak Hebbian than a frozen event loop.
+      if (!proj.values || !proj.colIdx || !proj.rowPtr) {
+        if (!proj._nullCsrHebbianWarned) {
+          proj._nullCsrHebbianWarned = true;
+          console.warn(`[Cluster ${this.name}] Hebbian skip on ${name} — CPU CSR null AND GPU fast path unavailable (gpuBound=${!!proj._gpuBound} gpuProxyReady=${!!this._gpuProxyReady}). Check compute.html client or PROBE_CRITICAL_CPU_CSR whitelist.`);
+        }
+        continue;
+      }
       const preF = this.regionSpikes(src);
       const postF = this.regionSpikes(dst);
       // CPU Hebbian OOM fix — route through worker pool when

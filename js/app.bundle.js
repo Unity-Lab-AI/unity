@@ -647,7 +647,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "ba4e8634-1be4";
+var BUILD = "ba4e8634-d6c8";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2587,6 +2587,22 @@ var NeuronCluster = class {
    */
   async _crossRegionHebbian(lr, opts = {}) {
     if (!this.crossProjections) return;
+    if (!this._crossRegionHebbianDiagLogged) {
+      this._crossRegionHebbianDiagLogged = true;
+      try {
+        const gpuReady = !!this._gpuProxyReady;
+        const hasProxy = !!(this._gpuProxy && this._gpuProxy.hebbianBound);
+        const poolReady = !!(this._sparsePool && this._sparsePool.ready);
+        const paths = [];
+        for (const [name, proj] of Object.entries(this.crossProjections)) {
+          const gpuFast = !!(proj._gpuBound && gpuReady && hasProxy);
+          const cpuAlive = !!(proj.values && proj.colIdx && proj.rowPtr);
+          paths.push(`${name}:${gpuFast ? "GPU-fast" : cpuAlive ? "CPU" : "NULL"}`);
+        }
+        console.log(`[Cluster ${this.name}] _crossRegionHebbian first-call diag \u2014 gpuReady=${gpuReady} proxy=${hasProxy} pool=${poolReady} \xB7 paths: ${paths.join(" ")}`);
+      } catch {
+      }
+    }
     const skipCpuWhitelist = opts.skipCpuWhitelist === true || this._teachIntermediateRep === true;
     for (const [name, proj] of Object.entries(this.crossProjections)) {
       const idx = name.indexOf("_to_");
@@ -2614,6 +2630,13 @@ var NeuronCluster = class {
           const preF2 = this.regionSpikes(src);
           const postF2 = this.regionSpikes(dst);
           proj.hebbianUpdate(preF2, postF2, lr);
+        }
+        continue;
+      }
+      if (!proj.values || !proj.colIdx || !proj.rowPtr) {
+        if (!proj._nullCsrHebbianWarned) {
+          proj._nullCsrHebbianWarned = true;
+          console.warn(`[Cluster ${this.name}] Hebbian skip on ${name} \u2014 CPU CSR null AND GPU fast path unavailable (gpuBound=${!!proj._gpuBound} gpuProxyReady=${!!this._gpuProxyReady}). Check compute.html client or PROBE_CRITICAL_CPU_CSR whitelist.`);
         }
         continue;
       }
@@ -13097,8 +13120,26 @@ var Curriculum = class _Curriculum {
     const _p1Start = Date.now();
     let _p1LastBeat = _p1Start;
     let _p1Done = 0;
+    try {
+      const projNames = Object.keys(cluster.crossProjections || {});
+      const gpuReady = !!cluster._gpuProxyReady;
+      const hasProxy = !!(cluster._gpuProxy && cluster._gpuProxy.hebbianBound);
+      const poolReady = !!(cluster._sparsePool && cluster._sparsePool.ready);
+      const projStatus = projNames.map((n) => {
+        const p = cluster.crossProjections[n];
+        const gpuBound = !!(p && p._gpuBound);
+        const cpuAlive = !!(p && p.values && p.colIdx && p.rowPtr);
+        return `${n}:${gpuBound ? "G" : "-"}${cpuAlive ? "C" : "-"}`;
+      }).join(" ");
+      console.log(`[Curriculum] Phase 1 preflight \u2014 gpuReady=${gpuReady} proxy=${hasProxy} pool=${poolReady} \xB7 proj[G=gpuBound C=cpuCSR]: ${projStatus}`);
+    } catch (err) {
+      console.warn(`[Curriculum] Phase 1 preflight diag failed: ${err?.message || err}`);
+    }
     for (let rep = 0; rep < REPS; rep++) {
       for (const letter of ALPHABET) {
+        const _iterStart = Date.now();
+        const _logFirst = _p1Done < 3;
+        if (_logFirst) console.log(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' START`);
         const letterOneHot = encodeLetter(letter);
         const phonFeat = _phonemeFeatureForLetter(letter);
         const nameEmb = sharedEmbeddings.getEmbedding(letter);
@@ -13125,7 +13166,9 @@ var Curriculum = class _Curriculum {
             cluster.lastSpikes[semRegion.start + i] = semPat[i] > 0 ? 1 : 0;
           }
         }
+        if (_logFirst) console.log(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' pre-crossRegion (${Date.now() - _iterStart}ms into iter)`);
         await cluster._crossRegionHebbian(lr);
+        if (_logFirst) console.log(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' DONE (${Date.now() - _iterStart}ms total)`);
         this.stats.lettersSeen++;
         _p1Done++;
         const _p1Now = Date.now();
