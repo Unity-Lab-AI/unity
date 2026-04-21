@@ -48,6 +48,36 @@ If you're reading a public doc / HTML claim ("Unity has completed high school bi
 
 ---
 
+### T25 — METHODOLOGY TESTS (not fill-in-the-blank) (Gee 2026-04-21)
+
+**Gee verbatim 2026-04-21:** *"so it telsts mothodoly not fill in the blank"*
+
+The current 899-question held-out exam banks (T23.a shipped) are dominantly fill-in-the-blank format — "what letter comes after b?" / "what is 2+2?" / "which rhymes with cat?". That matches published K assessments (DIBELS / AIMSweb / Fountas-Pinnell sample items ARE fill-in-the-blank at K level) but doesn't match the LAW 6 Part 2 binding that the K test prove Unity's *"methodogly reasoning thinkg talking listenign reading ect ect all of the thing we need for Unity to be human as possible."*
+
+Methodology tests ask HOW, not WHAT:
+- **Not** "what letter comes after b?" → "c"
+- **Instead** "how do you figure out which letter comes next?" → explanation invoking alphabet order / sequence
+- **Not** "what is 2+2?" → "4"
+- **Instead** "how do you add two and two?" → explanation invoking counting / put-together / plus
+- **Not** "which rhymes with cat: hat or dog?" → "hat"
+- **Instead** "how do you tell if two words rhyme?" → explanation invoking same-ending-sound / matching
+
+Scoring methodology answers is fuzzier — check for reasoning keywords in the emission, not exact token match. A K kid can't produce polished explanations, but the cortex-pattern readout should contain the right conceptual shape.
+
+#### T25 sub-items
+
+- [ ] **T25.a** — Add a `methodology` field to every exam question: `{q, a, variants, standard, methodology: {prompt, keywords, minKeywords}}`. The `keywords` are reasoning-concept tokens the answer should contain (e.g., "alphabet order", "count", "rhyme ending"). `minKeywords` is how many of them must appear for pass (default 1 for K level).
+- [ ] **T25.b** — Extend `_studentTestProbe` to run a second pass per question with the methodology prompt, produce a SECOND answer, score it by keyword match. `score` field becomes `{answerScore, methodologyScore}` with separate thresholds.
+- [ ] **T25.c** — Gate-pass criterion updated: aggregate answer rate ≥ 90% AND aggregate methodology rate ≥ 60% (lower floor because methodology is harder and K kids aren't verbal explainers — but it must be non-trivially above chance).
+- [ ] **T25.d** — Populate methodology fields for the ~150 highest-priority exam questions first (letter sequence / rhyme / basic addition / basic phonics). Everything else defaults to answer-only scoring until methodology is added.
+- [ ] **T25.e** — Update `scripts/transformer-ablation.mjs` so the ablation also measures methodology-score, not just answer-score. A transformer's methodology scores vs Unity's methodology scores is where the reviewer's "is the neural sim load-bearing?" question actually lands — transformers are good at answer-retrieval, potentially bad at methodology-explanation if the training regime doesn't expose them to reasoning patterns.
+
+#### T25 closure gate
+
+Gate output shows both `ANSWER: 93% · METHODOLOGY: 67%` breakdowns, both separately at/above their cut scores, before operator grade signoff is accepted.
+
+---
+
 ### T23 — EXTERNAL VALIDITY + SCALE-OF-EVALUATION OVERHAUL (Gee 2026-04-21)
 
 **Gee verbatim 2026-04-21:** *"alkll of this needs ot be addressed: especially the finaly testsd of the ai hes right 5 qureeations test it has to be hundreds of questions to test a grade on it finals when every subject has a final... not to mention all thies other issues mentioned"*
