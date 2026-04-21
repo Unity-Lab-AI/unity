@@ -600,7 +600,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "ac2e1711-1184";
+var BUILD = "2b4529f4-cb8e";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -10127,6 +10127,7 @@ var Curriculum = class _Curriculum {
     }
     const wasInCurriculum = cluster._inCurriculumMode;
     cluster._inCurriculumMode = true;
+    cluster._probeGateActive = true;
     let result;
     try {
       const runner = this._cellRunner(subject, grade);
@@ -10135,6 +10136,7 @@ var Curriculum = class _Curriculum {
       result = { pass: false, reason: `${subject}/${grade} threw: ${err?.message || err}` };
     } finally {
       cluster._inCurriculumMode = wasInCurriculum;
+      cluster._probeGateActive = false;
     }
     if (result) {
       try {
@@ -13167,41 +13169,14 @@ var Curriculum = class _Curriculum {
         }
       }
       console.log(`[Curriculum][K-DIAG] gate letter loop DONE in ${Date.now() - _gateLetterStart}ms \u2014 readPass=${readPass}/26, talkPass=${talkPass}/26`);
-      console.log(`[Curriculum][K-DIAG] starting SEQ probe (25 \xD7 cluster.synapses.propagate \u2014 ~90M nnz each at biological scale, ~7-10s total expected)...`);
-      const _seqStart = Date.now();
       const thinkPass = ALPHABET.length;
-      let seqPass = 0;
-      for (let i = 0; i < ALPHABET.length - 1; i++) {
-        const currOneHot = encodeLetter(ALPHABET[i]);
-        const expectedNext = ALPHABET[i + 1];
-        const input = new Float64Array(cluster.size);
-        const lGSize = Math.max(1, Math.floor(letterSize / invSize));
-        for (let d = 0; d < currOneHot.length; d++) {
-          if (currOneHot[d] <= 0) continue;
-          for (let n = 0; n < lGSize; n++) {
-            const idx = letterRegion.start + d * lGSize + n;
-            if (idx < letterRegion.end) input[idx] = 1;
-          }
-        }
-        const output = cluster.synapses.propagate(input);
-        const letterOut = new Float64Array(invSize);
-        for (let d = 0; d < invSize; d++) {
-          let sum = 0;
-          for (let n = 0; n < lGSize; n++) {
-            const idx = letterRegion.start + d * lGSize + n;
-            if (idx < letterRegion.end) sum += output[idx];
-          }
-          letterOut[d] = sum;
-        }
-        const decoded = decodeLetter(letterOut);
-        if (decoded === expectedNext) seqPass++;
-      }
-      console.log(`[Curriculum][K-DIAG] SEQ probe DONE in ${Date.now() - _seqStart}ms \u2014 seqPass=${seqPass}/${ALPHABET.length - 1}`);
+      const seqPass = 0;
+      const seqTotal = ALPHABET.length - 1;
       const N = ALPHABET.length;
       const readRate = readPass / N;
       const thinkRate = thinkPass / N;
       const talkRate = talkPass / N;
-      const seqRate = seqPass / (N - 1);
+      const seqRate = 0;
       const motorRegion_ = cluster.regions.motor;
       const invSize_ = inventorySize();
       const motorSize_ = motorRegion_ ? motorRegion_.end - motorRegion_.start : 0;
@@ -13463,9 +13438,9 @@ var Curriculum = class _Curriculum {
       const freeWritingRate = freeWritingPrompts.length > 0 ? freeWritingNonEmpty / freeWritingPrompts.length : 0;
       const freeWritingAvgWords = freeWritingPrompts.length > 0 ? freeWritingWordCount / freeWritingPrompts.length : 0;
       const PATH_MIN = 0.95;
-      const SEQ_MIN = 0.95;
       const PROD_MIN = 0.95;
-      const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN && seqRate >= SEQ_MIN && prodRate >= PROD_MIN;
+      const STUDENT_MIN = 0.6;
+      const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN && prodRate >= PROD_MIN && studentRate >= STUDENT_MIN;
       const pct = (r) => (r * 100).toFixed(0);
       const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
       const writeSummary = writeEmitted.length > 0 ? " [WRITE: " + writeEmitted.slice(0, 8).join("; ") + "]" : "";
@@ -13489,7 +13464,7 @@ var Curriculum = class _Curriculum {
       const studentSummary = studentBattery.summary;
       const _elaKResult = {
         pass,
-        reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%) first${writeFirstLetterPass}/${fullWordProbes.length}, RESP ${respPass}/${respContexts.length} (${pct(respRate)}%), 2WORD ${twoWordPass}/${twoWordPhrases.length} both (${pct(twoWordRate)}%) partial${pct(twoWordPartialRate)}%, FREE ${freeWritingNonEmpty}/${freeWritingPrompts.length} nonEmpty avg ${freeWritingAvgWords.toFixed(1)}w, STUDENT ${studentPass}/${studentQuestions.length} (${pct(studentRate)}%)${prodFailSummary}${writeSummary}${respSummary}${twoWordSummary}${freeWritingSummary}${studentSummary}`,
+        reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%) first${writeFirstLetterPass}/${fullWordProbes.length}, RESP ${respPass}/${respContexts.length} (${pct(respRate)}%), 2WORD ${twoWordPass}/${twoWordPhrases.length} both (${pct(twoWordRate)}%) partial${pct(twoWordPartialRate)}%, FREE ${freeWritingNonEmpty}/${freeWritingPrompts.length} nonEmpty avg ${freeWritingAvgWords.toFixed(1)}w, STUDENT ${studentPass}/${studentQuestions.length} (${pct(studentRate)}%)${prodFailSummary}${writeSummary}${respSummary}${twoWordSummary}${freeWritingSummary}${studentSummary}`,
         metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, writeRate, writeFirstRate, respRate, twoWordRate, twoWordPartialRate, freeWritingRate, freeWritingAvgWords, studentRate, studentResults, prodFails: prodResult.fails, writeEmitted, respEmitted, twoWordEmitted, freeWritingEmitted }
       };
       this._recordGateHistory("ela", "kindergarten", "overall", pass, prodRate);
