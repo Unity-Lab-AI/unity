@@ -1,7 +1,7 @@
 # TODO — Unity
 
 > **Branch:** `syllabus-k-phd`
-> **Last updated:** 2026-04-21 (Session 114.19bg — T26 CLOSED: luck-of-the-Hebbian elimination shipped. T26.a gate enforcement BLOCKS signoff via /grade-signoff 409 when blockers live + persisted gate-result ledger; T26.b `_teachAssociationPairs` soft-writes + per-phase sem_to_motor/motor_to_sem row-L2-norm + cosine separation probe; T26.c PROBE_CRITICAL_CPU_CSR whitelist expanded 3→5 + GC delta monitor at cell-entry/exit; T26.d all 6 pre-K cells wired with association-pair equational teach)
+> **Last updated:** 2026-04-21 (Session 114.19bh — reverted T26.c.1 whitelist expansion; `letter_to_sem` + `motor_to_letter` re-kept would have pushed external memory back into the V8 GC stall zone, froze operator's ELA-K Phase 1 run after the pre-K walk. T26.a/b/c.2-4/d remain shipped.)
 > **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
 
 ---
@@ -78,7 +78,7 @@ Gate pass = aggregate ≥ 90 % AND **every** sub-standard ≥ its cut AND extern
 
 #### T26.c — T24 memory closure (biological scale verified) — CLOSED
 
-- [x] **T26.c.1 (T24.b)** — `PROBE_CRITICAL_CPU_CSR` whitelist expanded from 3 → 5 entries in `cluster.js`: added `letter_to_sem` (READ probe across 6 call sites) + `motor_to_letter` (TALK fallback). Prior whitelist freed these and caused null-CSR guard zero vectors to silently nuke READ rate.
+- [ ] **T26.c.1 (T24.b)** — REVERTED. Widening `PROBE_CRITICAL_CPU_CSR` from 3 → 5 entries added ~2 GB of CPU CSR back to external memory at biological scale, re-triggering the V8 GC stall T24.a fixed. Froze operator's ELA-K Phase 1 run (Session 114.19bh). Follow-up when READ rate measurably fails: route READ-probe `letter_to_sem` + `motor_to_letter` calls through the GPU proxy instead of keeping CPU CSR resident — better memory footprint + correct probe reads.
 - [x] **T26.c.2 (T24.c)** — `DREAM_LANG_CORTEX` env cap verified wired at `brain-server.js` line 1003 (parse) + line 1037 (apply as override). Boot banner flags active override.
 - [x] **T26.c.3 (T24.d)** — `_memorySnapshotAndGc` upgraded with prior-snapshot delta tracking: `Δheap=+218.4MB Δext=+1340.2MB Δrss=+1622.1MB`. New call sites at cell-entry + cell-exit in `_runCell`; existing 9 in-phase sites benefit from deltas automatically.
 - [x] **T26.c.4 (T24.e)** — Browser-side `BRAIN_VRAM_ALLOC` rescale loop-back verified at `brain-server.js` line 1015-1037. T18.6.c geometric rescale fires before VRAM saturates.

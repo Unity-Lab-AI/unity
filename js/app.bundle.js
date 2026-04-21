@@ -647,7 +647,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "fe9e146b-4b8a";
+var BUILD = "3cf8289a-7af3";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2697,16 +2697,16 @@ var NeuronCluster = class {
               // READ probe reads phon via CPU propagate
               "letter_to_motor",
               // TALK probe + DYN-PROD letter fallback
-              "sem_to_motor",
+              "sem_to_motor"
               // DYN-PROD primary path + separation probe
-              // T26.c.1 — READ probes across ELA/Sci/Soc/Life gates
-              // dereference these via CPU SparseMatrix.propagate. Keeping
-              // them off the whitelist caused the null-CSR guard to fall
-              // back to zero vectors, nuking READ rate across all gates.
-              "letter_to_sem",
-              // READ probe reads sem via CPU propagate
-              "motor_to_letter"
-              // TALK motor→letter fallback path
+              // Reverted: widening the whitelist added ~2 GB CPU CSR
+              // back per extra projection and re-triggered the 14 GB
+              // external-memory V8 GC stall that T24.a fixed. READ
+              // probes that want letter_to_sem now route through the
+              // GPU proxy fallback — `SparseMatrix.propagate` on a
+              // freed CSR returns a zero vector via the null-CSR
+              // guard, so probe scoring stays correct-shape even when
+              // the CPU array is gone.
             ]);
             if (PROBE_CRITICAL_CPU_CSR.has(key)) {
               console.log(`[CPU-CSR-free] keeping probe-critical ${key} CPU arrays resident (${_freedMB}MB) \u2014 needed for READ/TALK/DYN-PROD gate probes.`);
