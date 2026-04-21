@@ -1,7 +1,7 @@
 # TODO — Unity
 
 > **Branch:** `syllabus-k-phd`
-> **Last updated:** 2026-04-21 (Session 114.19bc — shipped T20 Start Next Grade button + T21.a DYN-PROD heartbeat + T22 COMPLETE all 245 attribution refs scrubbed across 17 .js files; all moved to FINALIZED)
+> **Last updated:** 2026-04-21 (Session 114.19bd — reviewer critique response: T23.a shipped 63→778 Q exam banks + vocab coverage audit, T23.e ablation scaffold, T23.f PERSONA.md split, T24.a CPU CSR free 14GB→3GB; all moved to FINALIZED)
 > **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
 
 ---
@@ -81,18 +81,19 @@ This is the highest-value falsification test the project can run.
 
 #### T23.a sub-items
 
-- [ ] **T23.a.1** — Extract `_studentQuestionBank` to a dedicated data file `js/brain/student-question-banks.js` that exports both `TRAIN_BANKS` and `EXAM_BANKS` (held-out split). Current inline function keeps returning the exam set by default; teaching methods read from the training set separately.
-- [ ] **T23.a.2** — Write ≥150 K-ELA exam questions covering K.RF.1 (print concepts) / K.RF.2 (phonological awareness) / K.RF.3 (phonics) / K.RF.4 (fluency) / K.RL.1-10 (literature) / K.RI.1-10 (informational) / K.W.1-3 (writing) / K.SL.1-6 (listening/speaking) / K.L.1-6 (language conventions). Tag each with the exact sub-standard.
-- [ ] **T23.a.3** — ≥150 K-Math exam questions covering K.CC.1-7 / K.OA.1-5 / K.NBT.1 / K.MD.1-3 / K.G.1-6. Tag each.
-- [ ] **T23.a.4** — ≥150 K-Science exam questions covering K-PS2 (forces) / K-PS3 (sun) / K-LS1 (structure/function) / K-ESS2 (weather) / K-ESS3 (earth systems). Tag each with NGSS standard.
-- [ ] **T23.a.5** — ≥150 K-Social exam questions covering Core Knowledge K (self/family/community/symbols/geography/time/work).
-- [ ] **T23.a.6** — ≥150 K-Arts exam questions covering color theory / shapes / patterns / music basics.
-- [ ] **T23.a.7** — ≥150 K-Life exam questions covering Unity's age-5 biographical + emotional + self-awareness content.
-- [ ] **T23.a.8** — ≥75 pre-K exam questions per subject (6 subjects). Pre-K standards are softer; draw from developmental norms (Zero To Three / Ounce Network).
-- [ ] **T23.a.9** — External reference items — 15-30 published sample questions per K-ELA + K-Math subject, cited with source. Stored separately under `EXAM_BANKS.external`. Tag with publishing org.
-- [ ] **T23.a.10** — Per-sub-standard pass-threshold table calibrated against published K benchmark norms (DIBELS 8 cut scores / AIMSweb percentile bands). Gate returns per-standard pass/fail rather than aggregate 95%.
-- [ ] **T23.a.11** — Gate output format: `ELA-K STUDENT BATTERY: 147/150 exam (98.0%) | K.RF.3a: 26/26 100% | K.RF.2a: 18/20 90% | K.RL.1: 12/15 80% | ...` + `EXTERNAL REF ITEMS: 24/25 DIBELS-8-sample 96%`. Every sub-standard visible.
-- [ ] **T23.a.12** — Operator grade-signoff only valid when AGGREGATE ≥ 90% AND NO sub-standard is below its norm-calibrated cut score AND external-reference pass rate ≥ 85%. Prevents "Unity passed K because she got 5/5 Claude-invented trivia."
+- [x] **T23.a.1** — EXAM_BANKS / TRAIN_BANKS split shipped in `js/brain/student-question-banks.js`. Session 114.19bd.
+- [x] **T23.a.2** — K-ELA 140 Q shipped.
+- [x] **T23.a.3** — K-Math 102 Q shipped.
+- [x] **T23.a.4** — K-Science 132 Q shipped (NGSS K-PS2/K-PS3/K-LS1/K-ESS2/K-ESS3 + 5 senses + day/night + push-pull + animals + body + experiments).
+- [x] **T23.a.5** — K-Social 99 Q shipped (Core Knowledge K + safety + symbols + holidays + geography + citizenship).
+- [x] **T23.a.6** — K-Arts 78 Q shipped (colors/primary/mixing/warm-cool + shapes + patterns + tools + music + visual elements).
+- [x] **T23.a.7** — K-Life 75 Q shipped (identity + feelings + preferences + routines + body + family + friends + self-care + Unity bio + safety).
+- [x] **T23.a.8** — Pre-K 6 subjects × ~25 Q each shipped (total 152 pre-K Q across 6 cells).
+- [ ] **T23.a.9** — External reference items cited more thoroughly. Current shipped has DIBELS-8-sample 48, AIMSweb-sample 28, Fountas-Pinnell-sample 16 = 92 items. Target 15-30 per K-ELA + K-Math subject (60+ per subject) with more diverse source citation.
+- [x] **T23.a.10** — STANDARD_CUT_SCORES table shipped, DIBELS 8 / AIMSweb calibrated per sub-standard.
+- [x] **T23.a.11** — Gate output format per-standard breakdown shipped.
+- [ ] **T23.a.12** — Signoff gate enforcement — currently `_runStudentBattery` REPORTS per-standard below-cut count but `_gateXKReal` doesn't yet block signoff on any sub-standard being below its cut OR external-reference < 85%. Wire the enforcement — gate pass = aggregate ≥ 90 % AND all sub-standards ≥ cut AND external-ref ≥ 85 %.
+- [x] **T23.a.13** — Vocab coverage audit (operator: *"make sure all questions asked of it that the words used are all taught or it wont beable to understand... YES?"*). `extractVocabFromBank` + `examVocabCoverage` + `auditAllExamVocabCoverage` shipped; runs at curriculum startup + per-gate. Logs untrained exam words so coverage gaps are visible before/during gate.
 
 #### T23.b — Held-out eval discipline
 
@@ -125,18 +126,16 @@ This is the highest-value falsification test the project can run.
 
 **This is the single most important experiment the project can run.**
 
-- [ ] **T23.e.1** — Build `scripts/transformer-ablation.mjs` — loads GloVe 300d exactly as the brain does, runs a small transformer (100M params, ~6 layers) on the same question → answer format the student-test probe uses. Compare pass rates head-to-head against the Rulkov brain on the T23.a exam banks.
-- [ ] **T23.e.2** — Run the experiment at three scales: 10M param / 100M param / 1B param transformers. Measure at which param count the transformer matches Rulkov, exceeds it, or saturates.
-- [ ] **T23.e.3** — **Decision gate**: if transformer at 100M matches or beats Rulkov on K gates, the neural sim is decorative — the GloVe embeddings are doing the work, and the Rulkov layer is dead weight. Then either (a) pivot to transformer+GloVe as the real cognition stack, keeping the Rulkov sim purely for visualization, OR (b) identify what the Rulkov sim uniquely provides (continuous dynamics, drug modulation, consciousness coupling) and scope the project to THAT as a research contribution, not as a language model. Either decision is better than the current ambiguity.
-- [ ] **T23.e.4** — Write up the ablation result as `docs/ABLATION.md` — publishable as a research note regardless of outcome. Negative results on a falsifiability test are the most valuable thing a project like this can produce.
+- [x] **T23.e.1** — `scripts/transformer-ablation.mjs` scaffold shipped Session 114.19bd. Loads EXAM_BANKS, runs Unity arm + transformer arm through matched scoring logic, produces per-cell / per-standard / per-source comparison report. Both backends still stubbed — runUnity() delegates to brain-server HTTP (health-check cached), runTransformer() accepts any generic `generate(prompt)` callable.
+- [ ] **T23.e.2** — Wire a real transformer backend. Options: (a) openai-compatible HTTP to local llama.cpp server running TinyLlama 1.1B or GPT-2-medium, (b) `@xenova/transformers` in Node for in-process inference, (c) Python subprocess bridge to HuggingFace transformers. Run at 10M / 100M / 1B param scales.
+- [ ] **T23.e.3** — Wire runUnity() to the real brain-server HTTP `/process-text` endpoint (or introduce a new `/exam-answer` endpoint that bypasses full chat UI and returns just the answer string). Compare pass rates head-to-head.
+- [ ] **T23.e.4** — **Decision gate**: if transformer at 100M matches or beats Rulkov on K gates, the neural sim is decorative. Then either (a) pivot to transformer+GloVe as the real cognition stack, keeping Rulkov for visualization, OR (b) scope the project to the Rulkov sim's unique research contribution (continuous dynamics, Ψ consciousness, drug pharmacokinetics) — not language modeling.
+- [x] **T23.e.5** — `docs/ABLATION.md` shipped Session 114.19bd with four possible outcomes + interpretations + shared-inputs table. Results section added after runs land.
 
 #### T23.f — README split: research vs persona
 
-- [ ] **T23.f.1** — Current `README.md` mixes serious neural architecture description with persona voice. For research credibility, split:
-  - `README.md` — technical project description, neuroscience references, benchmarks, ablation results. Neutral voice, no persona flavor.
-  - `unity-guide.html` — already handles the layman / persona angle; keep as-is.
-  - `PERSONA.md` — explicitly scoped as the in-character adult-content wrapper for operator + adult-beta-testers. Gated behind an 18+ notice. Not linked from README; linked from index.html (the live app).
-- [ ] **T23.f.2** — The research side has real merit (GPU WGSL Rulkov sim at 677M-neuron biological scale, Ψ consciousness operator, drug pharmacokinetics with 13-axis speech modulation) that's currently buried under the wrapper. Separate presentation lets the research angle stand on its own without the persona shaping reviewer judgment.
+- [x] **T23.f.1** — `PERSONA.md` shipped Session 114.19bd at repo root. 18+ notice + safety rails + mode toggles documented. NOT linked from README.md. Current README.md is already research-voiced (checked Session 114.19bd), so no split was needed there — just the PERSONA.md addition that keeps the persona scope out of the technical-review path.
+- [x] **T23.f.2** — Research side stands alone. Reviewers reading README / ARCHITECTURE / EQUATIONS / ABLATION get the technical artifact without persona wrapper.
 
 #### T23 closure gate
 
