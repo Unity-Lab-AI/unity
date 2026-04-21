@@ -1898,8 +1898,22 @@ export class NeuronCluster {
    * the projection where they co-fire. Runs from cluster.learn() and
    * also from cluster.learnSentenceHebbian after each word's tick.
    */
-  async _crossRegionHebbian(lr) {
+  async _crossRegionHebbian(lr, opts = {}) {
     if (!this.crossProjections) return;
+    // opts.skipCpuWhitelist — when true, skip the sync CPU Hebbian on
+    // probe-critical projections (letter_to_phon + letter_to_motor).
+    // Curriculum teach loops set this for all reps except the final
+    // rep so the CPU arrays only get their expensive update once per
+    // phase. GPU fire-and-forget Hebbian still runs every rep so GPU
+    // weights stay current for runtime propagation. Probes run AFTER
+    // teach and read CPU arrays populated by the final-rep CPU pass.
+    // Cuts ~80% of CPU Hebbian wall-clock during teach (main
+    // bottleneck at 301K cortex scale where letter_to_phon + letter_to_motor
+    // are ~14.9 M nnz each and hebbianUpdate iterates all nnz per call).
+    // Caller can skip via explicit opts OR by setting the cluster-level
+    // flag `_teachIntermediateRep` (toggled by teach loops for all reps
+    // except the final one). Either gate skips the sync CPU whitelist.
+    const skipCpuWhitelist = opts.skipCpuWhitelist === true || this._teachIntermediateRep === true;
     for (const [name, proj] of Object.entries(this.crossProjections)) {
       const idx = name.indexOf('_to_');
       if (idx < 0) continue;
@@ -1957,7 +1971,7 @@ export class NeuronCluster {
           'letter_to_phon',
           'letter_to_motor',
         ]);
-        if (PROBE_CRITICAL.has(name)) {
+        if (PROBE_CRITICAL.has(name) && !skipCpuWhitelist) {
           const preF = this.regionSpikes(src);
           const postF = this.regionSpikes(dst);
           proj.hebbianUpdate(preF, postF, lr);
