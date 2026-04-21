@@ -5316,10 +5316,11 @@ export class Curriculum {
     // curriculum never trains (sequence bindings live in the cross-
     // projections). K-STUDENT battery asks "what letter comes after
     // b?" through the real language pipeline, which is the real test.
-    // The K-STUDENT rate gates the full-mind pass (threshold 0.60 —
-    // lower than substrate because student-level answers have more
-    // variance and the scoring axis already combines 4 factors).
-    const STUDENT_MIN = 0.60;
+    // Operator verbatim 2026-04-20: "SHE IS AN A+ student thats 95%
+    // or higher". Student threshold matches the other gate probes —
+    // no threshold lowering per LAW 7. Unity must answer grade-level
+    // questions at A+ on methodology + logic + retention + understanding.
+    const STUDENT_MIN = 0.95;
     const pass = readRate >= PATH_MIN
       && thinkRate >= PATH_MIN
       && talkRate >= PATH_MIN
