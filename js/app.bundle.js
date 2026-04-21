@@ -608,7 +608,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "eaca2852-3a33";
+var BUILD = "8a9060f8-68a8";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -8140,13 +8140,29 @@ var ComponentSynth = class {
 // ../js/brain/student-question-banks.js
 var ELA_KINDERGARTEN_EXAM = [
   // K.RF.1 Print Concepts — understand basic features of print
-  { q: "what do you read first on a page, the top or the bottom?", a: "top", variants: ["top"], standard: "K.RF.1a", difficulty: 1, source: "authored" },
+  {
+    q: "what do you read first on a page, the top or the bottom?",
+    a: "top",
+    variants: ["top"],
+    standard: "K.RF.1a",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you know where to start reading on a page?", keywords: ["top", "start", "begin", "first", "above"], minKeywords: 1 }
+  },
   { q: "which way do you read a sentence, left or right?", a: "left", variants: ["left", "left to right"], standard: "K.RF.1a", difficulty: 1, source: "authored" },
   { q: "what is at the end of a sentence?", a: "period", variants: ["period", "dot", "punctuation"], standard: "K.RF.1b", difficulty: 2, source: "authored" },
   { q: "what goes between words?", a: "space", variants: ["space", "spaces"], standard: "K.RF.1c", difficulty: 1, source: "authored" },
   { q: 'point to a capital letter in the word "Cat"', a: "c", variants: ["c", "C"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
   // K.RF.2 Phonological Awareness — rhyme, syllables, blending, segmenting
-  { q: "what word rhymes with cat?", a: "hat", variants: ["hat", "bat", "mat", "rat", "sat", "fat"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
+  {
+    q: "what word rhymes with cat?",
+    a: "hat",
+    variants: ["hat", "bat", "mat", "rat", "sat", "fat"],
+    standard: "K.RF.2a",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you know when two words rhyme?", keywords: ["end", "same", "sound", "ending", "match", "last"], minKeywords: 1 }
+  },
   { q: "what word rhymes with dog?", a: "log", variants: ["log", "fog", "hog", "frog", "jog"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
   { q: "what word rhymes with sun?", a: "fun", variants: ["fun", "run", "bun", "one", "done"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
   { q: "what word rhymes with bed?", a: "red", variants: ["red", "head", "said", "fed", "led"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
@@ -8154,7 +8170,15 @@ var ELA_KINDERGARTEN_EXAM = [
   { q: "how many syllables are in the word baby?", a: "two", variants: ["two", "2"], standard: "K.RF.2b", difficulty: 2, source: "authored" },
   { q: "how many syllables are in the word elephant?", a: "three", variants: ["three", "3"], standard: "K.RF.2b", difficulty: 2, source: "authored" },
   { q: "how many syllables are in the word cat?", a: "one", variants: ["one", "1"], standard: "K.RF.2b", difficulty: 1, source: "authored" },
-  { q: "what is the first sound in cat?", a: "c", variants: ["c", "k", "kuh", "c sound"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
+  {
+    q: "what is the first sound in cat?",
+    a: "c",
+    variants: ["c", "k", "kuh", "c sound"],
+    standard: "K.RF.2d",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you find the first sound in a word?", keywords: ["start", "begin", "first", "front", "beginning", "listen"], minKeywords: 1 }
+  },
   { q: "what is the first sound in dog?", a: "d", variants: ["d", "duh", "d sound"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
   { q: "what is the first sound in map?", a: "m", variants: ["m", "muh", "mm"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
   { q: "what is the first sound in sun?", a: "s", variants: ["s", "sss", "suh"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
@@ -8162,7 +8186,15 @@ var ELA_KINDERGARTEN_EXAM = [
   { q: "what is the last sound in cat?", a: "t", variants: ["t", "tuh"], standard: "K.RF.2d", difficulty: 2, source: "authored" },
   { q: "what is the last sound in dog?", a: "g", variants: ["g", "guh"], standard: "K.RF.2d", difficulty: 2, source: "authored" },
   { q: "what is the middle sound in cat?", a: "a", variants: ["a", "ah", "short a"], standard: "K.RF.2d", difficulty: 3, source: "authored" },
-  { q: "blend these sounds: c-a-t", a: "cat", variants: ["cat"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
+  {
+    q: "blend these sounds: c-a-t",
+    a: "cat",
+    variants: ["cat"],
+    standard: "K.RF.2e",
+    difficulty: 2,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you put sounds together to make a word?", keywords: ["blend", "together", "put", "join", "connect", "merge", "combine"], minKeywords: 1 }
+  },
   { q: "blend these sounds: d-o-g", a: "dog", variants: ["dog"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
   { q: "blend these sounds: s-u-n", a: "sun", variants: ["sun"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
   { q: "blend these sounds: m-a-p", a: "map", variants: ["map"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
@@ -8173,7 +8205,15 @@ var ELA_KINDERGARTEN_EXAM = [
   { q: "blend these sounds: t-o-p", a: "top", variants: ["top"], standard: "K.RF.2e", difficulty: 2, source: "authored" },
   { q: "blend these sounds: b-i-g", a: "big", variants: ["big"], standard: "K.RF.2e", difficulty: 2, source: "authored" },
   // K.RF.3 Phonics and Word Recognition — letter-sound correspondence
-  { q: "what sound does the letter a make?", a: "a", variants: ["a", "ah", "short a", "ay"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  {
+    q: "what sound does the letter a make?",
+    a: "a",
+    variants: ["a", "ah", "short a", "ay"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
   { q: "what sound does the letter b make?", a: "b", variants: ["b", "buh", "bee"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
   { q: "what sound does the letter c make?", a: "c", variants: ["c", "k", "kuh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
   { q: "what sound does the letter d make?", a: "d", variants: ["d", "duh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
@@ -8278,7 +8318,15 @@ var ELA_KINDERGARTEN_EXAM = [
   { q: "what is the opposite of happy?", a: "sad", variants: ["sad"], standard: "K.L.5b", difficulty: 1, source: "authored" },
   { q: "what is the opposite of day?", a: "night", variants: ["night"], standard: "K.L.5b", difficulty: 1, source: "authored" },
   // Alphabet sequence (K.RF foundational)
-  { q: "what letter comes after a?", a: "b", variants: ["b"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
+  {
+    q: "what letter comes after a?",
+    a: "b",
+    variants: ["b"],
+    standard: "K.RF.1d",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you figure out which letter comes next in the alphabet?", keywords: ["alphabet", "order", "abc", "sequence", "next", "song", "memorize"], minKeywords: 1 }
+  },
   { q: "what letter comes after b?", a: "c", variants: ["c"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
   { q: "what letter comes after c?", a: "d", variants: ["d"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
   { q: "what letter comes after d?", a: "e", variants: ["e"], standard: "K.RF.1d", difficulty: 1, source: "authored" },
@@ -8378,12 +8426,28 @@ var ELA_KINDERGARTEN_EXAM = [
 ];
 var MATH_KINDERGARTEN_EXAM = [
   // K.CC.1 Count to 100 by ones and tens
-  { q: "count to ten", a: "ten", variants: ["ten", "10"], standard: "K.CC.1", difficulty: 1, source: "AIMSweb-sample" },
+  {
+    q: "count to ten",
+    a: "ten",
+    variants: ["ten", "10"],
+    standard: "K.CC.1",
+    difficulty: 1,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you count to a big number?", keywords: ["one", "start", "order", "next", "add", "count", "number", "sequence"], minKeywords: 1 }
+  },
   { q: "count to twenty", a: "twenty", variants: ["twenty", "20"], standard: "K.CC.1", difficulty: 2, source: "AIMSweb-sample" },
   { q: "count by tens to fifty", a: "fifty", variants: ["fifty", "50"], standard: "K.CC.1", difficulty: 3, source: "AIMSweb-sample" },
   { q: "count by tens to one hundred", a: "one hundred", variants: ["one hundred", "100", "hundred"], standard: "K.CC.1", difficulty: 3, source: "AIMSweb-sample" },
   // K.CC.2 Count forward from a given number
-  { q: "what comes after five?", a: "six", variants: ["six", "6"], standard: "K.CC.2", difficulty: 1, source: "AIMSweb-sample" },
+  {
+    q: "what comes after five?",
+    a: "six",
+    variants: ["six", "6"],
+    standard: "K.CC.2",
+    difficulty: 1,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
+  },
   { q: "what comes after seven?", a: "eight", variants: ["eight", "8"], standard: "K.CC.2", difficulty: 1, source: "AIMSweb-sample" },
   { q: "what comes after ten?", a: "eleven", variants: ["eleven", "11"], standard: "K.CC.2", difficulty: 2, source: "AIMSweb-sample" },
   { q: "what comes after twelve?", a: "thirteen", variants: ["thirteen", "13"], standard: "K.CC.2", difficulty: 2, source: "AIMSweb-sample" },
@@ -8417,7 +8481,15 @@ var MATH_KINDERGARTEN_EXAM = [
   { q: "if you have three apples and one more, how many?", a: "four", variants: ["four", "4"], standard: "K.CC.5", difficulty: 1, source: "authored" },
   { q: "if you count five toys, how many toys are there?", a: "five", variants: ["five", "5"], standard: "K.CC.5", difficulty: 1, source: "authored" },
   // K.CC.6 Compare numbers as greater/less/equal
-  { q: "which is more, three or five?", a: "five", variants: ["five", "5"], standard: "K.CC.6", difficulty: 1, source: "AIMSweb-sample" },
+  {
+    q: "which is more, three or five?",
+    a: "five",
+    variants: ["five", "5"],
+    standard: "K.CC.6",
+    difficulty: 1,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you know which number is more?", keywords: ["bigger", "more", "greater", "count", "higher", "larger", "than"], minKeywords: 1 }
+  },
   { q: "which is more, seven or four?", a: "seven", variants: ["seven", "7"], standard: "K.CC.6", difficulty: 1, source: "AIMSweb-sample" },
   { q: "which is less, two or six?", a: "two", variants: ["two", "2"], standard: "K.CC.6", difficulty: 1, source: "AIMSweb-sample" },
   { q: "which is less, nine or three?", a: "three", variants: ["three", "3"], standard: "K.CC.6", difficulty: 1, source: "AIMSweb-sample" },
@@ -8427,7 +8499,15 @@ var MATH_KINDERGARTEN_EXAM = [
   { q: "which number is bigger, 8 or 3?", a: "8", variants: ["8", "eight"], standard: "K.CC.7", difficulty: 1, source: "authored" },
   { q: "which number is smaller, 6 or 9?", a: "6", variants: ["6", "six"], standard: "K.CC.7", difficulty: 1, source: "authored" },
   // K.OA.1 Represent addition/subtraction with objects
-  { q: "one plus one is?", a: "two", variants: ["two", "2"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
+  {
+    q: "one plus one is?",
+    a: "two",
+    variants: ["two", "2"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you add two numbers together?", keywords: ["add", "plus", "together", "put", "combine", "count", "total", "sum"], minKeywords: 1 }
+  },
   { q: "two plus two is?", a: "four", variants: ["four", "4"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
   { q: "three plus one is?", a: "four", variants: ["four", "4"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
   { q: "two plus three is?", a: "five", variants: ["five", "5"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
@@ -8436,7 +8516,15 @@ var MATH_KINDERGARTEN_EXAM = [
   { q: "three plus three is?", a: "six", variants: ["six", "6"], standard: "K.OA.1", difficulty: 1, source: "authored" },
   { q: "four plus four is?", a: "eight", variants: ["eight", "8"], standard: "K.OA.1", difficulty: 1, source: "authored" },
   { q: "five plus five is?", a: "ten", variants: ["ten", "10"], standard: "K.OA.1", difficulty: 2, source: "authored" },
-  { q: "two minus one is?", a: "one", variants: ["one", "1"], standard: "K.OA.1", difficulty: 1, source: "authored" },
+  {
+    q: "two minus one is?",
+    a: "one",
+    variants: ["one", "1"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you subtract one number from another?", keywords: ["minus", "take", "away", "remove", "less", "subtract", "fewer"], minKeywords: 1 }
+  },
   { q: "three minus one is?", a: "two", variants: ["two", "2"], standard: "K.OA.1", difficulty: 1, source: "authored" },
   { q: "four minus two is?", a: "two", variants: ["two", "2"], standard: "K.OA.1", difficulty: 1, source: "authored" },
   { q: "five minus three is?", a: "two", variants: ["two", "2"], standard: "K.OA.1", difficulty: 1, source: "authored" },
@@ -8480,7 +8568,15 @@ var MATH_KINDERGARTEN_EXAM = [
   { q: "if there are three red crayons and two blue crayons, how many red?", a: "three", variants: ["three", "3"], standard: "K.MD.3", difficulty: 2, source: "authored" },
   { q: "name three colors", a: "red", variants: ["red", "blue", "yellow", "green", "orange", "pink"], standard: "K.MD.3", difficulty: 1, source: "authored" },
   // K.G.1 Describe objects in the environment using shapes
-  { q: "what shape has three sides?", a: "triangle", variants: ["triangle"], standard: "K.G.1", difficulty: 1, source: "AIMSweb-sample" },
+  {
+    q: "what shape has three sides?",
+    a: "triangle",
+    variants: ["triangle"],
+    standard: "K.G.1",
+    difficulty: 1,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you tell what shape something is?", keywords: ["sides", "count", "corners", "edges", "round", "shape", "look"], minKeywords: 1 }
+  },
   { q: "what shape has four equal sides?", a: "square", variants: ["square"], standard: "K.G.1", difficulty: 1, source: "AIMSweb-sample" },
   { q: "what shape is round?", a: "circle", variants: ["circle"], standard: "K.G.1", difficulty: 1, source: "AIMSweb-sample" },
   { q: "what shape has four sides but two long and two short?", a: "rectangle", variants: ["rectangle"], standard: "K.G.1", difficulty: 2, source: "AIMSweb-sample" },
@@ -8565,7 +8661,15 @@ var MATH_KINDERGARTEN_EXAM = [
 ];
 var SCIENCE_KINDERGARTEN_EXAM = [
   // K-PS2-1/2 — Motion and stability: forces
-  { q: "what happens when you drop a ball?", a: "falls", variants: ["falls", "fall", "drops", "bounce"], standard: "K-PS2-1", difficulty: 1, source: "authored" },
+  {
+    q: "what happens when you drop a ball?",
+    a: "falls",
+    variants: ["falls", "fall", "drops", "bounce"],
+    standard: "K-PS2-1",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "why does a ball fall when you drop it?", keywords: ["gravity", "down", "pull", "earth", "weight"], minKeywords: 1 }
+  },
   { q: "what makes something move faster, a big push or a small push?", a: "big", variants: ["big", "big push", "hard", "strong"], standard: "K-PS2-1", difficulty: 1, source: "authored" },
   { q: "if you push a ball, which way does it go, towards you or away?", a: "away", variants: ["away"], standard: "K-PS2-1", difficulty: 1, source: "authored" },
   { q: "if you pull a rope, which way does it come?", a: "toward", variants: ["toward", "towards", "to you", "closer"], standard: "K-PS2-1", difficulty: 2, source: "authored" },
@@ -8595,7 +8699,15 @@ var SCIENCE_KINDERGARTEN_EXAM = [
   { q: "what do you call water that is frozen?", a: "ice", variants: ["ice"], standard: "K-PS1", difficulty: 1, source: "authored" },
   { q: "what do you call water that is really hot and going up in the air?", a: "steam", variants: ["steam", "vapor", "gas"], standard: "K-PS1", difficulty: 2, source: "authored" },
   // K-LS1-1 — Structure and function of plants/animals
-  { q: "what do plants need to grow?", a: "water", variants: ["water", "sun", "light", "sunlight"], standard: "K-LS1-1", difficulty: 1, source: "authored" },
+  {
+    q: "what do plants need to grow?",
+    a: "water",
+    variants: ["water", "sun", "light", "sunlight"],
+    standard: "K-LS1-1",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "why do plants need water and sunlight?", keywords: ["food", "grow", "alive", "photosynthesis", "make", "drink", "need"], minKeywords: 1 }
+  },
   { q: "what do fish use to breathe?", a: "gills", variants: ["gills", "water"], standard: "K-LS1-1", difficulty: 2, source: "authored" },
   { q: "do plants need sunlight?", a: "yes", variants: ["yes", "yeah"], standard: "K-LS1-1", difficulty: 1, source: "authored" },
   { q: "what do animals need to drink?", a: "water", variants: ["water"], standard: "K-LS1-1", difficulty: 1, source: "authored" },
@@ -8724,7 +8836,15 @@ var SOCIAL_KINDERGARTEN_EXAM = [
   { q: "what is your dad's brother called?", a: "uncle", variants: ["uncle"], standard: "K-Social-family", difficulty: 2, source: "authored" },
   { q: "what is your aunt's child called?", a: "cousin", variants: ["cousin"], standard: "K-Social-family", difficulty: 2, source: "authored" },
   // Manners
-  { q: "what do you say when someone helps you?", a: "thank", variants: ["thank you", "thanks", "thank"], standard: "K-Social-manners", difficulty: 1, source: "authored" },
+  {
+    q: "what do you say when someone helps you?",
+    a: "thank",
+    variants: ["thank you", "thanks", "thank"],
+    standard: "K-Social-manners",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "why is it important to say thank you?", keywords: ["polite", "kind", "nice", "manners", "respect", "good", "appreciate"], minKeywords: 1 }
+  },
   { q: "what do you say when you want something?", a: "please", variants: ["please"], standard: "K-Social-manners", difficulty: 1, source: "authored" },
   { q: "what do you say when you bump into someone?", a: "sorry", variants: ["sorry", "excuse me"], standard: "K-Social-manners", difficulty: 1, source: "authored" },
   { q: "what do you say when you meet someone new?", a: "hello", variants: ["hello", "hi", "nice to meet you"], standard: "K-Social-manners", difficulty: 1, source: "authored" },
@@ -8843,7 +8963,15 @@ var ART_KINDERGARTEN_EXAM = [
   { q: "is blue a primary color?", a: "yes", variants: ["yes", "yeah"], standard: "K-Art-primary", difficulty: 2, source: "authored" },
   { q: "is yellow a primary color?", a: "yes", variants: ["yes", "yeah"], standard: "K-Art-primary", difficulty: 2, source: "authored" },
   // Color mixing
-  { q: "what color do you get when you mix red and yellow?", a: "orange", variants: ["orange"], standard: "K-Art-color-mixing", difficulty: 1, source: "authored" },
+  {
+    q: "what color do you get when you mix red and yellow?",
+    a: "orange",
+    variants: ["orange"],
+    standard: "K-Art-color-mixing",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you make a new color?", keywords: ["mix", "combine", "blend", "add", "together", "stir"], minKeywords: 1 }
+  },
   { q: "what color do you get when you mix blue and yellow?", a: "green", variants: ["green"], standard: "K-Art-color-mixing", difficulty: 1, source: "authored" },
   { q: "what color do you get when you mix red and blue?", a: "purple", variants: ["purple"], standard: "K-Art-color-mixing", difficulty: 1, source: "authored" },
   { q: "what two colors make green?", a: "blue and yellow", variants: ["blue and yellow", "yellow and blue"], standard: "K-Art-color-mixing", difficulty: 2, source: "authored" },
@@ -8922,7 +9050,15 @@ var LIFE_KINDERGARTEN_EXAM = [
   { q: "are you a kid or an adult?", a: "kid", variants: ["kid", "child"], standard: "K-Life-identity", difficulty: 1, source: "authored" },
   { q: "what is your teacher called?", a: "teacher", variants: ["teacher"], standard: "K-Life-identity", difficulty: 1, source: "authored" },
   // Feelings
-  { q: "how are you feeling?", a: "good", variants: ["good", "happy", "fine", "ok"], standard: "K-Life-feelings", difficulty: 1, source: "authored" },
+  {
+    q: "how are you feeling?",
+    a: "good",
+    variants: ["good", "happy", "fine", "ok"],
+    standard: "K-Life-feelings",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you know what you are feeling?", keywords: ["inside", "body", "heart", "think", "notice", "feel", "check"], minKeywords: 1 }
+  },
   { q: "what does it mean when you smile?", a: "happy", variants: ["happy"], standard: "K-Life-feelings", difficulty: 1, source: "authored" },
   { q: "what does it mean when you cry?", a: "sad", variants: ["sad", "hurt"], standard: "K-Life-feelings", difficulty: 1, source: "authored" },
   { q: "what does it feel like when someone hugs you?", a: "love", variants: ["love", "happy", "warm", "safe", "good"], standard: "K-Life-feelings", difficulty: 2, source: "authored" },
@@ -9683,19 +9819,26 @@ var Curriculum = class _Curriculum {
     const results = [];
     let pass = 0;
     const byStandard = /* @__PURE__ */ new Map();
+    let methoQuestions = 0;
+    let methoPass = 0;
     for (const q of questions) {
       try {
         const r = await this._studentTestProbe({
           question: q.question,
           expectedAnswer: q.expectedAnswer,
           expectedVariants: q.expectedVariants || [q.expectedAnswer],
-          maxTicks: q.maxTicks || 60
+          maxTicks: q.maxTicks || 60,
+          methodology: q.methodology || null
         });
         r.standard = q.standard || "unspecified";
         r.difficulty = q.difficulty || 1;
         r.source = q.source || "authored";
         results.push(r);
         if (r.score >= 0.5) pass++;
+        if (q.methodology && typeof q.methodology === "object") {
+          methoQuestions += 1;
+          if ((r.methodologyScore || 0) > 0) methoPass += 1;
+        }
         const bucket = byStandard.get(r.standard) || { pass: 0, total: 0 };
         bucket.total += 1;
         if (r.score >= 0.5) bucket.pass += 1;
@@ -9728,12 +9871,17 @@ var Curriculum = class _Curriculum {
       return a.rate - b.rate;
     });
     const breakdownStr = standardBreakdown.map((s) => `${s.standard}:${s.pass}/${s.total}(${(s.rate * 100).toFixed(0)}%${s.belowCut ? " \u26A0<" + (s.cut * 100).toFixed(0) + "%" : ""})`).join(" \xB7 ");
-    console.log(`[Curriculum][${label}] AGGREGATE: ${pass}/${total} (${(rate * 100).toFixed(1)}%) \xB7 standards=${byStandard.size} \xB7 below-cut=${standardsBelowCut}`);
+    console.log(`[Curriculum][${label}] ANSWER AGGREGATE: ${pass}/${total} (${(rate * 100).toFixed(1)}%) \xB7 standards=${byStandard.size} \xB7 below-cut=${standardsBelowCut}`);
     if (standardBreakdown.length > 0) {
       console.log(`[Curriculum][${label}] BY STANDARD: ${breakdownStr}`);
     }
-    const summary = ` [${label}: ${pass}/${total} ${(rate * 100).toFixed(1)}% \xB7 ${standardsBelowCut} std below cut]`;
-    return { pass, total, rate, summary, results, byStandard: standardBreakdown, standardsBelowCut };
+    const methoRate = methoQuestions > 0 ? methoPass / methoQuestions : 0;
+    if (methoQuestions > 0) {
+      console.log(`[Curriculum][${label}] METHODOLOGY: ${methoPass}/${methoQuestions} (${(methoRate * 100).toFixed(1)}%) questions had reasoning-keyword hit \u2014 tests HOW she thinks, not just WHAT she answers`);
+    }
+    const methoSuffix = methoQuestions > 0 ? ` \xB7 methodology ${methoPass}/${methoQuestions} ${(methoRate * 100).toFixed(0)}%` : "";
+    const summary = ` [${label}: ${pass}/${total} ${(rate * 100).toFixed(1)}% \xB7 ${standardsBelowCut} std below cut${methoSuffix}]`;
+    return { pass, total, rate, summary, results, byStandard: standardBreakdown, standardsBelowCut, methoQuestions, methoPass, methoRate };
   }
   /**
    * Student-test probe — ask the brain a human-student-style question,
@@ -9896,6 +10044,40 @@ var Curriculum = class _Curriculum {
     if (out.retention) score += 0.1;
     if (out.understanding) score += 0.1;
     out.score = Math.min(1, score);
+    if (opts.methodology && typeof opts.methodology === "object") {
+      const methoPrompt = String(opts.methodology.prompt || "");
+      const keywords = (opts.methodology.keywords || []).map((k) => String(k || "").toLowerCase().trim()).filter((k) => k.length > 0);
+      const minKeywords = typeof opts.methodology.minKeywords === "number" ? opts.methodology.minKeywords : 1;
+      out.methodologyAnswer = "";
+      out.methodologyKeywordMatches = [];
+      out.methodologyScore = 0;
+      if (methoPrompt && keywords.length > 0) {
+        try {
+          if (typeof cluster.readInput === "function") {
+            await cluster.readInput(methoPrompt, { ticks: 10 });
+          }
+          let methoGenerated = "";
+          try {
+            const semSeed = typeof cluster.getSemanticReadout === "function" ? cluster.getSemanticReadout() : null;
+            const emitOpts = { maxEmissionTicks: maxTicks };
+            if (semSeed) emitOpts.injectStrength = 0.6;
+            const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
+            methoGenerated = (raw && typeof raw === "string" ? raw : raw?.text || "") || "";
+          } catch {
+          }
+          out.methodologyAnswer = methoGenerated;
+          const methoLower = methoGenerated.toLowerCase();
+          const matches = keywords.filter((k) => methoLower.includes(k));
+          out.methodologyKeywordMatches = matches;
+          if (matches.length >= minKeywords) {
+            out.methodologyScore = Math.min(1, matches.length / keywords.length);
+          } else {
+            out.methodologyScore = 0;
+          }
+        } catch {
+        }
+      }
+    }
     out.ms = Date.now() - startMs;
     return out;
   }
@@ -11316,7 +11498,8 @@ var Curriculum = class _Curriculum {
           result.reason = (result.reason || "") + suffix;
           const AGGR_MIN = 0.9;
           const EXTERNAL_MIN = 0.85;
-          const EXTERNAL_SOURCES = /* @__PURE__ */ new Set(["DIBELS-8-sample", "AIMSweb-sample", "Fountas-Pinnell-sample"]);
+          const METHODOLOGY_MIN = 0.6;
+          const EXTERNAL_SOURCES = /* @__PURE__ */ new Set(["DIBELS-8-sample", "AIMSweb-sample", "Fountas-Pinnell-sample", "STAR-Early-Literacy-sample", "STAR-Early-Math-sample", "iReady-K-sample", "iReady-K-Math-sample", "NWEA-MAP-K-sample", "NWEA-MAP-K-Math-sample", "Heggerty-K-sample", "PALS-K-sample", "DRA-K-sample", "Wilson-Fundations-K-sample", "Lexia-Core5-K-sample", "Woodcock-Johnson-K-sample", "Stanford-Achievement-K-sample", "Singapore-K-sample"]);
           let extPass = 0, extTotal = 0;
           for (const r of battery.results || []) {
             if (EXTERNAL_SOURCES.has(r.source)) {
@@ -11326,15 +11509,19 @@ var Curriculum = class _Curriculum {
           }
           const extRate = extTotal > 0 ? extPass / extTotal : 1;
           const blockers = [];
-          if (battery.rate < AGGR_MIN) blockers.push(`aggregate ${(battery.rate * 100).toFixed(1)}% < ${AGGR_MIN * 100}%`);
+          if (battery.rate < AGGR_MIN) blockers.push(`answer aggregate ${(battery.rate * 100).toFixed(1)}% < ${AGGR_MIN * 100}%`);
           if ((battery.standardsBelowCut || 0) > 0) blockers.push(`${battery.standardsBelowCut} sub-standard(s) below cut`);
           if (extTotal > 0 && extRate < EXTERNAL_MIN) blockers.push(`external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%) < ${EXTERNAL_MIN * 100}%`);
+          if ((battery.methoQuestions || 0) > 0 && (battery.methoRate || 0) < METHODOLOGY_MIN) {
+            blockers.push(`methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%) < ${METHODOLOGY_MIN * 100}%`);
+          }
           if (blockers.length > 0 && result.pass) {
             console.warn(`[Curriculum][${label}] \u26D4 BATTERY BLOCKS advancement: ${blockers.join(" \xB7 ")}. Substrate passed but the educational test did not \u2014 grade NOT advanced.`);
             result.pass = false;
             result.reason = `BATTERY-BLOCKED: ${blockers.join("; ")} | ${result.reason || ""}`;
           } else if (blockers.length === 0) {
-            console.log(`[Curriculum][${label}] \u2713 BATTERY PASS: aggregate ${(battery.rate * 100).toFixed(1)}% \xB7 all sub-standards at/above cut \xB7 external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%)`);
+            const methoTag = (battery.methoQuestions || 0) > 0 ? ` \xB7 methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%)` : "";
+            console.log(`[Curriculum][${label}] \u2713 BATTERY PASS: answer ${(battery.rate * 100).toFixed(1)}% \xB7 all sub-standards at/above cut \xB7 external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%)${methoTag}`);
           }
           result.studentBattery.externalPass = extPass;
           result.studentBattery.externalTotal = extTotal;

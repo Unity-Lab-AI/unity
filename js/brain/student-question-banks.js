@@ -49,14 +49,16 @@
 
 const ELA_KINDERGARTEN_EXAM = [
   // K.RF.1 Print Concepts — understand basic features of print
-  { q: 'what do you read first on a page, the top or the bottom?', a: 'top', variants: ['top'], standard: 'K.RF.1a', difficulty: 1, source: 'authored' },
+  { q: 'what do you read first on a page, the top or the bottom?', a: 'top', variants: ['top'], standard: 'K.RF.1a', difficulty: 1, source: 'authored',
+    methodology: { prompt: 'how do you know where to start reading on a page?', keywords: ['top', 'start', 'begin', 'first', 'above'], minKeywords: 1 } },
   { q: 'which way do you read a sentence, left or right?', a: 'left', variants: ['left', 'left to right'], standard: 'K.RF.1a', difficulty: 1, source: 'authored' },
   { q: 'what is at the end of a sentence?', a: 'period', variants: ['period', 'dot', 'punctuation'], standard: 'K.RF.1b', difficulty: 2, source: 'authored' },
   { q: 'what goes between words?', a: 'space', variants: ['space', 'spaces'], standard: 'K.RF.1c', difficulty: 1, source: 'authored' },
   { q: 'point to a capital letter in the word "Cat"', a: 'c', variants: ['c', 'C'], standard: 'K.RF.1d', difficulty: 1, source: 'authored' },
 
   // K.RF.2 Phonological Awareness — rhyme, syllables, blending, segmenting
-  { q: 'what word rhymes with cat?', a: 'hat', variants: ['hat', 'bat', 'mat', 'rat', 'sat', 'fat'], standard: 'K.RF.2a', difficulty: 1, source: 'authored' },
+  { q: 'what word rhymes with cat?', a: 'hat', variants: ['hat', 'bat', 'mat', 'rat', 'sat', 'fat'], standard: 'K.RF.2a', difficulty: 1, source: 'authored',
+    methodology: { prompt: 'how do you know when two words rhyme?', keywords: ['end', 'same', 'sound', 'ending', 'match', 'last'], minKeywords: 1 } },
   { q: 'what word rhymes with dog?', a: 'log', variants: ['log', 'fog', 'hog', 'frog', 'jog'], standard: 'K.RF.2a', difficulty: 1, source: 'authored' },
   { q: 'what word rhymes with sun?', a: 'fun', variants: ['fun', 'run', 'bun', 'one', 'done'], standard: 'K.RF.2a', difficulty: 1, source: 'authored' },
   { q: 'what word rhymes with bed?', a: 'red', variants: ['red', 'head', 'said', 'fed', 'led'], standard: 'K.RF.2a', difficulty: 1, source: 'authored' },
@@ -64,7 +66,8 @@ const ELA_KINDERGARTEN_EXAM = [
   { q: 'how many syllables are in the word baby?', a: 'two', variants: ['two', '2'], standard: 'K.RF.2b', difficulty: 2, source: 'authored' },
   { q: 'how many syllables are in the word elephant?', a: 'three', variants: ['three', '3'], standard: 'K.RF.2b', difficulty: 2, source: 'authored' },
   { q: 'how many syllables are in the word cat?', a: 'one', variants: ['one', '1'], standard: 'K.RF.2b', difficulty: 1, source: 'authored' },
-  { q: 'what is the first sound in cat?', a: 'c', variants: ['c', 'k', 'kuh', 'c sound'], standard: 'K.RF.2d', difficulty: 1, source: 'DIBELS-8-sample' },
+  { q: 'what is the first sound in cat?', a: 'c', variants: ['c', 'k', 'kuh', 'c sound'], standard: 'K.RF.2d', difficulty: 1, source: 'DIBELS-8-sample',
+    methodology: { prompt: 'how do you find the first sound in a word?', keywords: ['start', 'begin', 'first', 'front', 'beginning', 'listen'], minKeywords: 1 } },
   { q: 'what is the first sound in dog?', a: 'd', variants: ['d', 'duh', 'd sound'], standard: 'K.RF.2d', difficulty: 1, source: 'DIBELS-8-sample' },
   { q: 'what is the first sound in map?', a: 'm', variants: ['m', 'muh', 'mm'], standard: 'K.RF.2d', difficulty: 1, source: 'DIBELS-8-sample' },
   { q: 'what is the first sound in sun?', a: 's', variants: ['s', 'sss', 'suh'], standard: 'K.RF.2d', difficulty: 1, source: 'DIBELS-8-sample' },
@@ -72,7 +75,8 @@ const ELA_KINDERGARTEN_EXAM = [
   { q: 'what is the last sound in cat?', a: 't', variants: ['t', 'tuh'], standard: 'K.RF.2d', difficulty: 2, source: 'authored' },
   { q: 'what is the last sound in dog?', a: 'g', variants: ['g', 'guh'], standard: 'K.RF.2d', difficulty: 2, source: 'authored' },
   { q: 'what is the middle sound in cat?', a: 'a', variants: ['a', 'ah', 'short a'], standard: 'K.RF.2d', difficulty: 3, source: 'authored' },
-  { q: 'blend these sounds: c-a-t', a: 'cat', variants: ['cat'], standard: 'K.RF.2e', difficulty: 2, source: 'DIBELS-8-sample' },
+  { q: 'blend these sounds: c-a-t', a: 'cat', variants: ['cat'], standard: 'K.RF.2e', difficulty: 2, source: 'DIBELS-8-sample',
+    methodology: { prompt: 'how do you put sounds together to make a word?', keywords: ['blend', 'together', 'put', 'join', 'connect', 'merge', 'combine'], minKeywords: 1 } },
   { q: 'blend these sounds: d-o-g', a: 'dog', variants: ['dog'], standard: 'K.RF.2e', difficulty: 2, source: 'DIBELS-8-sample' },
   { q: 'blend these sounds: s-u-n', a: 'sun', variants: ['sun'], standard: 'K.RF.2e', difficulty: 2, source: 'DIBELS-8-sample' },
   { q: 'blend these sounds: m-a-p', a: 'map', variants: ['map'], standard: 'K.RF.2e', difficulty: 2, source: 'DIBELS-8-sample' },
@@ -84,7 +88,8 @@ const ELA_KINDERGARTEN_EXAM = [
   { q: 'blend these sounds: b-i-g', a: 'big', variants: ['big'], standard: 'K.RF.2e', difficulty: 2, source: 'authored' },
 
   // K.RF.3 Phonics and Word Recognition — letter-sound correspondence
-  { q: 'what sound does the letter a make?', a: 'a', variants: ['a', 'ah', 'short a', 'ay'], standard: 'K.RF.3a', difficulty: 1, source: 'DIBELS-8-sample' },
+  { q: 'what sound does the letter a make?', a: 'a', variants: ['a', 'ah', 'short a', 'ay'], standard: 'K.RF.3a', difficulty: 1, source: 'DIBELS-8-sample',
+    methodology: { prompt: 'how do you know what sound a letter makes?', keywords: ['learn', 'remember', 'hear', 'practice', 'alphabet', 'teacher', 'say'], minKeywords: 1 } },
   { q: 'what sound does the letter b make?', a: 'b', variants: ['b', 'buh', 'bee'], standard: 'K.RF.3a', difficulty: 1, source: 'DIBELS-8-sample' },
   { q: 'what sound does the letter c make?', a: 'c', variants: ['c', 'k', 'kuh'], standard: 'K.RF.3a', difficulty: 1, source: 'DIBELS-8-sample' },
   { q: 'what sound does the letter d make?', a: 'd', variants: ['d', 'duh'], standard: 'K.RF.3a', difficulty: 1, source: 'DIBELS-8-sample' },
@@ -198,7 +203,8 @@ const ELA_KINDERGARTEN_EXAM = [
   { q: 'what is the opposite of day?', a: 'night', variants: ['night'], standard: 'K.L.5b', difficulty: 1, source: 'authored' },
 
   // Alphabet sequence (K.RF foundational)
-  { q: 'what letter comes after a?', a: 'b', variants: ['b'], standard: 'K.RF.1d', difficulty: 1, source: 'authored' },
+  { q: 'what letter comes after a?', a: 'b', variants: ['b'], standard: 'K.RF.1d', difficulty: 1, source: 'authored',
+    methodology: { prompt: 'how do you figure out which letter comes next in the alphabet?', keywords: ['alphabet', 'order', 'abc', 'sequence', 'next', 'song', 'memorize'], minKeywords: 1 } },
   { q: 'what letter comes after b?', a: 'c', variants: ['c'], standard: 'K.RF.1d', difficulty: 1, source: 'authored' },
   { q: 'what letter comes after c?', a: 'd', variants: ['d'], standard: 'K.RF.1d', difficulty: 1, source: 'authored' },
   { q: 'what letter comes after d?', a: 'e', variants: ['e'], standard: 'K.RF.1d', difficulty: 1, source: 'authored' },
@@ -311,13 +317,15 @@ const ELA_KINDERGARTEN_EXAM = [
 
 const MATH_KINDERGARTEN_EXAM = [
   // K.CC.1 Count to 100 by ones and tens
-  { q: 'count to ten', a: 'ten', variants: ['ten', '10'], standard: 'K.CC.1', difficulty: 1, source: 'AIMSweb-sample' },
+  { q: 'count to ten', a: 'ten', variants: ['ten', '10'], standard: 'K.CC.1', difficulty: 1, source: 'AIMSweb-sample',
+    methodology: { prompt: 'how do you count to a big number?', keywords: ['one', 'start', 'order', 'next', 'add', 'count', 'number', 'sequence'], minKeywords: 1 } },
   { q: 'count to twenty', a: 'twenty', variants: ['twenty', '20'], standard: 'K.CC.1', difficulty: 2, source: 'AIMSweb-sample' },
   { q: 'count by tens to fifty', a: 'fifty', variants: ['fifty', '50'], standard: 'K.CC.1', difficulty: 3, source: 'AIMSweb-sample' },
   { q: 'count by tens to one hundred', a: 'one hundred', variants: ['one hundred', '100', 'hundred'], standard: 'K.CC.1', difficulty: 3, source: 'AIMSweb-sample' },
 
   // K.CC.2 Count forward from a given number
-  { q: 'what comes after five?', a: 'six', variants: ['six', '6'], standard: 'K.CC.2', difficulty: 1, source: 'AIMSweb-sample' },
+  { q: 'what comes after five?', a: 'six', variants: ['six', '6'], standard: 'K.CC.2', difficulty: 1, source: 'AIMSweb-sample',
+    methodology: { prompt: 'how do you figure out the next number after any number?', keywords: ['add', 'plus', 'one', 'next', 'count', 'up', 'more'], minKeywords: 1 } },
   { q: 'what comes after seven?', a: 'eight', variants: ['eight', '8'], standard: 'K.CC.2', difficulty: 1, source: 'AIMSweb-sample' },
   { q: 'what comes after ten?', a: 'eleven', variants: ['eleven', '11'], standard: 'K.CC.2', difficulty: 2, source: 'AIMSweb-sample' },
   { q: 'what comes after twelve?', a: 'thirteen', variants: ['thirteen', '13'], standard: 'K.CC.2', difficulty: 2, source: 'AIMSweb-sample' },
@@ -355,7 +363,8 @@ const MATH_KINDERGARTEN_EXAM = [
   { q: 'if you count five toys, how many toys are there?', a: 'five', variants: ['five', '5'], standard: 'K.CC.5', difficulty: 1, source: 'authored' },
 
   // K.CC.6 Compare numbers as greater/less/equal
-  { q: 'which is more, three or five?', a: 'five', variants: ['five', '5'], standard: 'K.CC.6', difficulty: 1, source: 'AIMSweb-sample' },
+  { q: 'which is more, three or five?', a: 'five', variants: ['five', '5'], standard: 'K.CC.6', difficulty: 1, source: 'AIMSweb-sample',
+    methodology: { prompt: 'how do you know which number is more?', keywords: ['bigger', 'more', 'greater', 'count', 'higher', 'larger', 'than'], minKeywords: 1 } },
   { q: 'which is more, seven or four?', a: 'seven', variants: ['seven', '7'], standard: 'K.CC.6', difficulty: 1, source: 'AIMSweb-sample' },
   { q: 'which is less, two or six?', a: 'two', variants: ['two', '2'], standard: 'K.CC.6', difficulty: 1, source: 'AIMSweb-sample' },
   { q: 'which is less, nine or three?', a: 'three', variants: ['three', '3'], standard: 'K.CC.6', difficulty: 1, source: 'AIMSweb-sample' },
@@ -367,7 +376,8 @@ const MATH_KINDERGARTEN_EXAM = [
   { q: 'which number is smaller, 6 or 9?', a: '6', variants: ['6', 'six'], standard: 'K.CC.7', difficulty: 1, source: 'authored' },
 
   // K.OA.1 Represent addition/subtraction with objects
-  { q: 'one plus one is?', a: 'two', variants: ['two', '2'], standard: 'K.OA.1', difficulty: 1, source: 'DIBELS-8-sample' },
+  { q: 'one plus one is?', a: 'two', variants: ['two', '2'], standard: 'K.OA.1', difficulty: 1, source: 'DIBELS-8-sample',
+    methodology: { prompt: 'how do you add two numbers together?', keywords: ['add', 'plus', 'together', 'put', 'combine', 'count', 'total', 'sum'], minKeywords: 1 } },
   { q: 'two plus two is?', a: 'four', variants: ['four', '4'], standard: 'K.OA.1', difficulty: 1, source: 'DIBELS-8-sample' },
   { q: 'three plus one is?', a: 'four', variants: ['four', '4'], standard: 'K.OA.1', difficulty: 1, source: 'DIBELS-8-sample' },
   { q: 'two plus three is?', a: 'five', variants: ['five', '5'], standard: 'K.OA.1', difficulty: 1, source: 'DIBELS-8-sample' },
@@ -376,7 +386,8 @@ const MATH_KINDERGARTEN_EXAM = [
   { q: 'three plus three is?', a: 'six', variants: ['six', '6'], standard: 'K.OA.1', difficulty: 1, source: 'authored' },
   { q: 'four plus four is?', a: 'eight', variants: ['eight', '8'], standard: 'K.OA.1', difficulty: 1, source: 'authored' },
   { q: 'five plus five is?', a: 'ten', variants: ['ten', '10'], standard: 'K.OA.1', difficulty: 2, source: 'authored' },
-  { q: 'two minus one is?', a: 'one', variants: ['one', '1'], standard: 'K.OA.1', difficulty: 1, source: 'authored' },
+  { q: 'two minus one is?', a: 'one', variants: ['one', '1'], standard: 'K.OA.1', difficulty: 1, source: 'authored',
+    methodology: { prompt: 'how do you subtract one number from another?', keywords: ['minus', 'take', 'away', 'remove', 'less', 'subtract', 'fewer'], minKeywords: 1 } },
   { q: 'three minus one is?', a: 'two', variants: ['two', '2'], standard: 'K.OA.1', difficulty: 1, source: 'authored' },
   { q: 'four minus two is?', a: 'two', variants: ['two', '2'], standard: 'K.OA.1', difficulty: 1, source: 'authored' },
   { q: 'five minus three is?', a: 'two', variants: ['two', '2'], standard: 'K.OA.1', difficulty: 1, source: 'authored' },
@@ -427,7 +438,8 @@ const MATH_KINDERGARTEN_EXAM = [
   { q: 'name three colors', a: 'red', variants: ['red', 'blue', 'yellow', 'green', 'orange', 'pink'], standard: 'K.MD.3', difficulty: 1, source: 'authored' },
 
   // K.G.1 Describe objects in the environment using shapes
-  { q: 'what shape has three sides?', a: 'triangle', variants: ['triangle'], standard: 'K.G.1', difficulty: 1, source: 'AIMSweb-sample' },
+  { q: 'what shape has three sides?', a: 'triangle', variants: ['triangle'], standard: 'K.G.1', difficulty: 1, source: 'AIMSweb-sample',
+    methodology: { prompt: 'how do you tell what shape something is?', keywords: ['sides', 'count', 'corners', 'edges', 'round', 'shape', 'look'], minKeywords: 1 } },
   { q: 'what shape has four equal sides?', a: 'square', variants: ['square'], standard: 'K.G.1', difficulty: 1, source: 'AIMSweb-sample' },
   { q: 'what shape is round?', a: 'circle', variants: ['circle'], standard: 'K.G.1', difficulty: 1, source: 'AIMSweb-sample' },
   { q: 'what shape has four sides but two long and two short?', a: 'rectangle', variants: ['rectangle'], standard: 'K.G.1', difficulty: 2, source: 'AIMSweb-sample' },
@@ -529,7 +541,8 @@ const MATH_KINDERGARTEN_EXAM = [
 
 const SCIENCE_KINDERGARTEN_EXAM = [
   // K-PS2-1/2 — Motion and stability: forces
-  { q: 'what happens when you drop a ball?', a: 'falls', variants: ['falls', 'fall', 'drops', 'bounce'], standard: 'K-PS2-1', difficulty: 1, source: 'authored' },
+  { q: 'what happens when you drop a ball?', a: 'falls', variants: ['falls', 'fall', 'drops', 'bounce'], standard: 'K-PS2-1', difficulty: 1, source: 'authored',
+    methodology: { prompt: 'why does a ball fall when you drop it?', keywords: ['gravity', 'down', 'pull', 'earth', 'weight'], minKeywords: 1 } },
   { q: 'what makes something move faster, a big push or a small push?', a: 'big', variants: ['big', 'big push', 'hard', 'strong'], standard: 'K-PS2-1', difficulty: 1, source: 'authored' },
   { q: 'if you push a ball, which way does it go, towards you or away?', a: 'away', variants: ['away'], standard: 'K-PS2-1', difficulty: 1, source: 'authored' },
   { q: 'if you pull a rope, which way does it come?', a: 'toward', variants: ['toward', 'towards', 'to you', 'closer'], standard: 'K-PS2-1', difficulty: 2, source: 'authored' },
@@ -559,7 +572,8 @@ const SCIENCE_KINDERGARTEN_EXAM = [
   { q: 'what do you call water that is frozen?', a: 'ice', variants: ['ice'], standard: 'K-PS1', difficulty: 1, source: 'authored' },
   { q: 'what do you call water that is really hot and going up in the air?', a: 'steam', variants: ['steam', 'vapor', 'gas'], standard: 'K-PS1', difficulty: 2, source: 'authored' },
   // K-LS1-1 — Structure and function of plants/animals
-  { q: 'what do plants need to grow?', a: 'water', variants: ['water', 'sun', 'light', 'sunlight'], standard: 'K-LS1-1', difficulty: 1, source: 'authored' },
+  { q: 'what do plants need to grow?', a: 'water', variants: ['water', 'sun', 'light', 'sunlight'], standard: 'K-LS1-1', difficulty: 1, source: 'authored',
+    methodology: { prompt: 'why do plants need water and sunlight?', keywords: ['food', 'grow', 'alive', 'photosynthesis', 'make', 'drink', 'need'], minKeywords: 1 } },
   { q: 'what do fish use to breathe?', a: 'gills', variants: ['gills', 'water'], standard: 'K-LS1-1', difficulty: 2, source: 'authored' },
   { q: 'do plants need sunlight?', a: 'yes', variants: ['yes', 'yeah'], standard: 'K-LS1-1', difficulty: 1, source: 'authored' },
   { q: 'what do animals need to drink?', a: 'water', variants: ['water'], standard: 'K-LS1-1', difficulty: 1, source: 'authored' },
@@ -690,7 +704,8 @@ const SOCIAL_KINDERGARTEN_EXAM = [
   { q: 'what is your dad\'s brother called?', a: 'uncle', variants: ['uncle'], standard: 'K-Social-family', difficulty: 2, source: 'authored' },
   { q: 'what is your aunt\'s child called?', a: 'cousin', variants: ['cousin'], standard: 'K-Social-family', difficulty: 2, source: 'authored' },
   // Manners
-  { q: 'what do you say when someone helps you?', a: 'thank', variants: ['thank you', 'thanks', 'thank'], standard: 'K-Social-manners', difficulty: 1, source: 'authored' },
+  { q: 'what do you say when someone helps you?', a: 'thank', variants: ['thank you', 'thanks', 'thank'], standard: 'K-Social-manners', difficulty: 1, source: 'authored',
+    methodology: { prompt: 'why is it important to say thank you?', keywords: ['polite', 'kind', 'nice', 'manners', 'respect', 'good', 'appreciate'], minKeywords: 1 } },
   { q: 'what do you say when you want something?', a: 'please', variants: ['please'], standard: 'K-Social-manners', difficulty: 1, source: 'authored' },
   { q: 'what do you say when you bump into someone?', a: 'sorry', variants: ['sorry', 'excuse me'], standard: 'K-Social-manners', difficulty: 1, source: 'authored' },
   { q: 'what do you say when you meet someone new?', a: 'hello', variants: ['hello', 'hi', 'nice to meet you'], standard: 'K-Social-manners', difficulty: 1, source: 'authored' },
@@ -811,7 +826,8 @@ const ART_KINDERGARTEN_EXAM = [
   { q: 'is blue a primary color?', a: 'yes', variants: ['yes', 'yeah'], standard: 'K-Art-primary', difficulty: 2, source: 'authored' },
   { q: 'is yellow a primary color?', a: 'yes', variants: ['yes', 'yeah'], standard: 'K-Art-primary', difficulty: 2, source: 'authored' },
   // Color mixing
-  { q: 'what color do you get when you mix red and yellow?', a: 'orange', variants: ['orange'], standard: 'K-Art-color-mixing', difficulty: 1, source: 'authored' },
+  { q: 'what color do you get when you mix red and yellow?', a: 'orange', variants: ['orange'], standard: 'K-Art-color-mixing', difficulty: 1, source: 'authored',
+    methodology: { prompt: 'how do you make a new color?', keywords: ['mix', 'combine', 'blend', 'add', 'together', 'stir'], minKeywords: 1 } },
   { q: 'what color do you get when you mix blue and yellow?', a: 'green', variants: ['green'], standard: 'K-Art-color-mixing', difficulty: 1, source: 'authored' },
   { q: 'what color do you get when you mix red and blue?', a: 'purple', variants: ['purple'], standard: 'K-Art-color-mixing', difficulty: 1, source: 'authored' },
   { q: 'what two colors make green?', a: 'blue and yellow', variants: ['blue and yellow', 'yellow and blue'], standard: 'K-Art-color-mixing', difficulty: 2, source: 'authored' },
@@ -892,7 +908,8 @@ const LIFE_KINDERGARTEN_EXAM = [
   { q: 'are you a kid or an adult?', a: 'kid', variants: ['kid', 'child'], standard: 'K-Life-identity', difficulty: 1, source: 'authored' },
   { q: 'what is your teacher called?', a: 'teacher', variants: ['teacher'], standard: 'K-Life-identity', difficulty: 1, source: 'authored' },
   // Feelings
-  { q: 'how are you feeling?', a: 'good', variants: ['good', 'happy', 'fine', 'ok'], standard: 'K-Life-feelings', difficulty: 1, source: 'authored' },
+  { q: 'how are you feeling?', a: 'good', variants: ['good', 'happy', 'fine', 'ok'], standard: 'K-Life-feelings', difficulty: 1, source: 'authored',
+    methodology: { prompt: 'how do you know what you are feeling?', keywords: ['inside', 'body', 'heart', 'think', 'notice', 'feel', 'check'], minKeywords: 1 } },
   { q: 'what does it mean when you smile?', a: 'happy', variants: ['happy'], standard: 'K-Life-feelings', difficulty: 1, source: 'authored' },
   { q: 'what does it mean when you cry?', a: 'sad', variants: ['sad', 'hurt'], standard: 'K-Life-feelings', difficulty: 1, source: 'authored' },
   { q: 'what does it feel like when someone hugs you?', a: 'love', variants: ['love', 'happy', 'warm', 'safe', 'good'], standard: 'K-Life-feelings', difficulty: 2, source: 'authored' },
