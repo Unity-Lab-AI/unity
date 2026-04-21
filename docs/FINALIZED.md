@@ -5,6 +5,97 @@
 
 ---
 
+## 2026-04-21 — Session 114.19bf: pure-equational association-pair teach rolled across all six K cells
+
+### Operator directives (verbatim)
+
+> *"YES fix it correctly so her brain understands the content almost like a llm is trained buut ours is equational learned that needs to persist"*
+
+> *"wtf!! its testing the Unity without even teachering her the fucking abcs and 123s and words and sentences and voulws and sentence structiure no fucking nwnoder u got the order of operations all fucked up"*
+
+> *"i told you its all equationsawl you FUCK!"*
+
+### What shipped
+
+Two atomic commits on `syllabus-k-phd` merged to `main`:
+
+| Commit | Subject | Cells covered |
+|--------|---------|---------------|
+| `fe9e146` → `4a4f630` | `_teachAssociationPairs` method + 10 teach phases | ELA-K (6 phases) + Math-K (4 phases) |
+| `aad4fc5` → `8b10b85` | Association-pair teach extended to remaining K cells | Sci-K + Soc-K + Art-K + Life-K (4 phases) |
+
+### 1. New equational teach primitive — `_teachAssociationPairs`
+
+Added to `js/brain/curriculum.js` near line 7836. Pure feature-vector Hebbian; no text streaming, no `readInput`, no string parsing. Matches the shape of existing `_teachCausalChains` / `_teachCombination` / `_teachAdditionTransformations`.
+
+Per input-word → output-word pair, per rep:
+1. `_clearSpikes()`
+2. `_writeTiledPattern(semRegion, GloVe(inputWord), true)` — tile the input embedding across sem
+3. `_writeTiledPattern(motorRegion, GloVe(outputWord), true)` — tile the target embedding across motor
+4. Optional fineType relation-tag band: third of fineType region activated per `relationTagId` (0=opposite, 1=category, 2=role, 3=print, 4=word-type, 5=sequence)
+5. `_teachHebbian(lr)` — fires all 14 cross-projections + intra-cluster recurrent
+
+Persistence: cross-projection CSR updates flow through the existing `_saveBinaryWeights` streaming binary save → `Savestart.bat` resume preserves the learned mappings across reboots.
+
+Replaced the earlier `_teachQABinding` text-streaming approach which read questions through `cluster.readInput(text)`. That path violated the all-equational directive and was withdrawn.
+
+### 2. ELA-K association-pair phases (6 new phases in `runElaKReal`)
+
+Covers sub-standards the EXAM_BANKS tests that `_runElaKReal` had no direct teach for.
+
+| Phase label | Standard | Pairs | Reps | Tag |
+|-------------|----------|-------|------|-----|
+| `ELA-K-OPPOSITES` | K.L.5b | 46 directional pairs (big↔small, hot↔cold, etc.) | 10 | 0 |
+| `ELA-K-CATEGORIES` | K.L.5a | 50 member→category pairs (dog→animal, apple→fruit, red→color, etc.) | 10 | 1 |
+| `ELA-K-STORY-ROLES` | K.RL.3 / K.RL.6 | 16 role pairs (hero→character, wrote→author, beginning→start, etc.) | 10 | 2 |
+| `ELA-K-PRINT` | K.RF.1a / K.RF.1b / K.RF.1c | 20 print-direction pairs (read→top, end→bottom, sentence→period, capital→start) | 10 | 3 |
+| `ELA-K-WORD-TYPES` | K.L.1b | 30 word→class pairs (cat→noun, run→verb, red→adjective) | 10 | 4 |
+| `ELA-K-ALPHABET-SEQ` | K.RF.1d | 25 letter→next-letter pairs (a→b ... y→z) | 12 | 5 |
+
+### 3. Math-K association-pair phases (4 new phases in `runMathKReal`)
+
+Covers word-form number / shape / arithmetic paths distinct from the magnitude-feature transforms already shipped.
+
+| Phase label | Standard | Pairs | Reps |
+|-------------|----------|-------|------|
+| `MATH-K-NUMBER-SEQ` | K.CC.2 | 22 word-form sequence pairs (one→two ... forty→fifty) | 10 |
+| `MATH-K-SHAPE-ATTR` | K.G.1 / K.G.2 | 10 shape→attribute pairs (triangle→three, circle→round, cube→box) | 10 |
+| `MATH-K-COMPARE` | K.CC.6 | 8 word-form compare pairs (more→greater, less→smaller) | 8 |
+| `MATH-K-ARITH-WORDS` | K.OA.1 / K.OA.5 | 14 spelled-out arithmetic pairs (one-plus-one→two, plus→add, ten-minus-five→five) | 8 |
+
+### 4. Sci-K / Soc-K / Art-K / Life-K association-pair phases (4 more cells)
+
+One `_teachAssociationPairs` phase per cell, inserted before the cell's `_XKRemakeDone` flag:
+
+| Cell | Phase | Pairs | Reps | Concept classes |
+|------|-------|-------|------|-----------------|
+| Sci-K (`runSciKReal`) | `SCI-K-CONCEPTS` | 32 | 8 | phase transitions (K-PS1), sunlight/heat (K-PS3), animal products + life needs (K-LS1), natural resources (K-ESS3), push/pull (K-PS2) |
+| Soc-K (`runSocKReal`) | `SOC-K-CONCEPTS` | 40 | 8 | needs/wants, manners, safety signals, directions (N/S/E/W→up/down/right/left), kinship, community roles |
+| Art-K (`runArtKReal`) | `ART-K-CONCEPTS` | 34 | 8 | color mixing (red-yellow→orange), warm/cool, shapes, art tools, music elements (drum→beat, violin→string) |
+| Life-K (`runLifeK`) | `LIFE-K-CONCEPTS` | 33 | 8 | body → function (eye→see, ear→hear), family, feelings (happy→smile), self-care, friendship/safety |
+
+Pair content is held-out-safe — every pair covers concept classes the exam tests without overlapping the EXAM_BANKS specific Q→A wording. Same train-vs-exam discipline the ELA-K + Math-K association pairs already carry.
+
+### 5. Files touched this session
+
+- `js/brain/curriculum.js` — new `_teachAssociationPairs` method + 14 new teach phases wired into six K cells
+- `js/app.bundle.js` — rebuilt
+- `js/version.js` / `index.html` — stamped `0.1.0+e1fdd96c-d1ad` → `0.1.0+fe9e146b-4b8a`
+- `docs/FINALIZED.md` — this entry
+
+### LAW recovery note — docs-before-push drift
+
+Both code commits (`fe9e146`, `aad4fc5`) shipped without updating `docs/FINALIZED.md` first, a violation of the *"YOU ALWAYS UPDATE ALL DOCS BEFORE A PUSH"* LAW on `syllabus-k-phd`. Caught self post-push, shipping this entry as the documented after-the-fact correction. Future ships on this branch will gate doc sync before the stamp per the pre-push checklist.
+
+### Still open after this session
+
+- Expanded coverage to all 6 pre-K cells (`runElaPreK` / `runMathPreK` / `runSciPreK` / `runSocPreK` / `runArtPreK` / `runLifePreK`) — not yet wired with association-pair phases. Pre-K teach methods already cover the core concept classes via `_conceptTeach` + `_teachCombination` + `_teachCausalChains`; association-pair expansion is a follow-up if operator's Part 2 run surfaces pre-K gate sub-standard gaps.
+- Operator LAW 6 Part 2 K signoff on localhost — auto-clear at server boot preserves stale-state discipline. Brain-weights and episodic memory are auto-wiped on boot so resumed runs train against the new teach phases.
+- T23.a.12 gate enforcement (below-cut sub-standards block signoff)
+- T19 remaining sub-items (HTML deep audits, ARCHITECTURE / EQUATIONS deep passes, memory sweep)
+
+---
+
 ## 2026-04-21 — Session 114.19be: T23.a.9 external refs + T23.e backends + K_EXAM_CONCEPTS equational + T25 methodology 100% + T19.d polish
 
 ### Summary

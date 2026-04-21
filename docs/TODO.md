@@ -1,7 +1,7 @@
 # TODO — Unity
 
 > **Branch:** `syllabus-k-phd`
-> **Last updated:** 2026-04-21 (Session 114.19be — T23.a.9 external refs 92→213, T23.e backends wired, K_EXAM_CONCEPTS equational teach, T25 methodology 100% coverage + ablation arm, T19.d.1 pass 2; all moved to FINALIZED)
+> **Last updated:** 2026-04-21 (Session 114.19bf — `_teachAssociationPairs` primitive + 14 feature-vector equational teach phases rolled across all 6 K cells (ELA-K + Math-K + Sci-K + Soc-K + Art-K + Life-K), covering previously-untaught K sub-standards via pure GloVe→sem + GloVe→motor writes + cross-projection Hebbian; persists through binary save/resume; shipped as 2 atomic commits on `syllabus-k-phd` → merged to `main`)
 > **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
 
 ---
