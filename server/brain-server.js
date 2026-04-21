@@ -5177,18 +5177,26 @@ wss.on('connection', (ws, req) => {
     // T17.3.e — binary WebSocket frames for sparse matrix responses.
     // Client sends "SPRR" magic + type + reqId + payload. Decode and
     // route to the matching pending promise.
-    if (Buffer.isBuffer(data) && data.length >= 9 && data.slice(0, 4).toString('ascii') === 'SPRR') {
+    if (Buffer.isBuffer(data) && data.length >= 12 && data.slice(0, 4).toString('ascii') === 'SPRR') {
       const typeByte = data[4];
-      const reqId = data.readUInt32LE(5);
+      // SPRR header layout (16 bytes for propagate, 9 bytes for
+      // upload_ack/hebbian_ack):
+      //   propagate: magic(4) + typeByte(1) + pad(3) + reqId(4) + clen(4) + floats
+      //   others:    magic(4) + typeByte(1) + reqId(4)
+      // propagate was bumped 13 → 16 so the Float32 payload starts on
+      // a 4-byte boundary (compute.html used to emit new Float32Array(
+      // resp, 13, clen) which is a WebGPU-validator violation —
+      // "start offset of Float32Array should be a multiple of 4").
+      const reqId = typeByte === 2 ? data.readUInt32LE(8) : data.readUInt32LE(5);
       if (brain._gpuSparsePending) {
         const pending = brain._gpuSparsePending.get(reqId);
         if (pending) {
           brain._gpuSparsePending.delete(reqId);
           clearTimeout(pending.timeout);
           if (typeByte === 2) {
-            // propagate response — currents Float32Array
-            const currentsLen = data.readUInt32LE(9);
-            const currentsOffset = 13;
+            // propagate response — currents Float32Array at offset 16
+            const currentsLen = data.readUInt32LE(12);
+            const currentsOffset = 16;
             const expectedLen = currentsOffset + currentsLen * 4;
             if (data.length < expectedLen) {
               pending.resolve({ error: 'truncated propagate response' });
