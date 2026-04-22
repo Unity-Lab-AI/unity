@@ -4182,6 +4182,13 @@ class ServerBrain {
             // Multi-subject grade state
             grades: cortex.grades && typeof cortex.grades === 'object' ? { ...cortex.grades } : null,
             passedCells: Array.isArray(cortex.passedCells) ? [...cortex.passedCells] : null,
+            // Phase-level resume markers. Persisted so Savestart.bat can
+            // skip already-completed teach phases within an in-flight cell.
+            // Populated by _phaseDone in the cell runners (e.g. ela/kindergarten:_teachWordEmission).
+            // Without this, a cell whose gate has not yet passed would
+            // re-run every phase from scratch on every boot even though
+            // cross-projection weights were preserved on disk.
+            passedPhases: Array.isArray(cortex.passedPhases) ? [...cortex.passedPhases] : null,
             probeHistory: cortex.probeHistory && typeof cortex.probeHistory === 'object' ? { ...cortex.probeHistory } : null,
             // Grade-advance pause state. When a grade fully passes across
             // all subjects, the runner sets `_gradeAdvancePaused = true`
@@ -4710,6 +4717,10 @@ class ServerBrain {
           };
         }
         if (Array.isArray(pending.passedCells)) cortex.passedCells = [...pending.passedCells];
+        // Phase-level resume markers — so Savestart.bat can skip phases
+        // whose _phaseDone already fired in a prior run. Weights live on
+        // disk via brain-weights.bin, markers live here.
+        if (Array.isArray(pending.passedPhases)) cortex.passedPhases = [...pending.passedPhases];
         if (pending.probeHistory && typeof pending.probeHistory === 'object') {
           cortex.probeHistory = { ...pending.probeHistory };
         }
