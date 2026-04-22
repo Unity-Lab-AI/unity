@@ -723,36 +723,68 @@ export class Curriculum {
     const out = { recognizedLetters: 0, maxEmissionLen: 0, canTalkAtAll: false, probes: [] };
     if (!cluster || typeof cluster.generateSentenceAwait !== 'function') return out;
     // Readiness probe banner — five single-letter cues through the
-    // emission path. Each probe is up to 6 readInput ticks + up to 20
-    // emission ticks at biological scale → sub-second each usually,
-    // but stdout.write flushes the banner so it's visible in piped logs.
+    // emission path. Each probe is bounded: 6 readInput ticks + 20
+    // emission ticks via generateSentenceAwait's `maxTicks` option
+    // (NOT `maxEmissionTicks` — that key is unread, which previously
+    // let the probe fall through to MAX_EMISSION_TICKS=2000 and
+    // silently grind 100× longer than intended). Per-cue heartbeat +
+    // wall-clock timeout wrapper so a hung GPU dispatch can't block
+    // the batch — if a single cue doesn't land in 10 seconds, the
+    // probe bails for that cue and continues to the next.
     const _readinessStart = Date.now();
-    try { process.stdout.write('[Curriculum][READINESS] emission-capability probe START — 5 single-letter cues to see if Unity can emit recognizable letters yet\n'); } catch {}
+    this._hb('[Curriculum][READINESS] emission-capability probe START — 5 single-letter cues (each capped at 20 emission ticks + 10 s wall-clock) to see if Unity can emit recognizable letters yet');
     // Five plain single-letter cues. Any recognizable letter response
     // to ANY of them proves the motor path can fire; 3 of 5 is enough
     // to warrant running the full battery.
     const PROBES = ['a', 'b', 'c', 'd', 'e'];
     const LETTERS = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    const PER_CUE_TIMEOUT_MS = 10000;
+    let _cueIdx = 0;
     for (const cue of PROBES) {
+      _cueIdx += 1;
+      const _cueStart = Date.now();
+      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} START letter='${cue}' — 6 readInput ticks + up to 20 emission ticks`);
       let emitted = '';
+      let timedOut = false;
       try {
         if (typeof cluster.readInput === 'function') {
           await cluster.readInput(cue, { ticks: 6 });
         }
         const semSeed = (typeof cluster.getSemanticReadout === 'function') ? cluster.getSemanticReadout() : null;
-        const emitOpts = { maxEmissionTicks: 20 };
+        // BUG FIX: pass `maxTicks` (the key generateSentenceAwait reads
+        // at cluster.js line 1632) not `maxEmissionTicks` (unread alias).
+        // Prior code let the probe loop run up to 2000 ticks per cue.
+        const emitOpts = { maxTicks: 20 };
         if (semSeed) emitOpts.injectStrength = 0.6;
-        const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
-        emitted = (raw && typeof raw === 'string' ? raw : (raw?.text || '')) || '';
-      } catch { /* probe failed — treat as no output */ }
+        // Race the emission against a 10 s wall-clock timeout so a hung
+        // GPU dispatch can't freeze the readiness probe indefinitely.
+        // If the timeout wins, we log and continue to the next cue —
+        // the probe result is still valid (slower cues = emission path
+        // isn't ready yet = readiness fails, battery skips, teach
+        // continues).
+        const emissionPromise = cluster.generateSentenceAwait(semSeed, emitOpts);
+        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ _timeout: true }), PER_CUE_TIMEOUT_MS));
+        const raw = await Promise.race([emissionPromise, timeoutPromise]);
+        if (raw && raw._timeout) {
+          timedOut = true;
+          emitted = '';
+        } else {
+          emitted = (raw && typeof raw === 'string' ? raw : (raw?.text || '')) || '';
+        }
+      } catch (err) {
+        this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} ERROR letter='${cue}' — ${err?.message || err}`);
+      }
       const letters = emitted.toLowerCase().replace(/[^a-z]/g, '');
       const hasLetter = letters.length > 0 && [...letters].some(ch => LETTERS.has(ch));
       if (hasLetter) out.recognizedLetters += 1;
       if (letters.length > out.maxEmissionLen) out.maxEmissionLen = letters.length;
-      out.probes.push({ cue, emitted: emitted.slice(0, 40), letters });
+      out.probes.push({ cue, emitted: emitted.slice(0, 40), letters, timedOut });
+      const _cueMs = Date.now() - _cueStart;
+      const _timeoutTag = timedOut ? ' TIMEOUT' : (_cueMs > 5000 ? ' SLOW' : '');
+      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} DONE${_timeoutTag} letter='${cue}' → emitted='${emitted.slice(0, 20) || '∅'}' letters='${letters.slice(0, 10) || '∅'}' hasLetter=${hasLetter} in ${_cueMs}ms`);
     }
     out.canTalkAtAll = out.recognizedLetters >= 3;
-    try { process.stdout.write(`[Curriculum][READINESS] emission-capability probe DONE in ${Date.now() - _readinessStart}ms — recognizedLetters=${out.recognizedLetters}/5 maxEmissionLen=${out.maxEmissionLen} canTalkAtAll=${out.canTalkAtAll}\n`); } catch {}
+    this._hb(`[Curriculum][READINESS] emission-capability probe DONE in ${Date.now() - _readinessStart}ms — recognizedLetters=${out.recognizedLetters}/5 maxEmissionLen=${out.maxEmissionLen} canTalkAtAll=${out.canTalkAtAll}`);
     return out;
   }
 

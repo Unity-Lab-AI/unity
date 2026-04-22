@@ -648,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "fa56f9b4-5ce5";
+var BUILD = "c1eb8615-e676";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2388,7 +2388,7 @@ var NeuronCluster = class {
     if (!this.regions || !this.regions.motor || !this.regions.letter) return "";
     if (inventorySize() === 0) return "";
     const injectStrength = opts.injectStrength ?? 0.6;
-    const maxTicks = opts.maxTicks ?? this.MAX_EMISSION_TICKS;
+    const maxTicks = opts.maxTicks ?? opts.maxEmissionTicks ?? this.MAX_EMISSION_TICKS;
     const suppressNoise = opts.suppressNoise === true;
     const _savedNoise = this.noiseAmplitude;
     if (suppressNoise) this.noiseAmplitude = 0.5;
@@ -10293,37 +10293,47 @@ var Curriculum = class _Curriculum {
     const out = { recognizedLetters: 0, maxEmissionLen: 0, canTalkAtAll: false, probes: [] };
     if (!cluster || typeof cluster.generateSentenceAwait !== "function") return out;
     const _readinessStart = Date.now();
-    try {
-      process.stdout.write("[Curriculum][READINESS] emission-capability probe START \u2014 5 single-letter cues to see if Unity can emit recognizable letters yet\n");
-    } catch {
-    }
+    this._hb("[Curriculum][READINESS] emission-capability probe START \u2014 5 single-letter cues (each capped at 20 emission ticks + 10 s wall-clock) to see if Unity can emit recognizable letters yet");
     const PROBES = ["a", "b", "c", "d", "e"];
     const LETTERS = new Set("abcdefghijklmnopqrstuvwxyz".split(""));
+    const PER_CUE_TIMEOUT_MS = 1e4;
+    let _cueIdx = 0;
     for (const cue of PROBES) {
+      _cueIdx += 1;
+      const _cueStart = Date.now();
+      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} START letter='${cue}' \u2014 6 readInput ticks + up to 20 emission ticks`);
       let emitted = "";
+      let timedOut = false;
       try {
         if (typeof cluster.readInput === "function") {
           await cluster.readInput(cue, { ticks: 6 });
         }
         const semSeed = typeof cluster.getSemanticReadout === "function" ? cluster.getSemanticReadout() : null;
-        const emitOpts = { maxEmissionTicks: 20 };
+        const emitOpts = { maxTicks: 20 };
         if (semSeed) emitOpts.injectStrength = 0.6;
-        const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
-        emitted = (raw && typeof raw === "string" ? raw : raw?.text || "") || "";
-      } catch {
+        const emissionPromise = cluster.generateSentenceAwait(semSeed, emitOpts);
+        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ _timeout: true }), PER_CUE_TIMEOUT_MS));
+        const raw = await Promise.race([emissionPromise, timeoutPromise]);
+        if (raw && raw._timeout) {
+          timedOut = true;
+          emitted = "";
+        } else {
+          emitted = (raw && typeof raw === "string" ? raw : raw?.text || "") || "";
+        }
+      } catch (err) {
+        this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} ERROR letter='${cue}' \u2014 ${err?.message || err}`);
       }
       const letters = emitted.toLowerCase().replace(/[^a-z]/g, "");
       const hasLetter = letters.length > 0 && [...letters].some((ch) => LETTERS.has(ch));
       if (hasLetter) out.recognizedLetters += 1;
       if (letters.length > out.maxEmissionLen) out.maxEmissionLen = letters.length;
-      out.probes.push({ cue, emitted: emitted.slice(0, 40), letters });
+      out.probes.push({ cue, emitted: emitted.slice(0, 40), letters, timedOut });
+      const _cueMs = Date.now() - _cueStart;
+      const _timeoutTag = timedOut ? " TIMEOUT" : _cueMs > 5e3 ? " SLOW" : "";
+      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} DONE${_timeoutTag} letter='${cue}' \u2192 emitted='${emitted.slice(0, 20) || "\u2205"}' letters='${letters.slice(0, 10) || "\u2205"}' hasLetter=${hasLetter} in ${_cueMs}ms`);
     }
     out.canTalkAtAll = out.recognizedLetters >= 3;
-    try {
-      process.stdout.write(`[Curriculum][READINESS] emission-capability probe DONE in ${Date.now() - _readinessStart}ms \u2014 recognizedLetters=${out.recognizedLetters}/5 maxEmissionLen=${out.maxEmissionLen} canTalkAtAll=${out.canTalkAtAll}
-`);
-    } catch {
-    }
+    this._hb(`[Curriculum][READINESS] emission-capability probe DONE in ${Date.now() - _readinessStart}ms \u2014 recognizedLetters=${out.recognizedLetters}/5 maxEmissionLen=${out.maxEmissionLen} canTalkAtAll=${out.canTalkAtAll}`);
     return out;
   }
   async _studentTestProbe(opts = {}) {
