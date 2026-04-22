@@ -2604,11 +2604,29 @@ export class NeuronCluster {
     // step(). Each missing projection becomes a worker-pool job; all
     // jobs run concurrently across cores, populating the cache before
     // step() consumes it.
-    if (this._sparsePool && this._sparsePool.ready) {
+    //
+    // BIOLOGICAL-SCALE BYPASS. Same fix T18.19 applied to intra-synapses
+    // Hebbian: at 301K cortex the worker pool allocates a fresh
+    // SharedArrayBuffer for each non-shared input (values/colIdx/rowPtr
+    // + pSpikes + output) per call. 15 projections × ~125 MB per-call
+    // SAB alloc = ~1.9 GB per tick; across hundreds of ticks per teach
+    // phase this accumulates into 37 GB+ of arrayBuffers memory (seen
+    // in the ab= heartbeat field). At biological scale the pool's
+    // alloc overhead dominates the matmul cost anyway, so single-thread
+    // CPU via step()'s tail path is strictly faster + allocation-free.
+    // Browser-scale (<100K) keeps the pool since compute cost dominates.
+    // Also caches pSpikes Uint32Array buffers on the cluster — reused
+    // across cache-miss fallbacks even when the pool runs.
+    const BIOLOGICAL_SCALE_SYNC_THRESHOLD = 100_000;
+    const atBioScale = (this.size | 0) > BIOLOGICAL_SCALE_SYNC_THRESHOLD;
+    if (this._sparsePool && this._sparsePool.ready && !atBioScale) {
       const poolJobs = [];
       // Intra-cluster cache miss
       if (!this._cachedIntraCurrents && this.synapses && this.lastSpikes) {
-        const pSpikes = new Uint32Array(this.lastSpikes.length);
+        if (!this._cachedIntraPSpikes || this._cachedIntraPSpikes.length !== this.lastSpikes.length) {
+          this._cachedIntraPSpikes = new Uint32Array(this.lastSpikes.length);
+        }
+        const pSpikes = this._cachedIntraPSpikes;
         for (let i = 0; i < this.lastSpikes.length; i++) pSpikes[i] = this.lastSpikes[i] ? 1 : 0;
         poolJobs.push(
           this._sparsePool.propagate(this.synapses, pSpikes).then((out) => {
@@ -2618,6 +2636,7 @@ export class NeuronCluster {
       }
       // Cross-projection cache misses
       if (this.crossProjections) {
+        if (!this._cachedCrossPSpikesByProj) this._cachedCrossPSpikesByProj = new Map();
         for (const [projName, proj] of Object.entries(this.crossProjections)) {
           if (this._cachedCrossCurrents.has(projName)) continue; // GPU filled it
           const idx = projName.indexOf('_to_');
@@ -2625,7 +2644,11 @@ export class NeuronCluster {
           const src = projName.slice(0, idx);
           if (!this.regions[src]) continue;
           const srcSpikes = this.regionSpikes(src);
-          const pSpikes = new Uint32Array(srcSpikes.length);
+          let pSpikes = this._cachedCrossPSpikesByProj.get(projName);
+          if (!pSpikes || pSpikes.length !== srcSpikes.length) {
+            pSpikes = new Uint32Array(srcSpikes.length);
+            this._cachedCrossPSpikesByProj.set(projName, pSpikes);
+          }
           for (let i = 0; i < srcSpikes.length; i++) pSpikes[i] = srcSpikes[i] > 0 ? 1 : 0;
           const cache = this._cachedCrossCurrents;
           poolJobs.push(

@@ -2791,6 +2791,11 @@ class ServerBrain {
    */
   async gpuReadbackCortexLetterBuckets(regionName, bucketCount, subSliceLen, startOffset = 0) {
     if (!this._gpuClient || this._gpuClient.readyState !== 1) return null;
+    // Timeout bumped 5s → 30s so readback can land even when compute.html
+    // is still draining a post-teach dispatch queue (binary weights save
+    // + many hebbianBound dispatches can delay the readback ACK past 5s).
+    // 30s matches the default sparse-dispatch timeout; readback is rare
+    // (per emission probe) so the longer cap doesn't slow the hot path.
     const ack = await this._sparseSend({
       type: 'readback_letter_buckets',
       clusterName: 'cortex',
@@ -2798,7 +2803,7 @@ class ServerBrain {
       bucketCount,
       subSliceLen,
       startOffset,
-    }, 5000);
+    }, 30000);
     if (!ack || !ack.counts) return null;
     return new Uint32Array(ack.counts);
   }

@@ -5,6 +5,73 @@
 
 ---
 
+## 2026-04-22 — Session 114.19bq: T34 — readback timeout + drainWait + SAB leak in stepAwait pool fallback (Art-K gate PROD 0/9 unblocker)
+
+### Operator verbatim 2026-04-22 — log snippet captured
+
+```
+[Brain] Binary weights saved 4 sections, 2412.3 MB → brain-weights.bin
+[Curriculum][READINESS] cue 1/5 START letter='a' — 6 readInput ticks + up to 20 emission ticks
+[Brain] sparse dispatch reqId=13877 type=readback_letter_buckets timed out after 5000ms
+[Curriculum][READINESS] cue 1/5 DONE TIMEOUT letter='a' → emitted='∅' letters='∅' hasLetter=false in 10018ms
+... [5/5 cues TIMEOUT] ...
+[Curriculum][READINESS] emission-capability probe DONE in 55060ms — recognizedLetters=0/5 maxEmissionLen=0 canTalkAtAll=false
+[MEM] cell-exit art/kindergarten pass=false: heap=131.9MB external=3275.0MB arrayBuffers=37392.3MB rss=37087.5MB
+[Curriculum] ═══ CELL DONE ═══ art/kindergarten in 291.5s — pass=false (reason: PROD 0/9 (0%))
+```
+
+Two interlocking problems:
+
+1. **Every readiness cue timed out** → readiness failed → K-STUDENT battery skipped → PROD probes emit nothing → Art-K gate fails 0/9 → retry fails same way → cell marked failed. Art-K never passes, advance blocked.
+2. **`arrayBuffers=37392.3MB` (37 GB)** — massive SharedArrayBuffer accumulation. Node's `external` only reports 3.3 GB (V8-tracked) but `arrayBuffers` captures SAB too — 37 GB of SAB memory allocated by the worker-pool path and not released.
+
+### Root causes
+
+**Readback timeout root cause:** `gpuReadbackCortexLetterBuckets` calls `_sparseSend` with a 5000 ms timeout. `generateSentenceAwait` needs this readback to decode motor argmax per tick. Right before the readiness probe fires, the teach phase just landed a binary-weights save (2.4 GB sync `fs.writeSync` that blocks the event loop ~2.7 s) AND many hebbianBound dispatches were queued to compute.html. compute.html's WebSocket pipeline is still draining those when the readback request lands → ACK races behind the backlog and the 5s timer fires first. Every single cue × 5 cues × 10 s wall-clock timeout = 55 s of wasted probe time, all returning empty.
+
+**SAB leak root cause:** `cluster.stepAwait` at line 2607-2638 falls through to `this._sparsePool.propagate(matrix, pSpikes)` whenever the GPU cache miss fires for intra-synapses or any of 14 cross-projections. `worker-pool.js propagate()` allocates a FRESH `SharedArrayBuffer` per call for any input that isn't already SAB-backed: values (~60 MB for 15M nnz × Float32), colIdx (~60 MB), rowPtr (~4 MB), spikes (~1.2 MB at 301 K), output (~40 KB). Per tick at biological scale with all 15 projections cache-missing: 15 × ~125 MB = **~1.9 GB of SAB allocation per tick**. Across the hundreds of ticks `generateSentenceAwait` runs per probe × multiple probes × multiple teach phases, 37 GB accumulates. Node's `arrayBuffers` counter tracks SAB but Node's `external` counter does NOT (known Node version discrepancy), which is why the T33 diagnostic showed `ext=3.3GB ab=37GB`.
+
+The same fix pattern T18.19 applied to `cluster.intraSynapsesHebbian` (bypass pool at biological scale) applies here — at 301K cortex the pool's alloc overhead dominates the matmul cost anyway, so single-thread CPU through `step()`'s tail path is strictly faster AND allocation-free.
+
+### What shipped
+
+**1. `server/brain-server.js` readback timeout 5 s → 30 s.** `gpuReadbackCortexLetterBuckets` now uses the default sparse-dispatch timeout (30 s) so readback ACKs can land even when compute.html is draining a post-teach dispatch queue. Readback is rare (per emission probe) so the longer cap doesn't slow the hot path.
+
+**2. `js/brain/curriculum.js` `_measureEmissionCapability` calls `cluster._gpuProxy.drainWait()` before the probe loop.** Forces the WebSocket send queue below threshold before the readback arrives. Non-fatal on error (proceeds with probe anyway if drainWait rejects).
+
+**3. `js/brain/cluster.js` `stepAwait` pool fallback BIOLOGICAL_SCALE_SYNC_THRESHOLD bypass.** Copy of the T18.19 pattern. At cluster size > 100K, the pool fallback is skipped entirely — cache misses fall through to `step()`'s single-thread CPU matmul tail path instead of allocating 1.9 GB of SABs per tick. Browser-scale (<100K) keeps the pool since compute cost dominates alloc cost.
+
+**4. `js/brain/cluster.js` `stepAwait` caches `pSpikes` Uint32Array buffers on the cluster.** Even when the pool runs (browser scale), the per-tick `new Uint32Array(301K)` allocation is eliminated — one buffer per projection keyed by projName, resized if shape changes. Cuts GB-scale per-tick allocation churn.
+
+### Expected effect on operator's next run
+
+- Readiness probe fires post-teach → drainWait blocks ~ms until send queue drains → readback lands in ~50 ms → `generateSentenceAwait` decodes motor → readiness cue returns real letter output
+- Art-K PROD probes actually produce answers → K-STUDENT battery runs (no longer skipped for "not-yet-readable") → cell passes → curriculum advances to Life-K cleanly
+- `arrayBuffers` stays flat at ~3 GB (matches `external`) instead of climbing to 37 GB. Operator sees the T33 delta marker `ab=3298MB` instead of `ab=37392MB ⚠+NMB`
+- RSS drops proportionally — the 37 GB SAB was counted in working set, its absence frees ~37 GB
+
+### Files touched
+
+- `server/brain-server.js` — readback timeout bump 5s → 30s
+- `js/brain/curriculum.js` — drainWait() before readiness probe
+- `js/brain/cluster.js` — stepAwait pool fallback biological-scale bypass + pSpikes caching
+- `js/app.bundle.js` — rebuilt (1.8 MB clean)
+- `js/version.js` / `index.html` — stamp bump
+- `docs/FINALIZED.md` — this entry
+- `docs/TODO.md` — T34 closure in banner
+
+### Why this wasn't caught in T18.19 scope
+
+T18.19 fixed `intraSynapsesHebbian` at biological scale but missed `stepAwait`'s pool fallback path. The Hebbian path is called during teach; the stepAwait pool fallback is called during gate probes. Gate probes at biological scale historically hit a different bug first (the T18.22-era external-memory cascade) which masked the SAB accumulation in stepAwait. Once T24.a shipped the selective-CSR-free + T17.7 rebind GPU path, gate probes started landing on stepAwait for cache-miss fallback — which THEN revealed this SAB leak.
+
+### LAW compliance
+
+- LAW #0 verbatim — operator's log snippet preserved with all timestamps + byte counts + reqIds intact at top of entry
+- Docs-before-push — ship atomic with code fix + bundle rebuild + stamp
+- Task-numbers-only-in-workflow-docs — T34 only in TODO/FINALIZED; code comments describe WHAT bypass + caching + drainWait do, not task numbers
+
+---
+
 ## 2026-04-22 — Session 114.19bp: T31-extended — auto-wrap phase-skip + persistence across EVERY cell runner (not just ELA-K)
 
 ### Operator verbatim 2026-04-22
