@@ -828,7 +828,11 @@ for each positive pair (X, Y) in training batch:
   teachAntiHebbian(lr · antiLrScale)   // anti-Hebbian: Δw = −lr·y·x (co-active decrement)
 ```
 
-Anti-Hebbian runs on the intra-cluster recurrent matrix at biological scale (cross-projection GPU anti-Hebbian shader is deferred — see TODO T39.b.4.b). `antiLrScale` defaults to 0.5 so negative pressure doesn't overwhelm the positive Oja update.
+Anti-Hebbian runs on BOTH the intra-cluster recurrent matrix (CPU CSR, via `NeuronCluster.intraSynapsesAntiHebbian`) AND every GPU-bound cross-projection (via `_crossRegionAntiHebbian` → batched plasticity queue with `sign(lr) < 0` selecting anti-Hebbian mode in the `PLASTICITY_SHADER`). `antiLrScale` defaults to 0.5 so negative pressure doesn't overwhelm the positive Oja update.
+
+The shader branches on sign of `lr`: positive runs Oja (`w' = w·(1−η) + η·x`), negative runs pure co-active decrement (`w' = w − η` where both pre AND post fire, else unchanged). Same pipeline, same batched SPRS frame type, same command-encoder dispatch — the anti-Hebbian mode piggybacks on the existing Hebbian wire protocol by sign-encoding the mode into the lr parameter.
+
+Push-pull training is also active in `_teachQABinding`: for every correct Q→A pair trained, the method samples a wrong answer from a different pair in the batch and fires anti-Hebbian on the (same-question, wrong-answer) combination at `0.5 · lr`. Plus every Q-A pair trains BOTH the natural-sentence format and a compressed `${keyToken}:` direct-prompt alt format, with the key token (`_extractKeyToken`) tiled into sem's second half alongside the full-sentence embedding in the first half — lightweight Bahdanau-2014 attention without a scoring network.
 
 **Read direction** uses: `visual_to_letter`, `letter_to_phon`, `phon_to_sem`, `sem_to_fineType`, `auditory_to_phon`.
 

@@ -208,9 +208,11 @@ Reference models still shipped (not on the runtime path):
 
 ## Synaptic Plasticity — How She Learns
 
-Three learning rules operate on every cluster's sparse CSR synapse matrix every timestep:
+Four plasticity rules operate on every cluster's sparse CSR synapse matrix every timestep:
 
-**Hebbian** — `Δw = η · pre · post` — Fire together, wire together. The oldest rule in neuroscience (Hebb, 1949). Creates associative memories.
+**Oja 1982 (primary Hebbian)** — `Δw = η · y · (x − y · w)` — self-normalizing Hebbian. Hebb's "fire together, wire together" (1949) with a subtractive decay proportional to the post-synaptic activity times the weight. For binary spikes this simplifies to `new_w = w · (1 − η) + η · x`: when both fire, `w` climbs toward 1; when post fires alone, `w` decays toward 0. The decay-when-post-alone is what DECORRELATES trained patterns — new pairs push active (pre, post) weights up while pulling down weights where only the post neuron was firing, forcing input competition at each post neuron. Prevents the basin-superposition failure where bare Hebb piles every pair onto the same columns. Runs on GPU via the WGSL `PLASTICITY_SHADER` and on CPU via `SparseMatrix.ojaUpdate()`.
+
+**Anti-Hebbian (contrastive push-pull)** — `Δw = −η · y · x` applied only where BOTH pre and post fire. Used two ways: (a) after every positive Oja update on a correct pair, `_teachAssociationPairs` samples a RANDOM wrong pair `(X, Y')` with `Y' ≠ Y` and fires the anti-Hebbian update at `0.5 · η` to push that combination apart in weight space; (b) `hebbianPairReinforce` runs a positive-Oja + negative-anti-Hebbian pair on every rep when a wrong transition is detected (e.g., digit `6→7` produces `8`). Without weakening the wrong association, the correct one can never overpower it. Implemented via `SparseMatrix.antiHebbianUpdate()` + `NeuronCluster.intraSynapsesAntiHebbian()`.
 
 **STDP** — Spike-Timing Dependent Plasticity:
 ```
@@ -219,9 +221,7 @@ Three learning rules operate on every cluster's sparse CSR synapse matrix every 
 ```
 Timing matters. Cause must precede effect. A- is slightly stronger than A+ (biological asymmetry). This is how the brain learns temporal sequences.
 
-**Reward-Modulated** — `Δw = η · δ · si · sj` — Hebbian learning gated by global reward signal δ (dopamine analog). Learning only happens when there's a prediction error. Successful interactions strengthen the patterns that produced them.
-
-**Anti-Hebbian** (curriculum sequence correction) — when a sequence probe detects a wrong transition (e.g., digit `6→7` produces `8`), fires positive Hebbian on the correct pair at +10× lr AND negative anti-Hebbian on the wrong pair at −5× lr. Without weakening the wrong association, the correct one can never overpower it. Used during curriculum teaching to clean up conflicting attractor basins.
+**Reward-Modulated** — Oja gated by a global reward signal δ (dopamine analog). In the `PLASTICITY_SHADER` the effective learning rate becomes `η · δ`, so positive reward strengthens active Oja updates, negative reward reverses them. Learning only happens when there's a prediction error.
 
 Weights clamped to [-2.0, +2.0]. 80% excitatory, 20% inhibitory (matching real cortex ratio). Each cluster has its own learning rate — basal ganglia learns fastest (0.005, RL needs rapid adaptation), hypothalamus slowest (0.0005, homeostasis shouldn't change fast).
 

@@ -1100,6 +1100,12 @@ class ServerBrain {
         // Hebbian call at 7M-per-direction standalone sizes.
         propagateBound:  (name)                             => this.gpuSparsePropagateBound(name),
         hebbianBound:    (name, lr)                         => this.gpuSparseHebbianBound(name, lr),
+        // Anti-Hebbian dispatch piggybacks on the same batched plasticity
+        // frame type — the PLASTICITY_SHADER branches on sign(lr), so
+        // sending a negative lr triggers pure-decrement-on-co-active
+        // without a new wire format or pipeline. |lr| is the magnitude;
+        // the negative sign is strictly a mode selector for the shader.
+        antiHebbianBound: (name, lr)                        => this.gpuSparseHebbianBound(name, -Math.abs(lr)),
         // T18.28 — drain-wait helper. Before gate probes fire readback
         // requests, wait for the WebSocket send queue to drop below
         // 10 MB so the readback lands immediately instead of queuing

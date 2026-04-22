@@ -267,24 +267,47 @@ const PLASTICITY_SHADER = /* wgsl */`
     if (i >= params.n) { return; }
     if (postSpikes[params.dstOffset + i] == 0u) { return; }
 
-    // Oja effective learning rate = lr × reward
-    let eta = params.lr * params.reward;
-    let decay = 1.0 - eta;   // (1 - eta) factor for the weight itself
-    let climb = eta;         // eta factor for the x input
+    // Effective learning rate magnitude. Sign of lr selects mode:
+    //   lr > 0 → Oja's rule (self-normalizing Hebbian)
+    //   lr < 0 → anti-Hebbian (pure decrement on co-active only)
+    // Reward stays a positive multiplier on the effective rate. The
+    // caller encodes mode by picking the sign of lr; the batched
+    // plasticity dispatch then routes anti-Hebbian updates through
+    // the same WebSocket frame type and pipeline as Oja updates.
+    let eta = abs(params.lr) * params.reward;
     let start = rowPtr[i];
     let end = rowPtr[i + 1u];
 
-    // Walk all nnz in this post-firing row. When pre also fires (x=1):
-    //   w' = w × (1 - eta) + eta × 1 = w + eta × (1 - w)
-    // When pre doesn't fire (x=0):
-    //   w' = w × (1 - eta) + 0      = w × (1 - eta)  — weight decays
-    // Combined form: w' = w × decay + climb × x
-    for (var k = start; k < end; k++) {
-      let j = colIdx[k];
-      let x = f32(preSpikes[params.srcOffset + j]);
-      var w = values[k] * decay + climb * x;
-      w = clamp(w, params.wMin, params.wMax);
-      values[k] = w;
+    if (params.lr >= 0.0) {
+      // OJA mode. Walk all nnz in the post-firing row:
+      //   x=1 (pre also fires): w' = w·(1−eta) + eta·1 = w + eta·(1−w)  → climbs toward 1
+      //   x=0 (pre silent):     w' = w·(1−eta) + 0     = w·(1−eta)     → decays toward 0
+      // The decay-when-post-alone is the decorrelator.
+      let decay = 1.0 - eta;
+      let climb = eta;
+      for (var k = start; k < end; k++) {
+        let j = colIdx[k];
+        let x = f32(preSpikes[params.srcOffset + j]);
+        var w = values[k] * decay + climb * x;
+        w = clamp(w, params.wMin, params.wMax);
+        values[k] = w;
+      }
+    } else {
+      // ANTI-HEBBIAN mode. Only decrements co-active (pre=1, post=1)
+      // entries. No post-alone decay — that's Oja's job on positive
+      // passes, and applying it here would inadvertently PUMP UP
+      // weights where only post fires (y²·w inversion). Used by the
+      // contrastive push-pull in `_teachAssociationPairs` /
+      // `_teachQABinding`: caller samples a wrong pair and fires
+      // this mode at |lr| to push that co-activation apart.
+      for (var k = start; k < end; k++) {
+        let j = colIdx[k];
+        if (preSpikes[params.srcOffset + j] != 0u) {
+          var w = values[k] - eta;
+          w = clamp(w, params.wMin, params.wMax);
+          values[k] = w;
+        }
+      }
     }
   }
 `;

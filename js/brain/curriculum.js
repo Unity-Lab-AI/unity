@@ -945,6 +945,41 @@ export class Curriculum {
       }
     } catch { /* non-fatal — fall through to generation anyway */ }
 
+    // Probe-side key-token extraction + dual-tile sem injection. Mirrors
+    // the teach-side pattern geometry `_teachQABinding` wrote during
+    // training — without this, the visual→letter→phon→sem pathway at
+    // probe time produces a natural but slightly different sem pattern
+    // than the direct-tile one the weights were trained on, and the
+    // learned sem→motor routes misfire. Matching probe geometry to
+    // teach geometry is the second half of the Bahdanau-lite attention
+    // landing — teach-side shipped first, probe-side lands here.
+    try {
+      if (this._isQuestionLike(question) && typeof cluster.injectEmbeddingToRegion === 'function') {
+        const qEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === 'function'
+          ? sharedEmbeddings.getSentenceEmbedding(question) : null;
+        if (qEmb && qEmb.length > 0) {
+          // Full sentence into sem (default layout — whole-region tile).
+          cluster.injectEmbeddingToRegion('sem', qEmb, 0.6);
+          const keyToken = this._extractKeyToken(question);
+          const keyEmb = keyToken && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
+            ? sharedEmbeddings.getEmbedding(keyToken) : null;
+          if (keyEmb && keyEmb.length > 0 && typeof this._injectEmbeddingToRegionOffset === 'function') {
+            // Key token into the second half of sem — same fractional
+            // offset (0.5) the teach-side `_writeTiledPatternOffset` uses.
+            this._injectEmbeddingToRegionOffset(cluster, 'sem', keyEmb, 0.6, 0.5);
+          }
+          // Let the injection propagate a few ticks into downstream
+          // regions before generate fires, so motor has sem-routed
+          // currents to work with instead of pure visual pathway residue.
+          if (typeof cluster.step === 'function') {
+            for (let t = 0; t < 5; t++) {
+              try { cluster.step(0.001); } catch { break; }
+            }
+          }
+        }
+      }
+    } catch { /* non-fatal — teach-side pattern parity is best-effort */ }
+
     // Generate Unity's answer via the tick-driven motor emission path.
     // This is the EXACT same call live chat makes — no shortcut, no
     // cheat path. If she can't answer here, she can't answer in chat.
@@ -2771,9 +2806,27 @@ export class Curriculum {
     // window to show trend over ~1 minute instead of single-interval.
     const _unaccRolling = []; // last 6 heartbeats of unaccounted values
     const UNACC_WINDOW = 6;
+    // Worker-heap aggregate, refreshed every 3rd heartbeat (~30s) to
+    // avoid spamming the worker pool with mem-snapshot messages every
+    // 10 seconds. Heartbeats between refreshes reuse the cached value.
+    let _cachedWorkerMem = null;
+    let _memSnapInFlight = false;
     const _aliveHbId = setInterval(() => {
       _aliveTick += 1;
       const elapsedS = ((Date.now() - _cellStart) / 1000).toFixed(0);
+      // Kick off a fresh worker memory snapshot every 3 ticks. Fire
+      // and forget — cache updates when the snapshot resolves, current
+      // tick just uses whatever was cached last time.
+      try {
+        const pool = cluster && cluster._sparsePool;
+        if (pool && typeof pool.memSnapshot === 'function' && !_memSnapInFlight && (_aliveTick % 3 === 1)) {
+          _memSnapInFlight = true;
+          pool.memSnapshot().then((snap) => {
+            _cachedWorkerMem = snap;
+            _memSnapInFlight = false;
+          }).catch(() => { _memSnapInFlight = false; });
+        }
+      } catch { /* non-fatal */ }
       let memLabel = '';
       try {
         if (typeof process !== 'undefined' && process.memoryUsage) {
@@ -2784,7 +2837,14 @@ export class Curriculum {
           const heapTotalMb = Number(mb(mu.heapTotal));
           const extMb = Number(mb(mu.external));
           const abMb = Number(mb(mu.arrayBuffers || 0));
-          const unaccountedMb = Math.max(0, rssMb - heapMb - extMb);
+          // Worker heap accounting — subtract from "unaccounted" so the
+          // operator sees the real leak-candidate residue, not the pool
+          // baseline. When snapshot unavailable, fall back to the boot-
+          // banner estimate of 30 MB × worker count.
+          const workerHeapMb = _cachedWorkerMem ? (_cachedWorkerMem.totalHeapUsedMb | 0) : 0;
+          const workerExtMb = _cachedWorkerMem ? (_cachedWorkerMem.totalExternalMb | 0) : 0;
+          const workerTotalMb = workerHeapMb + workerExtMb;
+          const unaccountedMb = Math.max(0, rssMb - heapMb - extMb - workerTotalMb);
           _priorRssMb = rssMb; // kept for back-compat, unused in trend calc now
           // Track unaccounted in rolling window to detect SUSTAINED
           // growth (real leak) vs instantaneous oscillation (GC churn).
@@ -2808,7 +2868,10 @@ export class Curriculum {
               unaccTrend = ` ⚠climbing+${trendMb}MB/min`;
             }
           }
-          memLabel = ` · heap=${heapMb}/${heapTotalMb}MB ext=${extMb}MB ab=${abMb}MB rss=${rssMb}MB (unaccounted=${unaccountedMb}MB${unaccTrend})`;
+          const workerTag = _cachedWorkerMem
+            ? ` workers=${workerHeapMb}MB${_cachedWorkerMem.estimated ? '~' : ''}(${_cachedWorkerMem.workerCount})`
+            : ' workers=?MB';
+          memLabel = ` · heap=${heapMb}/${heapTotalMb}MB ext=${extMb}MB ab=${abMb}MB rss=${rssMb}MB${workerTag} (unaccounted=${unaccountedMb}MB${unaccTrend})`;
         }
       } catch { /* memoryUsage unavailable */ }
       let phaseLabel = '';
@@ -5489,7 +5552,11 @@ export class Curriculum {
       // test validity.
       if (_phaseTick('_teachQABinding')) {
         const qaTrain = TRAIN_BANKS['ela/kindergarten'] || [];
-        await this._teachQABinding(qaTrain, { reps: 15, label: 'ELA-K-QA-TRAIN' });
+        // reps defaulted in _teachQABinding (100) to drive discriminable
+        // weight into sem→motor despite near-identical bag-of-words
+        // sentence embeddings across different "what letter comes
+        // after X?" questions.
+        await this._teachQABinding(qaTrain, { label: 'ELA-K-QA-TRAIN' });
         _phaseDone('_teachQABinding');
       }
 
@@ -6818,7 +6885,7 @@ export class Curriculum {
       // — held-out-distinct from MATH_KINDERGARTEN_EXAM.
       const mathQA = TRAIN_BANKS['math/kindergarten'] || [];
       if (mathQA.length > 0) {
-        await this._teachQABinding(mathQA, { reps: 15, label: 'MATH-K-QA-TRAIN' });
+        await this._teachQABinding(mathQA, { label: 'MATH-K-QA-TRAIN' });
       }
 
       this._mathKTransformsDone = true;
@@ -8370,6 +8437,13 @@ export class Curriculum {
     } else if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === 'function') {
       cluster.synapses.hebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, lr);
     }
+    // Optional BCM pass — stacks with Oja to provide per-neuron
+    // sliding-threshold homeostasis. No-op when `_bcmEnabled` is
+    // false (the default); opt-in via `cluster._bcmEnabled = true`
+    // once operator wants to test BCM's effect on sep-probe numbers.
+    if (cluster._bcmEnabled && typeof cluster.intraSynapsesBcm === 'function') {
+      cluster.intraSynapsesBcm(cluster.lastSpikes, cluster.lastSpikes, lr * 0.3);
+    }
   }
 
   /**
@@ -8391,6 +8465,15 @@ export class Curriculum {
     const cluster = this.cluster;
     if (!cluster) return;
     const absLr = Math.abs(lr);
+    // Cross-region anti-Hebbian — GPU dispatch via the batched plasticity
+    // queue with negative lr selecting anti-Hebbian mode in the shader.
+    // Silent no-op when GPU proxy unavailable (browser-only mode or pre-
+    // rebind), in which case only the intra-cluster contrastive fires.
+    if (typeof cluster._crossRegionAntiHebbian === 'function') {
+      await cluster._crossRegionAntiHebbian(absLr);
+    }
+    // Intra-cluster recurrent anti-Hebbian. Always runs at biological
+    // scale — the intra-synapses CSR stays live on CPU for probe paths.
     if (typeof cluster.intraSynapsesAntiHebbian === 'function') {
       await cluster.intraSynapsesAntiHebbian(cluster.lastSpikes, cluster.lastSpikes, absLr);
     } else if (cluster.synapses && typeof cluster.synapses.antiHebbianUpdate === 'function') {
@@ -8645,21 +8728,48 @@ export class Curriculum {
       this._hb(`[Curriculum][${opts.label || 'QA-TRAIN'}] SKIPPED — TRAIN_BANKS entry is empty for this cell`);
       return { trained: 0, skipped: 0 };
     }
-    const reps = opts.reps ?? 12;
+    // Reps bumped 12 → 100 per the Q-A intensity fix. Bag-of-words
+    // sentence embeddings for different "what comes after X?" questions
+    // differ only in one word out of 6-8 — the discriminating signal is
+    // tiny, so way more repetitions are needed to carve separable basins.
+    // Paired with key-token extraction + direct-prompt alt format + anti-
+    // pair push-pull (all below) so the extra reps actually accumulate
+    // discriminable weight instead of just more overlap.
+    const reps = opts.reps ?? 100;
     const lr = opts.lr ?? 0.03;
     const label = opts.label || 'K-QA-TRAIN';
     const semRegion = cluster.regions && cluster.regions.sem;
     const motorRegion = cluster.regions && cluster.regions.motor;
+    // Direct-prompt alternative format — strips the natural-language
+    // wrapping and feeds a compressed "<key-token>:" prompt so the sem
+    // pattern focuses on the discriminating token instead of the whole
+    // sentence bag. Default ON because the original natural-sentence
+    // path produced 0% Q-A pass rate via the generic bag embedding.
+    const directPromptAlt = opts.directPromptAlt !== false;
+    // Key-token tiling into a dedicated second-half slice of sem. Gives
+    // the discriminating token its own pattern footprint alongside the
+    // full-sentence embedding in the first half. Lets sem→motor learn
+    // both "sentence-shape → answer" AND "key-token → answer" paths.
+    const keyTokenTile = opts.keyTokenTile !== false;
+    // Contrastive anti-Hebbian push-pull, same mechanism as
+    // `_teachAssociationPairs`. For every correct Q-A pair the brain
+    // sees, sample a WRONG answer from a different pair and push the
+    // (current-question, wrong-answer) combination apart on the intra-
+    // cluster matrix. Rate scaled 0.5× vs positive so negative pressure
+    // doesn't overwhelm learning.
+    const antiPairs = opts.antiPairs !== false && qaList.length >= 2;
+    const antiLrScale = opts.antiLrScale ?? 0.5;
     if (!semRegion || !motorRegion) {
       console.warn(`[Curriculum][${label}] skipped — sem or motor region not available`);
       return { trained: 0, skipped: qaList.length };
     }
-    let trained = 0, skipped = 0;
+    let trained = 0, skipped = 0, altTrained = 0, antiFires = 0;
     const startMs = Date.now();
-    this._hb(`[Curriculum][${label}] START — ${qaList.length} Q→A training pairs × ${reps} reps (teacher-modeling question-answer behavior; pairs are HELD-OUT-DISTINCT from EXAM_BANKS for valid testing)`);
+    this._hb(`[Curriculum][${label}] START — ${qaList.length} Q→A training pairs × ${reps} reps (teacher-modeling; HELD-OUT-DISTINCT from EXAM_BANKS; direct-alt=${directPromptAlt} · keyTokenTile=${keyTokenTile} · anti-pairs=${antiPairs})`);
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return { trained, skipped };
-      for (const entry of qaList) {
+      for (let qIdx = 0; qIdx < qaList.length; qIdx++) {
+        const entry = qaList[qIdx];
         if (!entry || !entry.question || !entry.expectedAnswer) { skipped++; continue; }
         const qEmb = (sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === 'function')
           ? sharedEmbeddings.getSentenceEmbedding(entry.question)
@@ -8670,14 +8780,72 @@ export class Curriculum {
         if (!targetLetter) { skipped++; continue; }
         const motorPattern = encodeLetter(targetLetter);
         if (!motorPattern || motorPattern.length === 0) { skipped++; continue; }
+        const keyToken = this._extractKeyToken(entry.question);
+        const keyEmb = keyToken && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
+          ? sharedEmbeddings.getEmbedding(keyToken)
+          : null;
         try {
+          // ─── Natural-sentence positive pair ────────────────────────
           this._clearSpikes();
           this._writeTiledPattern(semRegion, qEmb, false);
+          if (keyTokenTile && keyEmb && keyEmb.length > 0) {
+            // Second-half overlay — key token gets its own pattern
+            // inside sem alongside the full sentence. Same region,
+            // different tile offset (second half), so both signals
+            // combine without overwriting each other.
+            this._writeTiledPatternOffset(semRegion, keyEmb, false, 0.5);
+          }
           this._writeTiledPattern(motorRegion, motorPattern, false);
           await this._teachHebbian(lr);
           trained++;
         } catch (err) {
           skipped++;
+        }
+
+        // ─── Direct-prompt alternative format positive pair ─────────
+        if (directPromptAlt && keyToken) {
+          try {
+            const directPromptText = `${keyToken}:`;
+            const directEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === 'function'
+              ? sharedEmbeddings.getSentenceEmbedding(directPromptText)
+              : null;
+            if (directEmb && directEmb.length > 0) {
+              this._clearSpikes();
+              this._writeTiledPattern(semRegion, directEmb, false);
+              if (keyTokenTile && keyEmb && keyEmb.length > 0) {
+                this._writeTiledPatternOffset(semRegion, keyEmb, false, 0.5);
+              }
+              this._writeTiledPattern(motorRegion, motorPattern, false);
+              await this._teachHebbian(lr);
+              altTrained++;
+            }
+          } catch { /* non-fatal alt-format pass */ }
+        }
+
+        // ─── Anti-Hebbian contrastive negative pair ─────────────────
+        if (antiPairs) {
+          let wrongIdx = Math.floor(Math.random() * qaList.length);
+          if (wrongIdx === qIdx) wrongIdx = (wrongIdx + 1) % qaList.length;
+          const wrongEntry = qaList[wrongIdx];
+          if (wrongEntry && wrongEntry.expectedAnswer) {
+            const wrongAnswer = String(wrongEntry.expectedAnswer).toLowerCase();
+            const wrongLetter = wrongAnswer.charAt(0);
+            if (wrongLetter && wrongLetter !== targetLetter) {
+              const wrongMotorPattern = encodeLetter(wrongLetter);
+              if (wrongMotorPattern && wrongMotorPattern.length > 0) {
+                try {
+                  this._clearSpikes();
+                  this._writeTiledPattern(semRegion, qEmb, false);
+                  if (keyTokenTile && keyEmb && keyEmb.length > 0) {
+                    this._writeTiledPatternOffset(semRegion, keyEmb, false, 0.5);
+                  }
+                  this._writeTiledPattern(motorRegion, wrongMotorPattern, false);
+                  await this._teachAntiHebbian(lr * antiLrScale);
+                  antiFires++;
+                } catch { /* non-fatal */ }
+              }
+            }
+          }
         }
       }
       await _microtask();
@@ -8698,8 +8866,181 @@ export class Curriculum {
         weightReport = ` · sem_to_motor |W| mean=${(sumAbs / N).toFixed(4)} max=${maxAbs.toFixed(4)}`;
       }
     } catch { /* non-fatal */ }
-    this._hb(`[Curriculum][${label}] DONE — ${trained} Q→A Hebbian updates across ${qaList.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${weightReport}`);
-    return { trained, skipped };
+    const altReport = directPromptAlt ? ` · alt-fires=${altTrained}` : '';
+    const antiReport = antiPairs ? ` · anti-fires=${antiFires}` : '';
+    this._hb(`[Curriculum][${label}] DONE — ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${weightReport}`);
+    return { trained, altTrained, antiFires, skipped };
+  }
+
+  /**
+   * Key-token extraction for Q-A training — lightweight attention-lite
+   * (Bahdanau 2014 spirit, no scoring network). Pattern-matches common
+   * K-grade question forms and returns the discriminating noun/letter/
+   * digit so the Q-A sem pattern can carry both the full-sentence bag
+   * AND the specific token that makes one question different from
+   * another. Returns lowercase token or null when no pattern matches.
+   */
+  _extractKeyToken(question) {
+    if (!question || typeof question !== 'string') return null;
+    const q = question.toLowerCase().trim();
+    // Order matters — more specific patterns first.
+    const patterns = [
+      // "what letter comes after/before X?" → X
+      /\b(?:what|which)\s+letter\s+(?:comes?|is|goes?)\s+(?:after|before|next(?:\s+to)?)\s+([a-z0-9]+)/,
+      // "what comes after X" / "what is after X"
+      /\b(?:what|which)\s+(?:comes?|is|goes?)\s+(?:after|before|next(?:\s+to)?)\s+([a-z0-9]+)/,
+      // "what rhymes with X" → X
+      /\brhymes?\s+with\s+([a-z]+)/,
+      // "what sound does X make" → X
+      /\bsound\s+does\s+([a-z]+)\s+make/,
+      // "how many X are in Y" → Y (the container is discriminator)
+      /\bhow\s+many\s+[a-z]+\s+(?:are\s+in|in)\s+([a-z]+)/,
+      // "what is X plus Y" → concat
+      /\bwhat\s+is\s+(\d+)\s+plus\s+(\d+)/,
+      // "what is X minus Y"
+      /\bwhat\s+is\s+(\d+)\s+minus\s+(\d+)/,
+      // "count from X" → X
+      /\bcount\s+from\s+([a-z0-9]+)/,
+      // "spell X" → X
+      /\bspell\s+([a-z]+)/,
+      // "starts with" — next token after "starts with"
+      /\bstarts?\s+with\s+([a-z]+)/,
+      // fallback: last single-quoted or question-mark-preceded token
+      /\b([a-z0-9]+)\??\s*$/,
+    ];
+    for (const p of patterns) {
+      const m = q.match(p);
+      if (m) {
+        if (m[2]) return `${m[1]}_${m[2]}`; // compound key (plus/minus)
+        if (m[1]) return m[1];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Return a top-K-by-magnitude filtered copy of an embedding. Keeps the
+   * K dims with the largest absolute value, zeros the rest. Used for
+   * motor-region sparsification in `_teachAssociationPairs` so the
+   * trained motor pattern only fires on the most discriminating
+   * embedding dims instead of the full GloVe bag (~15-25% of dims active
+   * shrinks toward ~5%). Forces basin competition per Maass 2000 WTA
+   * circuit theory. Returns the input unchanged when `feat.length <= K`.
+   */
+  _topKEmbedding(feat, K) {
+    if (!feat || feat.length === 0 || K <= 0 || feat.length <= K) return feat;
+    // Simple partial-sort: collect (absVal, index), sort by absVal desc,
+    // take top K indices, zero everything else. For K=15 and feat.length
+    // =300 this is O(N log N) per call — negligible vs the Hebbian
+    // dispatch cost that follows.
+    const pairs = new Array(feat.length);
+    for (let i = 0; i < feat.length; i++) {
+      pairs[i] = { idx: i, abs: Math.abs(feat[i]) };
+    }
+    pairs.sort((a, b) => b.abs - a.abs);
+    const keep = new Uint8Array(feat.length);
+    for (let i = 0; i < K; i++) keep[pairs[i].idx] = 1;
+    const out = feat.constructor ? new feat.constructor(feat.length) : new Float32Array(feat.length);
+    for (let i = 0; i < feat.length; i++) {
+      if (keep[i]) out[i] = feat[i];
+    }
+    return out;
+  }
+
+  /**
+   * Cheap question detector — surface cue only, no cortex reads. Used
+   * by `_studentTestProbe` to decide whether to fire the teach-side
+   * sem pattern injection on top of the natural visual pathway. False
+   * positives are harmless (an extra sem injection on a statement),
+   * false negatives cost probe accuracy on Q-A tests.
+   */
+  _isQuestionLike(text) {
+    if (!text || typeof text !== 'string') return false;
+    const lower = text.toLowerCase().trim();
+    if (!lower) return false;
+    if (lower.endsWith('?')) return true;
+    if (/^(what|who|where|when|why|how|which|whose|spell|count|rhymes|starts?)\b/.test(lower)) return true;
+    return false;
+  }
+
+  /**
+   * Inject an embedding into a fractional offset slice of a cluster
+   * region via `injectEmbeddingToRegion` semantics. Mirrors the teach-
+   * side `_writeTiledPatternOffset` but uses externalCurrent injection
+   * instead of direct spike writes, so the Rulkov dynamics pick up the
+   * signal on the next tick the same way live-chat does. Used by the
+   * probe path to apply the dual-tile sem pattern that teach-time
+   * training wrote.
+   */
+  _injectEmbeddingToRegionOffset(cluster, regionName, emb, strength, offsetFrac) {
+    if (!cluster || !cluster.regions || !emb || emb.length === 0) return;
+    const region = cluster.regions[regionName];
+    if (!region) return;
+    const regionSize = region.end - region.start;
+    if (regionSize <= 0) return;
+    const offset = Math.max(0, Math.min(0.99, offsetFrac || 0));
+    const sliceStart = region.start + Math.floor(regionSize * offset);
+    const sliceSize = region.end - sliceStart;
+    if (sliceSize <= 0) return;
+    const gSize = Math.max(1, Math.floor(sliceSize / emb.length));
+    const haveProxy = !!(cluster._gpuProxy && cluster._gpuProxy.writeCurrentSlice);
+    const fwdIndices = haveProxy ? [] : null;
+    const fwdValues = haveProxy ? [] : null;
+    for (let d = 0; d < emb.length; d++) {
+      const value = emb[d] * 8 * (strength ?? 1.0);
+      const startNeuron = sliceStart + d * gSize;
+      for (let n = 0; n < gSize; n++) {
+        const idx = startNeuron + n;
+        if (idx >= region.end) break;
+        cluster.externalCurrent[idx] += value;
+        if (fwdIndices && value !== 0) {
+          // Index relative to region start — same convention as
+          // `injectEmbeddingToRegion` for GPU main-cortex sub-slice.
+          fwdIndices.push(idx - region.start);
+          fwdValues.push(value);
+        }
+      }
+    }
+    if (haveProxy && fwdIndices.length > 0) {
+      try { cluster._gpuProxy.writeCurrentSlice(regionName, fwdIndices, fwdValues); }
+      catch { /* non-fatal — CPU injection already landed */ }
+    }
+  }
+
+  /**
+   * Tile a feature vector into a fractional offset slice of a region.
+   * `offset` is in [0, 1) giving the starting fraction of the region;
+   * the tile extends from `region.start + offset·size` to end-of-region.
+   * Used by `_teachQABinding` to overlay the key-token pattern in the
+   * second half of sem alongside the full-sentence pattern in the
+   * first half.
+   */
+  _writeTiledPatternOffset(region, feat, binarize, offset) {
+    const cluster = this.cluster;
+    if (!cluster || !region || !feat || feat.length === 0) return;
+    const size = region.end - region.start;
+    const slideStart = region.start + Math.floor(size * (offset || 0));
+    const slideSize = region.end - slideStart;
+    if (slideSize <= 0) return;
+    const gSize = Math.max(1, Math.floor(slideSize / feat.length));
+    const haveProxy = !!(cluster._gpuProxy && cluster._gpuProxy.writeSpikeSlice);
+    const sparseIndices = haveProxy ? [] : null;
+    for (let d = 0; d < feat.length; d++) {
+      if (feat[d] > 0) {
+        for (let n = 0; n < gSize; n++) {
+          const idx = slideStart + d * gSize + n;
+          if (idx < region.end) {
+            cluster.lastSpikes[idx] = 1;
+            if (sparseIndices) sparseIndices.push(idx);
+          }
+        }
+      }
+    }
+    if (haveProxy && sparseIndices.length > 0) {
+      try {
+        cluster._gpuProxy.writeSpikeSlice(sparseIndices);
+      } catch { /* non-fatal — CPU shadow already written */ }
+    }
   }
 
   async _teachAssociationPairs(pairs, opts = {}) {
@@ -8756,9 +9097,19 @@ export class Curriculum {
     // doesn't overwhelm learning. Default ON for any pairs.length >= 2.
     const antiPairs = opts.antiPairs !== false && pairs.length >= 2;
     const antiLrScale = opts.antiLrScale ?? 0.5;
-    let trained = 0, skipped = 0, antiFires = 0;
+    // Winner-take-all motor sparsification (Maass 2000 — WTA circuits
+    // are computationally universal with sparse active sets). GloVe
+    // embeddings tiled across motor fire ~15-25% of the region; keeping
+    // only the top N dims by embedding magnitude drops active count to
+    // ~5% which forces basin competition. Per-dim ranking uses the
+    // original feat magnitudes, not post-write spike counts, so
+    // discriminating features (high-magnitude dims that differ per
+    // word) survive and weak background dims get pruned.
+    const motorWTA = opts.motorWTA !== false && !binarize;
+    const motorTopK = opts.motorTopK ?? 15;
+    let trained = 0, skipped = 0, antiFires = 0, wtaApplied = 0;
     const startMs = Date.now();
-    this._hb(`[Curriculum][${label}] START — ${pairs.length} pairs × ${reps} reps · soft-writes=${!binarize} · row-norm=${normalizeAfter} · anti-pairs=${antiPairs}`);
+    this._hb(`[Curriculum][${label}] START — ${pairs.length} pairs × ${reps} reps · soft-writes=${!binarize} · row-norm=${normalizeAfter} · anti-pairs=${antiPairs} · motor-WTA=${motorWTA}/${motorTopK}`);
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return { trained, skipped };
       for (let pairIdx = 0; pairIdx < pairs.length; pairIdx++) {
@@ -8770,10 +9121,13 @@ export class Curriculum {
         const outEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
           ? sharedEmbeddings.getEmbedding(outputWord) : null;
         if (!inEmb || !outEmb || inEmb.length === 0 || outEmb.length === 0) { skipped++; continue; }
+        // Pre-compute WTA-filtered motor embedding (top-K by magnitude).
+        const outEmbMotor = motorWTA ? this._topKEmbedding(outEmb, motorTopK) : outEmb;
+        if (motorWTA && outEmbMotor !== outEmb) wtaApplied++;
         try {
           this._clearSpikes();
           this._writeTiledPattern(semRegion, inEmb, binarize);
-          this._writeTiledPattern(motorRegion, outEmb, binarize);
+          this._writeTiledPattern(motorRegion, outEmbMotor, binarize);
           if (fineTypeRegion && relationTagId !== null) {
             const fineSize = fineTypeRegion.end - fineTypeRegion.start;
             const band = Math.floor(fineSize / 6);
@@ -8804,10 +9158,11 @@ export class Curriculum {
               const wrongEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
                 ? sharedEmbeddings.getEmbedding(wrongOut) : null;
               if (wrongEmb && wrongEmb.length > 0) {
+                const wrongEmbMotor = motorWTA ? this._topKEmbedding(wrongEmb, motorTopK) : wrongEmb;
                 try {
                   this._clearSpikes();
                   this._writeTiledPattern(semRegion, inEmb, binarize);
-                  this._writeTiledPattern(motorRegion, wrongEmb, binarize);
+                  this._writeTiledPattern(motorRegion, wrongEmbMotor, binarize);
                   // Relation tag fires on NEG pair too so the relation
                   // channel doesn't learn to classify positive vs negative
                   // by tag presence alone.
@@ -8898,7 +9253,8 @@ export class Curriculum {
     } catch { /* non-fatal */ }
     const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1);
     const antiReport = antiPairs ? ` · anti-fires=${antiFires}` : '';
-    this._hb(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${normReport}${sepReport}${weightReport}`);
+    const wtaReport = motorWTA ? ` · motor-WTA=${wtaApplied}/${motorTopK}` : '';
+    this._hb(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${wtaReport}${normReport}${sepReport}${weightReport}`);
     return { trained, skipped };
   }
 

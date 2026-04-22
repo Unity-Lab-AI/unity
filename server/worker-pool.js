@@ -27,15 +27,32 @@ try {
 
 class SparseMatmulPool {
   constructor(opts = {}) {
-    // One worker per physical core minus one, capped at 16. Leaves a
-    // core free for the Node main thread + GPU dispatch + WebSocket
-    // + HTTP handling.
+    // Pool sizing. Prior cap was 16; lowered to 8 because at biological
+    // scale almost all matmul + plasticity traffic routes through the
+    // GPU proxy, so the worker pool only fires on the cold-fallback
+    // path (GPU miss / pre-rebind / standalone). Half the footprint
+    // for the same effective throughput on bio workloads. Browser
+    // scale (< 100K) still benefits from the workers because that
+    // path pegs single-thread. `opts.size` lets an operator override.
     const cpuCount = os.cpus()?.length || 4;
-    this._poolSize = Math.max(1, Math.min(opts.size ?? (cpuCount - 1), 16));
+    this._poolSize = Math.max(1, Math.min(opts.size ?? Math.min(cpuCount - 1, 8), 8));
     this._workers = [];
     this._ready = false;
     this._jobSeq = 0;
     this._pending = new Map(); // jobId → { resolve, expected, received }
+    // Idle-termination config. Workers hold per-thread V8 heap even
+    // when no jobs are running; terminating after a prolonged idle
+    // window releases that memory to the OS. `_lastJobAt` is the
+    // wall-clock of the most recent propagate/hebbian dispatch;
+    // `_idleTerminateMs` is the threshold past which the pool self-
+    // shuts-down (re-init lazily on next call). Default 5 minutes —
+    // curriculum teach cycles fire far more often than that, so the
+    // pool stays alive during active work and only quits during
+    // long wait-for-operator-input windows.
+    this._lastJobAt = Date.now();
+    this._idleTerminateMs = opts.idleTerminateMs ?? 300_000;
+    this._idleCheckMs = opts.idleCheckMs ?? 30_000;
+    this._idleTimer = null;
 
     this._init();
   }
@@ -56,6 +73,11 @@ class SparseMatmulPool {
       }
       this._ready = true;
       console.log(`[WorkerPool] Started ${this._poolSize} sparse-matmul workers (${os.cpus()?.length} cores available).`);
+      console.log(`[WorkerPool] Each worker runs its own V8 heap — expect ~${this._poolSize * 30} MB of worker heap baseline showing as 'workers' in the curriculum heartbeat. That total is NOT a leak; it's the pool's steady-state footprint and stays roughly flat unless a pool call churns external buffers.`);
+      // Start idle-termination watchdog. If no propagate/hebbian
+      // dispatches hit the pool for `_idleTerminateMs`, the pool
+      // shuts itself down to release worker heap. Next call re-inits.
+      this._startIdleWatchdog();
     } catch (err) {
       console.warn('[WorkerPool] Worker init failed:', err.message);
       this._ready = false;
@@ -63,6 +85,28 @@ class SparseMatmulPool {
   }
 
   _handleMessage(msg) {
+    if (msg.type === 'memSnap') {
+      // Worker memoryUsage snapshot reply. Stash it in the cache indexed
+      // by the snapId so concurrent mem-snapshot requests don't collide.
+      if (!this._memSnapInflight) return;
+      const entry = this._memSnapInflight.get(msg.snapId);
+      if (!entry) return;
+      entry.received++;
+      if (!msg.error) {
+        entry.replies.push({
+          heapUsed: msg.heapUsed,
+          heapTotal: msg.heapTotal,
+          external: msg.external,
+          arrayBuffers: msg.arrayBuffers,
+          rss: msg.rss,
+        });
+      }
+      if (entry.received >= entry.expected) {
+        this._memSnapInflight.delete(msg.snapId);
+        entry.resolve(entry.replies);
+      }
+      return;
+    }
     if (msg.type !== 'done') return;
     const entry = this._pending.get(msg.jobId);
     if (!entry) return;
@@ -71,6 +115,66 @@ class SparseMatmulPool {
       this._pending.delete(msg.jobId);
       entry.resolve();
     }
+  }
+
+  /**
+   * Ask every worker for its current process.memoryUsage() and return
+   * an aggregate. Resolves to `{ workerCount, totalHeapUsedMb,
+   * totalExternalMb, totalRssMb, replies }`. Used by the curriculum
+   * heartbeat to label worker-thread memory as a separate `workers=…`
+   * field so operator no longer sees worker heap reported as
+   * "unaccounted" — that was scaring Gee into thinking there was a
+   * 450+ MB leak when it was just the pool's baseline footprint.
+   *
+   * Falls back to the per-worker estimate constant when the pool isn't
+   * ready or all workers failed to reply. 500ms timeout caps the wait.
+   */
+  async memSnapshot(timeoutMs = 500) {
+    const PER_WORKER_ESTIMATE_MB = 30;
+    const fallback = () => ({
+      workerCount: this._workers.length,
+      estimated: true,
+      totalHeapUsedMb: this._workers.length * PER_WORKER_ESTIMATE_MB,
+      totalExternalMb: 0,
+      totalRssMb: this._workers.length * PER_WORKER_ESTIMATE_MB,
+      replies: [],
+    });
+    if (!this._ready || this._workers.length === 0) return fallback();
+    if (!this._memSnapInflight) this._memSnapInflight = new Map();
+    const snapId = ++this._jobSeq;
+    const N = this._workers.length;
+    const resultP = new Promise((resolve) => {
+      this._memSnapInflight.set(snapId, { expected: N, received: 0, replies: [], resolve });
+    });
+    for (const w of this._workers) {
+      try { w.postMessage({ type: 'mem', snapId }); }
+      catch { /* worker dead — counts as non-reply, timeout handles it */ }
+    }
+    const timedOutP = new Promise((resolve) => setTimeout(() => {
+      const entry = this._memSnapInflight?.get(snapId);
+      if (entry) {
+        this._memSnapInflight.delete(snapId);
+        resolve(entry.replies); // resolve with whatever we have
+      }
+    }, timeoutMs));
+    const replies = await Promise.race([resultP, timedOutP]);
+    if (!replies || replies.length === 0) return fallback();
+    let heap = 0, external = 0, rss = 0;
+    for (const r of replies) {
+      heap += r.heapUsed || 0;
+      external += r.external || 0;
+      rss += r.rss || 0;
+    }
+    const mb = (b) => Math.round(b / 1048576);
+    return {
+      workerCount: this._workers.length,
+      respondedCount: replies.length,
+      estimated: false,
+      totalHeapUsedMb: mb(heap),
+      totalExternalMb: mb(external),
+      totalRssMb: mb(rss),
+      replies,
+    };
   }
 
   /**
@@ -85,6 +189,7 @@ class SparseMatmulPool {
    * main thread as a fallback. Same result, just no parallelism.
    */
   async propagate(matrix, spikesU32) {
+    this._lastJobAt = Date.now();
     const rows = matrix.rows;
 
     // Materialize shared buffers. Ideally the caller already hands us
@@ -173,6 +278,7 @@ class SparseMatmulPool {
    * isn't available. Same result, just no parallelism.
    */
   async hebbianUpdate(matrix, preSpikes, postSpikes, lr) {
+    this._lastJobAt = Date.now();
     const rows = matrix.rows;
     const wMin = matrix.wMin ?? -2.0;
     const wMax = matrix.wMax ?? 2.0;
@@ -284,16 +390,46 @@ class SparseMatmulPool {
     return true;
   }
 
-  get ready() { return this._ready; }
+  get ready() {
+    // Lazy re-init when the idle watchdog previously shut the pool
+    // down. A caller asking for readiness after a long idle window
+    // gets a fresh pool on first check — zero manual state required.
+    if (!this._ready && this._idleTerminated) {
+      this._idleTerminated = false;
+      this._init();
+    }
+    return this._ready;
+  }
   get size() { return this._workers.length; }
 
-  shutdown() {
+  _startIdleWatchdog() {
+    if (this._idleTimer) clearInterval(this._idleTimer);
+    this._idleTimer = setInterval(() => {
+      if (!this._ready || this._workers.length === 0) return;
+      const idleMs = Date.now() - this._lastJobAt;
+      if (idleMs >= this._idleTerminateMs) {
+        console.log(`[WorkerPool] idle ${Math.round(idleMs/1000)}s — terminating ${this._workers.length} workers to release heap; pool re-inits on next call.`);
+        this.shutdown({ fromIdle: true });
+      }
+    }, this._idleCheckMs);
+    if (this._idleTimer && typeof this._idleTimer.unref === 'function') this._idleTimer.unref();
+  }
+
+  shutdown(opts = {}) {
     for (const w of this._workers) {
       try { w.postMessage({ type: 'shutdown' }); } catch {}
       try { w.terminate(); } catch {}
     }
     this._workers = [];
     this._ready = false;
+    if (this._idleTimer) {
+      clearInterval(this._idleTimer);
+      this._idleTimer = null;
+    }
+    // `fromIdle` marks a watchdog-triggered shutdown so `get ready()`
+    // can lazily re-init on the next call. Explicit shutdowns (server
+    // stop) shouldn't auto-restart.
+    if (opts.fromIdle) this._idleTerminated = true;
   }
 }
 
