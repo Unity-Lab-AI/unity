@@ -754,7 +754,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "9cea415f-f49e";
+var BUILD = "9f614d1a-764c";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -10215,6 +10215,18 @@ var SHORT_WORD_REPS_MAX = 2;
 var LONG_WORD_REPS_MAX = 1;
 var SHORT_WORD_MAX_LEN = 3;
 var SUBJECTS = ["ela", "math", "science", "social", "art", "life"];
+var SUBJECT_LABELS = {
+  ela: "ELA \u2014 English Language Arts: alphabet, phonics, reading, writing, question-answer grounding.",
+  math: "Math: counting, number names, magnitude, arithmetic, shape + position.",
+  science: "Science: cause-effect, classification, motion, weather, life systems, logic pathing.",
+  social: "Social Studies: self + family + community roles, emotions, kindness, rules.",
+  art: "Arts: color, shape, visual representation, rhythm, drawing, music.",
+  life: "Life Experience: identity, biography, feelings, routines, self-awareness as Unity the individual."
+};
+var GRADE_LABELS = {
+  "pre-K": "Pre-K (birth-to-4 developmental substrate)",
+  "kindergarten": "Kindergarten (Common Core K.RF / K.W / K.L / K.SL / K.RL + DIBELS / STAR / AIMSweb)"
+};
 var GRADE_ORDER = [
   "pre-K",
   "kindergarten",
@@ -10495,6 +10507,18 @@ var Curriculum = class _Curriculum {
               } catch {
               }
             }
+            this._currentCellPhasesCompleted = (this._currentCellPhasesCompleted | 0) + 1;
+            if (this._currentSubject && this._perSubjectStats) {
+              const s = this._perSubjectStats[this._currentSubject];
+              if (s) {
+                s.phasesCompleted = (s.phasesCompleted | 0) + 1;
+                s.lastCellAt = Date.now();
+              }
+            }
+          }
+          if (this._currentSubject && this._perSubjectStats) {
+            const s = this._perSubjectStats[this._currentSubject];
+            if (s) s.teachEvents = (s.teachEvents | 0) + 1;
           }
           return result;
         } finally {
@@ -10516,6 +10540,88 @@ var Curriculum = class _Curriculum {
         }
       };
     }
+  }
+  /**
+   * Snapshot of the current curriculum training status for the
+   * dashboard "Current Training" card. One atomic read containing:
+   *   - currentSubject / currentGrade / currentLabel / gradeLabel
+   *   - currentPhase (active _teach method name + elapsed ms)
+   *   - cellPhasesCompleted (phases completed in the CURRENT cell)
+   *   - perSubject: per-subject cumulative stats (phases, cells passed,
+   *     teach events, last training timestamp, per-subject grade)
+   *   - passedCells list so the dashboard can draw the walkthrough
+   *
+   * Called from `Brain.getState()` and serialized in every state
+   * broadcast so the dashboard has the full training picture in one
+   * poll. Null fields when Unity isn't mid-cell.
+   */
+  getCurriculumStatus() {
+    const cluster = this.cluster;
+    const perSubject = {};
+    if (this._perSubjectStats) {
+      for (const sub of SUBJECTS) {
+        const s = this._perSubjectStats[sub] || null;
+        perSubject[sub] = s ? { ...s } : {
+          subject: sub,
+          label: SUBJECT_LABELS[sub] || sub,
+          grade: null,
+          phasesCompleted: 0,
+          cellsPassed: 0,
+          teachEvents: 0,
+          lastCellAt: null
+        };
+      }
+    } else {
+      for (const sub of SUBJECTS) {
+        perSubject[sub] = {
+          subject: sub,
+          label: SUBJECT_LABELS[sub] || sub,
+          grade: null,
+          phasesCompleted: 0,
+          cellsPassed: 0,
+          teachEvents: 0,
+          lastCellAt: null
+        };
+      }
+    }
+    if (cluster && Array.isArray(cluster.passedCells)) {
+      for (const cellKey2 of cluster.passedCells) {
+        const sub = String(cellKey2).split("/")[0];
+        if (perSubject[sub]) perSubject[sub].cellsPassed = (perSubject[sub].cellsPassed | 0) + 1;
+      }
+    }
+    if (cluster && Array.isArray(cluster.passedPhases)) {
+      const persisted = {};
+      for (const phaseKey of cluster.passedPhases) {
+        const sub = String(phaseKey).split("/")[0];
+        if (perSubject[sub]) persisted[sub] = (persisted[sub] | 0) + 1;
+      }
+      for (const sub of Object.keys(persisted)) {
+        if (perSubject[sub]) {
+          perSubject[sub].phasesCompleted = Math.max(perSubject[sub].phasesCompleted | 0, persisted[sub]);
+        }
+      }
+    }
+    const activePhase = cluster && cluster._activePhase ? {
+      name: cluster._activePhase.name,
+      elapsedMs: cluster._activePhase.startAt ? Date.now() - cluster._activePhase.startAt : 0
+    } : null;
+    const cellKey = cluster && cluster._currentCellKey ? cluster._currentCellKey : null;
+    const currentCellPassedPhases = cellKey && Array.isArray(cluster?.passedPhases) ? cluster.passedPhases.filter((k) => k && k.startsWith(`${cellKey}:`)).length : 0;
+    return {
+      currentSubject: this._currentSubject || null,
+      currentGrade: this._currentGrade || null,
+      currentLabel: this._currentSubjectLabel || null,
+      currentGradeLabel: this._currentGrade ? GRADE_LABELS[this._currentGrade] || this._currentGrade : null,
+      currentCellKey: cellKey,
+      activePhase,
+      cellPhasesCompleted: this._currentCellPhasesCompleted | 0,
+      cellPhasesPersisted: currentCellPassedPhases,
+      cellStartAt: this._currentCellStartAt || null,
+      perSubject,
+      passedCellsTotal: cluster && Array.isArray(cluster.passedCells) ? cluster.passedCells.length : 0,
+      subjects: SUBJECTS.slice()
+    };
   }
   /**
    * Record a gate result. Called by every grade gate at the end of
@@ -12419,6 +12525,25 @@ var Curriculum = class _Curriculum {
     cluster._inCurriculumMode = true;
     const wasCellKey = cluster._currentCellKey;
     cluster._currentCellKey = cellKey;
+    this._currentSubject = subject;
+    this._currentGrade = grade;
+    this._currentSubjectLabel = SUBJECT_LABELS[subject] || subject;
+    this._currentCellStartAt = _cellStart;
+    this._currentCellPhasesCompleted = 0;
+    this._perSubjectStats = this._perSubjectStats || {};
+    if (!this._perSubjectStats[subject]) {
+      this._perSubjectStats[subject] = {
+        subject,
+        label: SUBJECT_LABELS[subject] || subject,
+        grade: null,
+        phasesCompleted: 0,
+        cellsPassed: 0,
+        teachEvents: 0,
+        lastCellAt: null
+      };
+    }
+    this._perSubjectStats[subject].grade = grade;
+    this._perSubjectStats[subject].label = SUBJECT_LABELS[subject] || subject;
     cluster._probeGateActive = true;
     let _aliveTick = 0;
     let _priorRssMb = 0;
@@ -16087,6 +16212,192 @@ var Curriculum = class _Curriculum {
     return vocab;
   }
   /**
+   * Pre-gate enrichment — composed call that fires every pre-test
+   * teach pass (vocabulary audit → sentence-structure teach →
+   * definition-first teach) so by the time a K gate probe asks
+   * questions, Unity has seen the vocabulary, the sentence
+   * structure, AND the definitions of every word she'll be tested
+   * on. Runs ONCE per gate entry (idempotent-per-cell via a
+   * `_pregateCellsDone` guard). Silent no-op when the cell key
+   * doesn't have a TRAIN_BANKS entry (nothing to enrich from).
+   *
+   * Separated from `_auditExamVocabulary` so the audit can fire
+   * stand-alone for logging while the enrichment chain only runs
+   * when the operator wants the closed-loop pre-test pipeline.
+   */
+  async _pregateEnrichment(cellKey, opts = {}) {
+    if (!cellKey) return;
+    this._pregateCellsDone = this._pregateCellsDone || /* @__PURE__ */ new Set();
+    if (!opts.force && this._pregateCellsDone.has(cellKey)) return;
+    this._pregateCellsDone.add(cellKey);
+    try {
+      this._auditExamVocabulary(cellKey);
+      if (typeof this._teachSentenceStructures === "function") {
+        await this._teachSentenceStructures(cellKey, opts.structReps ?? 6);
+      }
+      if (opts.definitions && typeof this._teachDefinitionFirst === "function") {
+        await this._teachDefinitionFirst(opts.definitions, { label: `${cellKey}-DEF`, reps: opts.defReps ?? 8 });
+      }
+      if (opts.contextMap && typeof this._teachWordInContext === "function") {
+        await this._teachWordInContext(opts.contextMap, { label: `${cellKey}-USAGE` });
+      }
+    } catch (err) {
+      console.warn(`[Curriculum] pregate-enrichment ${cellKey} failed:`, err?.message || err);
+    }
+  }
+  /**
+   * Sentence-structure teach pass. Takes the exam bank for a cell,
+   * extracts the unique question-template IDs + surface forms, and
+   * trains each structural pattern as a Hebbian binding against a
+   * tag in the question_template sub-region (fineType upper 25%).
+   * After this pass, the cortex has a dedicated basin for every
+   * structural template it will be tested on. Complement to
+   * `_auditExamVocabulary` — the audit surfaces uncovered words,
+   * this surfaces uncovered STRUCTURES and teaches them.
+   *
+   * Returns `{templatesTaught, skipped}` — the count of distinct
+   * templates that got teach passes for this cell. Fires at the
+   * start of each cell's teach sequence (insertable into the
+   * run*KReal / run*PreK runners before the subject-specific
+   * association pairs fire).
+   */
+  async _teachSentenceStructures(cellKey, reps = 6) {
+    const bank = TRAIN_BANKS && TRAIN_BANKS[cellKey];
+    if (!Array.isArray(bank) || bank.length === 0) return { templatesTaught: 0, skipped: 0 };
+    const byTemplate = /* @__PURE__ */ new Map();
+    for (const entry of bank) {
+      const q = entry.question || entry.q || "";
+      if (!q) continue;
+      const tId = this._classifyQuestionTemplate(q);
+      if (tId < 0) continue;
+      if (!byTemplate.has(tId)) byTemplate.set(tId, []);
+      byTemplate.get(tId).push(q);
+    }
+    if (byTemplate.size === 0) return { templatesTaught: 0, skipped: 0 };
+    let taught = 0;
+    let skipped = 0;
+    const cluster = this.cluster;
+    const semRegion = cluster?.regions?.sem;
+    const motorRegion = cluster?.regions?.motor;
+    if (!semRegion || !motorRegion) return { templatesTaught: 0, skipped: bank.length };
+    const lr = 0.03;
+    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH START \u2014 ${byTemplate.size} template forms \xD7 up to ${reps} reps each`);
+    try {
+      this._pushBrainEvent?.("teach", "fineType", `STRUCT START: ${cellKey} \xB7 ${byTemplate.size} templates`, { cellKey, templateCount: byTemplate.size });
+    } catch {
+    }
+    for (const [templateId, samples] of byTemplate) {
+      const anchor = samples[0];
+      const anchorEntry = bank.find((e) => (e.question || e.q) === anchor);
+      const answer = String(anchorEntry?.expectedAnswer || anchorEntry?.a || "yes").toLowerCase().trim();
+      const targetLetter = answer.charAt(0);
+      if (!targetLetter) {
+        skipped++;
+        continue;
+      }
+      const motorPattern = encodeLetter(targetLetter);
+      const qEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function" ? sharedEmbeddings.getSentenceEmbedding(anchor) : null;
+      if (!qEmb || qEmb.length === 0 || !motorPattern || motorPattern.length === 0) {
+        skipped++;
+        continue;
+      }
+      for (let r = 0; r < reps; r++) {
+        try {
+          this._clearSpikes();
+          this._writeTiledPattern(semRegion, qEmb, false);
+          this._writeQuestionTemplateTag(templateId);
+          this._writeTiledPattern(motorRegion, motorPattern, false);
+          await this._teachHebbian(lr);
+        } catch {
+        }
+      }
+      taught++;
+    }
+    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH DONE \u2014 ${taught} template forms \xD7 ${reps} reps (skipped ${skipped})`);
+    try {
+      this._pushBrainEvent?.("teach", "fineType", `STRUCT DONE: ${cellKey} \xB7 ${taught}`, { cellKey, taught, skipped });
+    } catch {
+    }
+    return { templatesTaught: taught, skipped };
+  }
+  /**
+   * Definition-first vocabulary teach. Exposes every word → short
+   * definition binding via the existing `_teachAssociationPairs`
+   * path so the sem region has a meaning anchor for each word, not
+   * just a GloVe basin. K-grade definition map covers the core
+   * Dolch + Common Core vocabulary. Every definition is a single
+   * anchor noun/verb that captures the word's semantic role.
+   *
+   * Falls back to a no-op when no definitions are provided.
+   */
+  async _teachDefinitionFirst(defMap, opts = {}) {
+    if (!defMap || typeof defMap !== "object") return { taught: 0, skipped: 0 };
+    const pairs = [];
+    for (const [word, def] of Object.entries(defMap)) {
+      if (!word || !def) continue;
+      pairs.push([word.toLowerCase(), String(def).toLowerCase().trim()]);
+    }
+    if (pairs.length === 0) return { taught: 0, skipped: 0 };
+    const reps = opts.reps ?? 8;
+    const label = opts.label || "DEF-FIRST";
+    const result = await this._teachAssociationPairs(pairs, {
+      reps,
+      label,
+      relationTagId: 1,
+      // category/definition band in fineType
+      antiPairs: false,
+      // definition teach doesn't need contrastive push-pull
+      motorWTA: false,
+      // definitions aren't letter-decoded, skip WTA
+      separationProbe: false
+    });
+    return { taught: result?.trained || 0, skipped: result?.skipped || 0 };
+  }
+  /**
+   * Word-usage-in-context teach. For each word, exercises it across
+   * multiple distinct context sentences so the cortex learns the
+   * word's combinatorial usage (subject-verb pairings, modifier-noun
+   * bindings, etc.), not just the isolated embedding. Different
+   * from definition teach — definitions anchor meaning, context
+   * teaches co-occurrence patterns.
+   *
+   * `contextMap` is `{word: [sentence1, sentence2, sentence3, ...]}`.
+   * Each sentence gets fed to `cluster.readInput` so the visual→
+   * letter→phon→sem pathway processes it naturally; the Hebbian
+   * updates that fire during the read pass build co-occurrence
+   * weights without needing explicit teach-target patterns.
+   */
+  async _teachWordInContext(contextMap, opts = {}) {
+    if (!contextMap || typeof contextMap !== "object") return { readings: 0 };
+    const cluster = this.cluster;
+    if (!cluster || typeof cluster.readInput !== "function") return { readings: 0 };
+    const ticksPerWord = opts.ticksPerWord ?? 3;
+    const label = opts.label || "WORD-USAGE";
+    let readings = 0;
+    this._hb(`[Curriculum][${label}] START \u2014 context-pass across ${Object.keys(contextMap).length} words`);
+    try {
+      this._pushBrainEvent?.("teach", "sem", `USAGE START: ${label} \xB7 ${Object.keys(contextMap).length} words`, { label });
+    } catch {
+    }
+    for (const [word, sentences] of Object.entries(contextMap)) {
+      if (!Array.isArray(sentences) || sentences.length === 0) continue;
+      for (const sentence of sentences) {
+        if (!sentence || typeof sentence !== "string") continue;
+        try {
+          cluster.readInput(sentence, { ticks: ticksPerWord });
+          readings++;
+        } catch {
+        }
+      }
+    }
+    this._hb(`[Curriculum][${label}] DONE \u2014 ${readings} context-pass readings across ${Object.keys(contextMap).length} words`);
+    try {
+      this._pushBrainEvent?.("teach", "sem", `USAGE DONE: ${label} \xB7 ${readings} reads`, { label, readings });
+    } catch {
+    }
+    return { readings };
+  }
+  /**
    * Pre-gate vocabulary audit. Fires `examVocabCoverage(cellKey,
    * trainedVocab)` against Unity's current trained vocabulary and
    * returns the coverage report. Logs a prominent warning (but does
@@ -16129,7 +16440,7 @@ var Curriculum = class _Curriculum {
   async _gateElaKReal() {
     const cluster = this.cluster;
     const ALPHABET = ALPHABET_ORDER;
-    this._auditExamVocabulary("ela/kindergarten");
+    await this._pregateEnrichment("ela/kindergarten");
     if (cluster) cluster._probeGateActive = true;
     try {
       let cosine = function(a, b) {
@@ -17102,7 +17413,7 @@ var Curriculum = class _Curriculum {
     const cluster = this.cluster;
     const DIGITS = DIGIT_ORDER;
     const NAMES = DIGIT_NAMES;
-    this._auditExamVocabulary("math/kindergarten");
+    await this._pregateEnrichment("math/kindergarten");
     const letterRegion = cluster.regions.letter;
     const phonRegion = cluster.regions.phon;
     const semRegion = cluster.regions.sem;
@@ -21817,7 +22128,7 @@ var Curriculum = class _Curriculum {
   async _gateSciKReal() {
     const cluster = this.cluster;
     if (!cluster || !cluster.synapses) return { pass: false, reason: "no cluster" };
-    this._auditExamVocabulary("science/kindergarten");
+    await this._pregateEnrichment("science/kindergarten");
     const sciKProductionSamples = [
       // K-PS2 Tests
       { question: "what happens when you push a ball", expected: ["move", "roll", "m"] },
@@ -22099,7 +22410,7 @@ var Curriculum = class _Curriculum {
   async _gateSocKReal() {
     const cluster = this.cluster;
     if (!cluster || !cluster.synapses) return { pass: false, reason: "no cluster" };
-    this._auditExamVocabulary("social/kindergarten");
+    await this._pregateEnrichment("social/kindergarten");
     const socKProductionSamples = [
       // Self / Family / Community Tests
       { question: "who fights fires", expected: ["firefighter", "f"] },
@@ -22358,7 +22669,7 @@ var Curriculum = class _Curriculum {
   async _gateArtKReal() {
     const cluster = this.cluster;
     if (!cluster || !cluster.synapses) return { pass: false, reason: "no cluster" };
-    this._auditExamVocabulary("art/kindergarten");
+    await this._pregateEnrichment("art/kindergarten");
     const artKProductionSamples = [
       // Visual Arts K Tests
       { question: "what are the three primary colors", expected: ["red", "yellow", "blue", "r", "y", "b"] },
@@ -33694,7 +34005,7 @@ var Curriculum = class _Curriculum {
   async _gateLifeKReal() {
     const cluster = this.cluster;
     if (!cluster || !cluster.synapses) return { pass: false, reason: "no cluster" };
-    this._auditExamVocabulary("life/kindergarten");
+    await this._pregateEnrichment("life/kindergarten");
     const lifeKProductionSamples = [
       // Life Pre-K Tests
       { question: "what is your name", expected: ["unity", "u"] },

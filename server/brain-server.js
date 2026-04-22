@@ -1754,6 +1754,15 @@ class ServerBrain {
       // events newer than `_brainEventTTL` for popup rendering. The
       // seq field lets the dashboard dedupe across poll intervals.
       brainEvents: this._recentBrainEvents(),
+      // Current training-subject snapshot for the dashboard "Current
+      // Training" card. Null fields when no cell is active. Sourced
+      // from the curriculum's per-cell + per-subject counters so the
+      // dashboard's subject/grade/progress display and the curriculum
+      // teach path can never drift out of sync — ONE cortex, ONE
+      // curriculum object, ONE dashboard read.
+      curriculum: this.curriculum && typeof this.curriculum.getCurriculumStatus === 'function'
+        ? this.curriculum.getCurriculumStatus()
+        : null,
     };
   }
 
