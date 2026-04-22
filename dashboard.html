@@ -106,6 +106,24 @@
     </div>
 
     <div class="card" style="margin-top:12px;">
+      <div class="card-title">Current Training — subject / grade / progress</div>
+      <div id="d-curriculum-panel" style="padding:10px 12px;font-family:monospace;font-size:12px;color:#ccc;">
+        <div id="d-curr-subject" style="font-size:15px;font-weight:bold;color:#a78bfa;">no cell active</div>
+        <div id="d-curr-grade" style="font-size:11px;color:#888;margin-top:2px;">—</div>
+        <div id="d-curr-desc" style="margin-top:8px;color:#bbb;line-height:1.5;font-size:11px;">Waiting for curriculum teach to begin.</div>
+        <div id="d-curr-phase" style="margin-top:10px;color:#888;font-size:11px;">phase: —</div>
+        <div style="margin-top:6px;">
+          <div style="font-size:10px;color:#666;margin-bottom:3px;">current cell progress</div>
+          <div style="background:#222;border:1px solid #333;height:8px;border-radius:3px;overflow:hidden;">
+            <div id="d-curr-cellbar" style="height:100%;width:0%;background:linear-gradient(90deg,#a78bfa,#ff4d9a);transition:width 0.4s ease;"></div>
+          </div>
+          <div id="d-curr-cellpct" style="font-size:10px;color:#888;margin-top:3px;">0% · 0 phases</div>
+        </div>
+        <div id="d-curr-subjects" style="margin-top:12px;border-top:1px solid #222;padding-top:8px;"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
       <div class="card-title">Brain Events — what Unity is thinking RIGHT NOW</div>
       <div id="d-brain-events" style="padding:8px 12px;font-family:monospace;font-size:11px;color:#ccc;line-height:1.6;max-height:200px;overflow-y:auto;">
         <div style="color:#666;">No live events yet — waiting for curriculum teach / gate / plasticity to fire.</div>
@@ -252,6 +270,10 @@
       // WHAT the unified cortex is doing right now. One source of
       // truth: the same cortexCluster that plasticity writes to.
       renderBrainEvents(s.brainEvents || []);
+      // Current-training card — subject + grade + description + phase
+      // progress bar + per-subject cumulative breakdown. Same source
+      // of truth: the Curriculum object's getCurriculumStatus().
+      renderCurriculumStatus(s.curriculum || null);
 
       // T15.C — dynamic drug-state panel. Renders scheduler.snapshot()
       // (active substances with phase + level + combo badges + risk
@@ -414,6 +436,91 @@
         _renderedEventSeqs.clear();
         for (const s of arr.slice(-250)) _renderedEventSeqs.add(s);
       }
+    }
+
+    // Curriculum-status renderer. Paints the "Current Training" card
+    // from the atomic snapshot the server sends in every state
+    // broadcast. Subject label goes big, grade tag goes small, one-
+    // sentence description under it, then an in-cell progress bar
+    // (phase count / heuristic total) and a per-subject breakdown
+    // grid showing phases + cells-passed + teach-events per subject.
+    //
+    // Heuristic: we don't know the TOTAL phase count for the current
+    // cell in advance (each cell's teach phase count varies — pre-K
+    // runners fire 4-6 phases, K runners fire 14-18). So progress %
+    // is computed as completed / max(completed, expected) where
+    // `expected` starts at 12 (typical K cell) and grows if the
+    // actual count overshoots. Bar saturates at 100% after the
+    // expected count, which is fine — operator cares about direction
+    // of motion, not exact total.
+    const EXPECTED_PHASES_PER_CELL = 12;
+    function renderCurriculumStatus(c) {
+      const $ = id => document.getElementById(id);
+      if (!c) {
+        $('d-curr-subject').textContent = 'no cell active';
+        $('d-curr-grade').textContent = '—';
+        $('d-curr-desc').textContent = 'Waiting for curriculum teach to begin.';
+        $('d-curr-phase').textContent = 'phase: —';
+        $('d-curr-cellbar').style.width = '0%';
+        $('d-curr-cellpct').textContent = '0% · 0 phases';
+        $('d-curr-subjects').innerHTML = '';
+        return;
+      }
+      // Subject + grade header
+      if (c.currentSubject && c.currentGrade) {
+        const subUpper = String(c.currentSubject).toUpperCase();
+        $('d-curr-subject').textContent = `${subUpper} — ${c.currentGrade}`;
+      } else if (c.passedCellsTotal > 0) {
+        $('d-curr-subject').textContent = 'between cells';
+      } else {
+        $('d-curr-subject').textContent = 'no cell active';
+      }
+      $('d-curr-grade').textContent = c.currentGradeLabel || c.currentGrade || '—';
+      $('d-curr-desc').textContent = c.currentLabel || 'Waiting for curriculum teach to begin.';
+
+      // Active phase + elapsed
+      if (c.activePhase && c.activePhase.name) {
+        const sec = (c.activePhase.elapsedMs / 1000).toFixed(1);
+        $('d-curr-phase').textContent = `phase: ${c.activePhase.name} (+${sec}s)`;
+      } else {
+        $('d-curr-phase').textContent = 'phase: (between phases)';
+      }
+
+      // In-cell progress bar. Prefer the persisted count (survives
+      // restarts) over the live runtime count (which resets to zero
+      // on each cell entry).
+      const done = Math.max(c.cellPhasesPersisted | 0, c.cellPhasesCompleted | 0);
+      const expected = Math.max(EXPECTED_PHASES_PER_CELL, done);
+      const pct = Math.min(100, Math.round((done / expected) * 100));
+      $('d-curr-cellbar').style.width = pct + '%';
+      $('d-curr-cellpct').textContent = `${pct}% · ${done} phases completed`;
+
+      // Per-subject breakdown grid. One row per subject. Shows the
+      // subject label, its current grade pointer, cumulative phases
+      // completed, cells passed, total teach events. Lets the
+      // operator see the whole curriculum walk at a glance.
+      const subjects = Array.isArray(c.subjects) && c.subjects.length ? c.subjects : Object.keys(c.perSubject || {});
+      const rows = [];
+      rows.push('<div style="display:grid;grid-template-columns:60px 1fr 48px 48px 60px;gap:4px;font-size:10px;color:#666;border-bottom:1px solid #222;padding-bottom:3px;margin-bottom:4px;"><div>subject</div><div>grade</div><div style="text-align:right;">phases</div><div style="text-align:right;">cells</div><div style="text-align:right;">events</div></div>');
+      for (const sub of subjects) {
+        const s = (c.perSubject && c.perSubject[sub]) || { phasesCompleted: 0, cellsPassed: 0, teachEvents: 0, grade: null };
+        const isActive = c.currentSubject === sub;
+        const color = isActive ? '#a78bfa' : '#888';
+        rows.push(`<div style="display:grid;grid-template-columns:60px 1fr 48px 48px 60px;gap:4px;font-size:10px;color:${color};padding:2px 0;">`
+          + `<div style="font-weight:${isActive ? 'bold' : 'normal'};">${sub}</div>`
+          + `<div style="color:#666;">${s.grade || '—'}</div>`
+          + `<div style="text-align:right;">${s.phasesCompleted | 0}</div>`
+          + `<div style="text-align:right;">${s.cellsPassed | 0}</div>`
+          + `<div style="text-align:right;">${formatEvents(s.teachEvents | 0)}</div>`
+          + `</div>`);
+      }
+      $('d-curr-subjects').innerHTML = rows.join('');
+    }
+
+    function formatEvents(n) {
+      if (n < 1000) return String(n);
+      if (n < 1000000) return (n / 1000).toFixed(1) + 'k';
+      return (n / 1000000).toFixed(1) + 'M';
     }
 
     function updateConversationStats(s) {

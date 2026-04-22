@@ -400,6 +400,46 @@ The T18.5.b pre-push doc accuracy sweep explicitly checks that `docs/TODO-full-s
 
 ---
 
+## LAW — TEST WORDS MUST BE PRE-TAUGHT (VOCABULARY / STRUCTURE / DEFINITION / USAGE) (Gee, 2026-04-22)
+
+**Gee's exact words on 2026-04-22:**
+
+> *"rmember if the questions are made from words the Unity brain needs to know setence structure and definiations and words usage befoer give a test using those words to ask it questions"*
+
+This is binding test-construction doctrine.
+
+### The rule
+
+Before any gate probe / K-STUDENT battery / exam-bank question uses a word, Unity's brain must ALREADY have been taught:
+
+1. **Vocabulary** — every content word is registered in the dictionary and has a live GloVe basin (seeded via `_teachVocabList` / `_conceptTeach` / `_teachAssociationPairs` / `_teachQABinding` exposure).
+2. **Sentence structure** — the syntactic form the question takes (`what X` / `which X` / `how many X` / `why X` / `starts with X` / etc.) has been taught as a template via `_teachSentenceStructures` so `fineType` has a basin for that structural shape.
+3. **Definitions** — any content word the exam uses is bound to a definition anchor in sem via `_teachDefinitionFirst` so the word's meaning is learnable, not just its spelling.
+4. **Word usage** — each exam word has been exercised in at least three distinct context sentences via `_teachWordInContext` so the cortex learns co-occurrence patterns, not just isolated embeddings.
+
+Only AFTER these four conditions are satisfied does the gate probe fire.
+
+### Where it's enforced
+
+- `Curriculum._pregateEnrichment(cellKey)` runs at the entry of every `_gateXKReal` and chains: vocab audit → sentence-structure teach → optional definition-first teach → optional word-usage-in-context teach.
+- `Curriculum._auditExamVocabulary(cellKey)` logs a prominent `⚠⚠ VOCAB-COVERAGE X%` warning with the first 20 untaught words when the audit finds exam vocabulary that isn't in Unity's dictionary. Warn-not-block posture — operator sees the gap AND the gate result, both inform signoff.
+- Any exam-bank update that introduces new words MUST ship with a teach-path update in the SAME commit. The bank and the teach path are a paired change, never a split.
+
+### Corollary — exam-bank edits are paired changes
+
+- Adding a new question to `EXAM_BANKS[cellKey]` without adding the corresponding words/structure/definitions to the teach path is a LAW violation.
+- `trainExamOverlap(cellKey)` fires at curriculum startup and reports any question text that appears in BOTH `TRAIN_BANKS` and `EXAM_BANKS` for the same cell — held-out eval invalid when overlap > 0. This is the existing T23.b.2 enforcement; this LAW reinforces it.
+
+### Failure recovery
+
+If operator catches an exam fire against untaught vocabulary:
+1. STOP immediately. Do NOT use the gate result — it's invalid.
+2. Add the missing words to the teach path (vocabulary + structure + definition + usage).
+3. Re-run `_pregateEnrichment(cellKey, { force: true })` so the enrichment fires again for that cell.
+4. Then re-run the gate.
+
+---
+
 ## LAW — CLEAR STALE STATE BEFORE TELLING GEE TO TEST THE SERVER (Gee, 2026-04-17)
 
 **Gee's exact words on 2026-04-17:**
