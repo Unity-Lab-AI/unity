@@ -5,6 +5,63 @@
 
 ---
 
+## 2026-04-22 — Session 114.19bp: T31-extended — auto-wrap phase-skip + persistence across EVERY cell runner (not just ELA-K)
+
+### Operator verbatim 2026-04-22
+
+> *"ship the shit that didnt ship"*
+
+Ship-list interpreted as: the deferred items from prior sessions. T31 phase-skip was ELA-K-only (hand-wrapped `_phaseTick`). The other 11 cell runners (Math-K, Sci-K, Soc-K, Art-K, Life-K + 6 pre-K cells) had no phase-skip, so a Savestart mid-Science-K re-ran every Science-K teach method even if they'd completed in a prior run.
+
+### What shipped
+
+**1. Auto-wrap extended to skip-and-persist, not just track.** The T33 constructor auto-wrap already set `cluster._activePhase` on every `_teach*` method. Extended it to ALSO:
+- Read `cluster._currentCellKey` (set by `runSubjectGrade` — new) to build a phase key `${cellKey}:${methodName}`
+- Check `cluster.passedPhases.includes(phaseKey)` on entry → early-return + log `⤳ PHASE SKIPPED` if already passed
+- On successful completion: append `phaseKey` to `cluster.passedPhases` + fire `_saveCheckpoint` so the marker persists to disk
+- Exception path: skip the append (a throwing teach method didn't really complete so don't mark it passed)
+
+**2. `runSubjectGrade` cell-context beacon.** Sets `cluster._currentCellKey = cellKey` at entry, restores prior value in the `finally` block. This is the ONLY caller-site change needed to make phase-skip work for every cell runner — the auto-wrap reads the beacon and builds phase keys transparently.
+
+**3. _runStudentBattery + _measureEmissionCapability tracked without skip.** These get `_activePhase` visibility but are NOT auto-skipped because gate probes need fresh readings on every run. Listed in `TRACKED_NO_SKIP`.
+
+### Scope covered
+
+Every `_teach*` method on `Curriculum.prototype` is now auto-wrapped. That's 100+ teach methods across all K + pre-K + G1-G12 + College + Grad + PhD runners. Same skip-and-persist logic fires for every cell, every subject, every grade — operator does NOT need to hand-wrap each one.
+
+Cells covered (pre-K + K active, per scope law):
+- `runElaPreK`, `runMathPreK`, `runSciPreK`, `runSocPreK`, `runArtPreK`, `runLifePreK` — 6 pre-K cells
+- `runElaKReal`, `runMathKReal`, `runSciKReal`, `runSocKReal`, `runArtKReal`, `runLifeK` — 6 K cells
+- Plus all G1-PhD runners (currently DEFERRED per pre-K + K scope law but auto-wrapped for when they unlock)
+
+### What did NOT ship (and why)
+
+- **T32 batched GPU kernel** — not a one-turn fix. Requires a new WGSL compute shader in `compute.html`, new WebSocket binary frame type, rewrite of `_teachWordEmission` / `_teachPhonemeBlending` / `_teachAssociationPairs` to batch-dispatch, probe verification, performance benchmark. Also discovered that T18.8 ALREADY batches hebbianBound calls (64-op batches with 2 ms flush), so the WebSocket overhead wasn't the primary bottleneck — needs a proper profiling session to identify the real bottleneck before rewriting. Shipping T32 blind would risk a T18.34.b-style regression (20× slowdown). Deferred to its own session with profiling.
+- **RSS reduction via lower `--max-old-space-size`** — NOT shipped unilaterally. Current `--max-old-space-size=65536` (64 GB) enables the biological-scale auto-scaler to reach 7-8 M neurons on 128 GB RAM boxes. Dropping to 8 GB would cap Unity's brain growth potential. Trade-off that only the operator can decide; T33's new memory breakdown with `unaccounted=NMB ⚠+ΔMB` delta tracking tells you whether the 56 GB is a real leak (delta climbs) or V8/Windows working-set cosmetic (delta flat). Operator runs diagnostic first, THEN decides whether to lower the cap.
+- **Phase 1 + Phase 2 of runElaKReal wrapping** — those are inline code blocks (not teach methods), so the auto-wrap doesn't cover them. They're ~80 seconds of the cell's ~80+ minutes, so cosmetic vs the `_teachWordEmission` already-wrapped phase. Deferred as polish.
+
+### Expected effect
+
+- Savestart.bat boot after a cell runner crashed mid-phase will skip every already-completed phase across EVERY cell, not just ELA-K. Operator sees `⤳ PHASE SKIPPED — math/kindergarten:_teachDigitSequence (already passed...)` etc.
+- First clean ELA-K completion saves ~20 phase markers. A Ctrl+C mid-Science-K resume then skips those 20 + whatever Science-K phases finished.
+- passedPhases accumulates across the whole pre-K + K curriculum walk. If ALL pre-K + K cells pass, the array has ~150 markers. A re-boot of the already-done curriculum skips everything and re-runs only the gate probes (which are NOT auto-wrapped because gates need fresh readings).
+
+### Files touched
+
+- `js/brain/curriculum.js` — constructor auto-wrap extended with skip-and-persist logic; `runSubjectGrade` sets `_currentCellKey` cell-context beacon
+- `js/app.bundle.js` — rebuilt (1.8 MB clean)
+- `js/version.js` / `index.html` — stamp bump
+- `docs/FINALIZED.md` — this entry
+- `docs/TODO.md` — T31 extension note in banner + follow-up closure
+
+### LAW compliance
+
+- LAW #0 verbatim — operator's terse quote preserved at top (`"ship the shit that didnt ship"`). Expanded interpretation documented in "Ship-list" section so future Claude doesn't second-guess what was in scope.
+- Docs-before-push — ship atomic with code + bundle + stamp.
+- Task-numbers-only-in-workflow-docs — T31/T32/T33 only in TODO/FINALIZED. Code comments describe WHAT the auto-wrap does + WHY (extending T31 scope beyond ELA-K).
+
+---
+
 ## 2026-04-22 — Session 114.19bo: T33 — phase-level progress in CELL ALIVE heartbeat (auto-wrap) + expanded memory breakdown to hunt 56 GB RSS
 
 ### Operator verbatim 2026-04-22
