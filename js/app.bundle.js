@@ -648,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "a3fb4a53-d801";
+var BUILD = "e9f94bdc-33cf";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -18027,7 +18027,7 @@ var Curriculum = class _Curriculum {
       for (let n = 0; n < gSize; n++) {
         const idx = region.start + d * gSize + n;
         if (idx >= region.end) continue;
-        cluster.lastSpikes[idx] = binarize ? 1 : feat[d];
+        cluster.lastSpikes[idx] = 1;
         if (sparseIndices) sparseIndices.push(idx - region.start);
       }
     }
@@ -18292,8 +18292,8 @@ var Curriculum = class _Curriculum {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return { trained: 0, skipped: 0 };
     if (!Array.isArray(pairs) || pairs.length === 0) return { trained: 0, skipped: 0 };
-    const reps = opts.reps ?? 8;
-    const lr = opts.lr ?? cluster.learningRate;
+    const reps = opts.reps ?? 12;
+    const lr = opts.lr ?? 0.03;
     const label = opts.label || "ASSOC";
     const semRegion = cluster.regions && cluster.regions.sem;
     const motorRegion = cluster.regions && cluster.regions.motor;
@@ -18362,18 +18362,41 @@ var Curriculum = class _Curriculum {
       if (normed.length > 0) normReport = ` \xB7 row-norm [${normed.join(",")}]`;
     }
     let sepReport = "";
+    let collapseFlag = "";
     if (runSeparationProbe && pairs.length >= 2) {
       try {
         const sep = this._checkSemBasinSeparation(pairs, { semRegion, motorRegion, overloadMax, sampleSize: 8 });
         if (sep && typeof sep.meanCos === "number") {
-          const flag = sep.meanCos > overloadMax ? " \u26A0OVERLOAD" : "";
-          sepReport = ` \xB7 sep-probe mean-cos=${sep.meanCos.toFixed(3)} max=${sep.maxCos.toFixed(3)}${flag}`;
+          const overload = sep.meanCos > overloadMax;
+          const collapsed = sep.meanCos < 0.05 && sep.maxCos < 0.05;
+          if (overload) collapseFlag = " \u26A0OVERLOAD";
+          else if (collapsed) collapseFlag = " \u26A0\u26A0 TRAINING_COLLAPSE: motor readouts near-zero \u2014 sem\u2192motor weights too weak to fire motor region";
+          sepReport = ` \xB7 sep-probe mean-cos=${sep.meanCos.toFixed(3)} max=${sep.maxCos.toFixed(3)}${collapseFlag}`;
         }
       } catch {
       }
     }
+    let weightReport = "";
+    try {
+      const proj = cluster.crossProjections && cluster.crossProjections.sem_to_motor;
+      if (proj && proj.values && proj.values.length > 0) {
+        const vals = proj.values;
+        let sumAbs = 0, maxAbs = 0, nnz = 0;
+        const N = Math.min(vals.length, 1e5);
+        for (let k = 0; k < N; k++) {
+          const v = vals[k];
+          const a = v < 0 ? -v : v;
+          sumAbs += a;
+          if (a > maxAbs) maxAbs = a;
+          if (a > 1e-6) nnz++;
+        }
+        const meanAbs = sumAbs / N;
+        weightReport = ` \xB7 sem_to_motor |W| mean=${meanAbs.toFixed(4)} max=${maxAbs.toFixed(4)} nnz=${nnz}/${N}`;
+      }
+    } catch {
+    }
     const elapsedSec = ((Date.now() - startMs) / 1e3).toFixed(1);
-    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${normReport}${sepReport}`);
+    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${normReport}${sepReport}${weightReport}`);
     return { trained, skipped };
   }
   /**
@@ -18396,27 +18419,30 @@ var Curriculum = class _Curriculum {
     const sampleSize = Math.min(opts.sampleSize || 8, pairs.length);
     const step = Math.max(1, Math.floor(pairs.length / sampleSize));
     const readouts = [];
-    const savedSpikes = new Float64Array(cluster.lastSpikes);
-    try {
-      for (let i = 0; i < pairs.length && readouts.length < sampleSize; i += step) {
-        const pair = pairs[i];
-        if (!Array.isArray(pair) || pair.length < 2) continue;
-        const [inputWord] = pair;
-        const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(inputWord) : null;
-        if (!inEmb || inEmb.length === 0) continue;
-        for (let j = 0; j < cluster.lastSpikes.length; j++) cluster.lastSpikes[j] = 0;
-        this._writeTiledPattern(semRegion, inEmb, false);
-        const out = proj.propagate(cluster.lastSpikes);
-        if (!out || out.length === 0) continue;
-        const motorSlice = out.slice(motorRegion.start, motorRegion.end);
-        let nrm = 0;
-        for (let d = 0; d < motorSlice.length; d++) nrm += motorSlice[d] * motorSlice[d];
-        nrm = Math.sqrt(nrm) || 1;
-        for (let d = 0; d < motorSlice.length; d++) motorSlice[d] /= nrm;
-        readouts.push(motorSlice);
+    const semSize = semRegion.end - semRegion.start;
+    for (let i = 0; i < pairs.length && readouts.length < sampleSize; i += step) {
+      const pair = pairs[i];
+      if (!Array.isArray(pair) || pair.length < 2) continue;
+      const [inputWord] = pair;
+      const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(inputWord) : null;
+      if (!inEmb || inEmb.length === 0) continue;
+      const semInput = new Float64Array(semSize);
+      const gSize = Math.max(1, Math.floor(semSize / inEmb.length));
+      for (let d = 0; d < inEmb.length; d++) {
+        if (inEmb[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < semSize) semInput[idx] = 1;
+        }
       }
-    } finally {
-      for (let j = 0; j < cluster.lastSpikes.length; j++) cluster.lastSpikes[j] = savedSpikes[j];
+      const out = proj.propagate(semInput);
+      if (!out || out.length === 0) continue;
+      let nrm = 0;
+      for (let d = 0; d < out.length; d++) nrm += out[d] * out[d];
+      nrm = Math.sqrt(nrm) || 1;
+      const normed = new Float64Array(out.length);
+      for (let d = 0; d < out.length; d++) normed[d] = out[d] / nrm;
+      readouts.push(normed);
     }
     if (readouts.length < 2) return null;
     let sumCos = 0, maxCos = -Infinity, comparisons = 0;

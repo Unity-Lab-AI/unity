@@ -8159,12 +8159,27 @@ export class Curriculum {
     const gSize = Math.max(1, Math.floor(size / feat.length));
     const haveProxy = !!(cluster._gpuProxy && cluster._gpuProxy.writeSpikeSlice);
     const sparseIndices = haveProxy ? [] : null;
+    // SOFT-WRITE BUG FIX: `cluster.lastSpikes` is a Uint8Array. Writing
+    // a float like `feat[d] = 0.2` (typical GloVe magnitude) to a
+    // Uint8Array TRUNCATES to 0 — effectively blanking the spike.
+    // Every `_teachAssociationPairs` phase with `binarize:false` was
+    // writing ZEROS into sem + motor regions, so Hebbian saw no
+    // signal → no learning → sep-probe mean-cos=0 on every teach
+    // phase → PROD probes emit empty → curriculum tests return
+    // uniform-empty responses. Fix: for any active dim (feat[d] > 0),
+    // write 1 regardless of `binarize` flag. Magnitude info was never
+    // preserved anyway because the GPU-side writeSpikeSlice path only
+    // sends indices (no values) — binarize:false was architecturally
+    // equivalent to binarize:true under the hood, but the Uint8Array
+    // truncation made it WORSE by zeroing the spike entirely. GloVe
+    // identity is preserved via WHICH dims fire (the active-set), not
+    // via the magnitudes those dims carry into the buffer.
     for (let d = 0; d < feat.length; d++) {
       if (feat[d] <= 0) continue;
       for (let n = 0; n < gSize; n++) {
         const idx = region.start + d * gSize + n;
         if (idx >= region.end) continue;
-        cluster.lastSpikes[idx] = binarize ? 1 : feat[d];
+        cluster.lastSpikes[idx] = 1;
         if (sparseIndices) sparseIndices.push(idx - region.start);
       }
     }
@@ -8444,8 +8459,17 @@ export class Curriculum {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return { trained: 0, skipped: 0 };
     if (!Array.isArray(pairs) || pairs.length === 0) return { trained: 0, skipped: 0 };
-    const reps = opts.reps ?? 8;
-    const lr = opts.lr ?? cluster.learningRate;
+    // Training hyperparam tuning: reps bumped 8 → 12 + lr bumped
+    // cluster.learningRate (0.01) → 0.03. Prior params couldn't drive
+    // convergence even with the soft-write bug fixed — 8 reps × lr=0.01
+    // accumulates ~0.08 weight per consistent (pre, post) pair, which
+    // after row-norm collapses back to ~1/√nnz ≈ 0.003 per neuron
+    // connection. Motor readouts at probe time would sum to sub-threshold
+    // values → argmax decode returns noise. 12 reps × lr=0.03 gives
+    // ~0.36 accumulated weight per pair, row-norm preserves discriminating
+    // magnitudes, motor readout clears firing threshold cleanly.
+    const reps = opts.reps ?? 12;
+    const lr = opts.lr ?? 0.03;
     const label = opts.label || 'ASSOC';
     const semRegion = cluster.regions && cluster.regions.sem;
     const motorRegion = cluster.regions && cluster.regions.motor;
@@ -8534,19 +8558,54 @@ export class Curriculum {
     }
     // Cosine-separation diagnostic — detects sem-region overload by
     // measuring pairwise cosine between motor readouts for a sample
-    // of trained pairs. Passes if mean-cosine < overloadMax.
+    // of trained pairs. Passes if mean-cosine < overloadMax AND
+    // mean-cosine > collapseMin (new lower bound — if motor readouts
+    // are all zeros OR all identical the training signal isn't
+    // landing and the phase is effectively no-op).
     let sepReport = '';
+    let collapseFlag = '';
     if (runSeparationProbe && pairs.length >= 2) {
       try {
         const sep = this._checkSemBasinSeparation(pairs, { semRegion, motorRegion, overloadMax, sampleSize: 8 });
         if (sep && typeof sep.meanCos === 'number') {
-          const flag = sep.meanCos > overloadMax ? ' ⚠OVERLOAD' : '';
-          sepReport = ` · sep-probe mean-cos=${sep.meanCos.toFixed(3)} max=${sep.maxCos.toFixed(3)}${flag}`;
+          const overload = sep.meanCos > overloadMax;
+          // Collapse detector: motor readouts all near-zero (cosine
+          // near 0) OR all identical (cosine near 1) both signal that
+          // the teach pattern didn't land usefully. 0.05 lower bound
+          // because normalized unit-vectors should have SOME variance
+          // when 8 different concepts are probed.
+          const collapsed = sep.meanCos < 0.05 && sep.maxCos < 0.05;
+          if (overload) collapseFlag = ' ⚠OVERLOAD';
+          else if (collapsed) collapseFlag = ' ⚠⚠ TRAINING_COLLAPSE: motor readouts near-zero — sem→motor weights too weak to fire motor region';
+          sepReport = ` · sep-probe mean-cos=${sep.meanCos.toFixed(3)} max=${sep.maxCos.toFixed(3)}${collapseFlag}`;
         }
       } catch { /* non-fatal */ }
     }
+    // Weight-magnitude diagnostic. Post-teach, sample the sem_to_motor
+    // projection weights to confirm Hebbian accumulation actually
+    // happened. If mean|W| is ~0, the teach didn't land → operator
+    // can tell at a glance whether to bump lr/reps further or whether
+    // the issue is elsewhere (null-CSR, wrong region binding, etc).
+    let weightReport = '';
+    try {
+      const proj = cluster.crossProjections && cluster.crossProjections.sem_to_motor;
+      if (proj && proj.values && proj.values.length > 0) {
+        const vals = proj.values;
+        let sumAbs = 0, maxAbs = 0, nnz = 0;
+        const N = Math.min(vals.length, 100000); // sample first 100K for speed
+        for (let k = 0; k < N; k++) {
+          const v = vals[k];
+          const a = v < 0 ? -v : v;
+          sumAbs += a;
+          if (a > maxAbs) maxAbs = a;
+          if (a > 1e-6) nnz++;
+        }
+        const meanAbs = sumAbs / N;
+        weightReport = ` · sem_to_motor |W| mean=${meanAbs.toFixed(4)} max=${maxAbs.toFixed(4)} nnz=${nnz}/${N}`;
+      }
+    } catch { /* non-fatal */ }
     const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1);
-    this._hb(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${normReport}${sepReport}`);
+    this._hb(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${normReport}${sepReport}${weightReport}`);
     return { trained, skipped };
   }
 
@@ -8570,27 +8629,52 @@ export class Curriculum {
     const sampleSize = Math.min(opts.sampleSize || 8, pairs.length);
     const step = Math.max(1, Math.floor(pairs.length / sampleSize));
     const readouts = [];
-    const savedSpikes = new Float64Array(cluster.lastSpikes);
-    try {
-      for (let i = 0; i < pairs.length && readouts.length < sampleSize; i += step) {
-        const pair = pairs[i];
-        if (!Array.isArray(pair) || pair.length < 2) continue;
-        const [inputWord] = pair;
-        const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
-          ? sharedEmbeddings.getEmbedding(inputWord) : null;
-        if (!inEmb || inEmb.length === 0) continue;
-        for (let j = 0; j < cluster.lastSpikes.length; j++) cluster.lastSpikes[j] = 0;
-        this._writeTiledPattern(semRegion, inEmb, false);
-        const out = proj.propagate(cluster.lastSpikes);
-        if (!out || out.length === 0) continue;
-        const motorSlice = out.slice(motorRegion.start, motorRegion.end);
-        let nrm = 0; for (let d = 0; d < motorSlice.length; d++) nrm += motorSlice[d] * motorSlice[d];
-        nrm = Math.sqrt(nrm) || 1;
-        for (let d = 0; d < motorSlice.length; d++) motorSlice[d] /= nrm;
-        readouts.push(motorSlice);
+    // SEP-PROBE SLICING BUG FIX: the prior code built input via
+    // _writeTiledPattern on cluster.lastSpikes (full cluster scope) and
+    // then passed cluster.lastSpikes to proj.propagate. But sem_to_motor
+    // is region-local indexed (rows=motorSize, cols=semSize) — propagate
+    // reads input[colIdx[k]] with colIdx in [0, semSize). Passing the
+    // full cluster buffer read LETTER region data as if it were SEM
+    // data (letter typically lives at index 0 in the cluster, sem lives
+    // at a large offset). Result: motor readouts were always based on
+    // letter patterns, not sem patterns, so all 8 probes produced
+    // similar output → cosine 0.000 reported as "training collapse"
+    // when actually the probe wasn't testing what it claimed to test.
+    //
+    // Correct fix: build a sem-sized Float64Array input, write the tile
+    // into it at [0..semSize), propagate → output is motor-sized
+    // directly (no slicing needed). Also normalizes in-place on the
+    // returned vector (which is a fresh array so no state corruption).
+    const semSize = semRegion.end - semRegion.start;
+    for (let i = 0; i < pairs.length && readouts.length < sampleSize; i += step) {
+      const pair = pairs[i];
+      if (!Array.isArray(pair) || pair.length < 2) continue;
+      const [inputWord] = pair;
+      const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
+        ? sharedEmbeddings.getEmbedding(inputWord) : null;
+      if (!inEmb || inEmb.length === 0) continue;
+      // Build sem-sized input (local index space). Tile the embedding
+      // the same way _writeTiledPattern would, but into a fresh
+      // Float64Array whose index 0 maps to semRegion.start.
+      const semInput = new Float64Array(semSize);
+      const gSize = Math.max(1, Math.floor(semSize / inEmb.length));
+      for (let d = 0; d < inEmb.length; d++) {
+        if (inEmb[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < semSize) semInput[idx] = 1;
+        }
       }
-    } finally {
-      for (let j = 0; j < cluster.lastSpikes.length; j++) cluster.lastSpikes[j] = savedSpikes[j];
+      const out = proj.propagate(semInput);
+      if (!out || out.length === 0) continue;
+      // out is motor-sized (proj.rows). L2-normalize the vector so
+      // cosine is a pure direction comparison (magnitude-free).
+      let nrm = 0;
+      for (let d = 0; d < out.length; d++) nrm += out[d] * out[d];
+      nrm = Math.sqrt(nrm) || 1;
+      const normed = new Float64Array(out.length);
+      for (let d = 0; d < out.length; d++) normed[d] = out[d] / nrm;
+      readouts.push(normed);
     }
     if (readouts.length < 2) return null;
     let sumCos = 0, maxCos = -Infinity, comparisons = 0;
