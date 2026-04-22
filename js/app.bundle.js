@@ -648,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "75a6636c-75ae";
+var BUILD = "a3fb4a53-d801";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2910,10 +2910,15 @@ var NeuronCluster = class {
         new Promise((r) => setTimeout(r, 1e3))
       ]);
     }
-    if (this._sparsePool && this._sparsePool.ready) {
+    const BIOLOGICAL_SCALE_SYNC_THRESHOLD = 1e5;
+    const atBioScale = (this.size | 0) > BIOLOGICAL_SCALE_SYNC_THRESHOLD;
+    if (this._sparsePool && this._sparsePool.ready && !atBioScale) {
       const poolJobs = [];
       if (!this._cachedIntraCurrents && this.synapses && this.lastSpikes) {
-        const pSpikes = new Uint32Array(this.lastSpikes.length);
+        if (!this._cachedIntraPSpikes || this._cachedIntraPSpikes.length !== this.lastSpikes.length) {
+          this._cachedIntraPSpikes = new Uint32Array(this.lastSpikes.length);
+        }
+        const pSpikes = this._cachedIntraPSpikes;
         for (let i = 0; i < this.lastSpikes.length; i++) pSpikes[i] = this.lastSpikes[i] ? 1 : 0;
         poolJobs.push(
           this._sparsePool.propagate(this.synapses, pSpikes).then((out) => {
@@ -2923,6 +2928,7 @@ var NeuronCluster = class {
         );
       }
       if (this.crossProjections) {
+        if (!this._cachedCrossPSpikesByProj) this._cachedCrossPSpikesByProj = /* @__PURE__ */ new Map();
         for (const [projName, proj] of Object.entries(this.crossProjections)) {
           if (this._cachedCrossCurrents.has(projName)) continue;
           const idx = projName.indexOf("_to_");
@@ -2930,7 +2936,11 @@ var NeuronCluster = class {
           const src = projName.slice(0, idx);
           if (!this.regions[src]) continue;
           const srcSpikes = this.regionSpikes(src);
-          const pSpikes = new Uint32Array(srcSpikes.length);
+          let pSpikes = this._cachedCrossPSpikesByProj.get(projName);
+          if (!pSpikes || pSpikes.length !== srcSpikes.length) {
+            pSpikes = new Uint32Array(srcSpikes.length);
+            this._cachedCrossPSpikesByProj.set(projName, pSpikes);
+          }
           for (let i = 0; i < srcSpikes.length; i++) pSpikes[i] = srcSpikes[i] > 0 ? 1 : 0;
           const cache2 = this._cachedCrossCurrents;
           poolJobs.push(
@@ -10351,6 +10361,12 @@ var Curriculum = class _Curriculum {
     const cluster = this.cluster;
     const out = { recognizedLetters: 0, maxEmissionLen: 0, canTalkAtAll: false, probes: [] };
     if (!cluster || typeof cluster.generateSentenceAwait !== "function") return out;
+    if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === "function") {
+      try {
+        await cluster._gpuProxy.drainWait();
+      } catch {
+      }
+    }
     const _readinessStart = Date.now();
     this._hb("[Curriculum][READINESS] emission-capability probe START \u2014 5 single-letter cues (each capped at 20 emission ticks + 10 s wall-clock) to see if Unity can emit recognizable letters yet");
     const PROBES = ["a", "b", "c", "d", "e"];

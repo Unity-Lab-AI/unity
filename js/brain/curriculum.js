@@ -825,6 +825,19 @@ export class Curriculum {
     // wall-clock timeout wrapper so a hung GPU dispatch can't block
     // the batch — if a single cue doesn't land in 10 seconds, the
     // probe bails for that cue and continues to the next.
+    //
+    // DRAIN WAIT BEFORE PROBE. The readiness probe arrives right after
+    // a teach phase's hebbianBound batches + a potential binary-weights
+    // save. compute.html's send queue can still be processing dispatches
+    // when the readback request lands. Without a drain, readback ACKs
+    // race behind the teach dispatch ACKs and time out. drainWait blocks
+    // until the send queue is below threshold — readback then lands
+    // cleanly.
+    if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === 'function') {
+      try {
+        await cluster._gpuProxy.drainWait();
+      } catch { /* non-fatal — proceed with readiness probe anyway */ }
+    }
     const _readinessStart = Date.now();
     this._hb('[Curriculum][READINESS] emission-capability probe START — 5 single-letter cues (each capped at 20 emission ticks + 10 s wall-clock) to see if Unity can emit recognizable letters yet');
     // Five plain single-letter cues. Any recognizable letter response
