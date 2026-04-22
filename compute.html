@@ -414,6 +414,12 @@ function connectToServer() {
           //     lr (f32)
           const opCount = view.getUint16(off, true); off += 2;
           off += 2; // pad to u32
+          // T32 — collect all ops first, then dispatch via
+          // hebbianSparseBatch for ONE encoder + ONE submit instead of
+          // N individual hebbianSparse calls (each of which submitted its
+          // own encoder to the GPU queue, serializing per-submit and
+          // pinning GPU utilization at sub-1% at teach velocity).
+          const ops = new Array(opCount);
           let fired = 0;
           try {
             for (let i = 0; i < opCount; i++) {
@@ -423,8 +429,13 @@ function connectToServer() {
               off += opNameLen;
               off = (off + 3) & ~3; // align to u32
               const opLr = view.getFloat32(off, true); off += 4;
-              gpu.hebbianSparse(opName, opLr);
-              fired++;
+              ops[i] = { name: opName, lr: opLr };
+            }
+            if (typeof gpu.hebbianSparseBatch === 'function') {
+              fired = gpu.hebbianSparseBatch(ops) || 0;
+            } else {
+              // Back-compat fallback if running against a pre-T32 gpu-compute.
+              for (const op of ops) { gpu.hebbianSparse(op.name, op.lr); fired++; }
             }
           } catch (err) {
             console.warn(`[GPU Compute] batched_hebbian binary failed at op ${fired}/${opCount}:`, err.message);

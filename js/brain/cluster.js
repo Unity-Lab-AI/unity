@@ -306,22 +306,15 @@ export class NeuronCluster {
       // gives the number of independent word mappings a post-synaptic
       // neuron can support without destructive interference.
       //
-      // T37 — REDUCED 1500 → 10 to unlock biological-scale language
-      // cortex. Prior 1500 capped language cortex at 301K neurons at
-      // biological scale because cross-projection VRAM math blew up.
-      // Even the intermediate T37.a value of 400 was too dense — intra-
-      // synapse matrix at fanout 300 (the DOMINANT VRAM user at scale)
-      // + cross at 400 capped language cortex at ~1.3M = 0.33% of brain.
-      // At cross-fanout 10 the 14 cross-projections use ~14×10×0.1N = 14N
-      // connections per neuron total — biologically plausible (real
-      // cortical neurons have 1000-10000 synapses but those are mostly
-      // LOCAL intra-region; long-range cross-area projections are a
-      // small minority in real brains too). 10 inputs per projection
-      // still accommodates K-level vocab — 5000 words × distributed
-      // across 16.7M sem neurons means ~3K neurons per word × 10 inputs
-      // = 30K cross-connections per word, plenty for learning via
-      // direct-pattern Hebbian.
-      const crossTargetFanout = 10;
+      // T37.b — FURTHER REDUCED 10 → 5 to hit Master's 25% target.
+      // Biological cortical long-range connections are ~100-1000 per
+      // neuron in REAL brains, but distributed across MANY cortical
+      // areas (not 14 cross-projections). Per-projection long-range
+      // fanout of 5 is biologically realistic for a single cortical
+      // area pair. Combined with intra-synapse fanout 10 + VRAM rebalance,
+      // this puts language cortex at ~72M neurons = 18% of brain,
+      // matching real human language network proportions.
+      const crossTargetFanout = 5;
       // sem↔motor projections init with 50/50 excitatory/inhibitory
       // (zero-mean random weights) instead of default 70/30. Killed
       // the positive-bias baseline that drowned Hebbian training on

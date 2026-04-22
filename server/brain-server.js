@@ -968,8 +968,8 @@ class ServerBrain {
       // (was 0.08%). Still not Master's 25% target but 100× up —
       // 25% needs architecture redesign (topographic sparse, hierarchy,
       // or streaming from CPU). Must match cluster.js values exactly.
-      const CORTEX_TARGET_FANOUT = 30;          // matches cortexCluster opts.targetFanout
-      const CROSS_TARGET_FANOUT = 10;           // matches cluster.js crossTargetFanout
+      const CORTEX_TARGET_FANOUT = 10;          // matches cortexCluster opts.targetFanout
+      const CROSS_TARGET_FANOUT = 5;            // matches cluster.js crossTargetFanout
       const BYTES_PER_NNZ = 8;                  // Float32 value + Uint32 colIdx
       const INTRA_CONNECTIVITY_CAP = 0.15;      // cortexCluster opts.connectivity
       const CROSS_DENSITY_CAP = 0.002;          // cluster.js cross-projection clamp
@@ -1144,18 +1144,18 @@ class ServerBrain {
         tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
         noiseAmplitude: 7,
         connectivity: 0.15,
-        // T37 — intra-synapse fanout dropped 300→30. Intra-synapse
-        // matrix is the DOMINANT VRAM user at biological scale (300×N
-        // nnz × 8 bytes = 2400N bytes per neuron). At 300 fanout the
-        // language cortex was capped at ~1.5M regardless of cross
-        // projection tuning. At 30 fanout the same VRAM budget supports
-        // 10× more neurons. Biological cortical neurons have 1000-10000
-        // synapses total but most are LOCAL (within 1mm radius). A 30-
-        // fanout sparse matrix models long-range intra-region connectivity
-        // only — short-range topographic neighbor-to-neighbor connectivity
-        // is captured via the Rulkov-map dynamics + pattern propagation
-        // without needing an explicit matrix entry for every pair.
-        targetFanout: 30,
+        // T37.b — intra-synapse fanout 30 → 10. Intra-synapse matrix is
+        // the DOMINANT VRAM user; each 3× reduction → 3× more neurons fit.
+        // At fanout 10 biological scale: 10 × 72M × 8 bytes = 5.76 GB for
+        // intra alone. Combined with cross (fanout 5) ≈ 1.3 GB, fits in
+        // 10.7 GB VRAM budget with room for projection overhead. Real
+        // cortical neurons have 1000-10000 synapses TOTAL but only
+        // 100-1000 are long-range; this 10-fanout matrix models just the
+        // sparse long-range intra-region connectivity. Short-range
+        // topographic neighbor-to-neighbor connectivity emerges via
+        // Rulkov dynamics + pattern propagation without explicit
+        // matrix entries.
+        targetFanout: 10,
         excitatoryRatio: 0.85,
         learningRate: 0.002,
         gpuProxy, // T17.3.d — proxy used for cross-region ops when GPU ready
@@ -2626,8 +2626,14 @@ class ServerBrain {
       this._boundHebbianBatch = { ops: [], flushTimer: null };
     }
     const batch = this._boundHebbianBatch;
-    const BATCHED_HEBBIAN_MAX_OPS = 64;
-    const BATCHED_HEBBIAN_FLUSH_MS = 2;
+    // T32 — bumped from 64→256 ops per batch + 2ms→20ms flush so batches
+    // accumulate more ops before flushing. Combined with the new
+    // hebbianSparseBatch path (ONE encoder + ONE submit per batch),
+    // GPU utilization during teach climbs from sub-1% toward saturating
+    // SM pipeline. Tradeoff: up to 20ms extra latency per fire-and-forget
+    // Hebbian — irrelevant to curriculum correctness, HUGE win for throughput.
+    const BATCHED_HEBBIAN_MAX_OPS = 256;
+    const BATCHED_HEBBIAN_FLUSH_MS = 20;
     // Backpressure guards — prevent unbounded queue growth under flow stress.
     // Max in-flight batches (reqIds in _gpuSparsePending waiting for ACK):
     //   Existing `_gpuSparseFlowOk()` caps non-batch pending at 4. A batch
