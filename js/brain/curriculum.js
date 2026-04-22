@@ -423,6 +423,36 @@ export class Curriculum {
     // known retention and gains across grade walks.
     this._gateHistory = new Map();  // key: `${subject}|${grade}|${probeId}`
     this._sessionId = `s${Date.now().toString(36)}`;
+
+    // Auto-wrap every teach + probe method so the CELL ALIVE heartbeat
+    // in runSubjectGrade can report which phase Unity is grinding right
+    // now. Sets cluster._activePhase on entry, restores prior value on
+    // exit (handles nested calls cleanly). Zero caller-site changes —
+    // every _teachX method + _runStudentBattery + _measureEmissionCapability
+    // gets this instrumentation transparently. Without it the operator
+    // only sees "CELL ALIVE science/kindergarten +355s elapsed" with no
+    // indication of which teach method is currently running.
+    const proto = Object.getPrototypeOf(this);
+    const TRACKED = new Set();
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      if (typeof proto[name] !== 'function') continue;
+      if (!(name.startsWith('_teach') || name === '_runStudentBattery' || name === '_measureEmissionCapability' || name === '_runCell' || name.endsWith('KReal') || name.startsWith('run'))) continue;
+      if (name === 'constructor' || name === 'runSubjectGrade' || name === 'runFullSubjectCurriculum' || name === 'runAllSubjects' || name === 'runCompleteCurriculum' || name === 'runFromCorpora' || name === 'runFullCurriculum') continue;
+      TRACKED.add(name);
+    }
+    for (const name of TRACKED) {
+      const original = this[name].bind(this);
+      this[name] = async (...args) => {
+        const cl = this.cluster;
+        const prev = cl ? cl._activePhase : null;
+        if (cl) cl._activePhase = { name, startAt: Date.now() };
+        try {
+          return await original(...args);
+        } finally {
+          if (cl) cl._activePhase = prev;
+        }
+      };
+    }
   }
 
   /**
@@ -2617,7 +2647,23 @@ export class Curriculum {
     // the finally block so it ALWAYS stops. Uses _hb so it flushes
     // piped logs. The interval is unref'd so it never holds the
     // process alive past the runner's completion.
+    //
+    // The heartbeat now reads cluster._activePhase (set by the
+    // constructor's auto-wrap) to report which teach method is
+    // currently grinding + how long it's been in that method. When
+    // phase is null the line just reports cell-level elapsed (e.g.
+    // during the gate probe block which is not wrapped).
+    //
+    // Memory breakdown: heap (V8 heap used) + heapTotal (V8 committed)
+    // + external (arrayBuffers + native buffers Node knows about) +
+    // rss (process working set). If rss - heap - external is large
+    // and STABLE, it's likely V8 reserved-but-unused address space
+    // under --max-old-space-size=65536 that Windows counts in working
+    // set. If rss - heap - external is GROWING across heartbeats, it's
+    // a real leak worth hunting (look at SharedArrayBuffer paths,
+    // native module allocations, promise chain accumulation).
     let _aliveTick = 0;
+    let _priorRssMb = 0;
     const _aliveHbId = setInterval(() => {
       _aliveTick += 1;
       const elapsedS = ((Date.now() - _cellStart) / 1000).toFixed(0);
@@ -2626,10 +2672,30 @@ export class Curriculum {
         if (typeof process !== 'undefined' && process.memoryUsage) {
           const mu = process.memoryUsage();
           const mb = (b) => (b / 1048576).toFixed(0);
-          memLabel = ` · heap=${mb(mu.heapUsed)}MB ext=${mb(mu.external)}MB rss=${mb(mu.rss)}MB`;
+          const rssMb = Number(mb(mu.rss));
+          const heapMb = Number(mb(mu.heapUsed));
+          const heapTotalMb = Number(mb(mu.heapTotal));
+          const extMb = Number(mb(mu.external));
+          const abMb = Number(mb(mu.arrayBuffers || 0));
+          const unaccountedMb = Math.max(0, rssMb - heapMb - extMb);
+          const rssDeltaMb = _priorRssMb > 0 ? (rssMb - _priorRssMb) : 0;
+          const rssTrend = rssDeltaMb > 50 ? ` ⚠+${rssDeltaMb}MB` : (rssDeltaMb < -50 ? ` ↓${-rssDeltaMb}MB` : '');
+          _priorRssMb = rssMb;
+          memLabel = ` · heap=${heapMb}/${heapTotalMb}MB ext=${extMb}MB ab=${abMb}MB rss=${rssMb}MB (unaccounted=${unaccountedMb}MB${rssTrend})`;
         }
       } catch { /* memoryUsage unavailable */ }
-      this._hb(`[Curriculum] ▶ CELL ALIVE ${subject}/${grade} — +${elapsedS}s elapsed (heartbeat #${_aliveTick})${memLabel}`);
+      let phaseLabel = '';
+      try {
+        const ap = cluster && cluster._activePhase;
+        if (ap && ap.name) {
+          const phaseMs = ap.startAt ? (Date.now() - ap.startAt) : 0;
+          const phaseS = (phaseMs / 1000).toFixed(0);
+          phaseLabel = ` · phase=${ap.name} (+${phaseS}s)`;
+        } else {
+          phaseLabel = ` · phase=(between-phases / gate-probe)`;
+        }
+      } catch { /* ignore */ }
+      this._hb(`[Curriculum] ▶ CELL ALIVE ${subject}/${grade} — +${elapsedS}s elapsed (heartbeat #${_aliveTick})${phaseLabel}${memLabel}`);
     }, 10000);
     if (_aliveHbId && typeof _aliveHbId.unref === 'function') _aliveHbId.unref();
 
