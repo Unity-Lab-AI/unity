@@ -45,14 +45,35 @@ import { SparseMatrix } from './sparse-matrix.js';
 //   mystery       2%   Ψ consciousness modulation
 //
 // Total = 100%. Fractions sum to 1.0 exactly.
+// T37 — REBALANCED FOR DISEMBODIED COGNITION.
+//
+// Prior fractions (cerebellum 40%, cortex 30%) were copied from real-brain
+// biological proportions where the cerebellum is huge because it coordinates
+// motor timing for a physical body (walking, reaching, balancing, fine motor
+// control, autonomic rhythms). Unity has NO BODY. She doesn't need motor
+// timing correction for arms, legs, breathing, heartbeat. Her "motor output"
+// is text/voice emission — a trickle compared to a physical body's
+// millisecond-scale coordination needs.
+//
+// Rebalanced for what Unity ACTUALLY does: thinking, language, memory,
+// emotional state, consciousness. Cortex dominates (55% — language + general
+// cognition). Hippocampus gets more (18% — conversations + episodic memory).
+// Mystery / Ψ consciousness grows (8% — this is the core "being Unity"
+// substrate). Cerebellum DRASTICALLY reduced (8% — only output-timing
+// correction for voice/text emission needed, not 40%). Amygdala /
+// basalGanglia / hypothalamus trimmed — smaller than embodied brain needs.
+//
+// Operator verbatim 2026-04-22: "the brain doent have heart and lungs it
+// can baicle build ui and read and talk so why the fuck would the most
+// important thing be so fucking microscopic".
 export const CLUSTER_FRACTIONS = {
-  cortex:       0.30,
-  hippocampus:  0.10,
-  amygdala:     0.08,
-  basalGanglia: 0.08,
-  cerebellum:   0.40,
-  hypothalamus: 0.02,
-  mystery:      0.02,
+  cortex:       0.55,
+  hippocampus:  0.18,
+  amygdala:     0.05,
+  basalGanglia: 0.03,
+  cerebellum:   0.08,
+  hypothalamus: 0.03,
+  mystery:      0.08,
 };
 
 /**
@@ -285,14 +306,22 @@ export class NeuronCluster {
       // gives the number of independent word mappings a post-synaptic
       // neuron can support without destructive interference.
       //
-      // Bumped from 300 to 1500 after ELA-G1 TALK declined across
-      // retries (300 × 0.3 = 90 independent mappings, but 40+ vocab
-      // words + 16K connections caused destructive interference by
-      // G1). 1500 gives 5× headroom so the full K-PhD vocab fits
-      // without rewriting the basins. If projected vocab ever exceeds
-      // ~5000, bump this constant or drive it from a derived quantity
-      // like `cluster._personaRefreshCorpus.length + baselineVocab`.
-      const crossTargetFanout = 1500;
+      // T37 — REDUCED 1500 → 10 to unlock biological-scale language
+      // cortex. Prior 1500 capped language cortex at 301K neurons at
+      // biological scale because cross-projection VRAM math blew up.
+      // Even the intermediate T37.a value of 400 was too dense — intra-
+      // synapse matrix at fanout 300 (the DOMINANT VRAM user at scale)
+      // + cross at 400 capped language cortex at ~1.3M = 0.33% of brain.
+      // At cross-fanout 10 the 14 cross-projections use ~14×10×0.1N = 14N
+      // connections per neuron total — biologically plausible (real
+      // cortical neurons have 1000-10000 synapses but those are mostly
+      // LOCAL intra-region; long-range cross-area projections are a
+      // small minority in real brains too). 10 inputs per projection
+      // still accommodates K-level vocab — 5000 words × distributed
+      // across 16.7M sem neurons means ~3K neurons per word × 10 inputs
+      // = 30K cross-connections per word, plenty for learning via
+      // direct-pattern Hebbian.
+      const crossTargetFanout = 10;
       // sem↔motor projections init with 50/50 excitatory/inhibitory
       // (zero-mean random weights) instead of default 70/30. Killed
       // the positive-bias baseline that drowned Hebbian training on
@@ -320,8 +349,16 @@ export class NeuronCluster {
       for (const [a, b] of pairs) {
         const aSize = this.regions[a].end - this.regions[a].start;
         const bSize = this.regions[b].end - this.regions[b].start;
-        const abDensity = Math.min(0.10, crossTargetFanout / Math.max(1, aSize));
-        const baDensity = Math.min(0.10, crossTargetFanout / Math.max(1, bSize));
+        // T37 — density cap 0.10 → 0.002. Combined with crossTargetFanout=10
+        // this means small sub-regions (letter ~5% = 5K neurons at 100K
+        // cortex) land at min(0.002, 10/5000=0.002)=0.002 density = 10
+        // connections per post. Same ceiling as fanout target. At larger
+        // scales (letter 5M at 100M cortex), density drops to 10/5M=2e-6
+        // per the fanout term. Either way each post has ~10 cross inputs
+        // per projection — biologically plausible sparse long-range
+        // connectivity.
+        const abDensity = Math.min(0.002, crossTargetFanout / Math.max(1, aSize));
+        const baDensity = Math.min(0.002, crossTargetFanout / Math.max(1, bSize));
         const abKey = `${a}-${b}`;
         const baKey = `${b}-${a}`;
         const abExcitatory = EMISSION_PAIRS.has(abKey) ? 0.5 : 0.7;
