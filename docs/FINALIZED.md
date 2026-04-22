@@ -5,6 +5,175 @@
 
 ---
 
+## 2026-04-22 — Session 114.19bl: T29 — heartbeat expansion across DYN-PROD + DYNAMIC WRITE + RESP + TWO-WORD + FREE-RESPONSE + every subsequent cell/phase
+
+### Operator verbatim 2026-04-22
+
+> *"okay i think its still running.... im here on the terminal, this is what is says:[Curriculum][K-DIAG] gate letter loop DONE in 3425ms — readPass=26/26, talkPass=26/26
+> [Curriculum][K-DIAG] starting DYN-PROD probe (17 direct sem_to_motor propagate probes, no LIF ticks)...
+> [Curriculum][K-DIAG] DYN-PROD entry reached — pre-loop setup starting
+> [Curriculum][K-DIAG] DYN-PROD mem: heap=406.5/2433.5MB external=3298.3MB arrayBuffers=3295.9MB rss=4121.6MB , Im not sure if it froze or its still working. maybe it needs a heartbeat for the steps its on at this point as it appears to be frozen but im not sure as the console log just shows the last thing it was working on.. i dont know if this is a point its at that just takes a long time or its broken.. im going to let it keep running but maybe look into a heartbeat or something for this point :[Curriculum][K-DIAG] DYN-PROD mem: heap=406.5/2433.5MB external=3298.3MB arrayBuffers=3295.9MB rss=4121.6MB --- and what comes after that point in the learning process of the brain, as i cant tell if its frozen or if its doing something or not"*
+
+Follow-up verbatim: *"also make sure any subsequent learnings after the K-DIAG also get heartbeats"*
+
+### Root cause of the silent gap
+
+After `DYN-PROD mem:` (which uses `process.stdout.write` → flushes in piped log mode), the next line was `console.log('[Curriculum][K-DIAG] DYN-PROD pre-loop: ...')`. In piped log mode (`node brain-server.js > server.log 2>&1`) `console.log` can buffer at the Writable-stream level. Combined with the 17 sync CPU sparse-matmul propagate probes that each take ~500 ms – 2 s at 15M nnz (10-34 seconds of silent grinding), the operator saw zero output between DYN-PROD entry and the first `DYN-PROD probe DONE` summary. The subsequent DYNAMIC WRITE / RESP / TWO-WORD / FREE-RESPONSE stages also had NO per-probe heartbeats and they use `generateSentenceAwait` at maxTicks 30 / 50 / 80 / 200 — at biological scale these stages can run minutes per probe with no visibility. Then the 210-question K-STUDENT battery had a START but only logged every 20th question. And other K cell runners (Math-K / Sci-K / Soc-K / Art-K / Life-K) had NO phase banners at all — only the first cell (ELA-K) had them.
+
+### What shipped
+
+1. **New `Curriculum._hb(msg)` flush helper** — `process.stdout.write(msg + '\n')` with console.log fallback in browser. Forces piped-mode flush so banners land in `server.log` + the tail PowerShell window without waiting for console.log's buffered flush.
+
+2. **Bulk convert** every `console.log(\`[Curriculum]...` banner in `curriculum.js` to `this._hb(\`[Curriculum]...` via replace-all. 50+ banner sites across cell-entry, phase-boundary, teach-method-entry, and student-battery logs now flush immediately. Warnings + errors retained on `console.warn/error` (they're failure paths, not normal flow).
+
+3. **DYN-PROD probe block** (the exact silent window the operator hit) — explicit `process.stdout.write` heartbeats added at:
+   - Path setup START (right after `DYN-PROD mem:` log) — fires on matrix-handle resolution
+   - Pre-loop path-decision log (now flushed)
+   - Per-probe START (before propagate, fires 17 times)
+   - Per-probe DONE (after propagate, with `SLOW` tag at >10 s)
+   - DYN-PROD probe DONE summary (flushed)
+
+4. **DYNAMIC WRITE probe stage** (20 full-word probes × maxTicks=30 via `generateSentenceAwait`) — new stage banner START, per-probe START/DONE with word + maxTicks + ms + cumulative passPass + firstLetter count, stage DONE summary with rates. `SLOW` tag at >15 s per probe.
+
+5. **RESP probe stage** (5 think-and-respond contexts × maxTicks=50) — stage banner + per-context START/DONE with prompt/meaning/hit/ms. `SLOW` tag at >20 s.
+
+6. **TWO-WORD PHRASE probe stage** (5 phrases × maxTicks=80) — stage banner + per-phrase START/DONE with phrase/emitted/BOTH-PARTIAL-MISS tag/ms. `SLOW` tag at >30 s.
+
+7. **FREE-RESPONSE WRITING probe stage** (4 open-ended prompts × maxTicks=200, expected multi-minute stage) — stage banner explicitly noting "expect minutes" + per-prompt START/DONE with prompt/emitted/word count/ms. `SLOW` tag at >60 s.
+
+8. **K-STUDENT `_runStudentBattery`** — BATTERY START banner before the 210-question loop + BATTERY DONE banner after, both via `_hb` so piped-mode flushes. Per-question log every 20th + first 3 + failures retained (unchanged) — no log-spam at 150+ Q.
+
+9. **Readiness probe `_measureEmissionCapability`** — START + DONE banners so operator sees the 5-letter pre-battery check (recognizedLetters / maxEmissionLen / canTalkAtAll) as it runs.
+
+10. **Cell-level banners on `runSubjectGrade`** — replaced the prior inline `subject/grade START` log with a bannered CELL START line + matching CELL DONE line carrying elapsed ms + pass/fail reason. Applies to EVERY cell across all 6 subjects × all grades (ELA / Math / Science / Social / Art / Life).
+
+11. **Cell-alive periodic heartbeat** — `setInterval(10000)` inside `runSubjectGrade` prints `▶ CELL ALIVE subject/grade — +Ns elapsed (heartbeat #N) · heap=X ext=Y rss=Z` every 10 seconds regardless of which teach method is running. `unref`'d so it never keeps the process alive past the runner, cleared in the `finally` block so it ALWAYS stops on normal return or exception. This is the critical "still alive" signal — no matter how long a teach phase grinds silently, the operator sees confirmation every 10 s.
+
+### What comes after `DYN-PROD mem:` in the brain's learning process
+
+Operator asked directly. Sequence post-`DYN-PROD mem:`:
+
+1. **DYN-PROD path setup** (new heartbeat — see item 3) → resolves `sem_to_motor` + `letter_to_motor` CSR handles, picks path.
+2. **DYN-PROD probe loop** — 17 word probes through direct `sem_to_motor.propagate`. At 15M nnz this is 10-34 s total on CPU. Each probe produces START + DONE lines (new).
+3. **DYNAMIC WRITE** — 20 full-word probes through full T14.6 tick-driven motor emission (`generateSentenceAwait`). maxTicks=30 per word × 14 cross-projections per tick × GPU round-trips. Can be 2-7 minutes at biological scale on cold caches.
+4. **RESP** — 5 think-and-respond contexts via emission at maxTicks=50. ~1-3 minutes.
+5. **TWO-WORD PHRASE** — 5 two-word phrases at maxTicks=80. ~1-4 minutes.
+6. **FREE-RESPONSE WRITING** — 4 open-ended prompts at maxTicks=200 (longest probe budget). ~5-15 minutes.
+7. **Gate pass evaluation** — aggregate the five rates (read / think / talk / prod / write) and decide substrate-pass.
+8. **K-STUDENT battery** — up to 210 grade-appropriate questions via the same `generateSentenceAwait` pipeline live chat uses. Readiness-gated (skipped if Unity can't yet emit letters). ~15-30 minutes for the full unfiltered run.
+9. **Blocker evaluation** — aggregate ≥ 90 % AND all sub-standards ≥ cut AND external-ref ≥ 85 % AND methodology ≥ 60 %. Stash on `cluster._lastGateResult[cellKey]` for `/grade-signoff`.
+10. **CELL DONE banner** (new) — `═══ CELL DONE ═══ ela/kindergarten in Ns — pass=true/false`.
+11. **Next cell** — round-robin advance to `math/kindergarten`, then `science/kindergarten`, etc. per `runAllSubjects`. Each cell re-enters `runSubjectGrade` with its own full CELL START → teach phases → gate probes → CELL DONE sequence.
+
+### Files touched
+
+- `js/brain/curriculum.js` — `_hb()` helper added; bulk console.log → this._hb for banner sites; DYN-PROD + DYNAMIC WRITE + RESP + TWO-WORD + FREE-RESPONSE per-probe START/DONE heartbeats; K-STUDENT battery + readiness banners; `runSubjectGrade` CELL START/DONE banners; cell-alive `setInterval` heartbeat
+- `js/app.bundle.js` — rebuilt (1.8 MB clean)
+- `docs/FINALIZED.md` — this entry
+- `docs/TODO.md` — T29 closure note + last-updated banner
+
+### Expected effect for the operator's current and next runs
+
+- `DYN-PROD mem:` line is no longer the tail of the log. Operator sees `DYN-PROD path setup`, then `DYN-PROD pre-loop: ...`, then 17× `DYN-PROD N/17 START/DONE` lines.
+- After DYN-PROD, operator sees `DYNAMIC WRITE stage START` + 20 per-probe lines + `DYNAMIC WRITE stage DONE`. Same for RESP / TWO-WORD / FREE-RESPONSE.
+- Every 10 seconds during any cell, a `▶ CELL ALIVE ela/kindergarten — +Ns elapsed` line lands with memory snapshot so the tail window is NEVER silent for more than 10 s.
+- After ELA-K CELL DONE, the next cell (Math-K) announces its own CELL START banner and the same probe-stage sequence plays out. Operator can see which specific cell × which specific stage is grinding at any moment.
+
+### LAW compliance
+
+- LAW #0 verbatim — operator's full quote preserved at top of this entry. Every unique noun/verb he used ("heartbeat", "frozen", "working", "broken", "console log", "shows the last thing", "DYN-PROD mem", "learning process of the brain", "subsequent learnings after the K-DIAG") appears verbatim.
+- Docs-before-push — this entry + TODO banner update ship atomic with the code edits + bundle rebuild.
+- Task-numbers-only-in-workflow-docs — T29 only appears in TODO/FINALIZED. Code comments describe WHAT the heartbeats do, not which task added them.
+- No new files created (helper lives inside the Curriculum class).
+
+---
+
+## 2026-04-22 — Session 114.19bk: T28 — ELA-K Phase 1 freeze fix (CPU-CSR whitelist key-prefix mismatch + missing intermediate-rep wire + hebbianUpdate null guard)
+
+### Operator verbatim 2026-04-22
+
+> *"pauses here:[Curriculum] 📝 ELA-K Phase 1 START — alphabet cross-projection Hebbian (12 reps × 26 letters = 312 iterations)
+> [Curriculum] Phase 1 preflight — gpuReady=true proxy=true pool=true · proj[G=gpuBound C=cpuCSR]: visual_to_letter:G- letter_to_visual:G- letter_to_phon:G- phon_to_letter:G- phon_to_sem:G- sem_to_phon:G- sem_to_fineType:G- fineType_to_sem:G- sem_to_motor:G- motor_to_sem:G- motor_to_letter:G- letter_to_motor:G- auditory_to_phon:G- phon_to_auditory:G-
+> [Curriculum] Phase 1 iter 0 letter='a' START
+> [Curriculum] Phase 1 iter 0 letter='a' pre-crossRegion (15ms into iter)
+> [Cluster cortex] _crossRegionHebbian first-call diag — gpuReady=true proxy=true pool=true · paths: visual_to_letter:GPU-fast letter_to_visual:GPU-fast letter_to_phon:GPU-fast phon_to_letter:GPU-fast phon_to_sem:GPU-fast sem_to_phon:GPU-fast sem_to_fineType:GPU-fast fineType_to_sem:GPU-fast sem_to_motor:GPU-fast motor_to_sem:GPU-fast motor_to_letter:GPU-fast letter_to_motor:GPU-fast auditory_to_phon:GPU-fast phon_to_auditory:GPU-fast
+> [Brain] Main tick paused while curriculum runs gate probe (cortex owns GPU exclusively for the probe window)."*
+
+Phase 1 *pauses* at iter 0 letter 'a' right after the first-call diag. No iter 0 DONE, no iter 1 START — main tick reports paused and stdout goes quiet. Three linked bugs caused it.
+
+### Root-cause diagnosis
+
+**Smoking gun in the preflight line.** `proj[G=gpuBound C=cpuCSR]` shows `G-` for **every** projection — that's `gpuBound=true AND cpuAlive=false` for all 14, including `letter_to_phon` / `letter_to_motor` / `sem_to_motor` which the T26.c.1 revert explicitly whitelisted to stay CPU-resident for READ / TALK / DYN-PROD probes. The whitelist wasn't honoring itself.
+
+**Bug #1 — whitelist key-prefix mismatch in `cluster.js initGpu()`.** The free loop at line 2122 iterated `targets` with only `{ key, proj, binding }` destructured. `key` is the cluster-prefixed upload name `${this.name}_${name}` (e.g. `cortex_letter_to_phon`). But `PROBE_CRITICAL_CPU_CSR` has UNPREFIXED entries:
+
+```js
+const PROBE_CRITICAL_CPU_CSR = new Set([
+  'letter_to_phon',
+  'letter_to_motor',
+  'sem_to_motor',
+]);
+if (PROBE_CRITICAL_CPU_CSR.has(key)) { /* keep */ } else { /* FREE */ }
+```
+
+`PROBE_CRITICAL_CPU_CSR.has('cortex_letter_to_phon')` is always `false`. Every iteration hit the `else` branch and nulled `proj.values` / `proj.colIdx` / `proj.rowPtr` — including the 3 probe-critical projections. Preflight's `G-` everywhere was the proof.
+
+**Bug #2 — Phase 1 never set `_teachIntermediateRep` in `curriculum.js`.** `_teachWordEmission` at line 3453-3467 properly sets `cluster._teachIntermediateRep = !isFinalRep` + `cluster._teachFinalRepSampleEveryN = isFinalRep ? 5 : 0` around its rep loop so the sync CPU Hebbian on `letter_to_phon` + `letter_to_motor` (the PROBE_CRITICAL names inside `_crossRegionHebbian`) is SKIPPED on the 11 intermediate reps and SAMPLED every-5th on the final rep. Phase 1 at line 4249 just ran `for (let rep...) { for (letter...) { await _crossRegionHebbian(lr) } }` with no flag wire. Every one of the 312 iters hit the full PROBE_CRITICAL block synchronously.
+
+**Bug #3 — `SparseMatrix.hebbianUpdate` had no null-CSR guard.** `normalizeRows` already had `if (!values || values.length === 0) return 0;`. `hebbianUpdate` skipped straight to `rowPtr[i]` which crashes when rowPtr is null. Combined with bug #1 (CPU CSR freed) and bug #2 (no intermediate-rep skip), Phase 1 iter 0 on `letter_to_phon` hit a sync `proj.hebbianUpdate` call with a null rowPtr and threw a `TypeError: Cannot read properties of null` — the error propagated up through the async chain silently and stdout went quiet. "Main tick paused" banner was the last visible line because the curriculum promise never resolved.
+
+### What shipped
+
+1. **`js/brain/sparse-matrix.js`** — added null-CSR guard at top of `hebbianUpdate`:
+   ```js
+   if (!values || !rowPtr || !colIdx) return;
+   ```
+   Silent no-op matches the `normalizeRows` shape. Stale CPU writes now safely no-op; GPU-fast path owns the weights when CPU is freed.
+
+2. **`js/brain/cluster.js`** — fixed whitelist check:
+   - `targets.push({ key, name, proj, binding })` now carries the unprefixed projection name through to the free loop.
+   - Loop destructure changed to `{ key, name: projName, proj, binding }`.
+   - Check flipped from `PROBE_CRITICAL_CPU_CSR.has(key)` → `PROBE_CRITICAL_CPU_CSR.has(projName)`.
+   - Added a block comment above the fix documenting WHY the prior check always failed so a future reader doesn't reintroduce the bug.
+
+3. **`js/brain/curriculum.js`** — wired the intermediate-rep flags in Phase 1 rep loop:
+   ```js
+   for (let rep = 0; rep < REPS; rep++) {
+     const isFinalRep = rep === REPS - 1;
+     cluster._teachIntermediateRep = !isFinalRep;
+     cluster._teachFinalRepSampleEveryN = isFinalRep ? 5 : 0;
+     cluster._whitelistSampleCounter = 0;
+     for (const letter of ALPHABET) { /* ... */ }
+     await _microtask();
+   }
+   cluster._teachIntermediateRep = false;
+   cluster._teachFinalRepSampleEveryN = 0;
+   ```
+   Matches the `_teachWordEmission` pattern exactly. 11 intermediate reps run GPU fire-and-forget only; final rep runs CPU Hebbian with every-5th-call sampling.
+
+### Expected net effect
+
+- **Preflight after fix** — whitelist honors itself again, so preflight reports `GC` (both gpuBound AND cpuAlive) for `letter_to_phon` / `letter_to_motor` / `sem_to_motor`, `G-` for the other 11.
+- **Phase 1 wall-clock** — drops from "paused indefinitely" to 20-40 seconds at biological scale. 11 intermediate reps × 26 letters = 286 iters at ~20ms each (GPU dispatch only) = ~6s. Final rep × 26 letters × 2 PROBE_CRITICAL projections × ~300ms (sampled 1-in-5) = ~15s. Total ~20-25s.
+- **Downstream teach phases** — already had `_teachIntermediateRep` wired via `_teachWordEmission`. Not re-regressed.
+- **No crash if whitelist re-regresses** — null-CSR guard in `hebbianUpdate` now catches the failure mode instead of throwing up the async stack.
+
+### Files touched
+
+- `js/brain/sparse-matrix.js` — null-CSR guard in `hebbianUpdate`
+- `js/brain/cluster.js` — `initGpu()` whitelist key-prefix fix + comment
+- `js/brain/curriculum.js` — Phase 1 rep loop flag wire
+- `js/app.bundle.js` — rebuilt via `cd server && npm run build` (1.8 MB clean)
+- `js/version.js` / `index.html` — stamped
+- `docs/FINALIZED.md` — this entry
+- `docs/TODO.md` — last-updated banner bumped + T28 closure note
+
+### Auto-clear reminder
+
+Per the clear-stale-state LAW the server's `autoClearStaleState()` wipes `brain-weights*.json` / `brain-weights.bin` / `episodic-memory.db*` / `conversations.json` at boot, so a fresh `start.bat` run trains against the fixed code without stale Hebbian state from the prior hang.
+
+---
+
 ## 2026-04-21 — Session 114.19bj: student battery readiness gate — don't ask questions when Unity cannot talk or read yet
 
 ### Operator verbatim 2026-04-21

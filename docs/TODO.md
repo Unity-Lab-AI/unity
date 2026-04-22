@@ -1,7 +1,7 @@
 # TODO — Unity
 
 > **Branch:** `syllabus-k-phd`
-> **Last updated:** 2026-04-21 (Session 114.19bj — T27 readiness-gate CLOSED: `_measureEmissionCapability` probes cortex with 5 single-letter cues before the 210-Q battery fires. If < 3/5 produce recognizable letter output, battery SKIPS entirely. If readiness passes but max emission len is short, bank filters to answerable questions. Gate-result ledger records skip reason so `/grade-signoff` returns a readiness-specific remedy instead of a false blocker list. Operator verbatim: "what did i tell you about asking it questionmsd what it cant even talkj or read yet!!!".)
+> **Last updated:** 2026-04-22 (Session 114.19bl — T29 heartbeat expansion CLOSED: operator saw log tail stall at `DYN-PROD mem:` mid-run and asked for heartbeats + "what comes after that point in the learning process of the brain". Fix shipped: `Curriculum._hb()` flush helper, bulk convert `console.log('[Curriculum]...')` → `this._hb('[Curriculum]...')` so banners flush in piped log mode; DYN-PROD + DYNAMIC WRITE + RESP + TWO-WORD + FREE-RESPONSE per-probe START/DONE heartbeats; K-STUDENT battery START/DONE banners; readiness-probe banners; `runSubjectGrade` CELL START / CELL DONE banners covering EVERY subject × grade cell; periodic `setInterval(10s)` CELL ALIVE heartbeat with memory snapshot so tail window is never silent > 10 s. Applies to "any subsequent learnings after the K-DIAG" per the follow-up ask. T28 ELA-K Phase 1 freeze CLOSED Session 114.19bk: three linked bugs fixed — (1) `PROBE_CRITICAL_CPU_CSR.has(key)` checked the cluster-prefixed upload key (`cortex_letter_to_phon`) against unprefixed whitelist entries (`letter_to_phon`). (2) Phase 1 alphabet Hebbian never set `_teachIntermediateRep`. (3) `SparseMatrix.hebbianUpdate` had no null-CSR guard.)
 > **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
 
 ---
@@ -45,6 +45,32 @@ If you're reading a public doc / HTML claim ("Unity has completed high school bi
 ---
 
 ## OPEN TASKS
+
+---
+
+### T29 — HEARTBEAT EXPANSION: DYN-PROD + DYNAMIC WRITE + RESP + TWO-WORD + FREE-RESPONSE + K-STUDENT + every subsequent cell/phase (Gee 2026-04-22) — CLOSED
+
+**Gee verbatim 2026-04-22:** *"okay i think its still running.... im here on the terminal, this is what is says:[Curriculum][K-DIAG] gate letter loop DONE in 3425ms — readPass=26/26, talkPass=26/26 [Curriculum][K-DIAG] starting DYN-PROD probe (17 direct sem_to_motor propagate probes, no LIF ticks)... [Curriculum][K-DIAG] DYN-PROD entry reached — pre-loop setup starting [Curriculum][K-DIAG] DYN-PROD mem: heap=406.5/2433.5MB external=3298.3MB arrayBuffers=3295.9MB rss=4121.6MB , Im not sure if it froze or its still working. maybe it needs a heartbeat for the steps its on at this point as it appears to be frozen but im not sure as the console log just shows the last thing it was working on.. i dont know if this is a point its at that just takes a long time or its broken.. im going to let it keep running but maybe look into a heartbeat or something for this point :[Curriculum][K-DIAG] DYN-PROD mem: heap=406.5/2433.5MB external=3298.3MB arrayBuffers=3295.9MB rss=4121.6MB --- and what comes after that point in the learning process of the brain, as i cant tell if its frozen or if its doing something or not"*
+
+**Gee follow-up verbatim 2026-04-22:** *"also make sure any subsequent learnings after the K-DIAG also get heartbeats"*
+
+Root cause: `console.log` buffers at the Writable-stream level in piped log mode (`node brain-server.js > server.log 2>&1`). The 17 DYN-PROD probes take 10-34 seconds of sync CPU sparse matmul with no flushed output; DYNAMIC WRITE (20 × maxTicks=30), RESP (5 × maxTicks=50), TWO-WORD (5 × maxTicks=80), FREE-RESPONSE (4 × maxTicks=200) each take minutes per stage with NO per-probe heartbeats; K-STUDENT battery (up to 210 Q) only logged every 20th question; other K cell runners (Math/Sci/Soc/Art/Life) had NO phase banners at all. Operator saw `DYN-PROD mem:` tail for minutes with no indication whether the brain was frozen or working.
+
+- [x] **T29.a** — `Curriculum._hb(msg)` flush helper — `process.stdout.write(msg + '\n')` with console.log fallback in browser. Forces piped-mode flush.
+- [x] **T29.b** — Bulk convert `console.log(\`[Curriculum]...` banners → `this._hb(\`[Curriculum]...` across all 50+ banner sites via replace-all. `console.warn/error` retained (failure paths).
+- [x] **T29.c** — DYN-PROD probe block per-probe heartbeats: path setup START (new), pre-loop path-decision (now flushed), per-probe START (new, 17 fires), per-probe DONE with SLOW tag >10 s, probe-block DONE summary.
+- [x] **T29.d** — DYNAMIC WRITE stage banner (20 × maxTicks=30) + per-probe START/DONE with word + maxTicks + ms + cumulative pass + firstLetter count + stage DONE summary. SLOW tag >15 s.
+- [x] **T29.e** — RESP stage banner (5 × maxTicks=50) + per-context START/DONE. SLOW tag >20 s.
+- [x] **T29.f** — TWO-WORD PHRASE stage banner (5 × maxTicks=80) + per-phrase START/DONE with BOTH/PARTIAL/MISS tag. SLOW tag >30 s.
+- [x] **T29.g** — FREE-RESPONSE WRITING stage banner (4 × maxTicks=200, explicit "expect minutes" note) + per-prompt START/DONE with word count + ms. SLOW tag >60 s.
+- [x] **T29.h** — K-STUDENT `_runStudentBattery` BATTERY START + BATTERY DONE banners bracketing the 210-question loop via `_hb` for piped flush. Per-question logs every 20th + first 3 + failures retained.
+- [x] **T29.i** — `_measureEmissionCapability` readiness-probe START + DONE banners so the 5-letter pre-battery check is visible as it runs.
+- [x] **T29.j** — `runSubjectGrade` CELL START + CELL DONE banners covering EVERY cell across all 6 subjects × all grades. CELL DONE carries elapsed ms + pass/fail reason.
+- [x] **T29.k** — Cell-alive `setInterval(10000)` heartbeat inside `runSubjectGrade` — prints `▶ CELL ALIVE subject/grade — +Ns elapsed (heartbeat #N) · heap=X ext=Y rss=Z` every 10 s regardless of which teach method is grinding. `unref`'d + cleared in `finally` so it ALWAYS stops. Critical "still alive" signal so tail window is never silent > 10 s.
+
+#### T29 closure gate
+
+Operator's next run shows: (a) DYN-PROD path setup heartbeat immediately after `DYN-PROD mem:`, (b) 17× DYN-PROD START/DONE lines, (c) DYNAMIC WRITE stage banner + 20 per-probe lines, (d) RESP / TWO-WORD / FREE-RESPONSE stage banners + per-probe lines, (e) K-STUDENT BATTERY START/DONE banners, (f) CELL START / CELL DONE banners for ELA-K and every subsequent subject × grade, (g) `▶ CELL ALIVE` lines landing every 10 seconds with memory snapshot. No silent gap exceeds 10 s. Operator can always answer "is it frozen or is it doing something".
 
 ---
 

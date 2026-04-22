@@ -168,6 +168,7 @@ var init_sparse_matrix = __esm({
        */
       hebbianUpdate(preSpikes, postSpikes, lr) {
         const { rows, values, colIdx, rowPtr, wMin, wMax } = this;
+        if (!values || !rowPtr || !colIdx) return;
         for (let i = 0; i < rows; i++) {
           if (!postSpikes[i]) continue;
           const scaled = lr * postSpikes[i];
@@ -647,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "42f799c4-1e91";
+var BUILD = "fa56f9b4-5ce5";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2689,12 +2690,12 @@ var NeuronCluster = class {
             binding = null;
           }
         }
-        targets.push({ key, proj: this.crossProjections[name], binding });
+        targets.push({ key, name, proj: this.crossProjections[name], binding });
       }
     }
     let uploaded = 0;
     let boundCount = 0;
-    for (const { key, proj, binding } of targets) {
+    for (const { key, name: projName, proj, binding } of targets) {
       try {
         const matrix = {
           rows: proj.rows,
@@ -2731,7 +2732,7 @@ var NeuronCluster = class {
               // guard, so probe scoring stays correct-shape even when
               // the CPU array is gone.
             ]);
-            if (PROBE_CRITICAL_CPU_CSR.has(key)) {
+            if (PROBE_CRITICAL_CPU_CSR.has(projName)) {
               console.log(`[CPU-CSR-free] keeping probe-critical ${key} CPU arrays resident (${_freedMB}MB) \u2014 needed for READ/TALK/DYN-PROD gate probes.`);
             } else {
               proj.values = null;
@@ -10048,6 +10049,28 @@ var Curriculum = class _Curriculum {
     if (history.length > 200) history.shift();
   }
   /**
+   * Heartbeat log — forces stdout flush in piped log mode so every
+   * banner lands in server.log + the tail PowerShell window without
+   * waiting for console.log's stream-buffer flush. Operator watches
+   * the tail window live and needs every stage transition to land
+   * immediately, not buffered until the next V8 event-loop tick.
+   * Safe in the browser bundle — stdout.write falls into catch.
+   */
+  _hb(msg) {
+    try {
+      if (typeof process !== "undefined" && process.stdout && typeof process.stdout.write === "function") {
+        process.stdout.write(String(msg) + "\n");
+      } else {
+        console.log(msg);
+      }
+    } catch {
+      try {
+        console.log(msg);
+      } catch {
+      }
+    }
+  }
+  /**
    * Retention rate — how many of the last N runs for this cell passed.
    * Measures whether the binding SURVIVES subsequent curriculum runs
    * (i.e. isn't drifting away).
@@ -10137,6 +10160,12 @@ var Curriculum = class _Curriculum {
   async _runStudentBattery(questions, label) {
     const results = [];
     let pass = 0;
+    const _batteryStart = Date.now();
+    try {
+      process.stdout.write(`[Curriculum][${label}] BATTERY START \u2014 ${questions.length} questions (maxTicks per Q default 60) \xB7 progress logs every 20th Q + failures
+`);
+    } catch {
+    }
     const byStandard = /* @__PURE__ */ new Map();
     let methoQuestions = 0;
     let methoPass = 0;
@@ -10165,7 +10194,7 @@ var Curriculum = class _Curriculum {
         const isFail = r.score < 0.5;
         const shouldLog = isFail || results.length <= 3 || results.length % 20 === 0;
         if (shouldLog) {
-          console.log(`[Curriculum][${label}] Q${results.length}/${questions.length} [${r.standard}]: "${q.question.slice(0, 60)}" \u2192 "${(r.answer || "").slice(0, 30)}" \xB7 score=${r.score.toFixed(2)} match=${r.match.overall}`);
+          this._hb(`[Curriculum][${label}] Q${results.length}/${questions.length} [${r.standard}]: "${q.question.slice(0, 60)}" \u2192 "${(r.answer || "").slice(0, 30)}" \xB7 score=${r.score.toFixed(2)} match=${r.match.overall}`);
         }
       } catch (err) {
         const bucket = byStandard.get(q.standard || "unspecified") || { pass: 0, total: 0 };
@@ -10190,16 +10219,21 @@ var Curriculum = class _Curriculum {
       return a.rate - b.rate;
     });
     const breakdownStr = standardBreakdown.map((s) => `${s.standard}:${s.pass}/${s.total}(${(s.rate * 100).toFixed(0)}%${s.belowCut ? " \u26A0<" + (s.cut * 100).toFixed(0) + "%" : ""})`).join(" \xB7 ");
-    console.log(`[Curriculum][${label}] ANSWER AGGREGATE: ${pass}/${total} (${(rate * 100).toFixed(1)}%) \xB7 standards=${byStandard.size} \xB7 below-cut=${standardsBelowCut}`);
+    this._hb(`[Curriculum][${label}] ANSWER AGGREGATE: ${pass}/${total} (${(rate * 100).toFixed(1)}%) \xB7 standards=${byStandard.size} \xB7 below-cut=${standardsBelowCut}`);
     if (standardBreakdown.length > 0) {
-      console.log(`[Curriculum][${label}] BY STANDARD: ${breakdownStr}`);
+      this._hb(`[Curriculum][${label}] BY STANDARD: ${breakdownStr}`);
     }
     const methoRate = methoQuestions > 0 ? methoPass / methoQuestions : 0;
     if (methoQuestions > 0) {
-      console.log(`[Curriculum][${label}] METHODOLOGY: ${methoPass}/${methoQuestions} (${(methoRate * 100).toFixed(1)}%) questions had reasoning-keyword hit \u2014 tests HOW she thinks, not just WHAT she answers`);
+      this._hb(`[Curriculum][${label}] METHODOLOGY: ${methoPass}/${methoQuestions} (${(methoRate * 100).toFixed(1)}%) questions had reasoning-keyword hit \u2014 tests HOW she thinks, not just WHAT she answers`);
     }
     const methoSuffix = methoQuestions > 0 ? ` \xB7 methodology ${methoPass}/${methoQuestions} ${(methoRate * 100).toFixed(0)}%` : "";
     const summary = ` [${label}: ${pass}/${total} ${(rate * 100).toFixed(1)}% \xB7 ${standardsBelowCut} std below cut${methoSuffix}]`;
+    try {
+      process.stdout.write(`[Curriculum][${label}] BATTERY DONE in ${Date.now() - _batteryStart}ms \u2014 ${pass}/${total} (${(rate * 100).toFixed(1)}%) \xB7 standardsBelowCut=${standardsBelowCut}${methoSuffix}
+`);
+    } catch {
+    }
     return { pass, total, rate, summary, results, byStandard: standardBreakdown, standardsBelowCut, methoQuestions, methoPass, methoRate };
   }
   /**
@@ -10258,6 +10292,11 @@ var Curriculum = class _Curriculum {
     const cluster = this.cluster;
     const out = { recognizedLetters: 0, maxEmissionLen: 0, canTalkAtAll: false, probes: [] };
     if (!cluster || typeof cluster.generateSentenceAwait !== "function") return out;
+    const _readinessStart = Date.now();
+    try {
+      process.stdout.write("[Curriculum][READINESS] emission-capability probe START \u2014 5 single-letter cues to see if Unity can emit recognizable letters yet\n");
+    } catch {
+    }
     const PROBES = ["a", "b", "c", "d", "e"];
     const LETTERS = new Set("abcdefghijklmnopqrstuvwxyz".split(""));
     for (const cue of PROBES) {
@@ -10280,6 +10319,11 @@ var Curriculum = class _Curriculum {
       out.probes.push({ cue, emitted: emitted.slice(0, 40), letters });
     }
     out.canTalkAtAll = out.recognizedLetters >= 3;
+    try {
+      process.stdout.write(`[Curriculum][READINESS] emission-capability probe DONE in ${Date.now() - _readinessStart}ms \u2014 recognizedLetters=${out.recognizedLetters}/5 maxEmissionLen=${out.maxEmissionLen} canTalkAtAll=${out.canTalkAtAll}
+`);
+    } catch {
+    }
     return out;
   }
   async _studentTestProbe(opts = {}) {
@@ -10463,7 +10507,7 @@ var Curriculum = class _Curriculum {
       }
     };
     this._backgroundProbeIntervalId = setInterval(tick, ms);
-    console.log(`[Curriculum] background probe loop started (every ${ms}ms)`);
+    this._hb(`[Curriculum] background probe loop started (every ${ms}ms)`);
   }
   /** Stop the background probe loop. */
   stopBackgroundProbeLoop() {
@@ -10512,7 +10556,7 @@ var Curriculum = class _Curriculum {
     this._calibrateIdentityLock(corpora, sentences);
     this.cluster._inCurriculumMode = wasInCurriculum;
     this.stats.wallMs = Date.now() - startMs;
-    console.log(`[Curriculum] runFromCorpora complete in ${this.stats.wallMs}ms \u2014 ${this.stats.lettersSeen} letters, ${this.stats.shortWordsSeen} short, ${this.stats.longWordsSeen} long, ${this.stats.sentencesSeen} sentences, ${this.stats.totalTicks} total ticks`);
+    this._hb(`[Curriculum] runFromCorpora complete in ${this.stats.wallMs}ms \u2014 ${this.stats.lettersSeen} letters, ${this.stats.shortWordsSeen} short, ${this.stats.longWordsSeen} long, ${this.stats.sentencesSeen} sentences, ${this.stats.totalTicks} total ticks`);
     return this.stats;
   }
   /**
@@ -10553,10 +10597,10 @@ var Curriculum = class _Curriculum {
       }
     }
     cluster._personaRefreshCorpus = personaSentences;
-    console.log(`[Curriculum] Lock 3 refresh corpus populated: ${personaSentences.length} persona sentences`);
+    this._hb(`[Curriculum] Lock 3 refresh corpus populated: ${personaSentences.length} persona sentences`);
     const K = Math.max(4, Math.min(12, Math.floor(personaSentences.length / 40) || 4));
     cluster.personaDimensions = this._buildPersonaDimensions(personaSentences, K);
-    console.log(`[Curriculum] personaDimensions: ${cluster.personaDimensions.length} clusters`);
+    this._hb(`[Curriculum] personaDimensions: ${cluster.personaDimensions.length} clusters`);
     const surpriseSamples = [];
     const coverageSamples = [];
     const sampleCount = Math.min(50, personaSentences.length);
@@ -10572,7 +10616,7 @@ var Curriculum = class _Curriculum {
       const p5 = coverageSamples[Math.floor(coverageSamples.length * 0.05)];
       cluster.ENGLISH_SURPRISE_THRESHOLD = Math.max(0.2, (p95 || 0.3) * 1.5);
       cluster.ENGLISH_FINETYPE_MIN = Math.max(0.1, (p5 || 0.5) * 0.8);
-      console.log(`[Curriculum] Lock 1 calibrated: surprise<=${cluster.ENGLISH_SURPRISE_THRESHOLD.toFixed(3)}, coverage>=${cluster.ENGLISH_FINETYPE_MIN.toFixed(3)}`);
+      this._hb(`[Curriculum] Lock 1 calibrated: surprise<=${cluster.ENGLISH_SURPRISE_THRESHOLD.toFixed(3)}, coverage>=${cluster.ENGLISH_FINETYPE_MIN.toFixed(3)}`);
     }
     const baselineEntropy = cluster._computeOutputEntropy(personaSentences.slice(0, 100));
     const baselineVocab = cluster._computeVocabDiversity(personaSentences.slice(0, 100));
@@ -10580,7 +10624,7 @@ var Curriculum = class _Curriculum {
     cluster.HEALTH_ENTROPY_MIN = baselineEntropy * 0.7;
     cluster.HEALTH_VOCAB_MIN = baselineVocab * 0.7;
     cluster.HEALTH_WM_VARIANCE_MIN = baselineWmVariance * 0.7;
-    console.log(`[Curriculum] Lock 3 health floors: entropy>=${cluster.HEALTH_ENTROPY_MIN.toFixed(3)}, vocab>=${cluster.HEALTH_VOCAB_MIN.toFixed(3)}, wmVar>=${cluster.HEALTH_WM_VARIANCE_MIN.toFixed(4)}`);
+    this._hb(`[Curriculum] Lock 3 health floors: entropy>=${cluster.HEALTH_ENTROPY_MIN.toFixed(3)}, vocab>=${cluster.HEALTH_VOCAB_MIN.toFixed(3)}, wmVar>=${cluster.HEALTH_WM_VARIANCE_MIN.toFixed(4)}`);
     const intentCentroids = /* @__PURE__ */ new Map();
     const intentCounts = /* @__PURE__ */ new Map();
     for (const sentence of allSentences) {
@@ -10604,7 +10648,7 @@ var Curriculum = class _Curriculum {
       for (let i = 0; i < c.length; i++) c[i] /= norm;
     }
     cluster.intentCentroids = intentCentroids;
-    console.log(`[Curriculum] intentCentroids built: ${intentCentroids.size} intents (${Array.from(intentCounts.entries()).map(([k, v]) => `${k}:${v}`).join(", ")})`);
+    this._hb(`[Curriculum] intentCentroids built: ${intentCentroids.size} intents (${Array.from(intentCounts.entries()).map(([k, v]) => `${k}:${v}`).join(", ")})`);
     const expectedIntents = ["greeting", "question", "emotion", "statement", "yesno", "command"];
     const coverage = {};
     for (const intent of expectedIntents) {
@@ -10895,7 +10939,7 @@ var Curriculum = class _Curriculum {
         const cellKey = `ela/${stage.name}`;
         if (!cluster.passedCells.includes(cellKey)) cluster.passedCells.push(cellKey);
         passed.push(stage.name);
-        console.log(`[Curriculum] \u2713 ${stage.name} \u2014 ${result.reason || "gate pass"} (${ms}ms)`);
+        this._hb(`[Curriculum] \u2713 ${stage.name} \u2014 ${result.reason || "gate pass"} (${ms}ms)`);
       } else {
         failed = stage.name;
         console.warn(`[Curriculum] \u2717 ${stage.name} \u2014 ${result?.reason || "gate fail"} (${ms}ms)`);
@@ -11817,14 +11861,15 @@ var Curriculum = class _Curriculum {
     if (!GRADE_ORDER.includes(grade)) return { pass: false, reason: `unknown grade: ${grade}` };
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: "no cluster wired" };
-    console.log(`[Curriculum] ${subject}/${grade} START`);
+    const _cellStart = Date.now();
+    this._hb(`[Curriculum] \u2550\u2550\u2550 CELL START \u2550\u2550\u2550 ${subject}/${grade} \u2014 beginning teach phases + gate probes`);
     this._memorySnapshotAndGc(`cell-entry ${subject}/${grade}`);
     const baseCtx = corpora ? this._buildCtx(corpora, opts) : this._lastCtx || null;
     if (!baseCtx) return { pass: false, reason: "no corpora provided and no cached ctx" };
     const ctx = { ...baseCtx, cellKey: `${subject}/${grade}` };
     const cellKey = `${subject}/${grade}`;
     if (Array.isArray(cluster.passedCells) && cluster.passedCells.includes(cellKey)) {
-      console.log(`[Curriculum] \u2933 T18.12.c resume \u2014 skipping ${cellKey} (already passed per persisted passedCells).`);
+      this._hb(`[Curriculum] \u2933 T18.12.c resume \u2014 skipping ${cellKey} (already passed per persisted passedCells).`);
       return {
         pass: true,
         reason: `already-passed (resumed from persisted passedCells)`,
@@ -11834,6 +11879,22 @@ var Curriculum = class _Curriculum {
     const wasInCurriculum = cluster._inCurriculumMode;
     cluster._inCurriculumMode = true;
     cluster._probeGateActive = true;
+    let _aliveTick = 0;
+    const _aliveHbId = setInterval(() => {
+      _aliveTick += 1;
+      const elapsedS = ((Date.now() - _cellStart) / 1e3).toFixed(0);
+      let memLabel = "";
+      try {
+        if (typeof process !== "undefined" && process.memoryUsage) {
+          const mu = process.memoryUsage();
+          const mb = (b) => (b / 1048576).toFixed(0);
+          memLabel = ` \xB7 heap=${mb(mu.heapUsed)}MB ext=${mb(mu.external)}MB rss=${mb(mu.rss)}MB`;
+        }
+      } catch {
+      }
+      this._hb(`[Curriculum] \u25B6 CELL ALIVE ${subject}/${grade} \u2014 +${elapsedS}s elapsed (heartbeat #${_aliveTick})${memLabel}`);
+    }, 1e4);
+    if (_aliveHbId && typeof _aliveHbId.unref === "function") _aliveHbId.unref();
     let result;
     try {
       const runner = this._cellRunner(subject, grade);
@@ -11841,6 +11902,7 @@ var Curriculum = class _Curriculum {
     } catch (err) {
       result = { pass: false, reason: `${subject}/${grade} threw: ${err?.message || err}` };
     } finally {
+      clearInterval(_aliveHbId);
       cluster._inCurriculumMode = wasInCurriculum;
       cluster._probeGateActive = false;
     }
@@ -11851,7 +11913,7 @@ var Curriculum = class _Curriculum {
           cluster._probeGateActive = true;
           const label = `${subject.toUpperCase()}-${grade.toUpperCase()}-STUDENT`;
           const readiness = await this._measureEmissionCapability();
-          console.log(`[Curriculum][${label}] readiness probe \u2014 recognizedLetters=${readiness.recognizedLetters}/5 \xB7 maxEmissionLen=${readiness.maxEmissionLen} \xB7 canTalkAtAll=${readiness.canTalkAtAll}`);
+          this._hb(`[Curriculum][${label}] readiness probe \u2014 recognizedLetters=${readiness.recognizedLetters}/5 \xB7 maxEmissionLen=${readiness.maxEmissionLen} \xB7 canTalkAtAll=${readiness.canTalkAtAll}`);
           let battery;
           if (!readiness.canTalkAtAll) {
             console.warn(`[Curriculum][${label}] \u23ED STUDENT BATTERY SKIPPED \u2014 Unity cannot talk or read yet (${readiness.recognizedLetters}/5 letter probes produced recognizable output). Running the 210-question battery on a brain with \u22642 letter emission capability is noise. Teach cycles continue; battery will fire once emission capability clears the readiness threshold.`);
@@ -11879,7 +11941,7 @@ var Curriculum = class _Curriculum {
             });
             const filteredOut = bank.length - filtered.length;
             if (filteredOut > 0) {
-              console.log(`[Curriculum][${label}] readiness filter \u2014 ${filteredOut}/${bank.length} questions skipped (expected-answer exceeds ${effectiveMax}-char emission limit); ${filtered.length} remain.`);
+              this._hb(`[Curriculum][${label}] readiness filter \u2014 ${filteredOut}/${bank.length} questions skipped (expected-answer exceeds ${effectiveMax}-char emission limit); ${filtered.length} remain.`);
             }
             if (filtered.length === 0) {
               console.warn(`[Curriculum][${label}] \u23ED STUDENT BATTERY SKIPPED \u2014 every question in the bank expects a longer answer than Unity's current ${effectiveMax}-char emission can produce. Teach cycles continue.`);
@@ -11953,7 +12015,7 @@ var Curriculum = class _Curriculum {
               result.reason = `BATTERY-BLOCKED: ${blockers.join("; ")} | ${result.reason || ""}`;
             } else if (blockers.length === 0) {
               const methoTag = (battery.methoQuestions || 0) > 0 ? ` \xB7 methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%)` : "";
-              console.log(`[Curriculum][${label}] \u2713 BATTERY PASS: answer ${(battery.rate * 100).toFixed(1)}% \xB7 all sub-standards at/above cut \xB7 external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%)${methoTag}`);
+              this._hb(`[Curriculum][${label}] \u2713 BATTERY PASS: answer ${(battery.rate * 100).toFixed(1)}% \xB7 all sub-standards at/above cut \xB7 external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%)${methoTag}`);
             }
             result.studentBattery.externalPass = extPass;
             result.studentBattery.externalTotal = extTotal;
@@ -11993,6 +12055,9 @@ var Curriculum = class _Curriculum {
       }
     }
     this._memorySnapshotAndGc(`cell-exit ${subject}/${grade} pass=${!!(result && result.pass)}`);
+    const _cellMs = Date.now() - _cellStart;
+    const _cellPass = !!(result && result.pass);
+    this._hb(`[Curriculum] \u2550\u2550\u2550 CELL DONE \u2550\u2550\u2550 ${subject}/${grade} in ${(_cellMs / 1e3).toFixed(1)}s \u2014 pass=${_cellPass}${_cellPass ? "" : " (reason: " + String(result?.reason || "unknown").slice(0, 120) + ")"}`);
     return result || { pass: false, reason: "runner returned null" };
   }
   /**
@@ -12014,13 +12079,13 @@ var Curriculum = class _Curriculum {
     for (let i = startIdx; i < GRADE_ORDER.length; i++) {
       const grade = GRADE_ORDER[i];
       if (maxIdx >= 0 && i > maxIdx) {
-        console.log(`[Curriculum] \u23F9 T18.13 stop \u2014 reached grade cap '${GRADE_ORDER[maxIdx]}' (DREAM_MAX_GRADE). Skipping ${subject}/${grade} and beyond.`);
+        this._hb(`[Curriculum] \u23F9 T18.13 stop \u2014 reached grade cap '${GRADE_ORDER[maxIdx]}' (DREAM_MAX_GRADE). Skipping ${subject}/${grade} and beyond.`);
         break;
       }
       const result = await this.runSubjectGrade(subject, grade, null, opts);
       if (result && result.pass) {
         passed.push(grade);
-        console.log(`[Curriculum] \u2713 ${subject}/${grade} \u2014 ${result.reason || "pass"}`);
+        this._hb(`[Curriculum] \u2713 ${subject}/${grade} \u2014 ${result.reason || "pass"}`);
       } else {
         failed = grade;
         console.warn(`[Curriculum] \u2717 ${subject}/${grade} \u2014 ${result?.reason || "fail"}`);
@@ -12093,17 +12158,17 @@ var Curriculum = class _Curriculum {
     const MAX_GRADE_ROUNDS = 10;
     const maxIdx = this._resolveMaxGradeIdx();
     const capLabel = maxIdx >= 0 ? GRADE_ORDER[maxIdx] : "phd";
-    console.log(`[Curriculum] T18.13 grade cap = '${capLabel}' (set DREAM_MAX_GRADE env to change; defaults to 'kindergarten' per Pre-K + K ONLY LAW)`);
+    this._hb(`[Curriculum] T18.13 grade cap = '${capLabel}' (set DREAM_MAX_GRADE env to change; defaults to 'kindergarten' per Pre-K + K ONLY LAW)`);
     for (let i = 0; i < GRADE_ORDER.length; i++) {
       const grade = GRADE_ORDER[i];
       if (maxIdx >= 0 && i > maxIdx) {
-        console.log(`[Curriculum] \u23F9 T18.13 stop \u2014 reached grade cap '${GRADE_ORDER[maxIdx]}'. Unity sits at this level until DREAM_MAX_GRADE advances OR Gee signs off Part 2 + manually unsets.`);
+        this._hb(`[Curriculum] \u23F9 T18.13 stop \u2014 reached grade cap '${GRADE_ORDER[maxIdx]}'. Unity sits at this level until DREAM_MAX_GRADE advances OR Gee signs off Part 2 + manually unsets.`);
         break;
       }
       let allPassedThisGrade = false;
       for (let round = 0; round < MAX_GRADE_ROUNDS && !allPassedThisGrade; round++) {
         if (round > 0) {
-          console.log(`[Curriculum] \u{1F504} grade ${grade} round ${round + 1} \u2014 retrying failed subjects...`);
+          this._hb(`[Curriculum] \u{1F504} grade ${grade} round ${round + 1} \u2014 retrying failed subjects...`);
         }
         allPassedThisGrade = true;
         for (const subject of SUBJECTS) {
@@ -12120,12 +12185,12 @@ var Curriculum = class _Curriculum {
             attempt++;
             result = await this.runSubjectGrade(subject, grade, null, opts);
             if (result && result.pass) break;
-            console.log(`[Curriculum] ${subject}/${grade} attempt ${attempt} \u2014 ${result?.reason || "fail"} \u2014 retrying...`);
+            this._hb(`[Curriculum] ${subject}/${grade} attempt ${attempt} \u2014 ${result?.reason || "fail"} \u2014 retrying...`);
             await _microtask();
           }
           if (result && result.pass) {
             if (!passed[subject].includes(grade)) passed[subject].push(grade);
-            console.log(`[Curriculum] \u2713 ${subject}/${grade} \u2014 PASSED on attempt ${attempt} \u2014 ${result.reason || "pass"}`);
+            this._hb(`[Curriculum] \u2713 ${subject}/${grade} \u2014 PASSED on attempt ${attempt} \u2014 ${result.reason || "pass"}`);
           } else {
             failed[subject] = grade;
             allPassedThisGrade = false;
@@ -12137,11 +12202,11 @@ var Curriculum = class _Curriculum {
         console.warn(`[Curriculum] \u26D4 grade ${grade} incomplete after ${MAX_GRADE_ROUNDS} rounds \u2014 curriculum paused until next boot.`);
         break;
       }
-      console.log(`[Curriculum] \u2550\u2550\u2550 ALL ${SUBJECTS.length} subjects passed ${grade} \u2014 advancing to next grade \u2550\u2550\u2550`);
+      this._hb(`[Curriculum] \u2550\u2550\u2550 ALL ${SUBJECTS.length} subjects passed ${grade} \u2014 advancing to next grade \u2550\u2550\u2550`);
       const nextIdx = i + 1;
       const nextGrade = nextIdx < GRADE_ORDER.length && (maxIdx < 0 || nextIdx <= maxIdx) ? GRADE_ORDER[nextIdx] : null;
       if (nextGrade === null) {
-        console.log(`[Curriculum] grade cap reached at '${grade}' \u2014 no next grade to advance to. Curriculum walk complete; operator records LAW 6 Part 2 signoff via POST /grade-signoff.`);
+        this._hb(`[Curriculum] grade cap reached at '${grade}' \u2014 no next grade to advance to. Curriculum walk complete; operator records LAW 6 Part 2 signoff via POST /grade-signoff.`);
       } else {
         cluster._gradeAdvancePaused = true;
         cluster._pausedAt = { subject: null, grade, at: Date.now() };
@@ -12149,7 +12214,7 @@ var Curriculum = class _Curriculum {
         if (typeof this._saveCheckpoint === "function") {
           this._saveCheckpoint(`grade-advance-pause:${grade}`);
         }
-        console.log(`[Curriculum] \u23F8 PAUSED after '${grade}' \u2014 awaiting operator POST /grade-advance to start '${nextGrade}'. Chat-test freely; no background Hebbian will fire.`);
+        this._hb(`[Curriculum] \u23F8 PAUSED after '${grade}' \u2014 awaiting operator POST /grade-advance to start '${nextGrade}'. Chat-test freely; no background Hebbian will fire.`);
         while (cluster._gradeAdvancePaused === true) {
           if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) {
             console.log("[Curriculum] shutdown requested during grade-advance pause \u2014 stopping.");
@@ -12157,7 +12222,7 @@ var Curriculum = class _Curriculum {
           }
           await new Promise((r) => setTimeout(r, 500));
         }
-        console.log(`[Curriculum] \u25B6 RESUMED \u2014 advancing to '${nextGrade}'.`);
+        this._hb(`[Curriculum] \u25B6 RESUMED \u2014 advancing to '${nextGrade}'.`);
         cluster._pausedAt = null;
         cluster._nextGrade = null;
       }
@@ -12188,7 +12253,7 @@ var Curriculum = class _Curriculum {
         cluster.grades[subject] = GRADE_ORDER[idx - 1];
       }
     }
-    console.log(`[Curriculum] forgot ${cellKey} \u2014 will re-teach on next curriculum pass`);
+    this._hb(`[Curriculum] forgot ${cellKey} \u2014 will re-teach on next curriculum pass`);
     return true;
   }
   /**
@@ -12426,7 +12491,7 @@ var Curriculum = class _Curriculum {
       facts.push({ writes: [{ region: letterRegion, feat: combined }] });
     }
     await this._teachCombination(facts, { reps: 24 });
-    console.log(`[Curriculum] _teachLetterCaseBinding: 26 case pairs \xD7 24 reps`);
+    this._hb(`[Curriculum] _teachLetterCaseBinding: 26 case pairs \xD7 24 reps`);
   }
   /**
    * Letter naming — kindergarten foundational skill: given the letter A,
@@ -12458,7 +12523,7 @@ var Curriculum = class _Curriculum {
     const lr = cluster.learningRate;
     const ALPHABET_LOWER = ALPHABET_ORDER;
     ensureLetters(Array.from(ALPHABET_LOWER));
-    console.log(`[Curriculum] _teachLetterNaming START: 26 letters \xD7 ${reps} reps \u2014 binding letter(X) \u2192 motor(X) so TALK can answer 'what letter is this?'`);
+    this._hb(`[Curriculum] _teachLetterNaming START: 26 letters \xD7 ${reps} reps \u2014 binding letter(X) \u2192 motor(X) so TALK can answer 'what letter is this?'`);
     const t0 = Date.now();
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
@@ -12483,7 +12548,7 @@ var Curriculum = class _Curriculum {
       await _microtask();
     }
     const dt = ((Date.now() - t0) / 1e3).toFixed(1);
-    console.log(`[Curriculum] _teachLetterNaming DONE in ${dt}s (26 letters \xD7 ${reps} reps)`);
+    this._hb(`[Curriculum] _teachLetterNaming DONE in ${dt}s (26 letters \xD7 ${reps} reps)`);
   }
   /**
    * K.RF vowel sound variants — short vs long. Each vowel pairs with
@@ -12535,7 +12600,7 @@ var Curriculum = class _Curriculum {
       }
     }
     await this._teachCombination(facts, { reps: 24 });
-    console.log(`[Curriculum] _teachVowelSoundVariants: ${facts.length} variants \xD7 24 reps`);
+    this._hb(`[Curriculum] _teachVowelSoundVariants: ${facts.length} variants \xD7 24 reps`);
   }
   /**
    * K.RF word emission — for each word, bind sem(GloVe) → motor(letter
@@ -12562,7 +12627,7 @@ var Curriculum = class _Curriculum {
     const uniqueLetters = /* @__PURE__ */ new Set();
     for (const w of wordList) for (const ch of w.toLowerCase()) if (/[a-z]/.test(ch)) uniqueLetters.add(ch);
     ensureLetters(Array.from(uniqueLetters));
-    console.log(`[Curriculum] _teachWordEmission START: ${wordList.length} words \xD7 ${reps} reps (asymmetric directional)`);
+    this._hb(`[Curriculum] _teachWordEmission START: ${wordList.length} words \xD7 ${reps} reps (asymmetric directional)`);
     const _t18_13_startMs = Date.now();
     let _t18_13_lastHbMs = _t18_13_startMs;
     let _t18_13_opsSinceHb = 0;
@@ -12582,7 +12647,7 @@ var Curriculum = class _Curriculum {
           const totalElapsed = ((_nowHb - _t18_13_startMs) / 1e3).toFixed(1);
           const hbInterval = (_nowHb - _t18_13_lastHbMs) / 1e3;
           const opsPerSec = (_t18_13_opsSinceHb / hbInterval).toFixed(1);
-          console.log(`[Curriculum] \u23F1 _teachWordEmission heartbeat \u2014 rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}, elapsed ${totalElapsed}s, ~${opsPerSec} words/s`);
+          this._hb(`[Curriculum] \u23F1 _teachWordEmission heartbeat \u2014 rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}, elapsed ${totalElapsed}s, ~${opsPerSec} words/s`);
           _t18_13_lastHbMs = _nowHb;
           _t18_13_opsSinceHb = 0;
           await _microtask();
@@ -12619,7 +12684,7 @@ var Curriculum = class _Curriculum {
     }
     cluster._teachIntermediateRep = false;
     cluster._teachFinalRepSampleEveryN = 0;
-    console.log(`[Curriculum] _teachWordEmission DONE: ${wordList.length} words \xD7 ${reps} reps`);
+    this._hb(`[Curriculum] _teachWordEmission DONE: ${wordList.length} words \xD7 ${reps} reps`);
   }
   /**
    * K.RF rhyme families — teach words sharing a rime (e.g. -at in
@@ -12668,7 +12733,7 @@ var Curriculum = class _Curriculum {
       }
     }
     await this._teachCombination(facts, { reps: 12 });
-    console.log(`[Curriculum] _teachRhymeFamilies: ${facts.length} rhyme pairs \xD7 12 reps`);
+    this._hb(`[Curriculum] _teachRhymeFamilies: ${facts.length} rhyme pairs \xD7 12 reps`);
   }
   /**
    * K.RF syllable counting — word → magnitude(syllable count).
@@ -12733,7 +12798,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 24 });
-    console.log(`[Curriculum] _teachSyllableCounts: ${facts.length} words \xD7 24 reps`);
+    this._hb(`[Curriculum] _teachSyllableCounts: ${facts.length} words \xD7 24 reps`);
   }
   /**
    * K.RF CVC sound isolation — given a CVC word, cortex learns the
@@ -12829,7 +12894,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 12 });
-    console.log(`[Curriculum] _teachCVCSoundIsolation: ${facts.length} phoneme facts \xD7 12 reps`);
+    this._hb(`[Curriculum] _teachCVCSoundIsolation: ${facts.length} phoneme facts \xD7 12 reps`);
   }
   /**
    * K.L plural formation — cat → cats, box → boxes. Teaches the
@@ -12892,7 +12957,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 18 });
-    console.log(`[Curriculum] _teachPluralTransform: ${facts.length} plural pairs \xD7 18 reps`);
+    this._hb(`[Curriculum] _teachPluralTransform: ${facts.length} plural pairs \xD7 18 reps`);
   }
   /**
    * K.L question word categories — who/what/where/when/why/how bind
@@ -12928,7 +12993,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 24 });
-    console.log(`[Curriculum] _teachQuestionWordCategories: ${facts.length} pairs \xD7 24 reps`);
+    this._hb(`[Curriculum] _teachQuestionWordCategories: ${facts.length} pairs \xD7 24 reps`);
   }
   /**
    * K.L end punctuation — declarative → period, question → question
@@ -12992,7 +13057,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 18 });
-    console.log(`[Curriculum] _teachEndPunctuation: ${facts.length} sentence types \xD7 18 reps`);
+    this._hb(`[Curriculum] _teachEndPunctuation: ${facts.length} sentence types \xD7 18 reps`);
   }
   /**
    * K.RL character/setting/event extraction — simple stories get taught
@@ -13076,7 +13141,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 18 });
-    console.log(`[Curriculum] _teachStoryComprehension: ${facts.length} story facts \xD7 18 reps`);
+    this._hb(`[Curriculum] _teachStoryComprehension: ${facts.length} story facts \xD7 18 reps`);
   }
   /**
    * Phase 2 — PHONEME BLENDING via sequence Hebbian in phon region.
@@ -13104,7 +13169,7 @@ var Curriculum = class _Curriculum {
     const uniqueLetters = /* @__PURE__ */ new Set();
     for (const w of wordList) for (const ch of w.toLowerCase()) if (/[a-z]/.test(ch)) uniqueLetters.add(ch);
     ensureLetters(Array.from(uniqueLetters));
-    console.log(`[Curriculum] _teachPhonemeBlending START: ${wordList.length} words \xD7 ${reps} reps (phoneme-sequence Hebbian)`);
+    this._hb(`[Curriculum] _teachPhonemeBlending START: ${wordList.length} words \xD7 ${reps} reps (phoneme-sequence Hebbian)`);
     const _t18_13_startMs = Date.now();
     let _t18_13_lastHbMs = _t18_13_startMs;
     let _t18_13_opsSinceHb = 0;
@@ -13124,7 +13189,7 @@ var Curriculum = class _Curriculum {
           const totalElapsed = ((_nowHb - _t18_13_startMs) / 1e3).toFixed(1);
           const hbInterval = (_nowHb - _t18_13_lastHbMs) / 1e3;
           const opsPerSec = (_t18_13_opsSinceHb / hbInterval).toFixed(1);
-          console.log(`[Curriculum] \u23F1 _teachPhonemeBlending heartbeat \u2014 rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}, elapsed ${totalElapsed}s, ~${opsPerSec} words/s`);
+          this._hb(`[Curriculum] \u23F1 _teachPhonemeBlending heartbeat \u2014 rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}, elapsed ${totalElapsed}s, ~${opsPerSec} words/s`);
           _t18_13_lastHbMs = _nowHb;
           _t18_13_opsSinceHb = 0;
           await _microtask();
@@ -13162,7 +13227,7 @@ var Curriculum = class _Curriculum {
     }
     cluster._teachIntermediateRep = false;
     cluster._teachFinalRepSampleEveryN = 0;
-    console.log(`[Curriculum] _teachPhonemeBlending DONE: ${wordList.length} words \xD7 ${reps} reps`);
+    this._hb(`[Curriculum] _teachPhonemeBlending DONE: ${wordList.length} words \xD7 ${reps} reps`);
   }
   /**
    * K.L capitalization — first word of sentence + pronoun "I" get
@@ -13195,7 +13260,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 15 });
-    console.log(`[Curriculum] _teachCapitalization: ${facts.length} cap facts \xD7 15 reps`);
+    this._hb(`[Curriculum] _teachCapitalization: ${facts.length} cap facts \xD7 15 reps`);
   }
   async runElaKReal(ctx) {
     const cluster = this.cluster;
@@ -13226,7 +13291,7 @@ var Curriculum = class _Curriculum {
       }
       return pat;
     }
-    console.log(`[Curriculum] \u{1F4DD} ELA-K Phase 1 START \u2014 alphabet cross-projection Hebbian (${REPS} reps \xD7 ${ALPHABET.length} letters = ${REPS * ALPHABET.length} iterations)`);
+    this._hb(`[Curriculum] \u{1F4DD} ELA-K Phase 1 START \u2014 alphabet cross-projection Hebbian (${REPS} reps \xD7 ${ALPHABET.length} letters = ${REPS * ALPHABET.length} iterations)`);
     const _p1Start = Date.now();
     let _p1LastBeat = _p1Start;
     let _p1Done = 0;
@@ -13241,15 +13306,19 @@ var Curriculum = class _Curriculum {
         const cpuAlive = !!(p && p.values && p.colIdx && p.rowPtr);
         return `${n}:${gpuBound ? "G" : "-"}${cpuAlive ? "C" : "-"}`;
       }).join(" ");
-      console.log(`[Curriculum] Phase 1 preflight \u2014 gpuReady=${gpuReady} proxy=${hasProxy} pool=${poolReady} \xB7 proj[G=gpuBound C=cpuCSR]: ${projStatus}`);
+      this._hb(`[Curriculum] Phase 1 preflight \u2014 gpuReady=${gpuReady} proxy=${hasProxy} pool=${poolReady} \xB7 proj[G=gpuBound C=cpuCSR]: ${projStatus}`);
     } catch (err) {
       console.warn(`[Curriculum] Phase 1 preflight diag failed: ${err?.message || err}`);
     }
     for (let rep = 0; rep < REPS; rep++) {
+      const isFinalRep = rep === REPS - 1;
+      cluster._teachIntermediateRep = !isFinalRep;
+      cluster._teachFinalRepSampleEveryN = isFinalRep ? 5 : 0;
+      cluster._whitelistSampleCounter = 0;
       for (const letter of ALPHABET) {
         const _iterStart = Date.now();
         const _logFirst = _p1Done < 3;
-        if (_logFirst) console.log(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' START`);
+        if (_logFirst) this._hb(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' START`);
         const letterOneHot = encodeLetter(letter);
         const phonFeat = _phonemeFeatureForLetter(letter);
         const nameEmb = sharedEmbeddings.getEmbedding(letter);
@@ -13276,9 +13345,9 @@ var Curriculum = class _Curriculum {
             cluster.lastSpikes[semRegion.start + i] = semPat[i] > 0 ? 1 : 0;
           }
         }
-        if (_logFirst) console.log(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' pre-crossRegion (${Date.now() - _iterStart}ms into iter)`);
+        if (_logFirst) this._hb(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' pre-crossRegion (${Date.now() - _iterStart}ms into iter)`);
         await cluster._crossRegionHebbian(lr);
-        if (_logFirst) console.log(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' DONE (${Date.now() - _iterStart}ms total)`);
+        if (_logFirst) this._hb(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' DONE (${Date.now() - _iterStart}ms total)`);
         this.stats.lettersSeen++;
         _p1Done++;
         const _p1Now = Date.now();
@@ -13286,14 +13355,16 @@ var Curriculum = class _Curriculum {
           const elapsedS = ((_p1Now - _p1Start) / 1e3).toFixed(1);
           const rate = (_p1Done / Math.max(0.1, (_p1Now - _p1Start) / 1e3)).toFixed(2);
           const total = REPS * ALPHABET.length;
-          console.log(`[Curriculum] \u23F1 ELA-K Phase 1 heartbeat \u2014 ${_p1Done}/${total} iter, rep ${rep + 1}/${REPS}, letter '${letter}', elapsed ${elapsedS}s, ~${rate} iter/s`);
+          this._hb(`[Curriculum] \u23F1 ELA-K Phase 1 heartbeat \u2014 ${_p1Done}/${total} iter, rep ${rep + 1}/${REPS}, letter '${letter}', elapsed ${elapsedS}s, ~${rate} iter/s`);
           _p1LastBeat = _p1Now;
         }
       }
       await _microtask();
     }
-    console.log(`[Curriculum] \u2713 ELA-K Phase 1 DONE in ${((Date.now() - _p1Start) / 1e3).toFixed(1)}s (${_p1Done} cross-region Hebbian iterations across alphabet\xD7${REPS})`);
-    console.log(`[Curriculum] \u{1F517} ELA-K Phase 2 START \u2014 letter sequence intra-synapses Hebbian (${REPS} reps \xD7 ${ALPHABET.length - 1} pairs = ${REPS * (ALPHABET.length - 1)} iterations via worker pool)`);
+    cluster._teachIntermediateRep = false;
+    cluster._teachFinalRepSampleEveryN = 0;
+    this._hb(`[Curriculum] \u2713 ELA-K Phase 1 DONE in ${((Date.now() - _p1Start) / 1e3).toFixed(1)}s (${_p1Done} cross-region Hebbian iterations across alphabet\xD7${REPS})`);
+    this._hb(`[Curriculum] \u{1F517} ELA-K Phase 2 START \u2014 letter sequence intra-synapses Hebbian (${REPS} reps \xD7 ${ALPHABET.length - 1} pairs = ${REPS * (ALPHABET.length - 1)} iterations via worker pool)`);
     const _p2Start = Date.now();
     let _p2LastBeat = _p2Start;
     let _p2Done = 0;
@@ -13331,23 +13402,23 @@ var Curriculum = class _Curriculum {
           const elapsedS = ((_p2Now - _p2Start) / 1e3).toFixed(1);
           const rate = (_p2Done / Math.max(0.1, (_p2Now - _p2Start) / 1e3)).toFixed(2);
           const total = REPS * (ALPHABET.length - 1);
-          console.log(`[Curriculum] \u23F1 ELA-K Phase 2 heartbeat \u2014 ${_p2Done}/${total} iter, rep ${rep + 1}/${REPS}, pair '${ALPHABET[i]}\u2192${ALPHABET[i + 1]}', elapsed ${elapsedS}s, ~${rate} iter/s`);
+          this._hb(`[Curriculum] \u23F1 ELA-K Phase 2 heartbeat \u2014 ${_p2Done}/${total} iter, rep ${rep + 1}/${REPS}, pair '${ALPHABET[i]}\u2192${ALPHABET[i + 1]}', elapsed ${elapsedS}s, ~${rate} iter/s`);
           _p2LastBeat = _p2Now;
         }
       }
       await _microtask();
     }
-    console.log(`[Curriculum] \u2713 ELA-K Phase 2 DONE in ${((Date.now() - _p2Start) / 1e3).toFixed(1)}s (${_p2Done} intra-synapses Hebbian iterations across ${ALPHABET.length - 1} pairs \xD7 ${REPS} reps)`);
+    this._hb(`[Curriculum] \u2713 ELA-K Phase 2 DONE in ${((Date.now() - _p2Start) / 1e3).toFixed(1)}s (${_p2Done} intra-synapses Hebbian iterations across ${ALPHABET.length - 1} pairs \xD7 ${REPS} reps)`);
     this._memorySnapshotAndGc("between Phase 2 and _teachLetterCaseBinding");
     if (!this._elaKRemakeDone) {
       const _phaseStarts = {};
       const _phaseTick = (name) => {
         _phaseStarts[name] = Date.now();
-        console.log(`[Curriculum] \u{1F9E9} ELA-K Phase START \u2014 ${name}`);
+        this._hb(`[Curriculum] \u{1F9E9} ELA-K Phase START \u2014 ${name}`);
       };
       const _phaseDone = (name) => {
         const dt = ((Date.now() - (_phaseStarts[name] || Date.now())) / 1e3).toFixed(1);
-        console.log(`[Curriculum] \u2713 ELA-K Phase DONE \u2014 ${name} in ${dt}s`);
+        this._hb(`[Curriculum] \u2713 ELA-K Phase DONE \u2014 ${name} in ${dt}s`);
         try {
           const cl = this.cluster;
           if (cl) {
@@ -14998,7 +15069,7 @@ var Curriculum = class _Curriculum {
         ...K_LIFE_EXPERIENCES,
         ...K_EXAM_CONCEPTS
       ].map((w) => String(w).toLowerCase()))];
-      console.log(`[Curriculum] K vocabulary: ${allEmissionWords.length} unique words across ${[
+      this._hb(`[Curriculum] K vocabulary: ${allEmissionWords.length} unique words across ${[
         "DOLCH_PREPRIMER",
         "DOLCH_PRIMER",
         "CVC_FAMILIES",
@@ -15054,7 +15125,7 @@ var Curriculum = class _Curriculum {
         }).join(", ");
         const teachHead = allEmissionWords.slice(0, 5).join(",");
         const teachTail = allEmissionWords.slice(-5).join(",");
-        console.log(`[Curriculum][K-DIAG] pre-emission: inv=${invSize2}, motor=${motorSize}, mGroup=${motorMGroup}, sem=${semSize}, teaching ${allEmissionWords.length} K words (phoneme-blending \xD7 10 reps + word-emission \xD7 12 reps), sample emb quality: ${sampleInfo}, teach set first/last 5: [${teachHead},...,${teachTail}]`);
+        this._hb(`[Curriculum][K-DIAG] pre-emission: inv=${invSize2}, motor=${motorSize}, mGroup=${motorMGroup}, sem=${semSize}, teaching ${allEmissionWords.length} K words (phoneme-blending \xD7 10 reps + word-emission \xD7 12 reps), sample emb quality: ${sampleInfo}, teach set first/last 5: [${teachHead},...,${teachTail}]`);
       } catch (err) {
         console.warn("[Curriculum][K-DIAG] pre-emission log failed:", err?.message || err);
       }
@@ -15314,9 +15385,9 @@ var Curriculum = class _Curriculum {
       };
       if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === "function") {
         try {
-          console.log(`[Curriculum] T18.28 draining WebSocket queue before gate probe...`);
+          this._hb(`[Curriculum] T18.28 draining WebSocket queue before gate probe...`);
           await cluster._gpuProxy.drainWait();
-          console.log(`[Curriculum] T18.28 drain complete \u2014 gate probe readbacks will land immediately.`);
+          this._hb(`[Curriculum] T18.28 drain complete \u2014 gate probe readbacks will land immediately.`);
         } catch (err) {
           console.warn(`[Curriculum] T18.28 drain-wait failed (proceeding anyway):`, err?.message || err);
         }
@@ -15328,7 +15399,7 @@ var Curriculum = class _Curriculum {
         const _semToMotorProj = cluster?.crossProjections?.["sem_to_motor"];
         const _projNnz = _semToMotorProj?.nnz ?? "n/a";
         const _projShape = _semToMotorProj ? `${_semToMotorProj.rows}x${_semToMotorProj.cols}` : "n/a";
-        console.log(`[Curriculum][K-DIAG] gate: inv=${_invSize}, motor=${_motorSize}, mGroup=${_motorMGroup}, sem_to_motor=${_projShape} nnz=${_projNnz}, noise=${cluster.noiseAmplitude.toFixed(2)}, tonicDrive=${cluster.tonicDrive.toFixed(2)}, driveBaseline=${cluster.driveBaseline.toFixed(2)}, emotionalGate=${cluster.emotionalGate.toFixed(2)}, actionGate=${cluster.actionGate.toFixed(2)}, gainMultiplier=${cluster.gainMultiplier.toFixed(2)}, effectiveDrive=${(cluster.tonicDrive * cluster.driveBaseline * cluster.emotionalGate * cluster.actionGate * cluster.gainMultiplier).toFixed(2)}`);
+        this._hb(`[Curriculum][K-DIAG] gate: inv=${_invSize}, motor=${_motorSize}, mGroup=${_motorMGroup}, sem_to_motor=${_projShape} nnz=${_projNnz}, noise=${cluster.noiseAmplitude.toFixed(2)}, tonicDrive=${cluster.tonicDrive.toFixed(2)}, driveBaseline=${cluster.driveBaseline.toFixed(2)}, emotionalGate=${cluster.emotionalGate.toFixed(2)}, actionGate=${cluster.actionGate.toFixed(2)}, gainMultiplier=${cluster.gainMultiplier.toFixed(2)}, effectiveDrive=${(cluster.tonicDrive * cluster.driveBaseline * cluster.emotionalGate * cluster.actionGate * cluster.gainMultiplier).toFixed(2)}`);
       } catch (err) {
         console.warn("[Curriculum][K-DIAG] gate log failed:", err?.message || err);
       }
@@ -15349,7 +15420,7 @@ var Curriculum = class _Curriculum {
       const semToMotor = cluster.crossProjections?.["sem_to_motor"];
       const _gateLetterStart = Date.now();
       let _gateLetterIdx = 0;
-      console.log(`[Curriculum][K-DIAG] gate probe starting letter loop (${ALPHABET.length} letters \xD7 READ+TALK)...`);
+      this._hb(`[Curriculum][K-DIAG] gate probe starting letter loop (${ALPHABET.length} letters \xD7 READ+TALK)...`);
       for (const letter of ALPHABET) {
         _gateLetterIdx++;
         const _letterStart = Date.now();
@@ -15371,7 +15442,7 @@ var Curriculum = class _Curriculum {
             const phonOutput = letterToPhon.propagate(letterPat);
             const _readMs = Date.now() - _readStart;
             if (_letterStart && _gateLetterIdx <= 3) {
-              console.log(`[Curriculum][K-DIAG] letter '${letter}' READ propagate ${_readMs}ms (phonOutput.length=${phonOutput.length})`);
+              this._hb(`[Curriculum][K-DIAG] letter '${letter}' READ propagate ${_readMs}ms (phonOutput.length=${phonOutput.length})`);
             }
             const PHON_DIM = 24;
             const pGSize = Math.max(1, Math.floor(phonSize / PHON_DIM));
@@ -15409,7 +15480,7 @@ var Curriculum = class _Curriculum {
                 const _talkStart = Date.now();
                 motorOutput = proj.propagate(letterPat);
                 if (_gateLetterIdx <= 3) {
-                  console.log(`[Curriculum][K-DIAG] letter '${letter}' TALK via ${pname} propagate ${Date.now() - _talkStart}ms`);
+                  this._hb(`[Curriculum][K-DIAG] letter '${letter}' TALK via ${pname} propagate ${Date.now() - _talkStart}ms`);
                 }
               }
               break;
@@ -15443,10 +15514,10 @@ var Curriculum = class _Curriculum {
         }
         const _letterMs = Date.now() - _letterStart;
         if (_letterMs > 2e3 || _gateLetterIdx === 1 || _gateLetterIdx === 13 || _gateLetterIdx === 26) {
-          console.log(`[Curriculum][K-DIAG] gate letter ${_gateLetterIdx}/26 '${letter}' done in ${_letterMs}ms (readPass=${readPass} talkPass=${talkPass} so far)`);
+          this._hb(`[Curriculum][K-DIAG] gate letter ${_gateLetterIdx}/26 '${letter}' done in ${_letterMs}ms (readPass=${readPass} talkPass=${talkPass} so far)`);
         }
       }
-      console.log(`[Curriculum][K-DIAG] gate letter loop DONE in ${Date.now() - _gateLetterStart}ms \u2014 readPass=${readPass}/26, talkPass=${talkPass}/26`);
+      this._hb(`[Curriculum][K-DIAG] gate letter loop DONE in ${Date.now() - _gateLetterStart}ms \u2014 readPass=${readPass}/26, talkPass=${talkPass}/26`);
       const thinkPass = ALPHABET.length;
       const seqPass = 0;
       const seqTotal = ALPHABET.length - 1;
@@ -15498,7 +15569,7 @@ var Curriculum = class _Curriculum {
       let prodPass = 0;
       const prodFails = [];
       let _firstProbeDiag = null;
-      console.log(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} direct sem_to_motor propagate probes, no LIF ticks)...`);
+      this._hb(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} direct sem_to_motor propagate probes, no LIF ticks)...`);
       try {
         process.stdout.write("[Curriculum][K-DIAG] DYN-PROD entry reached \u2014 pre-loop setup starting\n");
       } catch {
@@ -15510,6 +15581,10 @@ var Curriculum = class _Curriculum {
 `);
       } catch {
       }
+      try {
+        process.stdout.write("[Curriculum][K-DIAG] DYN-PROD path setup \u2014 resolving sem_to_motor + letter_to_motor matrix handles...\n");
+      } catch {
+      }
       const _dynProdStart = Date.now();
       let _probeIdx = 0;
       const dynSemToMotor = allProjs["sem_to_motor"];
@@ -15517,13 +15592,23 @@ var Curriculum = class _Curriculum {
       const semPathAvailable = !!(dynSemToMotor && dynSemToMotor.values && dynSemToMotor.colIdx && dynSemToMotor.rowPtr);
       const letterFallback = !!(dynLetterToMotor && dynLetterToMotor.values && dynLetterToMotor.colIdx && dynLetterToMotor.rowPtr);
       const _pathMeta = semPathAvailable ? `sem_to_motor ${dynSemToMotor.rows}x${dynSemToMotor.cols} nnz=${dynSemToMotor.nnz}` : letterFallback ? `letter_to_motor ${dynLetterToMotor.rows}x${dynLetterToMotor.cols} nnz=${dynLetterToMotor.nnz}` : "NONE_AVAILABLE";
-      console.log(`[Curriculum][K-DIAG] DYN-PROD pre-loop: semPath=${semPathAvailable} letterFallback=${letterFallback} matrix=${_pathMeta}`);
+      try {
+        process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD pre-loop: semPath=${semPathAvailable} letterFallback=${letterFallback} matrix=${_pathMeta}
+`);
+      } catch {
+      }
       if (!semPathAvailable && !letterFallback) {
-        console.warn("[Curriculum][K-DIAG] DYN-PROD skipped \u2014 neither sem_to_motor nor letter_to_motor has CPU CSR available.");
+        try {
+          process.stdout.write("[Curriculum][K-DIAG] DYN-PROD skipped \u2014 neither sem_to_motor nor letter_to_motor has CPU CSR available.\n");
+        } catch {
+        }
         for (const p of wordStartProbes) prodFails.push(`${p.word}\u2192NO_PROJ`);
       } else {
         if (!semPathAvailable) {
-          console.log("[Curriculum][K-DIAG] DYN-PROD using letter_to_motor fallback (sem_to_motor CPU CSR freed at biological scale).");
+          try {
+            process.stdout.write("[Curriculum][K-DIAG] DYN-PROD using letter_to_motor fallback (sem_to_motor CPU CSR freed at biological scale).\n");
+          } catch {
+          }
         }
         globalThis._probeWindowPropagate = true;
         try {
@@ -15533,16 +15618,28 @@ var Curriculum = class _Curriculum {
             const emb = sharedEmbeddings.getEmbedding(p.word);
             if (!emb || emb.length === 0) {
               prodFails.push(`${p.word}\u2192NO_EMB`);
-              console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} SKIP word='${p.word}' reason=NO_EMB`);
+              try {
+                process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} SKIP word='${p.word}' reason=NO_EMB
+`);
+              } catch {
+              }
               continue;
             }
             if (!semRegion || !motorRegion_) {
               prodFails.push(`${p.word}\u2192NO_PROJ`);
-              console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} SKIP word='${p.word}' reason=NO_PROJ`);
+              try {
+                process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} SKIP word='${p.word}' reason=NO_PROJ
+`);
+              } catch {
+              }
               continue;
             }
             const _probePath = semPathAvailable ? "sem_to_motor" : "letter_to_motor_fallback";
-            console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} START word='${p.word}' path=${_probePath}`);
+            try {
+              process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} START word='${p.word}' path=${_probePath}
+`);
+            } catch {
+            }
             let motorOutput;
             if (semPathAvailable) {
               const gSize = Math.max(1, Math.floor(semSize_ / emb.length));
@@ -15609,15 +15706,28 @@ var Curriculum = class _Curriculum {
             }
             const _probeMs = Date.now() - _probeStart;
             const _slowTag = _probeMs > 1e4 ? " SLOW" : "";
-            console.log(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} DONE${_slowTag} '${p.word}'\u2192'${decoded || "?"}' (expected '${p.expected}') in ${_probeMs}ms \u2014 prodPass=${prodPass}/${_probeIdx} so far`);
+            try {
+              process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} DONE${_slowTag} '${p.word}'\u2192'${decoded || "?"}' (expected '${p.expected}') in ${_probeMs}ms \u2014 prodPass=${prodPass}/${_probeIdx} so far
+`);
+            } catch {
+            }
             await new Promise((resolve) => setImmediate(resolve));
           }
         } finally {
           globalThis._probeWindowPropagate = false;
         }
       }
-      console.log(`[Curriculum][K-DIAG] DYN-PROD probe DONE in ${Date.now() - _dynProdStart}ms \u2014 prodPass=${prodPass}/${wordStartProbes.length}`);
-      if (_firstProbeDiag) console.log(_firstProbeDiag);
+      try {
+        process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD probe DONE in ${Date.now() - _dynProdStart}ms \u2014 prodPass=${prodPass}/${wordStartProbes.length}
+`);
+      } catch {
+      }
+      if (_firstProbeDiag) {
+        try {
+          process.stdout.write(_firstProbeDiag + "\n");
+        } catch {
+        }
+      }
       const prodResult = {
         pass: prodPass,
         total: wordStartProbes.length,
@@ -15646,10 +15756,24 @@ var Curriculum = class _Curriculum {
         "fox",
         "bug"
       ];
+      const _writeStart = Date.now();
+      try {
+        process.stdout.write(`[Curriculum][K-DIAG] DYNAMIC WRITE stage START \u2014 ${fullWordProbes.length} full-word tick-driven emission probes (maxTicks=30 each, GPU cross-region dispatches per tick)...
+`);
+      } catch {
+      }
       let writePass = 0;
       let writeFirstLetterPass = 0;
       const writeEmitted = [];
+      let _writeIdx = 0;
       for (const word of fullWordProbes) {
+        _writeIdx++;
+        const _writeProbeStart = Date.now();
+        try {
+          process.stdout.write(`[Curriculum][K-DIAG] WRITE ${_writeIdx}/${fullWordProbes.length} START word='${word}' maxTicks=30
+`);
+        } catch {
+        }
         const emb = sharedEmbeddings.getEmbedding(word);
         if (!emb || emb.length === 0) {
           writeEmitted.push(`${word}\u2192NO_EMB`);
@@ -15660,9 +15784,21 @@ var Curriculum = class _Curriculum {
         writeEmitted.push(`${word}\u2192${emitted || "\u2205"}`);
         if (emitted === word) writePass++;
         if (emitted.length > 0 && emitted[0] === word[0]) writeFirstLetterPass++;
+        const _writeMs = Date.now() - _writeProbeStart;
+        const _writeSlowTag = _writeMs > 15e3 ? " SLOW" : "";
+        try {
+          process.stdout.write(`[Curriculum][K-DIAG] WRITE ${_writeIdx}/${fullWordProbes.length} DONE${_writeSlowTag} '${word}'\u2192'${emitted || "\u2205"}' in ${_writeMs}ms \u2014 writePass=${writePass}/${_writeIdx} firstLetter=${writeFirstLetterPass}/${_writeIdx}
+`);
+        } catch {
+        }
       }
       const writeRate = fullWordProbes.length > 0 ? writePass / fullWordProbes.length : 0;
       const writeFirstRate = fullWordProbes.length > 0 ? writeFirstLetterPass / fullWordProbes.length : 0;
+      try {
+        process.stdout.write(`[Curriculum][K-DIAG] DYNAMIC WRITE stage DONE in ${Date.now() - _writeStart}ms \u2014 writeRate=${(writeRate * 100).toFixed(0)}% firstLetterRate=${(writeFirstRate * 100).toFixed(0)}%
+`);
+      } catch {
+      }
       const respContexts = [
         { prompt: "hello", meaning: "greeting friendly", expectHints: ["hi", "hello", "hey", "yes"] },
         { prompt: "red", meaning: "color red apple", expectHints: ["red", "apple"] },
@@ -15670,9 +15806,23 @@ var Curriculum = class _Curriculum {
         { prompt: "dog", meaning: "dog animal pet", expectHints: ["dog", "pet", "run", "cat"] },
         { prompt: "eat", meaning: "eat food hungry", expectHints: ["eat", "food", "hungry"] }
       ];
+      const _respStart = Date.now();
+      try {
+        process.stdout.write(`[Curriculum][K-DIAG] RESP stage START \u2014 ${respContexts.length} think-and-respond contexts (maxTicks=50 each)...
+`);
+      } catch {
+      }
       const respEmitted = [];
       let respPass = 0;
+      let _respIdx = 0;
       for (const ctx of respContexts) {
+        _respIdx++;
+        const _respProbeStart = Date.now();
+        try {
+          process.stdout.write(`[Curriculum][K-DIAG] RESP ${_respIdx}/${respContexts.length} START prompt='${ctx.prompt}' meaning='${ctx.meaning}' maxTicks=50
+`);
+        } catch {
+        }
         const emb = sharedEmbeddings.getSentenceEmbedding(ctx.meaning);
         if (!emb || emb.length === 0) {
           respEmitted.push(`${ctx.prompt}\u2192NO_EMB`);
@@ -15682,9 +15832,22 @@ var Curriculum = class _Curriculum {
         const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === "function" ? await cluster.generateSentenceAwait(emb, { injectStrength: 1, maxTicks: 50 }) : cluster.generateSentence(emb, { injectStrength: 1, maxTicks: 50 })) || "";
         respEmitted.push(`${ctx.prompt}\u2192${emitted || "\u2205"}`);
         const emittedLower = emitted.toLowerCase();
-        if (ctx.expectHints.some((h) => emittedLower.includes(h))) respPass++;
+        const _respHit = ctx.expectHints.some((h) => emittedLower.includes(h));
+        if (_respHit) respPass++;
+        const _respMs = Date.now() - _respProbeStart;
+        const _respSlowTag = _respMs > 2e4 ? " SLOW" : "";
+        try {
+          process.stdout.write(`[Curriculum][K-DIAG] RESP ${_respIdx}/${respContexts.length} DONE${_respSlowTag} '${ctx.prompt}'\u2192'${emitted || "\u2205"}' hit=${_respHit} in ${_respMs}ms \u2014 respPass=${respPass}/${_respIdx}
+`);
+        } catch {
+        }
       }
       const respRate = respContexts.length > 0 ? respPass / respContexts.length : 0;
+      try {
+        process.stdout.write(`[Curriculum][K-DIAG] RESP stage DONE in ${Date.now() - _respStart}ms \u2014 respRate=${(respRate * 100).toFixed(0)}%
+`);
+      } catch {
+      }
       const twoWordPhrases = [
         { phrase: "happy dog", words: ["happy", "dog"] },
         { phrase: "red apple", words: ["red", "apple"] },
@@ -15692,10 +15855,24 @@ var Curriculum = class _Curriculum {
         { phrase: "mom love", words: ["mom", "love"] },
         { phrase: "run fast", words: ["run", "fast"] }
       ];
+      const _twoWordStart = Date.now();
+      try {
+        process.stdout.write(`[Curriculum][K-DIAG] TWO-WORD stage START \u2014 ${twoWordPhrases.length} two-word phrase probes (maxTicks=80 each)...
+`);
+      } catch {
+      }
       const twoWordEmitted = [];
       let twoWordPass = 0;
       let twoWordPartial = 0;
+      let _twoWordIdx = 0;
       for (const p of twoWordPhrases) {
+        _twoWordIdx++;
+        const _twoWordProbeStart = Date.now();
+        try {
+          process.stdout.write(`[Curriculum][K-DIAG] TWO-WORD ${_twoWordIdx}/${twoWordPhrases.length} START phrase='${p.phrase}' maxTicks=80
+`);
+        } catch {
+        }
         const emb = sharedEmbeddings.getSentenceEmbedding(p.phrase);
         if (!emb || emb.length === 0) {
           twoWordEmitted.push(`${p.phrase}\u2192NO_EMB`);
@@ -15710,19 +15887,46 @@ var Curriculum = class _Curriculum {
         const matchedOne = p.words.some((w) => emittedTokens.includes(w));
         if (matchedBoth) twoWordPass++;
         else if (matchedOne) twoWordPartial++;
+        const _twoWordMs = Date.now() - _twoWordProbeStart;
+        const _twoWordSlowTag = _twoWordMs > 3e4 ? " SLOW" : "";
+        const _twoWordTag = matchedBoth ? "BOTH" : matchedOne ? "PARTIAL" : "MISS";
+        try {
+          process.stdout.write(`[Curriculum][K-DIAG] TWO-WORD ${_twoWordIdx}/${twoWordPhrases.length} DONE${_twoWordSlowTag} '${p.phrase}'\u2192'${emitted || "\u2205"}' ${_twoWordTag} in ${_twoWordMs}ms \u2014 pass=${twoWordPass}/${_twoWordIdx} partial=${twoWordPartial}
+`);
+        } catch {
+        }
       }
       const twoWordRate = twoWordPhrases.length > 0 ? twoWordPass / twoWordPhrases.length : 0;
       const twoWordPartialRate = twoWordPhrases.length > 0 ? (twoWordPass + twoWordPartial) / twoWordPhrases.length : 0;
+      try {
+        process.stdout.write(`[Curriculum][K-DIAG] TWO-WORD stage DONE in ${Date.now() - _twoWordStart}ms \u2014 fullRate=${(twoWordRate * 100).toFixed(0)}% partialRate=${(twoWordPartialRate * 100).toFixed(0)}%
+`);
+      } catch {
+      }
       const freeWritingPrompts = [
         "tell me about your day",
         "what do you like",
         "how do you feel",
         "what is your favorite color"
       ];
+      const _freeStart = Date.now();
+      try {
+        process.stdout.write(`[Curriculum][K-DIAG] FREE-RESPONSE stage START \u2014 ${freeWritingPrompts.length} open-ended prompts (maxTicks=200 each \u2014 longest probe, expect minutes)...
+`);
+      } catch {
+      }
       const freeWritingEmitted = [];
       let freeWritingNonEmpty = 0;
       let freeWritingWordCount = 0;
+      let _freeIdx = 0;
       for (const prompt of freeWritingPrompts) {
+        _freeIdx++;
+        const _freeProbeStart = Date.now();
+        try {
+          process.stdout.write(`[Curriculum][K-DIAG] FREE ${_freeIdx}/${freeWritingPrompts.length} START prompt='${prompt}' maxTicks=200
+`);
+        } catch {
+        }
         const emb = sharedEmbeddings.getSentenceEmbedding(prompt);
         if (!emb || emb.length === 0) {
           freeWritingEmitted.push(`${prompt}\u2192NO_EMB`);
@@ -15734,9 +15938,21 @@ var Curriculum = class _Curriculum {
         freeWritingEmitted.push(`${prompt}\u2192${emitted || "\u2205"} (${tokens.length}w)`);
         if (tokens.length > 0) freeWritingNonEmpty++;
         freeWritingWordCount += tokens.length;
+        const _freeMs = Date.now() - _freeProbeStart;
+        const _freeSlowTag = _freeMs > 6e4 ? " SLOW" : "";
+        try {
+          process.stdout.write(`[Curriculum][K-DIAG] FREE ${_freeIdx}/${freeWritingPrompts.length} DONE${_freeSlowTag} '${prompt}'\u2192'${emitted || "\u2205"}' (${tokens.length}w) in ${_freeMs}ms
+`);
+        } catch {
+        }
       }
       const freeWritingRate = freeWritingPrompts.length > 0 ? freeWritingNonEmpty / freeWritingPrompts.length : 0;
       const freeWritingAvgWords = freeWritingPrompts.length > 0 ? freeWritingWordCount / freeWritingPrompts.length : 0;
+      try {
+        process.stdout.write(`[Curriculum][K-DIAG] FREE-RESPONSE stage DONE in ${Date.now() - _freeStart}ms \u2014 nonEmpty=${freeWritingNonEmpty}/${freeWritingPrompts.length} avgWords=${freeWritingAvgWords.toFixed(1)}
+`);
+      } catch {
+      }
       const PATH_MIN = 0.95;
       const PROD_MIN = 0.95;
       const STUDENT_MIN = 0.95;
@@ -17503,7 +17719,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachAdditionTransformations: ${facts.length} facts \xD7 ${REPS} reps`);
+    this._hb(`[Curriculum] _teachAdditionTransformations: ${facts.length} facts \xD7 ${REPS} reps`);
   }
   /**
    * SUBTRACTION as magnitude transformation.
@@ -17567,7 +17783,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachSubtractionTransformations: ${facts.length} facts \xD7 ${REPS} reps`);
+    this._hb(`[Curriculum] _teachSubtractionTransformations: ${facts.length} facts \xD7 ${REPS} reps`);
   }
   /**
    * COMPARISON as ordinal magnitude relationship.
@@ -17638,7 +17854,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachComparisonTransformations: ${pairs.length} pairs \xD7 ${REPS} reps`);
+    this._hb(`[Curriculum] _teachComparisonTransformations: ${pairs.length} pairs \xD7 ${REPS} reps`);
   }
   // ═══════════════════════════════════════════════════════════════════
   // Math-K PART 1 expansion: equational teaching for every K.CC /
@@ -17957,7 +18173,7 @@ var Curriculum = class _Curriculum {
     const overloadMax = opts.overloadMax ?? 0.3;
     let trained = 0, skipped = 0;
     const startMs = Date.now();
-    console.log(`[Curriculum][${label}] START \u2014 ${pairs.length} pairs \xD7 ${reps} reps \xB7 soft-writes=${!binarize} \xB7 row-norm=${normalizeAfter}`);
+    this._hb(`[Curriculum][${label}] START \u2014 ${pairs.length} pairs \xD7 ${reps} reps \xB7 soft-writes=${!binarize} \xB7 row-norm=${normalizeAfter}`);
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return { trained, skipped };
       for (const pair of pairs) {
@@ -18020,7 +18236,7 @@ var Curriculum = class _Curriculum {
       }
     }
     const elapsedSec = ((Date.now() - startMs) / 1e3).toFixed(1);
-    console.log(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${normReport}${sepReport}`);
+    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${normReport}${sepReport}`);
     return { trained, skipped };
   }
   /**
@@ -18338,7 +18554,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 8 });
-    console.log(`[Curriculum] _teachMagnitudeToMotor: ${facts.length} digits \xD7 8 reps`);
+    this._hb(`[Curriculum] _teachMagnitudeToMotor: ${facts.length} digits \xD7 8 reps`);
   }
   /**
    * K.OA DECOMPOSITION — given magnitude(c) in sem, the cortex learns
@@ -18368,7 +18584,7 @@ var Curriculum = class _Curriculum {
       }
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachDecomposition: ${facts.length} triples \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachDecomposition: ${facts.length} triples \xD7 6 reps`);
   }
   /**
    * K.OA MAKE-TEN — given magnitude(n) ONLY in free's left half (right
@@ -18395,7 +18611,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 8 });
-    console.log(`[Curriculum] _teachMakeTen: ${facts.length} pairs \xD7 8 reps`);
+    this._hb(`[Curriculum] _teachMakeTen: ${facts.length} pairs \xD7 8 reps`);
   }
   /**
    * K.NBT TEEN DECOMPOSITION — 11 through 19 as "ten and some more".
@@ -18424,7 +18640,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 16 });
-    console.log(`[Curriculum] _teachTeenDecomposition: ${facts.length} teens \xD7 16 reps (symmetric)`);
+    this._hb(`[Curriculum] _teachTeenDecomposition: ${facts.length} teens \xD7 16 reps (symmetric)`);
   }
   /**
    * K.CC UNIVERSAL SUCCESSOR — given magnitude(n), sem activates
@@ -18447,7 +18663,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 4 });
-    console.log(`[Curriculum] _teachCountToHundred: ${facts.length} successors \xD7 4 reps`);
+    this._hb(`[Curriculum] _teachCountToHundred: ${facts.length} successors \xD7 4 reps`);
   }
   /**
    * K.CC SKIP-COUNT BY TENS — given magnitude(n) injected into PHON
@@ -18472,7 +18688,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 10 });
-    console.log(`[Curriculum] _teachSkipCountByTens: ${facts.length} steps \xD7 10 reps`);
+    this._hb(`[Curriculum] _teachSkipCountByTens: ${facts.length} steps \xD7 10 reps`);
   }
   /**
    * K.MD ATTRIBUTE COMPARISON — teaches "which is longer/heavier/bigger"
@@ -18527,7 +18743,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachAttributeCompare: ${ATTR_POLES.length} attribute pairs \xD7 2 dirs \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachAttributeCompare: ${ATTR_POLES.length} attribute pairs \xD7 2 dirs \xD7 6 reps`);
   }
   /**
    * K.MD CLASSIFY AND COUNT — given a set of tagged items, learn to
@@ -18576,7 +18792,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachClassifyCount: ${facts.length} category-count pairs \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachClassifyCount: ${facts.length} category-count pairs \xD7 6 reps`);
   }
   /**
    * K.G SHAPE FEATURES — given a shape name GloVe in sem, free region
@@ -18626,7 +18842,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 10 });
-    console.log(`[Curriculum] _teachShapeFeatures: ${facts.length} shapes \xD7 10 reps`);
+    this._hb(`[Curriculum] _teachShapeFeatures: ${facts.length} shapes \xD7 10 reps`);
   }
   /**
    * K.G SHAPE COMPOSITION — "put two triangles together to make a
@@ -18683,7 +18899,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 10 });
-    console.log(`[Curriculum] _teachShapeCompose: ${facts.length} compositions \xD7 10 reps`);
+    this._hb(`[Curriculum] _teachShapeCompose: ${facts.length} compositions \xD7 10 reps`);
   }
   /**
    * CAUSAL CHAINS — if X then Y as directional cross-projection.
@@ -18741,7 +18957,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachCausalChains: ${pairs.length} pairs \xD7 ${REPS} reps`);
+    this._hb(`[Curriculum] _teachCausalChains: ${pairs.length} pairs \xD7 ${REPS} reps`);
   }
   /**
    * CLASSIFICATION REASONING — items sharing features cluster together.
@@ -18802,7 +19018,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachClassificationReasoning: ${items.length} items \xD7 ${REPS} reps`);
+    this._hb(`[Curriculum] _teachClassificationReasoning: ${items.length} items \xD7 ${REPS} reps`);
   }
   /**
    * SVO PARSING — teach sentence structure extraction.
@@ -18904,7 +19120,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachSVOParsing: ${SVO_DATA.length} SVO triples \xD7 ${REPS} reps`);
+    this._hb(`[Curriculum] _teachSVOParsing: ${SVO_DATA.length} SVO triples \xD7 ${REPS} reps`);
   }
   /**
    * TRANSITIVE INFERENCE — if A→B and B→C, Unity should infer A→C.
@@ -18954,7 +19170,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachInference: ${chains.length} chains \xD7 ${REPS} reps`);
+    this._hb(`[Curriculum] _teachInference: ${chains.length} chains \xD7 ${REPS} reps`);
   }
   /**
    * EMOTIONAL INFERENCE — situation→emotion mapping as equational pattern.
@@ -19018,7 +19234,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachEmotionalInference: ${mappings.length} mappings \xD7 ${REPS} reps`);
+    this._hb(`[Curriculum] _teachEmotionalInference: ${mappings.length} mappings \xD7 ${REPS} reps`);
   }
   /**
    * MULTIPLICATION as magnitude transformation (Grade 3+).
@@ -19073,7 +19289,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachMultiplicationTransformations: ${facts.length} facts \xD7 4 reps`);
+    this._hb(`[Curriculum] _teachMultiplicationTransformations: ${facts.length} facts \xD7 4 reps`);
   }
   /**
    * PLACE VALUE as positional encoding (Grade 1+).
@@ -19120,7 +19336,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachPlaceValueTransformations: 90 numbers \xD7 4 reps`);
+    this._hb(`[Curriculum] _teachPlaceValueTransformations: 90 numbers \xD7 4 reps`);
   }
   /**
    * FRACTION as ratio feature (Grade 3+).
@@ -19187,7 +19403,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachFractionTransformations: ${fractions.length} fractions \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachFractionTransformations: ${fractions.length} fractions \xD7 6 reps`);
   }
   /**
    * ALGEBRA as variable binding (Grade 6+).
@@ -19238,7 +19454,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachAlgebraTransformations: ${equations.length} equations \xD7 4 reps`);
+    this._hb(`[Curriculum] _teachAlgebraTransformations: ${equations.length} equations \xD7 4 reps`);
   }
   /**
    * PARAPHRASE — same meaning, different words.
@@ -19305,7 +19521,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachParaphrase: ${pairs.length} pairs \xD7 8 reps`);
+    this._hb(`[Curriculum] _teachParaphrase: ${pairs.length} pairs \xD7 8 reps`);
   }
   /**
    * HYPOTHESIS TESTING — predict→observe→confirm/reject.
@@ -19353,7 +19569,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachHypothesisTesting: ${tests.length} tests \xD7 8 reps`);
+    this._hb(`[Curriculum] _teachHypothesisTesting: ${tests.length} tests \xD7 8 reps`);
   }
   /**
    * PERSPECTIVE TAKING — same event, different viewpoints.
@@ -19415,7 +19631,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    console.log(`[Curriculum] _teachPerspectiveTaking: ${events.length} events \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachPerspectiveTaking: ${events.length} events \xD7 6 reps`);
   }
   /**
    * AUTO FINAL — generates a comprehension final exam from a sentence array.
@@ -19775,7 +19991,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachForceMotion: ${facts.length} force-motion pairs \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachForceMotion: ${facts.length} force-motion pairs \xD7 6 reps`);
   }
   /**
    * K-PS2 bigger-push → more-motion magnitude transform.
@@ -19803,7 +20019,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachForceStrengthEffect: ${facts.length} strength\u2192effect \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachForceStrengthEffect: ${facts.length} strength\u2192effect \xD7 6 reps`);
   }
   /**
    * K-ESS2 Weather categories — weather type → feature profile
@@ -19838,7 +20054,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachWeatherCategories: ${facts.length} weather types \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachWeatherCategories: ${facts.length} weather types \xD7 6 reps`);
   }
   /**
    * K-ESS2 Season → temperature binding. Summer=hot, winter=cold, etc.
@@ -19873,7 +20089,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 8 });
-    console.log(`[Curriculum] _teachSeasonTemperature: ${facts.length} season-temp pairs \xD7 8 reps`);
+    this._hb(`[Curriculum] _teachSeasonTemperature: ${facts.length} season-temp pairs \xD7 8 reps`);
   }
   /**
    * K-LS1 Plant + animal needs — organism type → survival requirements.
@@ -19909,7 +20125,7 @@ var Curriculum = class _Curriculum {
       }
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachLivingThingNeeds: ${facts.length} need facts \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachLivingThingNeeds: ${facts.length} need facts \xD7 6 reps`);
   }
   /**
    * K-LS1 Animal diet classification — herbivore / carnivore / omnivore.
@@ -19964,7 +20180,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachDietClassification: ${facts.length} diet facts \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachDietClassification: ${facts.length} diet facts \xD7 6 reps`);
   }
   /**
    * K-LS1 Body part → function (wings→fly, fins→swim, legs→walk).
@@ -20000,7 +20216,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachBodyPartFunction: ${facts.length} part-function pairs \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachBodyPartFunction: ${facts.length} part-function pairs \xD7 6 reps`);
   }
   /**
    * K-ESS3 Natural resources + natural-vs-human-made classification.
@@ -20049,7 +20265,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachNaturalVsHumanMade: ${facts.length} classified \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachNaturalVsHumanMade: ${facts.length} classified \xD7 6 reps`);
   }
   async runSciKReal(ctx) {
     await this._teachClassification();
@@ -20214,7 +20430,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 8 });
-    console.log(`[Curriculum] _teachCommunityHelpers: ${facts.length} \xD7 8 reps`);
+    this._hb(`[Curriculum] _teachCommunityHelpers: ${facts.length} \xD7 8 reps`);
   }
   /**
    * Core Knowledge K needs vs wants — binary classification with fineType tag.
@@ -20256,7 +20472,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachNeedsVsWants: ${facts.length} \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachNeedsVsWants: ${facts.length} \xD7 6 reps`);
   }
   /**
    * Core Knowledge K American symbols — symbol ↔ fact pairs.
@@ -20295,7 +20511,7 @@ var Curriculum = class _Curriculum {
       }
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachAmericanSymbols: ${facts.length} \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachAmericanSymbols: ${facts.length} \xD7 6 reps`);
   }
   /**
    * Core Knowledge K geography — continents, oceans, cardinal directions.
@@ -20343,7 +20559,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachGeographyBasics: ${facts.length} \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachGeographyBasics: ${facts.length} \xD7 6 reps`);
   }
   async runSocKReal(ctx) {
     await this._teachFamilyRoles();
@@ -20501,7 +20717,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 8 });
-    console.log(`[Curriculum] _teachColorMixing: ${facts.length} \xD7 8 reps`);
+    this._hb(`[Curriculum] _teachColorMixing: ${facts.length} \xD7 8 reps`);
   }
   /**
    * Visual Arts K — warm/cool color classification.
@@ -20538,7 +20754,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachWarmCoolColors: ${facts.length} \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachWarmCoolColors: ${facts.length} \xD7 6 reps`);
   }
   /**
    * Visual Arts K — AB pattern next-item prediction.
@@ -20575,7 +20791,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachPatternCompletion: ${facts.length} \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachPatternCompletion: ${facts.length} \xD7 6 reps`);
   }
   /**
    * Music K — tempo/dynamics/pitch classifications + beat concept.
@@ -20618,7 +20834,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(facts, { reps: 6 });
-    console.log(`[Curriculum] _teachMusicBasics: ${facts.length} \xD7 6 reps`);
+    this._hb(`[Curriculum] _teachMusicBasics: ${facts.length} \xD7 6 reps`);
   }
   async runArtKReal(ctx) {
     await this._teachPrimaryColors();
@@ -30777,12 +30993,12 @@ var Curriculum = class _Curriculum {
       }
       if (newMin !== currentMin) {
         hist.pathMin = newMin;
-        console.log(`[Curriculum] auto-calibrate ${cellKey}: pathMin ${currentMin.toFixed(2)} \u2192 ${newMin.toFixed(2)} (${(passRate * 100).toFixed(0)}% pass rate over ${totalProbes} probes)`);
+        this._hb(`[Curriculum] auto-calibrate ${cellKey}: pathMin ${currentMin.toFixed(2)} \u2192 ${newMin.toFixed(2)} (${(passRate * 100).toFixed(0)}% pass rate over ${totalProbes} probes)`);
       }
     }
     if (result && result.pass) {
       hist.passes++;
-      console.log(`[Curriculum] probe \u2713 ${cellKey} \u2014 ${result.reason || "pass"}`);
+      this._hb(`[Curriculum] probe \u2713 ${cellKey} \u2014 ${result.reason || "pass"}`);
     } else {
       hist.fails++;
       console.warn(`[Curriculum] probe \u2717 ${cellKey} \u2014 ${result?.reason || "fail"}`);
@@ -30796,7 +31012,7 @@ var Curriculum = class _Curriculum {
           if (healResult && healResult.pass) {
             hist.fails--;
             hist.passes++;
-            console.log(`[Curriculum] self-heal \u2713 ${cellKey} \u2014 ${healResult.reason || "healed"}`);
+            this._hb(`[Curriculum] self-heal \u2713 ${cellKey} \u2014 ${healResult.reason || "healed"}`);
             return { subject, grade, result: healResult, selfHealed: true };
           }
           console.warn(`[Curriculum] self-heal \u2717 ${cellKey} \u2014 still failing: ${healResult?.reason || "fail"}`);
@@ -31035,7 +31251,7 @@ var Curriculum = class _Curriculum {
           totalOverlap += overlap.length;
         }
       }
-      console.log(`[Curriculum] Held-out eval check: ${totalExam} exam questions across ${Object.keys(EXAM_BANKS).length} cells \xB7 overlap=${totalOverlap} (0 = valid held-out)`);
+      this._hb(`[Curriculum] Held-out eval check: ${totalExam} exam questions across ${Object.keys(EXAM_BANKS).length} cells \xB7 overlap=${totalOverlap} (0 = valid held-out)`);
     } catch (err) {
       console.warn("[Curriculum] Held-out eval check failed:", err?.message || err);
     }
@@ -31049,14 +31265,14 @@ var Curriculum = class _Curriculum {
       const stats = sharedEmbeddings?.stats || null;
       const gloveLoaded = stats && (stats.loaded === true || (stats.pretrained || 0) > 1e3);
       if (gloveLoaded) {
-        console.log(`[Curriculum] Embedding source: GloVe ${stats.dim || 300}d (${stats.pretrained || 0} pretrained vectors)`);
+        this._hb(`[Curriculum] Embedding source: GloVe ${stats.dim || 300}d (${stats.pretrained || 0} pretrained vectors)`);
       } else {
         console.log("[Curriculum] Embedding source: fastText-style subword n-grams (built-in, no download needed)");
       }
     } catch (err) {
       console.warn("[Curriculum] Embedding status check failed:", err?.message || err);
     }
-    console.log(`[Curriculum] runCompleteCurriculum: GPU ready \u2014 walking all ${SUBJECTS.length} subjects pre-K onward (cap via DREAM_MAX_GRADE; default 'kindergarten' per Pre-K + K ONLY LAW)`);
+    this._hb(`[Curriculum] runCompleteCurriculum: GPU ready \u2014 walking all ${SUBJECTS.length} subjects pre-K onward (cap via DREAM_MAX_GRADE; default 'kindergarten' per Pre-K + K ONLY LAW)`);
     const savedLR = this.cluster.learningRate;
     const savedNoise = this.cluster.noiseAmplitude;
     this.cluster.learningRate = 0.01;
@@ -31206,7 +31422,7 @@ var Curriculum = class _Curriculum {
       ] });
     }
     await this._teachCombination(combinationFacts, { reps });
-    console.log(`[Curriculum] _teachBiographicalFacts: ${combinationFacts.length} facts \xD7 ${reps} reps`);
+    this._hb(`[Curriculum] _teachBiographicalFacts: ${combinationFacts.length} facts \xD7 ${reps} reps`);
   }
   // ══════════════════════════════════════════════════════════════════
   // PRE-K EQUATIONAL RUNNERS (LAW 6 Part 1)

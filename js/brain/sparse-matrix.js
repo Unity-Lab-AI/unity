@@ -244,6 +244,11 @@ export class SparseMatrix {
    */
   hebbianUpdate(preSpikes, postSpikes, lr) {
     const { rows, values, colIdx, rowPtr, wMin, wMax } = this;
+    // Null-CSR guard — post CPU CSR free this call would crash at
+    // `rowPtr[i]` / `values[k]`. Silent no-op keeps teach paths safe
+    // when the GPU-fast path owns the weights and a stale CPU write
+    // accidentally fires. Same shape as the `normalizeRows` null guard.
+    if (!values || !rowPtr || !colIdx) return;
 
     for (let i = 0; i < rows; i++) {
       if (!postSpikes[i]) continue;
