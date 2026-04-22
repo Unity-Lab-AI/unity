@@ -264,6 +264,77 @@ export class SparseMatrix {
   }
 
   /**
+   * Oja's rule (Oja 1982, J Math Biol 15:267) — Hebbian with an intrinsic
+   * weight-decay term proportional to y²·w. Keeps weights bounded without
+   * the clamp doing all the work, AND pushes the weight matrix toward the
+   * principal components of the pre-pattern distribution.
+   *
+   *   Δw[i,j] = lr × y[j] × (x[i] - y[j] × w[i,j])
+   *
+   * Where:
+   *   x[i]    — pre-synaptic activity at column i
+   *   y[j]    — post-synaptic activity at row j
+   *   w[i,j]  — current weight
+   *
+   * Effects vs bare Hebbian:
+   *   - No runaway growth — weights self-stabilize via the y²·w subtraction
+   *   - Basis vectors orthogonalize — converges to principal components
+   *   - Decorrelates new patterns from old ones, so sep-probe mean-cosine
+   *     drops instead of climbing toward saturation
+   *   - Directly counters the overlap-collapse behaviour that produced the
+   *     stuck-motor-at-'l' symptom
+   *
+   * Same null-CSR safety + row-iteration shape as `hebbianUpdate`. Drop-in
+   * replacement for the per-projection Hebbian call in the teach paths.
+   */
+  ojaUpdate(preSpikes, postSpikes, lr) {
+    const { rows, values, colIdx, rowPtr, wMin, wMax } = this;
+    if (!values || !rowPtr || !colIdx) return;
+
+    for (let i = 0; i < rows; i++) {
+      const y = postSpikes[i];
+      if (!y) continue;
+      const y2 = y * y;
+      const start = rowPtr[i];
+      const end = rowPtr[i + 1];
+      for (let k = start; k < end; k++) {
+        const x = preSpikes[colIdx[k]];
+        // Oja: Δw = lr × y × (x - y × w) = lr·y·x - lr·y²·w
+        values[k] += lr * y * x - lr * y2 * values[k];
+        if (values[k] > wMax) values[k] = wMax;
+        else if (values[k] < wMin) values[k] = wMin;
+      }
+    }
+  }
+
+  /**
+   * Anti-Hebbian negative-pair update.
+   *
+   * Explicit depressive pressure: weights DECREASE where pre and post
+   * co-activate. Called immediately after a positive-pair Oja/Hebbian
+   * update, but with a SAMPLED WRONG pair (X, Y') where Y' ≠ the correct
+   * answer Y. The paired-opposite push pulls non-matching patterns apart
+   * in weight space while the positive pair pulls the correct pair
+   * together — push-pull discrimination instead of passive superposition.
+   */
+  antiHebbianUpdate(preSpikes, postSpikes, lr) {
+    const { rows, values, colIdx, rowPtr, wMin, wMax } = this;
+    if (!values || !rowPtr || !colIdx) return;
+
+    for (let i = 0; i < rows; i++) {
+      if (!postSpikes[i]) continue;
+      const scaled = -lr * postSpikes[i]; // negative — weights depress
+      const start = rowPtr[i];
+      const end = rowPtr[i + 1];
+      for (let k = start; k < end; k++) {
+        values[k] += scaled * preSpikes[colIdx[k]];
+        if (values[k] > wMax) values[k] = wMax;
+        else if (values[k] < wMin) values[k] = wMin;
+      }
+    }
+  }
+
+  /**
    * Per-row L2 normalization — rescales each row's values so its
    * Euclidean norm hits `targetNorm`. Prevents weight runaway /
    * saturation when many teach phases accumulate Hebbian updates

@@ -803,10 +803,32 @@ Each cluster.learn():
   for each (src → dst) projection in crossProjections:
     preF  = cluster.regionSpikes(src)    // Float64 binary
     postF = cluster.regionSpikes(dst)
-    projection.hebbianUpdate(preF, postF, lr = cluster.learningRate)
+    projection.ojaUpdate(preF, postF, lr = cluster.learningRate)
 ```
 
-ALWAYS propagate. ALWAYS Hebbian-update on every learn call. No "wait for curriculum" gate — the projections train through normal use during corpus exposure and live chat. Random-init start is biologically plausible: newborn cortex has weak random cross-region connections that strengthen with experience (Friederici 2017, *Psychon Bull Rev* 24:41-47, neural language network development).
+ALWAYS propagate. ALWAYS plastic-update on every learn call. No "wait for curriculum" gate — the projections train through normal use during corpus exposure and live chat. Random-init start is biologically plausible: newborn cortex has weak random cross-region connections that strengthen with experience (Friederici 2017, *Psychon Bull Rev* 24:41-47, neural language network development).
+
+**Plasticity rule (Oja 1982, J Math Biol 15:267):**
+
+```
+Δw[i,j] = lr · y[j] · (x[i] − y[j] · w[i,j])
+```
+
+where `x[i]` is the pre-synaptic activation at column `i`, `y[j]` is the post-synaptic activation at row `j`, and `w[i,j]` is the current weight. For binary spikes (`y ∈ {0,1}`) this simplifies to `new_w = w · (1 − lr) + lr · x`. When pre also fires (`x=1`) the weight climbs toward 1; when pre doesn't fire (`x=0`) the weight decays toward 0. The post-alone decay is what decorrelates trained patterns — new pairs push active (pre, post) weights up while pulling down weights where only post was firing, forcing input competition at each post neuron. Prevents the basin-superposition failure mode that bare Hebbian (`Δw = lr·y·x`) produces when many pairs share the same post region. Sep-probe mean-cosine converges toward ≤0.2 instead of climbing toward saturation.
+
+**Contrastive push-pull via anti-Hebbian** (`_teachAssociationPairs` with `antiPairs: true`):
+
+```
+for each positive pair (X, Y) in training batch:
+  write sem := emb(X), motor := emb(Y)
+  teachHebbian(lr)                     // Oja-update with correct pairing
+
+  sample wrong pair (X, Y') where Y' ≠ Y:
+  write sem := emb(X), motor := emb(Y')
+  teachAntiHebbian(lr · antiLrScale)   // anti-Hebbian: Δw = −lr·y·x (co-active decrement)
+```
+
+Anti-Hebbian runs on the intra-cluster recurrent matrix at biological scale (cross-projection GPU anti-Hebbian shader is deferred — see TODO T39.b.4.b). `antiLrScale` defaults to 0.5 so negative pressure doesn't overwhelm the positive Oja update.
 
 **Read direction** uses: `visual_to_letter`, `letter_to_phon`, `phon_to_sem`, `sem_to_fineType`, `auditory_to_phon`.
 
@@ -1126,12 +1148,12 @@ For each (source_region, target_region, expected_pattern) triple:
     lastSpikes[source_region.start .. source_region.end] := source_pattern
     lastSpikes[target_region.start .. target_region.end] := target_pattern
 
-    // Fire Hebbian on CLEAN patterns — no cluster.step()
+    // Fire Oja plasticity on CLEAN patterns — no cluster.step()
     for each proj in crossProjections:
-        proj.hebbianUpdate(lastSpikes, lr)
+        proj.ojaUpdate(lastSpikes, lastSpikes, lr)
 ```
 
-No `cluster.step()`, no Rulkov iteration, no recurrent interference. The cross-projection weights update from exact signal.
+No `cluster.step()`, no Rulkov iteration, no recurrent interference. The cross-projection weights update from the exact signal via Oja's self-normalizing rule (see plasticity equation above).
 
 **Direct matrix probe equation:**
 

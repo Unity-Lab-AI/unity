@@ -2050,7 +2050,7 @@ export class NeuronCluster {
           }
           const preF = this.regionSpikes(src);
           const postF = this.regionSpikes(dst);
-          proj.hebbianUpdate(preF, postF, lr);
+          proj.ojaUpdate(preF, postF, lr);
         }
         continue;
       }
@@ -2090,12 +2090,17 @@ export class NeuronCluster {
       // GPU-bound post T17.7 Phase C.1 rebind so this path is cold.
       if (this._sparsePool && this._sparsePool.ready) {
         try {
+          // Sparse-pool path is cold at biological scale (sync path wins
+          // on nnz >= 100K per intraSynapsesHebbian threshold). Browser-
+          // only mode still uses the pool with bare Hebbian — the GPU
+          // plasticity shader already runs Oja fire-and-forget below, so
+          // the CSR shadow update stays correct-enough for probes.
           await this._sparsePool.hebbianUpdate(proj, preF, postF, lr);
         } catch {
-          proj.hebbianUpdate(preF, postF, lr);
+          proj.ojaUpdate(preF, postF, lr);
         }
       } else {
-        proj.hebbianUpdate(preF, postF, lr);
+        proj.ojaUpdate(preF, postF, lr);
       }
       // T17.3.d — fire-and-forget GPU Hebbian fallback for standalone
       // (non-bound) projections. Bandwidth cost: srcSize + dstSize u32s.
@@ -2397,17 +2402,24 @@ export class NeuronCluster {
 
     if (atBioScale) {
       // Biological scale — sync path, zero external-memory allocation.
-      this.synapses.hebbianUpdate(pre, post, lr);
+      // Oja's rule here: self-normalizing Hebbian with decorrelating
+      // decay so repeated intra-cluster associations don't all pile
+      // into the same recurrent columns.
+      this.synapses.ojaUpdate(pre, post, lr);
     } else if (this._sparsePool && this._sparsePool.ready) {
       try {
+        // Pool path keeps bare Hebbian (external worker RPC doesn't
+        // expose ojaUpdate). Browser-only scale is below the overlap
+        // threshold where Oja's decorrelation matters, so the shadow
+        // stays acceptable.
         await this._sparsePool.hebbianUpdate(this.synapses, pre, post, lr);
       } catch {
-        // Pool failed — fall back to synchronous path so the update
-        // still happens. Next call will retry via the pool.
-        this.synapses.hebbianUpdate(pre, post, lr);
+        // Pool failed — fall back to synchronous Oja so the update
+        // still happens with the correct plasticity rule.
+        this.synapses.ojaUpdate(pre, post, lr);
       }
     } else {
-      this.synapses.hebbianUpdate(pre, post, lr);
+      this.synapses.ojaUpdate(pre, post, lr);
     }
     // T18.18 — GPU SHADOW DISPATCH REMOVED. Pre-T18.18 this block fired
     // `this._gpuProxy.hebbian(key, pre, post, lr)` fire-and-forget as a
@@ -2450,6 +2462,40 @@ export class NeuronCluster {
     // Cross-projection Hebbian (T18.17 GPU-bound fast path) is NOT
     // affected — those run through T18.8 batched dispatch in bound mode
     // shipping ~50 bytes per op (no pre/post bulk data).
+  }
+
+  /**
+   * Anti-Hebbian update on the intra-cluster synapse matrix. Depresses
+   * co-active (pre=1, post=1) weights so sampled-wrong pairs push apart
+   * instead of superposing. Used by the push-pull contrastive teach path:
+   * caller fires the positive-pair Oja update first, then invokes this
+   * method with a sampled WRONG post-pattern to repel it from the
+   * pre-pattern in weight space.
+   *
+   * Sync at biological scale (matches `intraSynapsesHebbian`'s bio-path
+   * branch) — zero external-memory allocation, single CSR walk. `lr`
+   * here is always POSITIVE; the method handles the sign internally.
+   */
+  async intraSynapsesAntiHebbian(pre, post, lr) {
+    if (!this.synapses) return;
+    if (typeof this.synapses.antiHebbianUpdate !== 'function') return;
+    const BIOLOGICAL_SCALE_SYNC_THRESHOLD = 100_000;
+    const atBioScale = (this.size | 0) > BIOLOGICAL_SCALE_SYNC_THRESHOLD;
+    if (atBioScale) {
+      this.synapses.antiHebbianUpdate(pre, post, lr);
+    } else if (this._sparsePool && this._sparsePool.ready && typeof this._sparsePool.antiHebbianUpdate === 'function') {
+      try {
+        await this._sparsePool.antiHebbianUpdate(this.synapses, pre, post, lr);
+      } catch {
+        this.synapses.antiHebbianUpdate(pre, post, lr);
+      }
+    } else {
+      this.synapses.antiHebbianUpdate(pre, post, lr);
+    }
+    // No GPU shadow dispatch — intra-synapses GPU plasticity uses the
+    // positive Oja path only. Biological scale reads intra-synapses
+    // weights via CPU CSR for probes so the CPU anti-Hebbian update is
+    // what counts for contrastive push-pull.
   }
 
   /**
@@ -2784,9 +2830,14 @@ export class NeuronCluster {
     const correctPost = buildPattern(opts.correctOneHot);
     const wrongPost = opts.wrongOneHot ? buildPattern(opts.wrongOneHot) : null;
 
+    // Positive pair via Oja (self-normalizing, decorrelating), negative
+    // pair via explicit anti-Hebbian with positive lr. Using antiHebbian
+    // lets us pass a positive rate for clarity — it handles the sign
+    // internally — and matches the push-pull math reviewers expect.
+    const negAbs = Math.abs(negLr);
     for (let i = 0; i < reps; i++) {
-      this.synapses.hebbianUpdate(pre, correctPost, posLr);
-      if (wrongPost) this.synapses.hebbianUpdate(pre, wrongPost, negLr);
+      this.synapses.ojaUpdate(pre, correctPost, posLr);
+      if (wrongPost) this.synapses.antiHebbianUpdate(pre, wrongPost, negAbs);
     }
   }
 
@@ -2838,7 +2889,11 @@ export class NeuronCluster {
       // word-to-word transition during persona corpus playback.
       if (haveSnap) {
         for (let i = 0; i < this.size; i++) currSnap[i] = this.lastSpikes[i] ? 1 : 0;
-        this.synapses.hebbianUpdate(prevSnap, currSnap, lr);
+        // Sequence plasticity via Oja — prevents word-transition weights
+        // from stacking without bound across a long corpus, while the
+        // ojaThreshold/ojaDecay tail below keeps acting as belt-and-
+        // suspenders on any outliers the intrinsic decay missed.
+        this.synapses.ojaUpdate(prevSnap, currSnap, lr);
         updates++;
       }
 

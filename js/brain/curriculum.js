@@ -8372,6 +8372,32 @@ export class Curriculum {
     }
   }
 
+  /**
+   * Anti-Hebbian contrastive update. Called after a positive-pair Oja
+   * update, with `cluster.lastSpikes` holding the (correct-pre, WRONG-
+   * post) activation pattern. Depresses the co-active weights on the
+   * intra-cluster synapse matrix so sampled-wrong pairs push apart
+   * instead of piling into the same basins as correct pairs.
+   *
+   * Cross-projection GPU anti-Hebbian is a follow-up — sem_to_motor's
+   * CPU CSR is selectively freed at biological scale, and the existing
+   * Oja plasticity shader can't be safely coerced into true anti-
+   * Hebbian (the y²·w decay term grows weights when post fires alone).
+   * Until a dedicated anti-Hebbian WGSL shader ships, the contrastive
+   * signal rides the recurrent intra-cluster matrix which keeps CPU
+   * CSR live through the probe path.
+   */
+  async _teachAntiHebbian(lr) {
+    const cluster = this.cluster;
+    if (!cluster) return;
+    const absLr = Math.abs(lr);
+    if (typeof cluster.intraSynapsesAntiHebbian === 'function') {
+      await cluster.intraSynapsesAntiHebbian(cluster.lastSpikes, cluster.lastSpikes, absLr);
+    } else if (cluster.synapses && typeof cluster.synapses.antiHebbianUpdate === 'function') {
+      cluster.synapses.antiHebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, absLr);
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════
   // Fix A — Asymmetric Hebbian for directional bindings
   // ═══════════════════════════════════════════════════════════════════
@@ -8722,12 +8748,21 @@ export class Curriculum {
     // flags the phase as potentially overloaded. Set false to skip.
     const runSeparationProbe = opts.separationProbe !== false; // default TRUE
     const overloadMax = opts.overloadMax ?? 0.30;
-    let trained = 0, skipped = 0;
+    // Contrastive push-pull — after each positive-pair Oja update, fire a
+    // negative-pair anti-Hebbian pass using a sampled wrong output. This
+    // actively depresses sem + wrong-motor co-activation on the recurrent
+    // intra-cluster matrix so the next probe sees discrimination, not
+    // superposition. Rate scaled down vs positive so negative pressure
+    // doesn't overwhelm learning. Default ON for any pairs.length >= 2.
+    const antiPairs = opts.antiPairs !== false && pairs.length >= 2;
+    const antiLrScale = opts.antiLrScale ?? 0.5;
+    let trained = 0, skipped = 0, antiFires = 0;
     const startMs = Date.now();
-    this._hb(`[Curriculum][${label}] START — ${pairs.length} pairs × ${reps} reps · soft-writes=${!binarize} · row-norm=${normalizeAfter}`);
+    this._hb(`[Curriculum][${label}] START — ${pairs.length} pairs × ${reps} reps · soft-writes=${!binarize} · row-norm=${normalizeAfter} · anti-pairs=${antiPairs}`);
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return { trained, skipped };
-      for (const pair of pairs) {
+      for (let pairIdx = 0; pairIdx < pairs.length; pairIdx++) {
+        const pair = pairs[pairIdx];
         if (!Array.isArray(pair) || pair.length < 2) { skipped++; continue; }
         const [inputWord, outputWord] = pair;
         const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
@@ -8754,6 +8789,42 @@ export class Curriculum {
           trained++;
         } catch (err) {
           skipped++;
+        }
+
+        // Contrastive negative-pair pass — sample a different pair and
+        // use its output as the WRONG answer for the current input. Push
+        // that combination apart on the intra-cluster recurrent matrix.
+        if (antiPairs) {
+          let wrongIdx = Math.floor(Math.random() * pairs.length);
+          if (wrongIdx === pairIdx) wrongIdx = (wrongIdx + 1) % pairs.length;
+          const wrongPair = pairs[wrongIdx];
+          if (Array.isArray(wrongPair) && wrongPair.length >= 2) {
+            const wrongOut = wrongPair[1];
+            if (wrongOut && wrongOut !== outputWord) {
+              const wrongEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
+                ? sharedEmbeddings.getEmbedding(wrongOut) : null;
+              if (wrongEmb && wrongEmb.length > 0) {
+                try {
+                  this._clearSpikes();
+                  this._writeTiledPattern(semRegion, inEmb, binarize);
+                  this._writeTiledPattern(motorRegion, wrongEmb, binarize);
+                  // Relation tag fires on NEG pair too so the relation
+                  // channel doesn't learn to classify positive vs negative
+                  // by tag presence alone.
+                  if (fineTypeRegion && relationTagId !== null) {
+                    const fineSize = fineTypeRegion.end - fineTypeRegion.start;
+                    const band = Math.floor(fineSize / 6);
+                    const tagStart = fineTypeRegion.start + relationTagId * band;
+                    const tagEnd = Math.min(fineTypeRegion.end, tagStart + band);
+                    const tagVal = binarize ? 1 : 0.5;
+                    for (let i = tagStart; i < tagEnd; i++) cluster.lastSpikes[i] = tagVal;
+                  }
+                  await this._teachAntiHebbian(lr * antiLrScale);
+                  antiFires++;
+                } catch { /* non-fatal contrastive pass */ }
+              }
+            }
+          }
         }
       }
       await _microtask();
@@ -8826,7 +8897,8 @@ export class Curriculum {
       }
     } catch { /* non-fatal */ }
     const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1);
-    this._hb(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${normReport}${sepReport}${weightReport}`);
+    const antiReport = antiPairs ? ` · anti-fires=${antiFires}` : '';
+    this._hb(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${normReport}${sepReport}${weightReport}`);
     return { trained, skipped };
   }
 

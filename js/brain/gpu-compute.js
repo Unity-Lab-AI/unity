@@ -220,12 +220,34 @@ const SYNAPSE_PROPAGATE_SHADER = /* wgsl */`
   }
 `;
 
+// PLASTICITY_SHADER — Oja's rule (Oja 1982, J Math Biol 15:267).
+//
+// Prior shader was bare Hebbian: w += lr × reward when both pre and post
+// fire. Weights grew monotonically to wMax, and because motor has ~20K
+// neurons across 26 letter buckets shared by hundreds of trained pairs,
+// every pair stacked onto the same outgoing columns — basins superposed
+// into mush (sep-probe mean-cos climbed toward 0.5+).
+//
+// Oja adds a subtractive y²·w term that self-normalizes the weight vector
+// per post neuron AND orthogonalizes it against inputs that fired
+// post-alone. For binary spikes (y ∈ {0,1}) y² = y, so when post fires:
+//   Δw = lr·y·(x - y·w) = lr·(x - w)
+//   new_w = w·(1 - lr) + lr·x
+// When pre also fires (x=1): w climbs toward 1 — w ← w + lr·(1-w)
+// When pre doesn't fire (x=0): w decays toward 0 — w ← w·(1-lr)
+// The decay-when-post-alone is the decorrelator: new pairs push active
+// (pre,post) weights up WHILE pulling down weights where only post was
+// firing, creating competition between inputs to the same post neuron.
+//
+// Touches every nnz in a firing row instead of only the pre-active ones,
+// so roughly 2-3× more work per plasticity call at fanout 30. Worth it —
+// the overlap collapse was the actual blocker on K emission discrimination.
 const PLASTICITY_SHADER = /* wgsl */`
   struct Params {
     n: u32,
     nnz: u32,
-    lr: f32,         // learning rate
-    reward: f32,     // reward signal
+    lr: f32,         // learning rate (also Oja's η)
+    reward: f32,     // reward signal multiplier (applied to Oja lr)
     wMin: f32,
     wMax: f32,
     srcOffset: u32,  // T17.7 Phase A.4 — preSpikes[srcOffset + j] when cluster-bound
@@ -245,17 +267,24 @@ const PLASTICITY_SHADER = /* wgsl */`
     if (i >= params.n) { return; }
     if (postSpikes[params.dstOffset + i] == 0u) { return; }
 
-    let factor = params.lr * params.reward;
+    // Oja effective learning rate = lr × reward
+    let eta = params.lr * params.reward;
+    let decay = 1.0 - eta;   // (1 - eta) factor for the weight itself
+    let climb = eta;         // eta factor for the x input
     let start = rowPtr[i];
     let end = rowPtr[i + 1u];
 
+    // Walk all nnz in this post-firing row. When pre also fires (x=1):
+    //   w' = w × (1 - eta) + eta × 1 = w + eta × (1 - w)
+    // When pre doesn't fire (x=0):
+    //   w' = w × (1 - eta) + 0      = w × (1 - eta)  — weight decays
+    // Combined form: w' = w × decay + climb × x
     for (var k = start; k < end; k++) {
       let j = colIdx[k];
-      if (preSpikes[params.srcOffset + j] != 0u) {
-        var w = values[k] + factor;
-        w = clamp(w, params.wMin, params.wMax);
-        values[k] = w;
-      }
+      let x = f32(preSpikes[params.srcOffset + j]);
+      var w = values[k] * decay + climb * x;
+      w = clamp(w, params.wMin, params.wMax);
+      values[k] = w;
     }
   }
 `;
