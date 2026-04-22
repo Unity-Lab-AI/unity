@@ -725,6 +725,18 @@ class ServerBrain {
     this._stepTimeSamples = [];
     this._lastCpuUsage = process.cpuUsage();
 
+    // Brain-event ring buffer. Plasticity methods + curriculum phases +
+    // drug-scheduler events + gate results all push here with a short
+    // label describing what just happened. `getState()` includes the
+    // most recent events in every broadcast so the dashboard's 3D
+    // brain can render transient popup labels keyed to specific
+    // cortex regions. One unified event stream, ONE cortex source of
+    // truth — no split-brain dashboard state.
+    this._brainEvents = [];
+    this._brainEventSeq = 0;
+    this._brainEventCap = 64;    // keep the last 64 events available to poll
+    this._brainEventTTL = 8_000; // ms — events age out of the live popup list after 8s
+
     // GPU-EXCLUSIVE MODE — no CPU workers ever spawned. The old
     // ParallelBrain worker pool was deleted in U304 after the root
     // cause ("100% CPU from event listener polling in idle workers")
@@ -1284,6 +1296,14 @@ class ServerBrain {
           console.warn(`[Curriculum] checkpoint save failed: ${err.message}`);
         }
       };
+      // Brain-event push callback. Curriculum teach methods + gate
+      // probes + plasticity fires broadcast a short label through this
+      // so the dashboard 3D brain can show a transient popup anchored
+      // to the relevant cortex region. ONE cortex, ONE event stream.
+      this.curriculum._pushBrainEvent = (type, region, label, detail) => {
+        try { this.pushBrainEvent(type, region, label, detail); }
+        catch { /* non-fatal — event stream is best-effort */ }
+      };
       // Grade-advance save hook. When a curriculum cell pass promotes
       // `cortex.grades[subject]` to a new value, save immediately so the
       // grade advance survives a crash between cell-pass and the next
@@ -1727,7 +1747,48 @@ class ServerBrain {
         uptime: (Date.now() - (this._startedAt || Date.now())) / 1000,
         totalFrames: this.frameCount,
       },
+      // Live brain-event stream — plasticity fires, curriculum phases,
+      // drug events, template classifications, everything the cortex
+      // is DOING in the current window. Each entry carries
+      // {seq, ts, type, region, label, detail}. Dashboard filters to
+      // events newer than `_brainEventTTL` for popup rendering. The
+      // seq field lets the dashboard dedupe across poll intervals.
+      brainEvents: this._recentBrainEvents(),
     };
+  }
+
+  /**
+   * Append a brain event to the ring buffer. Oldest events drop off
+   * once the buffer fills. Callers supply:
+   *   - type: short identifier ('plasticity', 'teach', 'gate', 'drug')
+   *   - region: cortex sub-region the event anchors to ('motor', 'sem',
+   *     'fineType', 'intra', or a cluster name). Dashboard uses this
+   *     to place the popup on the correct part of the 3D brain.
+   *   - label: short human-readable description (≤ 40 chars ideal)
+   *   - detail: optional structured payload for operator debugging
+   */
+  pushBrainEvent(type, region, label, detail) {
+    if (!this._brainEvents) return;
+    this._brainEventSeq += 1;
+    this._brainEvents.push({
+      seq: this._brainEventSeq,
+      ts: Date.now(),
+      type: String(type || 'event'),
+      region: region ? String(region) : null,
+      label: String(label || ''),
+      detail: detail || null,
+    });
+    if (this._brainEvents.length > this._brainEventCap) {
+      this._brainEvents.splice(0, this._brainEvents.length - this._brainEventCap);
+    }
+  }
+
+  _recentBrainEvents() {
+    if (!this._brainEvents || this._brainEvents.length === 0) return [];
+    const cutoff = Date.now() - this._brainEventTTL;
+    // Only return events still inside the TTL window — older entries
+    // stay in the buffer for history but aren't live anymore.
+    return this._brainEvents.filter(e => e.ts >= cutoff);
   }
 
   /**

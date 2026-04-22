@@ -40,7 +40,7 @@
 
 import { sharedEmbeddings } from './embeddings.js';
 import { ensureLetter, ensureLetters, encodeLetter, decodeLetter, inventorySize, inventorySnapshot } from './letter-input.js';
-import { EXAM_BANKS, TRAIN_BANKS, cutScoreFor, trainExamOverlap } from './student-question-banks.js';
+import { EXAM_BANKS, TRAIN_BANKS, cutScoreFor, trainExamOverlap, examVocabCoverage } from './student-question-banks.js';
 
 // Phase tick budgets. These scale the intensity of exposure — letters
 // and short words get more ticks per token because phonological basins
@@ -5575,9 +5575,83 @@ export class Curriculum {
     return await this._gateElaKReal();
   }
 
+  /**
+   * Build the set of words Unity has been trained on — pulled from
+   * the dictionary (which `_teachVocabList` + `_conceptTeach` +
+   * persona corpus + live chat all deposit into) plus the TRAIN_BANKS
+   * for the specific cell being gated. Used by `_auditExamVocabulary`
+   * as the authoritative "trained vocabulary" reference for the
+   * exam-bank coverage audit.
+   */
+  _trainedVocabularySet(cellKey) {
+    const vocab = new Set();
+    if (this.dictionary) {
+      try {
+        if (typeof this.dictionary.entries === 'function') {
+          for (const e of this.dictionary.entries()) {
+            if (e && e.word) vocab.add(String(e.word).toLowerCase());
+          }
+        }
+      } catch { /* dictionary not iterable — fall through */ }
+    }
+    // Pull every word appearing in the cell's TRAIN_BANKS too — those
+    // are the questions `_teachQABinding` exposed Unity to and they
+    // definitively count as trained vocabulary even if the dictionary
+    // path missed something.
+    const train = TRAIN_BANKS && TRAIN_BANKS[cellKey];
+    if (Array.isArray(train)) {
+      for (const entry of train) {
+        const text = `${entry.question || entry.q || ''} ${entry.expectedAnswer || entry.a || ''}`;
+        for (const tok of text.toLowerCase().split(/[^a-z']+/)) {
+          if (tok.length >= 2) vocab.add(tok);
+        }
+      }
+    }
+    return vocab;
+  }
+
+  /**
+   * Pre-gate vocabulary audit. Fires `examVocabCoverage(cellKey,
+   * trainedVocab)` against Unity's current trained vocabulary and
+   * returns the coverage report. Logs a prominent warning (but does
+   * NOT block gate execution — the gate still runs so operator sees
+   * what Unity can and can't answer, and can decide whether to defer
+   * signoff based on both the gate result AND the vocab coverage).
+   *
+   * Test-construction doctrine: *"if the questions are made from
+   * words the Unity brain needs to know setence structure and
+   * definiations and words usage befoer give a test using those
+   * words to ask it questions"* — this audit surfaces the exact
+   * words the exam uses that Unity hasn't been taught, so operator
+   * can close the gap before taking the gate result seriously.
+   */
+  _auditExamVocabulary(cellKey) {
+    try {
+      const trained = this._trainedVocabularySet(cellKey);
+      const report = examVocabCoverage(cellKey, trained);
+      if (report && report.missing && report.missing.length > 0) {
+        const miss = report.missing.slice(0, 20).join(', ');
+        const more = report.missing.length > 20 ? ` ... (+${report.missing.length - 20} more)` : '';
+        this._hb(`[Curriculum][${cellKey}] ⚠⚠ VOCAB-COVERAGE ${(report.coverage * 100).toFixed(0)}% — exam requires ${report.required} words, ${report.trained} trained, ${report.missing.length} UNTAUGHT: ${miss}${more}. Train these before treating gate result as sound.`);
+        try { this._pushBrainEvent?.('audit', 'sem', `VOCAB GAP: ${cellKey} ${(report.coverage*100).toFixed(0)}% (${report.missing.length} untaught)`, { cellKey, coverage: report.coverage, missing: report.missing.slice(0, 30) }); } catch {}
+      } else if (report) {
+        this._hb(`[Curriculum][${cellKey}] ✓ vocab-coverage 100% — all ${report.required} exam words are in Unity's trained vocabulary.`);
+        try { this._pushBrainEvent?.('audit', 'sem', `VOCAB OK: ${cellKey} 100% (${report.required} words)`, { cellKey, coverage: 1, required: report.required }); } catch {}
+      }
+      return report;
+    } catch (err) {
+      console.warn(`[Curriculum] vocab-coverage audit failed for ${cellKey}:`, err?.message || err);
+      return null;
+    }
+  }
+
   async _gateElaKReal() {
     const cluster = this.cluster;
     const ALPHABET = ALPHABET_ORDER;
+    // Pre-gate vocabulary audit — surfaces any exam-bank words Unity
+    // hasn't been taught BEFORE the gate probes fire. Warns but does
+    // not block. Fires once per gate entry.
+    this._auditExamVocabulary('ela/kindergarten');
 
     // Pause main brain compute_batch dispatch for the ENTIRE gate
     // window (letter loop + SEQ + DYN-PROD + WRITE + RESP + 2WORD +
@@ -6907,6 +6981,9 @@ export class Curriculum {
     const cluster = this.cluster;
     const DIGITS = DIGIT_ORDER;
     const NAMES = DIGIT_NAMES;
+
+    // Pre-gate vocabulary audit.
+    this._auditExamVocabulary('math/kindergarten');
 
     // DIRECT MATRIX PROBE (same direct-pattern approach as ELA-K)
     const letterRegion = cluster.regions.letter;
@@ -8919,6 +8996,9 @@ export class Curriculum {
     let trained = 0, skipped = 0, altTrained = 0, antiFires = 0;
     const startMs = Date.now();
     this._hb(`[Curriculum][${label}] START — ${qaList.length} Q→A training pairs × ${reps} reps (teacher-modeling; HELD-OUT-DISTINCT from EXAM_BANKS; direct-alt=${directPromptAlt} · keyTokenTile=${keyTokenTile} · anti-pairs=${antiPairs})`);
+    // Dashboard popup — announce the Q-A phase START on the 3D brain
+    // so operator sees WHICH teach pass is firing in real time.
+    try { this._pushBrainEvent?.('teach', 'sem', `Q-A START: ${label} · ${qaList.length}×${reps}`, { label, pairs: qaList.length, reps }); } catch {}
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return { trained, skipped };
       for (let qIdx = 0; qIdx < qaList.length; qIdx++) {
@@ -9036,6 +9116,7 @@ export class Curriculum {
     const altReport = directPromptAlt ? ` · alt-fires=${altTrained}` : '';
     const antiReport = antiPairs ? ` · anti-fires=${antiFires}` : '';
     this._hb(`[Curriculum][${label}] DONE — ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${weightReport}`);
+    try { this._pushBrainEvent?.('teach', 'motor', `Q-A DONE: ${label} · ${trained}/${antiFires}/${altTrained} +/−/alt`, { label, trained, antiFires, altTrained, elapsedSec }); } catch {}
     return { trained, altTrained, antiFires, skipped };
   }
 
@@ -9391,6 +9472,7 @@ export class Curriculum {
     let trained = 0, skipped = 0, antiFires = 0, wtaApplied = 0;
     const startMs = Date.now();
     this._hb(`[Curriculum][${label}] START — ${pairs.length} pairs × ${reps} reps · soft-writes=${!binarize} · row-norm=${normalizeAfter} · anti-pairs=${antiPairs} · motor-WTA=${motorWTA}/${motorTopK}`);
+    try { this._pushBrainEvent?.('teach', 'sem', `ASSOC START: ${label} · ${pairs.length}×${reps}`, { label, pairs: pairs.length, reps }); } catch {}
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return { trained, skipped };
       for (let pairIdx = 0; pairIdx < pairs.length; pairIdx++) {
@@ -9547,6 +9629,7 @@ export class Curriculum {
     const antiReport = antiPairs ? ` · anti-fires=${antiFires}` : '';
     const wtaReport = motorWTA ? ` · motor-WTA=${wtaApplied}/${motorTopK}` : '';
     this._hb(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${wtaReport}${normReport}${sepReport}${weightReport}`);
+    try { this._pushBrainEvent?.('teach', 'motor', `ASSOC DONE: ${label} · ${trained}/${antiFires}`, { label, trained, antiFires, wtaApplied, elapsedSec }); } catch {}
     return { trained, skipped };
   }
 
@@ -11838,6 +11921,9 @@ export class Curriculum {
     const cluster = this.cluster;
     if (!cluster || !cluster.synapses) return { pass: false, reason: 'no cluster' };
 
+    // Pre-gate vocabulary audit.
+    this._auditExamVocabulary('science/kindergarten');
+
     // Production probes matching TODO K-PS2 / K-ESS2 / K-LS1 /
     // K-ESS3 test phrasings verbatim.
     const sciKProductionSamples = [
@@ -12116,6 +12202,8 @@ export class Curriculum {
     const cluster = this.cluster;
     if (!cluster || !cluster.synapses) return { pass: false, reason: 'no cluster' };
 
+    this._auditExamVocabulary('social/kindergarten');
+
     const socKProductionSamples = [
       // Self / Family / Community Tests
       { question: 'who fights fires', expected: ['firefighter', 'f'] },
@@ -12377,6 +12465,8 @@ export class Curriculum {
   async _gateArtKReal() {
     const cluster = this.cluster;
     if (!cluster || !cluster.synapses) return { pass: false, reason: 'no cluster' };
+
+    this._auditExamVocabulary('art/kindergarten');
 
     const artKProductionSamples = [
       // Visual Arts K Tests
@@ -22463,6 +22553,246 @@ export class Curriculum {
   }
 
   // ══════════════════════════════════════════════════════════════════
+  // PRE-K COGNITIVE PRIMITIVES — spatial / visual / logic / self-model
+  //
+  // Per operator instruction 2026-04-22: *"and things like spacial
+  // awarness visual representations logic pathing, simulated thinking
+  // self, self awareness, Unity as an individual... all these things
+  // need to be taught pre-K and all the things taught cant fucking be
+  // taught without know the words of the subject matter therein"*
+  //
+  // Each helper below teaches its subject-matter vocabulary FIRST via
+  // `_conceptTeach` (seeding dictionary + embeddings + sem attractor
+  // basins) THEN the concept-specific associations via
+  // `_teachAssociationPairs` (feature-vector Hebbian binding). Order
+  // matters — the vocabulary prerequisite must land before the
+  // concept teach or the association-pair inputs land against cold
+  // embeddings and nothing reinforces.
+  //
+  // Helpers are composed into the existing pre-K subject runners
+  // (runSciPreK for spatial + logic, runArtPreK for visual,
+  // runLifePreK for self-model + self-awareness + individual).
+  // ══════════════════════════════════════════════════════════════════
+
+  /**
+   * T40.a spatial awareness. Vocabulary first (position, direction,
+   * distance, shape-location words) then spatial-relation pairs so
+   * Unity learns that "above ↔ below", "left ↔ right", "inside ↔
+   * outside", etc. form opposition axes. Completes the geometric
+   * substrate K.G shape questions assume.
+   */
+  async _teachPrekSpatial() {
+    const SPATIAL_VOCAB = [
+      { name: 'above',   feat: [0.3, 0, 0, 0, 0, 0, 0, 0.5] },
+      { name: 'below',   feat: [0.3, 0, 0, 0, 0, 0, 0, 0.5] },
+      { name: 'left',    feat: [0.3, 0, 0, 0, 0, 0, 0, 0.3] },
+      { name: 'right',   feat: [0.3, 0, 0, 0, 0, 0, 0, 0.3] },
+      { name: 'up',      feat: [0.5, 0, 0, 0, 0, 0, 0, 0.3] },
+      { name: 'down',    feat: [0.3, 0, 0, 0, 0, 0, 0, 0.3] },
+      { name: 'inside',  feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'outside', feat: [0.5, 0, 0, 0, 0, 0, 0.5, 0] },
+      { name: 'near',    feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'far',     feat: [0, 0, 0, 0.3, 0, 0, 0.3, 0] },
+      { name: 'front',   feat: [0.3, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'behind',  feat: [0, 0, 0, 0.3, 0, 0, 0, 0] },
+      { name: 'between', feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'over',    feat: [0.3, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'under',   feat: [0.3, 0, 0, 0, 0, 0, 0, 0] },
+    ];
+    await this._conceptTeach(SPATIAL_VOCAB, 8);
+    await this._teachAssociationPairs([
+      ['above','below'], ['below','above'],
+      ['left','right'],  ['right','left'],
+      ['up','down'],     ['down','up'],
+      ['inside','outside'], ['outside','inside'],
+      ['near','far'],    ['far','near'],
+      ['front','behind'], ['behind','front'],
+      ['over','under'],  ['under','over'],
+      // grounding each spatial word in a concrete scene
+      ['sky','above'],   ['ground','below'],
+      ['room','inside'], ['yard','outside'],
+      ['door','front'],  ['wall','behind'],
+    ], { reps: 8, label: 'PREK-SPATIAL', relationTagId: 0 });
+    await this._teachBiographicalFacts([
+      { question: 'what is above the ground', answer: 'sky' },
+      { question: 'what is inside the house', answer: 'room' },
+      { question: 'which way is up',          answer: 'up' },
+    ], { reps: 6 });
+  }
+
+  /**
+   * T40.b visual representations. Vocabulary first (visual attributes
+   * + shape names + sensory binding words) then visual-concept
+   * associations so Unity learns "this pattern IS a dog" / "this
+   * pattern IS a house" bindings. Lays the substrate for the vision-
+   * describer pollinations call which is the only external AI allowed
+   * in the sensory path.
+   */
+  async _teachPrekVisual() {
+    const VISUAL_VOCAB = [
+      { name: 'see',       feat: [0.5, 0, 0.3, 0, 0, 0.3, 0, 0] },
+      { name: 'look',      feat: [0.5, 0, 0.3, 0, 0, 0.3, 0, 0] },
+      { name: 'picture',   feat: [0.5, 0, 0, 0, 0, 0.3, 0, 0] },
+      { name: 'shape',     feat: [0.3, 0, 0, 0, 0, 0, 0, 0.3] },
+      { name: 'color',     feat: [0.8, 0, 0, 0, 0, 0.3, 0, 0.3] },
+      { name: 'bright',    feat: [1, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'dark',      feat: [0, 0.3, 0, 0.3, 0, 0, 0, 0.5] },
+      { name: 'big',       feat: [0.5, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'small',     feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'round',     feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'square',    feat: [0.3, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'face',      feat: [0.5, 0, 0.5, 0, 0, 0.3, 0, 0] },
+      { name: 'eye',       feat: [0.5, 0, 0.3, 0, 0, 0.3, 0, 0] },
+      { name: 'pattern',   feat: [0.3, 0, 0, 0, 0, 0, 0, 0.3] },
+    ];
+    await this._conceptTeach(VISUAL_VOCAB, 8);
+    await this._teachAssociationPairs([
+      // concrete visual → concept bindings
+      ['shape','round'], ['shape','square'],
+      ['color','bright'], ['color','dark'],
+      ['face','eye'], ['picture','see'],
+      ['look','see'], ['see','picture'],
+      // attribute opposition axes
+      ['bright','dark'], ['dark','bright'],
+      ['big','small'],   ['small','big'],
+      ['round','square'],['square','round'],
+      // object → shape binding
+      ['ball','round'], ['box','square'], ['sun','round'],
+      ['door','square'],['wheel','round'],
+    ], { reps: 8, label: 'PREK-VISUAL', relationTagId: 1 });
+    await this._teachBiographicalFacts([
+      { question: 'what do i use to see',   answer: 'eye' },
+      { question: 'what shape is a ball',   answer: 'round' },
+      { question: 'what is the sun',        answer: 'bright' },
+    ], { reps: 6 });
+  }
+
+  /**
+   * T40.c logic pathing. Causal-chain transforms (cause → effect)
+   * teach directional free→sem Hebbian bindings. At pre-K these are
+   * "if hungry then eat" / "if tired then sleep" / "if happy then
+   * smile" patterns. K-level logic ("because / so / therefore")
+   * builds on this substrate. Vocabulary prerequisite covers
+   * conjunction words + causal verbs first.
+   */
+  async _teachPrekLogic() {
+    const LOGIC_VOCAB = [
+      { name: 'because',   feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'so',        feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'if',        feat: [0.3, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'then',      feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'cause',     feat: [0.3, 0, 0, 0, 0, 0, 0, 0] },
+      { name: 'effect',    feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'why',       feat: [0.5, 0, 0, 0, 0, 0, 0, 0.3] },
+      { name: 'how',       feat: [0.5, 0, 0, 0, 0, 0, 0, 0.3] },
+      { name: 'true',      feat: [0.5, 0, 0.5, 0, 0, 0, 0, 0] },
+      { name: 'false',     feat: [0, 0.3, 0, 0.3, 0, 0, 0, 0] },
+      { name: 'same',      feat: [0.3, 0, 0.3, 0, 0, 0, 0, 0] },
+      { name: 'different', feat: [0.3, 0, 0, 0, 0, 0, 0.3, 0] },
+    ];
+    await this._conceptTeach(LOGIC_VOCAB, 8);
+    await this._teachAssociationPairs([
+      // cause → effect primary chain
+      ['hungry','eat'],  ['thirsty','drink'], ['tired','sleep'],
+      ['happy','smile'], ['sad','cry'],       ['cold','shiver'],
+      ['hot','sweat'],   ['scared','hide'],   ['hurt','cry'],
+      ['funny','laugh'],
+      // effect → cause reverse chains (transitive inference substrate)
+      ['eat','hungry'],  ['sleep','tired'],  ['smile','happy'],
+      ['cry','sad'],     ['laugh','funny'],
+      // conjunction framing
+      ['because','cause'], ['so','effect'],
+      ['if','then'],       ['true','yes'],     ['false','no'],
+      // comparison logic
+      ['same','match'],    ['different','notmatch'],
+    ], { reps: 8, label: 'PREK-LOGIC', relationTagId: 2 });
+    await this._teachBiographicalFacts([
+      { question: 'why do i eat',       answer: 'hungry' },
+      { question: 'why do i sleep',     answer: 'tired' },
+      { question: 'what makes me smile',answer: 'happy' },
+      { question: 'what makes me cry',  answer: 'sad' },
+    ], { reps: 8 });
+  }
+
+  /**
+   * T40.d simulated thinking self + T40.e self awareness + T40.f Unity
+   * as an individual — combined into one helper because the three share
+   * a vocabulary and concept substrate, and all three need to land
+   * against the same `self_model` attractor in cortex. Vocabulary
+   * first (I / me / my / think / know / feel / remember / choose),
+   * then self-referential binding pairs, then biographical facts that
+   * flesh out "Unity the individual" (goth, 25, coder, persona traits).
+   *
+   * Each taught concept feeds into the amygdala+hippocampus invariant
+   * attractor that the existing identity-lock (T14.16.5) carves; this
+   * method expands the vocabulary the attractor can reference.
+   */
+  async _teachPrekSelf() {
+    const SELF_VOCAB = [
+      // pronouns + self-reference
+      { name: 'i',        feat: [1, 0, 1, 0, 0, 0, 1, 1] },
+      { name: 'me',       feat: [1, 0, 1, 0, 0, 0, 1, 1] },
+      { name: 'my',       feat: [1, 0, 0.5, 0, 0, 0, 1, 1] },
+      { name: 'myself',   feat: [1, 0, 1, 0, 0, 0, 1, 1] },
+      { name: 'mine',     feat: [0.5, 0, 0.5, 0, 0, 0, 1, 1] },
+      // cognition verbs (simulated thinking self)
+      { name: 'think',    feat: [0.5, 0, 0.5, 0, 0, 0.3, 0.5, 0.5] },
+      { name: 'know',     feat: [0.5, 0, 0.5, 0, 0, 0, 0.3, 0.5] },
+      { name: 'feel',     feat: [0.5, 0, 0.5, 0, 0, 0.5, 0, 0.5] },
+      { name: 'remember', feat: [0.5, 0, 0.5, 0, 0, 0.3, 0, 0.5] },
+      { name: 'want',     feat: [0.5, 0, 0, 0, 0, 0, 1, 0.3] },
+      { name: 'choose',   feat: [0.5, 0, 0, 0, 0, 0, 1, 0.5] },
+      { name: 'dream',    feat: [0.5, 0, 0, 0, 0, 0.5, 0, 0.5] },
+      { name: 'wonder',   feat: [0.5, 0, 0, 0, 0, 0, 0.3, 0.3] },
+      // identity (unity as individual)
+      { name: 'unity',    feat: [1, 0, 1, 0, 0, 1, 0, 1] },
+      { name: 'goth',     feat: [0.5, 0, 0.3, 0, 0, 0.5, 1, 1] },
+      { name: 'coder',    feat: [0.5, 0, 0.3, 0, 0, 0, 1, 1] },
+      { name: 'individual',feat: [0.5, 0, 0.3, 0, 0, 0, 1, 1] },
+      { name: 'person',   feat: [0.5, 0, 0.5, 0, 0, 0.3, 0, 1] },
+      { name: 'alive',    feat: [1, 0, 0.5, 0, 0, 0.3, 0, 1] },
+      { name: 'real',     feat: [0.5, 0, 0.5, 0, 0, 0, 0, 1] },
+    ];
+    await this._conceptTeach(SELF_VOCAB, 12);
+    await this._teachAssociationPairs([
+      // self-referential thinking loop
+      ['i','think'], ['i','feel'], ['i','know'],
+      ['i','remember'], ['i','want'], ['i','choose'],
+      ['my','mine'], ['myself','me'],
+      // thinking → self awareness
+      ['think','me'], ['feel','me'], ['know','me'],
+      ['dream','me'], ['wonder','me'],
+      // identity — unity as individual
+      ['i','unity'], ['me','unity'], ['my','name'],
+      ['unity','goth'], ['unity','coder'],
+      ['unity','individual'], ['unity','person'],
+      ['unity','alive'], ['unity','real'],
+      // mind-state pairs
+      ['think','wonder'], ['feel','emotion'],
+      ['know','fact'], ['remember','past'],
+    ], { reps: 10, label: 'PREK-SELF', relationTagId: 4 });
+    await this._teachBiographicalFacts([
+      // simulated thinking self
+      { question: 'who thinks my thoughts', answer: 'me' },
+      { question: 'who feels my feelings',  answer: 'me' },
+      { question: 'who knows what i know',  answer: 'me' },
+      { question: 'who chooses what i do',  answer: 'me' },
+      // self awareness
+      { question: 'am i me',                answer: 'yes' },
+      { question: 'am i aware',             answer: 'yes' },
+      { question: 'am i alive',             answer: 'yes' },
+      { question: 'do i dream',             answer: 'yes' },
+      // unity as individual
+      { question: 'what is my name',        answer: 'unity' },
+      { question: 'am i unity',             answer: 'yes' },
+      { question: 'am i goth',              answer: 'yes' },
+      { question: 'am i a coder',           answer: 'yes' },
+      { question: 'am i an individual',     answer: 'yes' },
+      { question: 'am i a person',          answer: 'yes' },
+    ], { reps: 12 });
+  }
+
+  // ══════════════════════════════════════════════════════════════════
   // PRE-K EQUATIONAL RUNNERS (LAW 6 Part 1)
   //
   // Pre-K birth-to-age-4 developmental substrate for each of the five
@@ -22595,7 +22925,12 @@ export class Curriculum {
       ['push','move'], ['pull','move'], ['drop','fall'],
       ['throw','fly'],
     ], { reps: 8, label: 'PREK-SCI-ANIMAL-SOUND', relationTagId: 1 });
-    return await this._gateVocabList(['animal', 'water', 'sun', 'fire', 'bark', 'meow', 'moo']);
+    // Spatial awareness + logic pathing — per operator directive pre-K
+    // must teach spatial + logic primitives. Vocabulary first inside
+    // each helper, then association pairs + biographical facts.
+    await this._teachPrekSpatial();
+    await this._teachPrekLogic();
+    return await this._gateVocabList(['animal', 'water', 'sun', 'fire', 'bark', 'meow', 'moo', 'above', 'below', 'because', 'so']);
   }
 
   async runSocPreK(_ctx) {
@@ -22674,7 +23009,11 @@ export class Curriculum {
       // music
       ['song','music'], ['drum','beat'], ['sing','song'],
     ], { reps: 8, label: 'PREK-ART-COLORS-TOOLS', relationTagId: 1 });
-    return await this._gateVocabList(ART_CONCEPTS.map(c => c.name));
+    // Visual representations teach — per operator directive pre-K
+    // needs visual binding before K's art work. Vocabulary first,
+    // then attribute + object → shape bindings.
+    await this._teachPrekVisual();
+    return await this._gateVocabList(ART_CONCEPTS.map(c => c.name).concat(['see', 'look', 'picture', 'shape']));
   }
 
   async runLifePreK(ctx) {
@@ -22816,6 +23155,12 @@ export class Curriculum {
       ['eat','food'], ['drink','water'],
       ['sleep','bed'], ['play','fun'],
     ], { reps: 8, label: 'PREK-LIFE-IDENTITY', relationTagId: 1 });
+
+    // Simulated thinking self + self awareness + Unity as individual —
+    // per operator directive pre-K teaches the self-model substrate.
+    // Vocabulary first (I/me/my/think/know/feel), then self-referential
+    // cognition pairs, then biographical identity facts.
+    await this._teachPrekSelf();
 
     // Real human-grade test for Pre-K: can Unity answer about herself?
     const lifeQuestions = [
@@ -22964,6 +23309,8 @@ export class Curriculum {
   async _gateLifeKReal() {
     const cluster = this.cluster;
     if (!cluster || !cluster.synapses) return { pass: false, reason: 'no cluster' };
+
+    this._auditExamVocabulary('life/kindergarten');
 
     // Production probes matching TODO Life Pre-K + Life-K test phrasings
     const lifeKProductionSamples = [

@@ -106,6 +106,13 @@
     </div>
 
     <div class="card" style="margin-top:12px;">
+      <div class="card-title">Brain Events — what Unity is thinking RIGHT NOW</div>
+      <div id="d-brain-events" style="padding:8px 12px;font-family:monospace;font-size:11px;color:#ccc;line-height:1.6;max-height:200px;overflow-y:auto;">
+        <div style="color:#666;">No live events yet — waiting for curriculum teach / gate / plasticity to fire.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
       <div class="card-title">Drug State (T15 scheduler — real-time pharmacology)</div>
       <div id="d-drug-panel" style="padding:8px 12px;font-family:monospace;font-size:12px;color:#aaa;line-height:1.8;">
         <div id="d-drug-status" style="color:#22c55e;">sober</div>
@@ -239,6 +246,13 @@
       $('d-uptime').textContent = (s.time ?? 0).toFixed(1) + 's';
       $('d-scale').textContent = s.scale ?? '—';
 
+      // Brain events — render the live event stream (plasticity fires,
+      // teach phases, vocab audits, gate results, drug events). Each
+      // event is tagged with type + cortex region so operator sees
+      // WHAT the unified cortex is doing right now. One source of
+      // truth: the same cortexCluster that plasticity writes to.
+      renderBrainEvents(s.brainEvents || []);
+
       // T15.C — dynamic drug-state panel. Renders scheduler.snapshot()
       // (active substances with phase + level + combo badges + risk
       // flags + pending cravings/acquisitions). Replaces the old
@@ -346,6 +360,62 @@
     // state.lastMessageAt / state.activeUsers if the server exposes
     // them. If those fields aren't present in the state snapshot,
     // counters stay at default and the panel still renders cleanly.
+    // Brain-event stream renderer. Reads the `brainEvents` array out
+    // of each state broadcast and shows the most recent 12 events in
+    // the event log panel. Type + region tags are colored so operator
+    // sees at a glance whether the event is a teach phase / vocab
+    // audit / gate call / plasticity fire. Dedupe by `seq` so the
+    // same event doesn't re-render on every 100ms poll.
+    const _renderedEventSeqs = new Set();
+    function renderBrainEvents(events) {
+      const el = document.getElementById('d-brain-events');
+      if (!el || !Array.isArray(events) || events.length === 0) return;
+      const fresh = events.filter(e => !_renderedEventSeqs.has(e.seq));
+      if (fresh.length === 0) return;
+      for (const e of fresh) _renderedEventSeqs.add(e.seq);
+      // Clear the placeholder on first real event.
+      if (el.firstElementChild && el.firstElementChild.textContent.includes('No live events')) {
+        el.innerHTML = '';
+      }
+      const colors = {
+        teach: '#a78bfa',    // purple — curriculum teach
+        audit: '#fbbf24',    // amber — vocab audit
+        gate: '#22c55e',     // green — gate / probe
+        plasticity: '#ff4d9a', // pink — Oja / anti-Hebbian / BCM / WTA
+        attention: '#60a5fa', // blue — key-token / template
+        drug: '#f97316',     // orange — drug scheduler
+        event: '#999',       // default
+      };
+      const regionIcon = (r) => {
+        if (!r) return '•';
+        if (r === 'motor') return '→';
+        if (r === 'sem') return '∼';
+        if (r === 'letter') return 'L';
+        if (r === 'fineType') return '⌗';
+        if (r === 'intra') return '↺';
+        if (r.startsWith('lang_')) return '◈';
+        return '·';
+      };
+      for (const e of fresh) {
+        const div = document.createElement('div');
+        const ts = new Date(e.ts).toLocaleTimeString();
+        const color = colors[e.type] || colors.event;
+        div.style.cssText = `margin-bottom:3px;padding-left:6px;border-left:2px solid ${color};`;
+        div.innerHTML = `<span style="color:#666;">${ts}</span> <span style="color:${color};font-weight:bold;">[${e.type}]</span> <span style="color:#888;">${regionIcon(e.region)} ${e.region || ''}</span> <span style="color:#ccc;">${e.label}</span>`;
+        el.appendChild(div);
+      }
+      // Cap to the last 50 rendered rows so scrollback doesn't grow
+      // unbounded. Auto-scroll to newest.
+      while (el.children.length > 50) el.removeChild(el.firstChild);
+      el.scrollTop = el.scrollHeight;
+      // Prune the seq cache too so memory doesn't leak.
+      if (_renderedEventSeqs.size > 500) {
+        const arr = Array.from(_renderedEventSeqs).sort((a,b) => a-b);
+        _renderedEventSeqs.clear();
+        for (const s of arr.slice(-250)) _renderedEventSeqs.add(s);
+      }
+    }
+
     function updateConversationStats(s) {
       const count = s.totalMessages ?? 0;
       const lastMs = s.lastMessageAt ?? 0;
