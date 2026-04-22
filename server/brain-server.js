@@ -1144,6 +1144,25 @@ class ServerBrain {
         tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
         noiseAmplitude: 7,
         connectivity: 0.15,
+        // T37.d — excitatoryRatio DROPPED 0.85 → 0.5 to eliminate motor
+        // self-loop attractor fixation. Prior 85% positive-bias intra-
+        // synapse matrix made whichever motor bucket randomly summed
+        // highest at init become a GLOBAL ATTRACTOR — every generation
+        // decoded to the same stuck letter regardless of input pattern.
+        // Operator's log showed Q83-170 all emitting "l", "ll", ..., or
+        // "llllll" — motor argmax was locked on bucket 11 (letter 'l')
+        // for this run's random seed. Training sparse cross-projections
+        // couldn't overcome 85% positive intra self-reinforcement.
+        //
+        // Zero-mean intra weights (50/50 excitatory/inhibitory) kills the
+        // random-init attractor bias. Each neuron's incoming connections
+        // sum to ~0 before training → no dominant bucket → motor argmax
+        // follows the trained signal from cross-projections. Biologically,
+        // real cortex IS 80% excitatory but balanced by GABA inhibitory
+        // interneurons; our sparse matrix doesn't model the GABA layer
+        // separately so 50/50 directly in the matrix gives the same net
+        // effect as 80% excitatory + 20-30% balancing inhibitory.
+        excitatoryRatio: 0.5,
         // T37.c — reverted fanout 10→30 after T37.b's 10/5 combo proved
         // too sparse to learn (operator saw "bg" and empty emissions
         // post-K-teach). Fanout 30 is biologically realistic for long-

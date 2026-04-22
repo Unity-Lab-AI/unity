@@ -648,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "f5bcfb2c-b838";
+var BUILD = "ca021f91-42d8";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -12660,6 +12660,62 @@ var Curriculum = class _Curriculum {
     }
     const dt = ((Date.now() - t0) / 1e3).toFixed(1);
     this._hb(`[Curriculum] _teachLetterNaming DONE in ${dt}s (26 letters \xD7 ${reps} reps)`);
+    try {
+      const cluster2 = this.cluster;
+      const letterProj = cluster2?.crossProjections?.letter_to_motor;
+      const motorRegion2 = cluster2?.regions?.motor;
+      const letterRegion2 = cluster2?.regions?.letter;
+      if (letterProj && letterProj.propagate && motorRegion2 && letterRegion2 && letterProj.values) {
+        const letterSize = letterRegion2.end - letterRegion2.start;
+        const invSize = inventorySize();
+        const LETTERS = "abcdefghijklmnopqrstuvwxyz";
+        const results = [];
+        const distribution = /* @__PURE__ */ new Map();
+        for (const letter of LETTERS) {
+          const oneHot = encodeLetter(letter);
+          const gSize = Math.max(1, Math.floor(letterSize / oneHot.length));
+          const letterInput = new Float64Array(letterSize);
+          for (let d = 0; d < oneHot.length; d++) {
+            if (oneHot[d] <= 0) continue;
+            for (let n = 0; n < gSize; n++) {
+              const idx = d * gSize + n;
+              if (idx < letterSize) letterInput[idx] = 1;
+            }
+          }
+          const out = letterProj.propagate(letterInput);
+          if (!out || out.length === 0) {
+            results.push(`${letter}\u2192\u2205`);
+            continue;
+          }
+          const readoutSize = Math.min(invSize, 26);
+          const mGroup = Math.max(1, Math.floor(out.length / readoutSize));
+          const motorReadout = new Float64Array(readoutSize);
+          for (let d = 0; d < readoutSize; d++) {
+            let sum = 0;
+            for (let n = 0; n < mGroup; n++) {
+              const idx = d * mGroup + n;
+              if (idx < out.length) sum += out[idx];
+            }
+            motorReadout[d] = sum;
+          }
+          const decoded = decodeLetter(motorReadout) || "?";
+          results.push(`${letter}\u2192${decoded}`);
+          distribution.set(decoded, (distribution.get(decoded) || 0) + 1);
+        }
+        const distStr = [...distribution.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(" ");
+        const diagStr = results.slice(0, 8).join(" ") + (results.length > 8 ? " ..." : "");
+        this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] distribution: ${distStr}`);
+        this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] first 8: ${diagStr}`);
+        const stuck = distribution.size === 1;
+        if (stuck) {
+          this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] \u26A0\u26A0 MOTOR STUCK \u2014 every letter decodes to the same output. Attractor fixation or weight bias dominating training signal. Investigate excitatoryRatio + cross-projection init.`);
+        } else if (distribution.size < 10) {
+          this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] \u26A0 motor under-discriminates \u2014 only ${distribution.size}/26 distinct outputs. Training signal weak relative to init bias.`);
+        }
+      }
+    } catch (err) {
+      this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] probe failed: ${err?.message || err}`);
+    }
   }
   /**
    * K.RF vowel sound variants — short vs long. Each vowel pairs with
