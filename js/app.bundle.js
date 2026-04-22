@@ -648,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "ca021f91-42d8";
+var BUILD = "6e3b9746-d4d2";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -11969,6 +11969,8 @@ var Curriculum = class _Curriculum {
     cluster._probeGateActive = true;
     let _aliveTick = 0;
     let _priorRssMb = 0;
+    const _unaccRolling = [];
+    const UNACC_WINDOW = 6;
     const _aliveHbId = setInterval(() => {
       _aliveTick += 1;
       const elapsedS = ((Date.now() - _cellStart) / 1e3).toFixed(0);
@@ -11983,10 +11985,25 @@ var Curriculum = class _Curriculum {
           const extMb = Number(mb(mu.external));
           const abMb = Number(mb(mu.arrayBuffers || 0));
           const unaccountedMb = Math.max(0, rssMb - heapMb - extMb);
-          const rssDeltaMb = _priorRssMb > 0 ? rssMb - _priorRssMb : 0;
-          const rssTrend = rssDeltaMb > 50 ? ` \u26A0+${rssDeltaMb}MB` : rssDeltaMb < -50 ? ` \u2193${-rssDeltaMb}MB` : "";
           _priorRssMb = rssMb;
-          memLabel = ` \xB7 heap=${heapMb}/${heapTotalMb}MB ext=${extMb}MB ab=${abMb}MB rss=${rssMb}MB (unaccounted=${unaccountedMb}MB${rssTrend})`;
+          _unaccRolling.push(unaccountedMb);
+          if (_unaccRolling.length > UNACC_WINDOW) _unaccRolling.shift();
+          let unaccTrend = "";
+          if (_unaccRolling.length >= UNACC_WINDOW) {
+            const half = Math.floor(UNACC_WINDOW / 2);
+            let sumFirst = 0, sumSecond = 0;
+            for (let i = 0; i < half; i++) sumFirst += _unaccRolling[i];
+            for (let i = half; i < UNACC_WINDOW; i++) sumSecond += _unaccRolling[i];
+            const avgFirst = sumFirst / half;
+            const avgSecond = sumSecond / (UNACC_WINDOW - half);
+            const trendMb = Math.round(avgSecond - avgFirst);
+            if (trendMb > 200) {
+              unaccTrend = ` \u26A0\u26A0LEAK+${trendMb}MB/min`;
+            } else if (trendMb > 100) {
+              unaccTrend = ` \u26A0climbing+${trendMb}MB/min`;
+            }
+          }
+          memLabel = ` \xB7 heap=${heapMb}/${heapTotalMb}MB ext=${extMb}MB ab=${abMb}MB rss=${rssMb}MB (unaccounted=${unaccountedMb}MB${unaccTrend})`;
         }
       } catch {
       }

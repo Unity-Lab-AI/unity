@@ -2761,6 +2761,16 @@ export class Curriculum {
     // native module allocations, promise chain accumulation).
     let _aliveTick = 0;
     let _priorRssMb = 0;
+    // T37.e — diagnostic trend tracking. The original T33 `⚠+` marker
+    // triggered on ANY RSS delta > 50 MB, but at biological-scale teach
+    // V8 heap oscillates ±200 MB per heartbeat via normal GC cycles
+    // (allocate during teach → Mark-Compact → drop → allocate again).
+    // That spammed false ⚠+ alarms on every up-tick even though RSS
+    // net-trend was flat. Fix: track UNACCOUNTED delta (which is much
+    // more stable — excludes V8 heap fluctuation) and use a rolling
+    // window to show trend over ~1 minute instead of single-interval.
+    const _unaccRolling = []; // last 6 heartbeats of unaccounted values
+    const UNACC_WINDOW = 6;
     const _aliveHbId = setInterval(() => {
       _aliveTick += 1;
       const elapsedS = ((Date.now() - _cellStart) / 1000).toFixed(0);
@@ -2775,10 +2785,30 @@ export class Curriculum {
           const extMb = Number(mb(mu.external));
           const abMb = Number(mb(mu.arrayBuffers || 0));
           const unaccountedMb = Math.max(0, rssMb - heapMb - extMb);
-          const rssDeltaMb = _priorRssMb > 0 ? (rssMb - _priorRssMb) : 0;
-          const rssTrend = rssDeltaMb > 50 ? ` ⚠+${rssDeltaMb}MB` : (rssDeltaMb < -50 ? ` ↓${-rssDeltaMb}MB` : '');
-          _priorRssMb = rssMb;
-          memLabel = ` · heap=${heapMb}/${heapTotalMb}MB ext=${extMb}MB ab=${abMb}MB rss=${rssMb}MB (unaccounted=${unaccountedMb}MB${rssTrend})`;
+          _priorRssMb = rssMb; // kept for back-compat, unused in trend calc now
+          // Track unaccounted in rolling window to detect SUSTAINED
+          // growth (real leak) vs instantaneous oscillation (GC churn).
+          _unaccRolling.push(unaccountedMb);
+          if (_unaccRolling.length > UNACC_WINDOW) _unaccRolling.shift();
+          let unaccTrend = '';
+          if (_unaccRolling.length >= UNACC_WINDOW) {
+            // Average of first half vs second half of window.
+            const half = Math.floor(UNACC_WINDOW / 2);
+            let sumFirst = 0, sumSecond = 0;
+            for (let i = 0; i < half; i++) sumFirst += _unaccRolling[i];
+            for (let i = half; i < UNACC_WINDOW; i++) sumSecond += _unaccRolling[i];
+            const avgFirst = sumFirst / half;
+            const avgSecond = sumSecond / (UNACC_WINDOW - half);
+            const trendMb = Math.round(avgSecond - avgFirst);
+            // Only flag LEAK if unaccounted grew > 200 MB across window
+            // AND is growing consistently. Otherwise it's GC churn.
+            if (trendMb > 200) {
+              unaccTrend = ` ⚠⚠LEAK+${trendMb}MB/min`;
+            } else if (trendMb > 100) {
+              unaccTrend = ` ⚠climbing+${trendMb}MB/min`;
+            }
+          }
+          memLabel = ` · heap=${heapMb}/${heapTotalMb}MB ext=${extMb}MB ab=${abMb}MB rss=${rssMb}MB (unaccounted=${unaccountedMb}MB${unaccTrend})`;
         }
       } catch { /* memoryUsage unavailable */ }
       let phaseLabel = '';
