@@ -182,6 +182,72 @@ var init_sparse_matrix = __esm({
         }
       }
       /**
+       * Oja's rule (Oja 1982, J Math Biol 15:267) — Hebbian with an intrinsic
+       * weight-decay term proportional to y²·w. Keeps weights bounded without
+       * the clamp doing all the work, AND pushes the weight matrix toward the
+       * principal components of the pre-pattern distribution.
+       *
+       *   Δw[i,j] = lr × y[j] × (x[i] - y[j] × w[i,j])
+       *
+       * Where:
+       *   x[i]    — pre-synaptic activity at column i
+       *   y[j]    — post-synaptic activity at row j
+       *   w[i,j]  — current weight
+       *
+       * Effects vs bare Hebbian:
+       *   - No runaway growth — weights self-stabilize via the y²·w subtraction
+       *   - Basis vectors orthogonalize — converges to principal components
+       *   - Decorrelates new patterns from old ones, so sep-probe mean-cosine
+       *     drops instead of climbing toward saturation
+       *   - Directly counters the overlap-collapse behaviour that produced the
+       *     stuck-motor-at-'l' symptom
+       *
+       * Same null-CSR safety + row-iteration shape as `hebbianUpdate`. Drop-in
+       * replacement for the per-projection Hebbian call in the teach paths.
+       */
+      ojaUpdate(preSpikes, postSpikes, lr) {
+        const { rows, values, colIdx, rowPtr, wMin, wMax } = this;
+        if (!values || !rowPtr || !colIdx) return;
+        for (let i = 0; i < rows; i++) {
+          const y = postSpikes[i];
+          if (!y) continue;
+          const y2 = y * y;
+          const start = rowPtr[i];
+          const end = rowPtr[i + 1];
+          for (let k = start; k < end; k++) {
+            const x = preSpikes[colIdx[k]];
+            values[k] += lr * y * x - lr * y2 * values[k];
+            if (values[k] > wMax) values[k] = wMax;
+            else if (values[k] < wMin) values[k] = wMin;
+          }
+        }
+      }
+      /**
+       * Anti-Hebbian negative-pair update.
+       *
+       * Explicit depressive pressure: weights DECREASE where pre and post
+       * co-activate. Called immediately after a positive-pair Oja/Hebbian
+       * update, but with a SAMPLED WRONG pair (X, Y') where Y' ≠ the correct
+       * answer Y. The paired-opposite push pulls non-matching patterns apart
+       * in weight space while the positive pair pulls the correct pair
+       * together — push-pull discrimination instead of passive superposition.
+       */
+      antiHebbianUpdate(preSpikes, postSpikes, lr) {
+        const { rows, values, colIdx, rowPtr, wMin, wMax } = this;
+        if (!values || !rowPtr || !colIdx) return;
+        for (let i = 0; i < rows; i++) {
+          if (!postSpikes[i]) continue;
+          const scaled = -lr * postSpikes[i];
+          const start = rowPtr[i];
+          const end = rowPtr[i + 1];
+          for (let k = start; k < end; k++) {
+            values[k] += scaled * preSpikes[colIdx[k]];
+            if (values[k] > wMax) values[k] = wMax;
+            else if (values[k] < wMin) values[k] = wMin;
+          }
+        }
+      }
+      /**
        * Per-row L2 normalization — rescales each row's values so its
        * Euclidean norm hits `targetNorm`. Prevents weight runaway /
        * saturation when many teach phases accumulate Hebbian updates
@@ -648,7 +714,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "5abe0be1-3d68";
+var BUILD = "4e768ae0-64f4";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2630,7 +2696,7 @@ var NeuronCluster = class {
           }
           const preF2 = this.regionSpikes(src);
           const postF2 = this.regionSpikes(dst);
-          proj.hebbianUpdate(preF2, postF2, lr);
+          proj.ojaUpdate(preF2, postF2, lr);
         }
         continue;
       }
@@ -2647,10 +2713,10 @@ var NeuronCluster = class {
         try {
           await this._sparsePool.hebbianUpdate(proj, preF, postF, lr);
         } catch {
-          proj.hebbianUpdate(preF, postF, lr);
+          proj.ojaUpdate(preF, postF, lr);
         }
       } else {
-        proj.hebbianUpdate(preF, postF, lr);
+        proj.ojaUpdate(preF, postF, lr);
       }
       if (this._gpuProxyReady && this._gpuProxy && this._gpuProxy.hebbian) {
         try {
@@ -2777,15 +2843,44 @@ var NeuronCluster = class {
     const BIOLOGICAL_SCALE_SYNC_THRESHOLD = 1e5;
     const atBioScale = (this.size | 0) > BIOLOGICAL_SCALE_SYNC_THRESHOLD;
     if (atBioScale) {
-      this.synapses.hebbianUpdate(pre, post, lr);
+      this.synapses.ojaUpdate(pre, post, lr);
     } else if (this._sparsePool && this._sparsePool.ready) {
       try {
         await this._sparsePool.hebbianUpdate(this.synapses, pre, post, lr);
       } catch {
-        this.synapses.hebbianUpdate(pre, post, lr);
+        this.synapses.ojaUpdate(pre, post, lr);
       }
     } else {
-      this.synapses.hebbianUpdate(pre, post, lr);
+      this.synapses.ojaUpdate(pre, post, lr);
+    }
+  }
+  /**
+   * Anti-Hebbian update on the intra-cluster synapse matrix. Depresses
+   * co-active (pre=1, post=1) weights so sampled-wrong pairs push apart
+   * instead of superposing. Used by the push-pull contrastive teach path:
+   * caller fires the positive-pair Oja update first, then invokes this
+   * method with a sampled WRONG post-pattern to repel it from the
+   * pre-pattern in weight space.
+   *
+   * Sync at biological scale (matches `intraSynapsesHebbian`'s bio-path
+   * branch) — zero external-memory allocation, single CSR walk. `lr`
+   * here is always POSITIVE; the method handles the sign internally.
+   */
+  async intraSynapsesAntiHebbian(pre, post, lr) {
+    if (!this.synapses) return;
+    if (typeof this.synapses.antiHebbianUpdate !== "function") return;
+    const BIOLOGICAL_SCALE_SYNC_THRESHOLD = 1e5;
+    const atBioScale = (this.size | 0) > BIOLOGICAL_SCALE_SYNC_THRESHOLD;
+    if (atBioScale) {
+      this.synapses.antiHebbianUpdate(pre, post, lr);
+    } else if (this._sparsePool && this._sparsePool.ready && typeof this._sparsePool.antiHebbianUpdate === "function") {
+      try {
+        await this._sparsePool.antiHebbianUpdate(this.synapses, pre, post, lr);
+      } catch {
+        this.synapses.antiHebbianUpdate(pre, post, lr);
+      }
+    } else {
+      this.synapses.antiHebbianUpdate(pre, post, lr);
     }
   }
   /**
@@ -3030,9 +3125,10 @@ var NeuronCluster = class {
     const pre = buildPattern(opts.srcOneHot);
     const correctPost = buildPattern(opts.correctOneHot);
     const wrongPost = opts.wrongOneHot ? buildPattern(opts.wrongOneHot) : null;
+    const negAbs = Math.abs(negLr);
     for (let i = 0; i < reps; i++) {
-      this.synapses.hebbianUpdate(pre, correctPost, posLr);
-      if (wrongPost) this.synapses.hebbianUpdate(pre, wrongPost, negLr);
+      this.synapses.ojaUpdate(pre, correctPost, posLr);
+      if (wrongPost) this.synapses.antiHebbianUpdate(pre, wrongPost, negAbs);
     }
   }
   /**
@@ -3070,7 +3166,7 @@ var NeuronCluster = class {
       for (let t = 0; t < ticksPerWord; t++) this.step(1e-3);
       if (haveSnap) {
         for (let i = 0; i < this.size; i++) currSnap[i] = this.lastSpikes[i] ? 1 : 0;
-        this.synapses.hebbianUpdate(prevSnap, currSnap, lr);
+        this.synapses.ojaUpdate(prevSnap, currSnap, lr);
         updates++;
       }
       for (let i = 0; i < this.size; i++) prevSnap[i] = this.lastSpikes[i] ? 1 : 0;
@@ -18177,6 +18273,31 @@ var Curriculum = class _Curriculum {
       cluster.synapses.hebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, lr);
     }
   }
+  /**
+   * Anti-Hebbian contrastive update. Called after a positive-pair Oja
+   * update, with `cluster.lastSpikes` holding the (correct-pre, WRONG-
+   * post) activation pattern. Depresses the co-active weights on the
+   * intra-cluster synapse matrix so sampled-wrong pairs push apart
+   * instead of piling into the same basins as correct pairs.
+   *
+   * Cross-projection GPU anti-Hebbian is a follow-up — sem_to_motor's
+   * CPU CSR is selectively freed at biological scale, and the existing
+   * Oja plasticity shader can't be safely coerced into true anti-
+   * Hebbian (the y²·w decay term grows weights when post fires alone).
+   * Until a dedicated anti-Hebbian WGSL shader ships, the contrastive
+   * signal rides the recurrent intra-cluster matrix which keeps CPU
+   * CSR live through the probe path.
+   */
+  async _teachAntiHebbian(lr) {
+    const cluster = this.cluster;
+    if (!cluster) return;
+    const absLr = Math.abs(lr);
+    if (typeof cluster.intraSynapsesAntiHebbian === "function") {
+      await cluster.intraSynapsesAntiHebbian(cluster.lastSpikes, cluster.lastSpikes, absLr);
+    } else if (cluster.synapses && typeof cluster.synapses.antiHebbianUpdate === "function") {
+      cluster.synapses.antiHebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, absLr);
+    }
+  }
   // ═══════════════════════════════════════════════════════════════════
   // Fix A — Asymmetric Hebbian for directional bindings
   // ═══════════════════════════════════════════════════════════════════
@@ -18497,12 +18618,15 @@ var Curriculum = class _Curriculum {
     const normTarget = opts.normTarget ?? 1;
     const runSeparationProbe = opts.separationProbe !== false;
     const overloadMax = opts.overloadMax ?? 0.3;
-    let trained = 0, skipped = 0;
+    const antiPairs = opts.antiPairs !== false && pairs.length >= 2;
+    const antiLrScale = opts.antiLrScale ?? 0.5;
+    let trained = 0, skipped = 0, antiFires = 0;
     const startMs = Date.now();
-    this._hb(`[Curriculum][${label}] START \u2014 ${pairs.length} pairs \xD7 ${reps} reps \xB7 soft-writes=${!binarize} \xB7 row-norm=${normalizeAfter}`);
+    this._hb(`[Curriculum][${label}] START \u2014 ${pairs.length} pairs \xD7 ${reps} reps \xB7 soft-writes=${!binarize} \xB7 row-norm=${normalizeAfter} \xB7 anti-pairs=${antiPairs}`);
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return { trained, skipped };
-      for (const pair of pairs) {
+      for (let pairIdx = 0; pairIdx < pairs.length; pairIdx++) {
+        const pair = pairs[pairIdx];
         if (!Array.isArray(pair) || pair.length < 2) {
           skipped++;
           continue;
@@ -18530,6 +18654,35 @@ var Curriculum = class _Curriculum {
           trained++;
         } catch (err) {
           skipped++;
+        }
+        if (antiPairs) {
+          let wrongIdx = Math.floor(Math.random() * pairs.length);
+          if (wrongIdx === pairIdx) wrongIdx = (wrongIdx + 1) % pairs.length;
+          const wrongPair = pairs[wrongIdx];
+          if (Array.isArray(wrongPair) && wrongPair.length >= 2) {
+            const wrongOut = wrongPair[1];
+            if (wrongOut && wrongOut !== outputWord) {
+              const wrongEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(wrongOut) : null;
+              if (wrongEmb && wrongEmb.length > 0) {
+                try {
+                  this._clearSpikes();
+                  this._writeTiledPattern(semRegion, inEmb, binarize);
+                  this._writeTiledPattern(motorRegion, wrongEmb, binarize);
+                  if (fineTypeRegion && relationTagId !== null) {
+                    const fineSize = fineTypeRegion.end - fineTypeRegion.start;
+                    const band = Math.floor(fineSize / 6);
+                    const tagStart = fineTypeRegion.start + relationTagId * band;
+                    const tagEnd = Math.min(fineTypeRegion.end, tagStart + band);
+                    const tagVal = binarize ? 1 : 0.5;
+                    for (let i = tagStart; i < tagEnd; i++) cluster.lastSpikes[i] = tagVal;
+                  }
+                  await this._teachAntiHebbian(lr * antiLrScale);
+                  antiFires++;
+                } catch {
+                }
+              }
+            }
+          }
         }
       }
       await _microtask();
@@ -18585,7 +18738,8 @@ var Curriculum = class _Curriculum {
     } catch {
     }
     const elapsedSec = ((Date.now() - startMs) / 1e3).toFixed(1);
-    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${normReport}${sepReport}${weightReport}`);
+    const antiReport = antiPairs ? ` \xB7 anti-fires=${antiFires}` : "";
+    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${normReport}${sepReport}${weightReport}`);
     return { trained, skipped };
   }
   /**
