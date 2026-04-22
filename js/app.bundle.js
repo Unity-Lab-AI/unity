@@ -648,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "d84bd0ca-6458";
+var BUILD = "2964f941-6396";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -10020,6 +10020,27 @@ var Curriculum = class _Curriculum {
     this.currentFocus = null;
     this._gateHistory = /* @__PURE__ */ new Map();
     this._sessionId = `s${Date.now().toString(36)}`;
+    const proto = Object.getPrototypeOf(this);
+    const TRACKED = /* @__PURE__ */ new Set();
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      if (typeof proto[name] !== "function") continue;
+      if (!(name.startsWith("_teach") || name === "_runStudentBattery" || name === "_measureEmissionCapability" || name === "_runCell" || name.endsWith("KReal") || name.startsWith("run"))) continue;
+      if (name === "constructor" || name === "runSubjectGrade" || name === "runFullSubjectCurriculum" || name === "runAllSubjects" || name === "runCompleteCurriculum" || name === "runFromCorpora" || name === "runFullCurriculum") continue;
+      TRACKED.add(name);
+    }
+    for (const name of TRACKED) {
+      const original = this[name].bind(this);
+      this[name] = async (...args) => {
+        const cl = this.cluster;
+        const prev = cl ? cl._activePhase : null;
+        if (cl) cl._activePhase = { name, startAt: Date.now() };
+        try {
+          return await original(...args);
+        } finally {
+          if (cl) cl._activePhase = prev;
+        }
+      };
+    }
   }
   /**
    * Record a gate result. Called by every grade gate at the end of
@@ -11890,6 +11911,7 @@ var Curriculum = class _Curriculum {
     cluster._inCurriculumMode = true;
     cluster._probeGateActive = true;
     let _aliveTick = 0;
+    let _priorRssMb = 0;
     const _aliveHbId = setInterval(() => {
       _aliveTick += 1;
       const elapsedS = ((Date.now() - _cellStart) / 1e3).toFixed(0);
@@ -11898,11 +11920,32 @@ var Curriculum = class _Curriculum {
         if (typeof process !== "undefined" && process.memoryUsage) {
           const mu = process.memoryUsage();
           const mb = (b) => (b / 1048576).toFixed(0);
-          memLabel = ` \xB7 heap=${mb(mu.heapUsed)}MB ext=${mb(mu.external)}MB rss=${mb(mu.rss)}MB`;
+          const rssMb = Number(mb(mu.rss));
+          const heapMb = Number(mb(mu.heapUsed));
+          const heapTotalMb = Number(mb(mu.heapTotal));
+          const extMb = Number(mb(mu.external));
+          const abMb = Number(mb(mu.arrayBuffers || 0));
+          const unaccountedMb = Math.max(0, rssMb - heapMb - extMb);
+          const rssDeltaMb = _priorRssMb > 0 ? rssMb - _priorRssMb : 0;
+          const rssTrend = rssDeltaMb > 50 ? ` \u26A0+${rssDeltaMb}MB` : rssDeltaMb < -50 ? ` \u2193${-rssDeltaMb}MB` : "";
+          _priorRssMb = rssMb;
+          memLabel = ` \xB7 heap=${heapMb}/${heapTotalMb}MB ext=${extMb}MB ab=${abMb}MB rss=${rssMb}MB (unaccounted=${unaccountedMb}MB${rssTrend})`;
         }
       } catch {
       }
-      this._hb(`[Curriculum] \u25B6 CELL ALIVE ${subject}/${grade} \u2014 +${elapsedS}s elapsed (heartbeat #${_aliveTick})${memLabel}`);
+      let phaseLabel = "";
+      try {
+        const ap = cluster && cluster._activePhase;
+        if (ap && ap.name) {
+          const phaseMs = ap.startAt ? Date.now() - ap.startAt : 0;
+          const phaseS = (phaseMs / 1e3).toFixed(0);
+          phaseLabel = ` \xB7 phase=${ap.name} (+${phaseS}s)`;
+        } else {
+          phaseLabel = ` \xB7 phase=(between-phases / gate-probe)`;
+        }
+      } catch {
+      }
+      this._hb(`[Curriculum] \u25B6 CELL ALIVE ${subject}/${grade} \u2014 +${elapsedS}s elapsed (heartbeat #${_aliveTick})${phaseLabel}${memLabel}`);
     }, 1e4);
     if (_aliveHbId && typeof _aliveHbId.unref === "function") _aliveHbId.unref();
     let result;

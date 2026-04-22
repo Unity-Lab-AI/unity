@@ -5,6 +5,67 @@
 
 ---
 
+## 2026-04-22 — Session 114.19bo: T33 — phase-level progress in CELL ALIVE heartbeat (auto-wrap) + expanded memory breakdown to hunt 56 GB RSS
+
+### Operator verbatim 2026-04-22
+
+> *"problem, there is no info about how far weve come and how far we have to go:[Curriculum] ▶ CELL ALIVE science/kindergarten — +224s elapsed (heartbeat #19) · heap=133MB ext=3303MB rss=56016MB ... 56 Gigabytes!!!!!?!?!?!?!??!?!?!?!?!?!?!?!?!?!?!?!?!?!?!??!"*
+
+Two concerns: (1) `CELL ALIVE` heartbeat shows cell-level elapsed but no visibility into WHICH phase Unity is currently grinding, and (2) RSS is reporting 56 GB while heap is 133 MB and external is 3.3 GB — 52 GB unaccounted for between heap + external and the Working Set Size Windows reports.
+
+### What shipped
+
+**1. Auto-wrapped phase tracking for every teach + probe method.** In `Curriculum` constructor, iterate prototype and wrap every `_teachX`, `_runStudentBattery`, `_measureEmissionCapability`, and cell runner with an async wrapper that sets `cluster._activePhase = { name, startAt }` on entry and restores the prior value on exit. Zero caller-site changes — every teach method now self-reports which phase is running. Nested calls (teach methods that call other teach methods) work via `prev`/restore semantics. Excludes top-level orchestrators (`runSubjectGrade`, `runAllSubjects`, etc.) so cell-level logs aren't duplicated.
+
+**2. Phase info in `CELL ALIVE` heartbeat.** `runSubjectGrade`'s `setInterval(10s)` heartbeat now reads `cluster._activePhase` and reports `phase=_teachForceMotionK (+12s)` or `phase=(between-phases / gate-probe)` when no phase is active. Operator can now see exactly which teach method is grinding at any moment + how long it's been running.
+
+**3. Expanded memory breakdown.** Heartbeat now emits `heap=133/148MB ext=3303MB ab=3298MB rss=56016MB (unaccounted=52580MB ⚠+50MB)` with:
+- `heap=used/total` — V8 heap in use / committed (shows if V8 is committing large chunks)
+- `ext` — Node-tracked external memory (array buffers + some native buffers)
+- `ab` — arrayBuffers specifically
+- `rss` — process Working Set (Windows) / RSS (Unix)
+- `unaccounted` — `rss - heap - ext` — the mystery gap
+- `⚠+NMB` / `↓NMB` — delta since previous heartbeat (>50 MB threshold) — flags whether memory is CLIMBING (real leak) or STABLE (V8 pre-reservation artifact, not a leak).
+
+### Why RSS is 56 GB — the diagnostic
+
+V8 was launched with `--max-old-space-size=65536 --max-semi-space-size=1024` (set in `Savestart.bat` + `start.bat` to give the brain plenty of headroom). On Windows:
+
+- `--max-old-space-size=65536` tells V8 the max heap is 64 GB. V8 reserves virtual address space up to this value.
+- `--max-semi-space-size=1024` sets each semi-space to 1 GB (2 GB across both). V8 allocates semi-space chunks eagerly.
+- Windows `GetProcessMemoryInfo().WorkingSetSize` (what Node reports as `rss`) includes pages in physical memory that the process has touched. V8's incremental GC scans old-space regions even when data is sparse, which can touch pages and bring them into the working set.
+- Native modules (better-sqlite3 memory-mapping episodic-memory.db + WAL, WebSocket ring buffers, worker thread memory) are also reflected in working set but NOT in Node's `external` counter (which specifically tracks `v8::ArrayBuffer::Allocator`-managed memory).
+
+**If `unaccounted` is STABLE across heartbeats** → not a leak, it's V8's touched-but-unused heap space plus native module overhead. Cosmetic. Brain runs fine.
+
+**If `unaccounted` is GROWING** (each heartbeat shows `⚠+NMB` climbing) → real leak. Suspect paths:
+- `server/worker-pool.js` allocates fresh `SharedArrayBuffer` per `propagate()` / `hebbianUpdate()` call for non-shared inputs. At biological scale with `_gpuBound=true` projections, this path is cold (GPU fast path takes precedence), but if a projection falls out of GPU-bound state mid-run it'd hit this path and leak SABs.
+- Promise/microtask chain accumulation — `generateSentenceAwait`'s per-tick `stepAwait` creates many awaited promises. If the teach loop doesn't yield cleanly, promise records pile up.
+- WebSocket message buffer backlog if compute.html is disconnected and dispatches queue up.
+
+Operator's next run will show which scenario via the `⚠` / `↓` delta marker on every CELL ALIVE line.
+
+### What this does NOT fix
+
+- Does not reduce RSS itself. If the unaccounted 52 GB is V8 reserved-space behavior, that's under Node's control with the `--max-old-space-size` flag. We can't shrink it without lowering the limit, which would cap the brain's growth potential.
+- Does not speed up teach phases. That's the T32 batched-GPU-kernel work (still open).
+
+### Files touched
+
+- `js/brain/curriculum.js` — constructor auto-wraps teach + probe methods; heartbeat reads `cluster._activePhase` + expanded memory breakdown
+- `js/app.bundle.js` — rebuilt (1.8 MB clean)
+- `js/version.js` / `index.html` — stamp bump
+- `docs/FINALIZED.md` — this entry
+- `docs/TODO.md` — T33 closure note in banner
+
+### LAW compliance
+
+- LAW #0 verbatim — operator's quote preserved at top of this entry including `"56 Gigabytes!!!!!?!?!?!?!??!?!?!?!?!?!?!?!?!?!?!?!?!?!?!??!"` and `"problem, there is no info about how far weve come and how far we have to go"`.
+- Docs-before-push — ship atomic with code fix + bundle rebuild + stamp.
+- Task-numbers-only-in-workflow-docs — T33 only appears in TODO/FINALIZED. Code comments describe WHAT the auto-wrap does and WHY Windows RSS is misleading, not task numbers.
+
+---
+
 ## 2026-04-22 — Session 114.19bn: T31 — Savestart phase-level resume (ELA-K) + passedPhases persistence + GPU-native learning architecture diagnostic (CPU at 5 % / node.exe GPU at 0 % explained — GPU lives in browser process)
 
 ### Operator verbatim 2026-04-22
