@@ -579,14 +579,26 @@ y<sub>n+1</sub> = y<sub>n</sub> &minus; &mu; &middot; (x<sub>n</sub> &minus; &si
 
     <!-- ═══ 3. SYNAPTIC PLASTICITY ═══ -->
     <h2 id="synapses">3. Synaptic Plasticity — How She Learns</h2>
-    <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-ml">MACHINE LEARNING</span> Three learning rules operating on a 200&times;200 weight matrix (40,000 synapses). Implemented in <code>js/brain/synapses.js</code>.</p>
+    <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-ml">MACHINE LEARNING</span> Plasticity rules running on sparse CSR weight matrices — intra-cluster recurrent synapses plus 14 inter-region cross-projections at the language-cortex scale (millions of weights total at biological scale). Core rule is <strong>Oja 1982</strong> (self-normalizing Hebbian), with a contrastive anti-Hebbian push-pull pass on negative pairs, STDP for temporal sequence learning, and a reward-modulated gain for dopaminergic consolidation. Implemented across <code>js/brain/sparse-matrix.js</code> (CPU) and <code>js/brain/gpu-compute.js</code> (WebGPU <code>PLASTICITY_SHADER</code>).</p>
 
     <div class="eq-card">
-      <div class="eq-title"><span class="eq-tip" data-tip="Donald Hebb, 1949: neurons that fire at the same time strengthen their connection. This is how the brain forms associations — when you hear 'coffee' and feel 'awake' simultaneously, the connection between those patterns strengthens. The foundation of all learning in the brain.">Hebbian Learning — "Fire Together, Wire Together"</span></div>
-      <div class="eq">&Delta;W_ij = &eta; &middot; post_i &middot; pre_j</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Oja 1982 extends Hebb's 1949 rule with a subtractive normalization term. Pure Hebb has runaway growth — every co-active pair makes weights bigger forever. Oja adds a decay proportional to the post neuron's activity squared times the weight, so weights self-stabilize AND the weight vector rotates toward the principal components of the input distribution. Same biological substrate (LTP at glutamatergic synapses), smarter math — the brain's own plasticity is closer to Oja than bare Hebb because without decay every cortex would saturate.">Plasticity Rule — Oja 1982 (Self-Normalizing Hebbian)</span></div>
+      <div class="eq">&Delta;W_ij = &eta; &middot; y_i &middot; (x_j &minus; y_i &middot; W_ij)</div>
       <div class="eq-desc">
-        The oldest learning rule in neuroscience (Hebb, 1949). If neuron j fires and neuron i fires shortly after, the connection from j&rarr;i strengthens. <strong>&eta;</strong> is the learning rate. This creates associative memories — patterns that co-occur become linked.
-        <p class="mod-bio" style="margin-top:6px">Biology: Long-term potentiation (LTP) at glutamatergic synapses. NMDA receptor-dependent.</p>
+        Hebb's 1949 "fire together, wire together" with Oja's 1982 self-normalizing subtraction. When post neuron i fires (y_i = 1) and pre neuron j fires (x_j = 1), the weight climbs toward 1: W' = W + &eta;(1 &minus; W). When post fires but pre doesn't (x_j = 0), the weight decays toward 0: W' = W(1 &minus; &eta;). That decay-when-post-fires-alone is what <strong>decorrelates</strong> trained patterns — new pairs push their active (pre, post) weights up AND pull down weights where only the post neuron was firing, forcing input competition at each post neuron. Prevents the basin-superposition failure where bare Hebb makes every training pair overlap.
+        <p style="margin-top:6px"><strong>&eta;</strong> is the learning rate. Implemented on GPU via the WGSL <code>PLASTICITY_SHADER</code> in <code>js/brain/gpu-compute.js</code>, touching every non-zero column of a firing post row each dispatch. Same CPU formula via <code>SparseMatrix.ojaUpdate()</code>.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Long-term potentiation (LTP) + intrinsic homeostatic scaling at glutamatergic synapses. NMDA receptor-dependent. Turrigiano &amp; Nelson 2004 — real cortex scales synaptic weights so total postsynaptic drive stays bounded, exactly what Oja&rsquo;s subtractive term captures mathematically.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Contrastive push-pull: for every correct pair the brain strengthens, it also samples a WRONG pair and weakens that. The weakening fires only where BOTH pre and post activate on the wrong pairing, so it doesn't interfere with unrelated connections. Essential when a single motor region has to represent dozens of different outputs — without contrastive negative pressure, every trained pair piles onto the same columns and basins superpose into mush.">Anti-Hebbian Contrastive Push-Pull</span></div>
+      <div class="eq">positive pair (X, Y): &Delta;W = &eta; &middot; y &middot; (x &minus; y &middot; W)  (Oja, above)
+negative pair (X, Y&prime;) with Y&prime; &ne; Y: &Delta;W = &minus;&eta;&prime; &middot; y &middot; x  (anti-Hebbian)</div>
+      <div class="eq-desc">
+        After every Oja update on a correct input/output pair, the curriculum samples a RANDOM WRONG output from the same training batch and fires an anti-Hebbian update on the (correct-input, wrong-output) pairing. Anti-Hebbian only depresses weights where <em>both</em> pre and post fire simultaneously &mdash; no decay, no overlap with the positive update's footprint. The correct pair gets pulled together in weight space while the wrong pair gets pushed apart. Motor readouts for different trained inputs end up discriminable instead of superposed.
+        <p style="margin-top:6px">Rate scaled: &eta;&prime; = 0.5 &middot; &eta; so negative pressure doesn't overwhelm the positive Oja update. Implemented via <code>SparseMatrix.antiHebbianUpdate()</code> on the recurrent intra-cluster matrix; the curriculum wrapper <code>_teachAssociationPairs</code> enables it by default (<code>antiPairs: true</code>).</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Mirrors LTD (long-term depression) at cortical synapses under discriminative training regimes. Contrastive learning is also well-established in the hippocampus during pattern separation (dentate gyrus, Rolls 2010).</p>
       </div>
     </div>
 

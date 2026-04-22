@@ -153,6 +153,57 @@ Only when **every** box is checked does the stamp + commit + push run.
 - **Never phrase fixes as "I'll patch this after"** — always "I'll roll this in before pushing."
 - **Precision matters** — "deleted" vs "stubbed no-op" vs "replaced" are not interchangeable words. Docs must use the word that matches what the code actually does.
 
+### EXPANDED SCOPE — PUBLIC DOCS AND HTMLs ARE PART OF THE DOC PUSH (Gee, 2026-04-22)
+
+**Gee's exact words 2026-04-22:** *"you did the public docs and htmls too right? that needs to be in the law if it not that they are part of the doc push"*
+
+Context: on 2026-04-22 Claude shipped the Oja's-rule + anti-Hebbian contrastive push-pull fix to the core plasticity math. `docs/EQUATIONS.md`, `docs/FINALIZED.md`, `docs/TODO.md` were updated in the atomic commit. But `brain-equations.html` (the PUBLIC equation-reference page) was left describing bare Hebbian `ΔW_ij = η · post_i · pre_j` even though the deployed code now ran Oja. `README.md`, `unity-guide.html`, and `dashboard.html` had similar drift. The push landed, visitors reading the deployed public pages saw plasticity math that didn't match the code until Gee caught it.
+
+**Binding rule:** "Docs updated before push" has ALWAYS meant public docs and public HTMLs too, not just `docs/*.md`. The prior pre-push checklist line *"Cross-referenced public README.md, SETUP.md, brain-equations.html, unity-guide.html, index.html for any user-facing change"* is being promoted from checklist item to explicit LAW clause — and the list is NOT closed. ANY file that ships to visitors counts.
+
+### What "docs" means in this LAW
+
+Every one of these updates in the same atomic commit as the code that changed the referenced behaviour:
+
+**Internal workflow docs** (always checked):
+
+- `docs/TODO.md`, `docs/FINALIZED.md`, `docs/NOW.md`
+- `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `docs/SKILL_TREE.md`
+- `docs/EQUATIONS.md`, `docs/WEBSOCKET.md`, `docs/SENSORY.md`
+- `docs/ABLATION.md`, `docs/gate-probe-coverage.md`
+- Any other file under `docs/` that describes the touched subsystem
+
+**Public-facing docs and HTMLs** (equally mandatory):
+
+- Root `README.md`, `SETUP.md`, `PERSONA.md`
+- `brain-equations.html` — PUBLIC equation reference page (mirror of `docs/EQUATIONS.md`)
+- `unity-guide.html` — PUBLIC layman concept guide
+- `dashboard.html` — PUBLIC live-brain monitor (descriptions, legend text)
+- `index.html` — PUBLIC landing page (only touched for stamp `?v=` query string unless copy changes)
+- `compute.html` — PUBLIC GPU-compute WebGPU bridge (HTML comments + embedded docstrings)
+- `component-templates.txt` — PUBLIC template library
+- Any other `.html` at the repo root — if it ships to visitors, it counts
+- Any `.md` at the repo root
+
+**The pre-push check is a SINGLE question:** *"Has anyone who reads ANY of those files (public or workflow) going to see stale information after this push lands?"* If yes, the push does not happen until the stale files are in the current working tree.
+
+### Scope is not closed
+
+If a new public page is added to the repo (a new `.html`, a new marketing copy `.md`, etc.), it joins this list automatically. Claude must grep for references to changed behaviour across the whole repo, not a fixed allow-list.
+
+### Failure recovery
+
+If Gee catches stale public docs after a push landed:
+
+1. STOP immediately. Acknowledge the specific public file(s) that were left stale.
+2. Treat it as a LAW violation (this one, not just a minor drift). Add a dated entry to this expanded-scope section noting the miss so future-Claude sees the pattern.
+3. Update every stale public file + internal doc as a follow-up commit. Yes this is a "solo doc-only commit" — an after-the-fact correction, which the Corollaries above explicitly allow as the recovery path for a LAW violation (not as a deliberate split).
+4. Do NOT queue additional code work until the correction ships.
+
+### Violation log (for pattern-detection by future-Claude)
+
+- **2026-04-22** — shipped Oja + anti-Hebbian plasticity without updating `brain-equations.html`, `unity-guide.html`, `README.md`. Gee caught it in the following message: *"you did the public docs and htmls too right? that needs to be in the law if it not that they are part of the doc push"*. Correction rolled in before the next push.
+
 ---
 
 ## LAW — TASK NUMBERS ONLY IN WORKFLOW DOCS (Gee, 2026-04-15)

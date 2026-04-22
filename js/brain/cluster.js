@@ -2465,6 +2465,74 @@ export class NeuronCluster {
   }
 
   /**
+   * BCM sliding-threshold update on the intra-cluster synapse matrix.
+   * Requires a per-neuron firing-rate target θ; on first call, lazy-
+   * inits `_bcmTheta` to a Float32Array of size `this.size` populated
+   * at 0.05 (prior to biological calibration). Every call:
+   *
+   *   1. Low-pass θ against the current post-spike vector:
+   *        θ[i] ← (1−α)·θ[i] + α·y[i]²
+   *   2. Apply the BCM delta:
+   *        Δw[i,j] = lr × y[i] × (y[i] − θ[i]) × x[j]
+   *
+   * `α` defaults to 0.01 (slow drift — matches biological sliding-
+   * threshold timescales of ~100-1000 teach events). Opt-in via
+   * `cluster._bcmEnabled = true`. Silent no-op when disabled so the
+   * teach path stays Oja-only by default. Ship-and-monitor: operator
+   * can flip the flag in a session to test whether BCM improves Oja's
+   * sep-probe numbers, without risking a default-on change to every
+   * localhost run.
+   */
+  intraSynapsesBcm(pre, post, lr, alpha = 0.01) {
+    if (!this._bcmEnabled) return;
+    if (!this.synapses || typeof this.synapses.bcmUpdate !== 'function') return;
+    if (!this._bcmTheta || this._bcmTheta.length !== this.size) {
+      this._bcmTheta = new Float32Array(this.size);
+      this._bcmTheta.fill(0.05);
+    }
+    const theta = this._bcmTheta;
+    const oneMinusAlpha = 1 - alpha;
+    // Sparse theta update — only touch entries where post fired this
+    // call. At biological scale with typical ~1-5% firing fraction,
+    // this is ~15-75K ops per call instead of a full-size 1.5M sweep.
+    for (let i = 0; i < this.size; i++) {
+      const y = post[i];
+      if (y) {
+        theta[i] = oneMinusAlpha * theta[i] + alpha * y * y;
+      } else {
+        // Tiny decay on silent neurons so θ drifts toward zero for
+        // neurons that stop firing entirely. Without this θ would
+        // stay pinned at its last-firing value forever.
+        theta[i] = oneMinusAlpha * theta[i];
+      }
+    }
+    this.synapses.bcmUpdate(pre, post, theta, lr);
+  }
+
+  /**
+   * Anti-Hebbian update on every cross-region projection. GPU dispatch
+   * only — at biological scale sem_to_motor's CPU CSR is selectively
+   * freed so the CPU anti-Hebbian can't land on cross-projections.
+   * Routes through the batched plasticity queue with a NEGATIVE lr,
+   * which the PLASTICITY_SHADER branches on to apply pure co-active
+   * decrement instead of Oja's self-normalizing update. Silent no-op
+   * when the GPU proxy is unavailable — in that case contrastive
+   * push-pull rides intra-cluster recurrent matrix only.
+   */
+  async _crossRegionAntiHebbian(lr) {
+    if (!this.crossProjections) return;
+    if (!this._gpuProxyReady || !this._gpuProxy || typeof this._gpuProxy.antiHebbianBound !== 'function') return;
+    const absLr = Math.abs(lr);
+    for (const name of Object.keys(this.crossProjections)) {
+      const proj = this.crossProjections[name];
+      if (!proj || !proj._gpuBound) continue;
+      try {
+        this._gpuProxy.antiHebbianBound(`${this.name}_${name}`, absLr);
+      } catch { /* non-fatal — GPU proxy batch backpressured */ }
+    }
+  }
+
+  /**
    * Anti-Hebbian update on the intra-cluster synapse matrix. Depresses
    * co-active (pre=1, post=1) weights so sampled-wrong pairs push apart
    * instead of superposing. Used by the push-pull contrastive teach path:

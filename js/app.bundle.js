@@ -248,6 +248,46 @@ var init_sparse_matrix = __esm({
         }
       }
       /**
+       * BCM plasticity rule (Bienenstock, Cooper, Munro 1982 — J Neurosci
+       * 2:32) — sliding-threshold Hebbian where the sign of the update
+       * depends on whether the post neuron's activity crosses a per-neuron
+       * threshold θ:
+       *
+       *   Δw[i,j] = lr × y[i] × (y[i] − θ[i]) × x[j]
+       *
+       * When y > θ → LTP (the neuron is firing above its moving average,
+       * reinforce the inputs that caused it). When y < θ → LTD (neuron
+       * under-firing, weaken the inputs driving it). θ is a separate
+       * per-neuron state that the caller updates externally (typically as
+       * a low-pass filter on y²). This method is stateless — it only
+       * applies the rule; theta tracking belongs to the owning cluster.
+       *
+       * Complements Oja: Oja's y²w term gives a fixed normalization
+       * target per input dim, BCM's (y − θ) term gives per-neuron
+       * homeostatic scaling against firing-rate drift. Shippable as an
+       * additive pass after the primary Oja update.
+       */
+      bcmUpdate(preSpikes, postSpikes, theta, lr) {
+        const { rows, values, colIdx, rowPtr, wMin, wMax } = this;
+        if (!values || !rowPtr || !colIdx || !theta) return;
+        for (let i = 0; i < rows; i++) {
+          const y = postSpikes[i];
+          if (!y) continue;
+          const thetaI = theta[i] || 0;
+          const factor = lr * y * (y - thetaI);
+          if (factor === 0) continue;
+          const start = rowPtr[i];
+          const end = rowPtr[i + 1];
+          for (let k = start; k < end; k++) {
+            const x = preSpikes[colIdx[k]];
+            if (!x) continue;
+            values[k] += factor * x;
+            if (values[k] > wMax) values[k] = wMax;
+            else if (values[k] < wMin) values[k] = wMin;
+          }
+        }
+      }
+      /**
        * Per-row L2 normalization — rescales each row's values so its
        * Euclidean norm hits `targetNorm`. Prevents weight runaway /
        * saturation when many teach phases accumulate Hebbian updates
@@ -714,7 +754,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "4e768ae0-64f4";
+var BUILD = "d2567083-4676";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2852,6 +2892,67 @@ var NeuronCluster = class {
       }
     } else {
       this.synapses.ojaUpdate(pre, post, lr);
+    }
+  }
+  /**
+   * BCM sliding-threshold update on the intra-cluster synapse matrix.
+   * Requires a per-neuron firing-rate target θ; on first call, lazy-
+   * inits `_bcmTheta` to a Float32Array of size `this.size` populated
+   * at 0.05 (prior to biological calibration). Every call:
+   *
+   *   1. Low-pass θ against the current post-spike vector:
+   *        θ[i] ← (1−α)·θ[i] + α·y[i]²
+   *   2. Apply the BCM delta:
+   *        Δw[i,j] = lr × y[i] × (y[i] − θ[i]) × x[j]
+   *
+   * `α` defaults to 0.01 (slow drift — matches biological sliding-
+   * threshold timescales of ~100-1000 teach events). Opt-in via
+   * `cluster._bcmEnabled = true`. Silent no-op when disabled so the
+   * teach path stays Oja-only by default. Ship-and-monitor: operator
+   * can flip the flag in a session to test whether BCM improves Oja's
+   * sep-probe numbers, without risking a default-on change to every
+   * localhost run.
+   */
+  intraSynapsesBcm(pre, post, lr, alpha = 0.01) {
+    if (!this._bcmEnabled) return;
+    if (!this.synapses || typeof this.synapses.bcmUpdate !== "function") return;
+    if (!this._bcmTheta || this._bcmTheta.length !== this.size) {
+      this._bcmTheta = new Float32Array(this.size);
+      this._bcmTheta.fill(0.05);
+    }
+    const theta = this._bcmTheta;
+    const oneMinusAlpha = 1 - alpha;
+    for (let i = 0; i < this.size; i++) {
+      const y = post[i];
+      if (y) {
+        theta[i] = oneMinusAlpha * theta[i] + alpha * y * y;
+      } else {
+        theta[i] = oneMinusAlpha * theta[i];
+      }
+    }
+    this.synapses.bcmUpdate(pre, post, theta, lr);
+  }
+  /**
+   * Anti-Hebbian update on every cross-region projection. GPU dispatch
+   * only — at biological scale sem_to_motor's CPU CSR is selectively
+   * freed so the CPU anti-Hebbian can't land on cross-projections.
+   * Routes through the batched plasticity queue with a NEGATIVE lr,
+   * which the PLASTICITY_SHADER branches on to apply pure co-active
+   * decrement instead of Oja's self-normalizing update. Silent no-op
+   * when the GPU proxy is unavailable — in that case contrastive
+   * push-pull rides intra-cluster recurrent matrix only.
+   */
+  async _crossRegionAntiHebbian(lr) {
+    if (!this.crossProjections) return;
+    if (!this._gpuProxyReady || !this._gpuProxy || typeof this._gpuProxy.antiHebbianBound !== "function") return;
+    const absLr = Math.abs(lr);
+    for (const name of Object.keys(this.crossProjections)) {
+      const proj = this.crossProjections[name];
+      if (!proj || !proj._gpuBound) continue;
+      try {
+        this._gpuProxy.antiHebbianBound(`${this.name}_${name}`, absLr);
+      } catch {
+      }
     }
   }
   /**
@@ -10537,6 +10638,29 @@ var Curriculum = class _Curriculum {
       }
     } catch {
     }
+    try {
+      if (this._isQuestionLike(question) && typeof cluster.injectEmbeddingToRegion === "function") {
+        const qEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function" ? sharedEmbeddings.getSentenceEmbedding(question) : null;
+        if (qEmb && qEmb.length > 0) {
+          cluster.injectEmbeddingToRegion("sem", qEmb, 0.6);
+          const keyToken = this._extractKeyToken(question);
+          const keyEmb = keyToken && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(keyToken) : null;
+          if (keyEmb && keyEmb.length > 0 && typeof this._injectEmbeddingToRegionOffset === "function") {
+            this._injectEmbeddingToRegionOffset(cluster, "sem", keyEmb, 0.6, 0.5);
+          }
+          if (typeof cluster.step === "function") {
+            for (let t = 0; t < 5; t++) {
+              try {
+                cluster.step(1e-3);
+              } catch {
+                break;
+              }
+            }
+          }
+        }
+      }
+    } catch {
+    }
     let generated = "";
     try {
       const semSeed = typeof cluster.getSemanticReadout === "function" ? cluster.getSemanticReadout() : null;
@@ -12067,9 +12191,24 @@ var Curriculum = class _Curriculum {
     let _priorRssMb = 0;
     const _unaccRolling = [];
     const UNACC_WINDOW = 6;
+    let _cachedWorkerMem = null;
+    let _memSnapInFlight = false;
     const _aliveHbId = setInterval(() => {
       _aliveTick += 1;
       const elapsedS = ((Date.now() - _cellStart) / 1e3).toFixed(0);
+      try {
+        const pool = cluster && cluster._sparsePool;
+        if (pool && typeof pool.memSnapshot === "function" && !_memSnapInFlight && _aliveTick % 3 === 1) {
+          _memSnapInFlight = true;
+          pool.memSnapshot().then((snap) => {
+            _cachedWorkerMem = snap;
+            _memSnapInFlight = false;
+          }).catch(() => {
+            _memSnapInFlight = false;
+          });
+        }
+      } catch {
+      }
       let memLabel = "";
       try {
         if (typeof process !== "undefined" && process.memoryUsage) {
@@ -12080,7 +12219,10 @@ var Curriculum = class _Curriculum {
           const heapTotalMb = Number(mb(mu.heapTotal));
           const extMb = Number(mb(mu.external));
           const abMb = Number(mb(mu.arrayBuffers || 0));
-          const unaccountedMb = Math.max(0, rssMb - heapMb - extMb);
+          const workerHeapMb = _cachedWorkerMem ? _cachedWorkerMem.totalHeapUsedMb | 0 : 0;
+          const workerExtMb = _cachedWorkerMem ? _cachedWorkerMem.totalExternalMb | 0 : 0;
+          const workerTotalMb = workerHeapMb + workerExtMb;
+          const unaccountedMb = Math.max(0, rssMb - heapMb - extMb - workerTotalMb);
           _priorRssMb = rssMb;
           _unaccRolling.push(unaccountedMb);
           if (_unaccRolling.length > UNACC_WINDOW) _unaccRolling.shift();
@@ -12099,7 +12241,8 @@ var Curriculum = class _Curriculum {
               unaccTrend = ` \u26A0climbing+${trendMb}MB/min`;
             }
           }
-          memLabel = ` \xB7 heap=${heapMb}/${heapTotalMb}MB ext=${extMb}MB ab=${abMb}MB rss=${rssMb}MB (unaccounted=${unaccountedMb}MB${unaccTrend})`;
+          const workerTag = _cachedWorkerMem ? ` workers=${workerHeapMb}MB${_cachedWorkerMem.estimated ? "~" : ""}(${_cachedWorkerMem.workerCount})` : " workers=?MB";
+          memLabel = ` \xB7 heap=${heapMb}/${heapTotalMb}MB ext=${extMb}MB ab=${abMb}MB rss=${rssMb}MB${workerTag} (unaccounted=${unaccountedMb}MB${unaccTrend})`;
         }
       } catch {
       }
@@ -15672,7 +15815,7 @@ var Curriculum = class _Curriculum {
       }
       if (_phaseTick("_teachQABinding")) {
         const qaTrain = TRAIN_BANKS["ela/kindergarten"] || [];
-        await this._teachQABinding(qaTrain, { reps: 15, label: "ELA-K-QA-TRAIN" });
+        await this._teachQABinding(qaTrain, { label: "ELA-K-QA-TRAIN" });
         _phaseDone("_teachQABinding");
       }
       this._elaKRemakeDone = true;
@@ -16644,7 +16787,7 @@ var Curriculum = class _Curriculum {
       ], { reps: 8, label: "MATH-K-ARITH-WORDS", relationTagId: 4 });
       const mathQA = TRAIN_BANKS["math/kindergarten"] || [];
       if (mathQA.length > 0) {
-        await this._teachQABinding(mathQA, { reps: 15, label: "MATH-K-QA-TRAIN" });
+        await this._teachQABinding(mathQA, { label: "MATH-K-QA-TRAIN" });
       }
       this._mathKTransformsDone = true;
     }
@@ -18272,6 +18415,9 @@ var Curriculum = class _Curriculum {
     } else if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === "function") {
       cluster.synapses.hebbianUpdate(cluster.lastSpikes, cluster.lastSpikes, lr);
     }
+    if (cluster._bcmEnabled && typeof cluster.intraSynapsesBcm === "function") {
+      cluster.intraSynapsesBcm(cluster.lastSpikes, cluster.lastSpikes, lr * 0.3);
+    }
   }
   /**
    * Anti-Hebbian contrastive update. Called after a positive-pair Oja
@@ -18292,6 +18438,9 @@ var Curriculum = class _Curriculum {
     const cluster = this.cluster;
     if (!cluster) return;
     const absLr = Math.abs(lr);
+    if (typeof cluster._crossRegionAntiHebbian === "function") {
+      await cluster._crossRegionAntiHebbian(absLr);
+    }
     if (typeof cluster.intraSynapsesAntiHebbian === "function") {
       await cluster.intraSynapsesAntiHebbian(cluster.lastSpikes, cluster.lastSpikes, absLr);
     } else if (cluster.synapses && typeof cluster.synapses.antiHebbianUpdate === "function") {
@@ -18531,21 +18680,26 @@ var Curriculum = class _Curriculum {
       this._hb(`[Curriculum][${opts.label || "QA-TRAIN"}] SKIPPED \u2014 TRAIN_BANKS entry is empty for this cell`);
       return { trained: 0, skipped: 0 };
     }
-    const reps = opts.reps ?? 12;
+    const reps = opts.reps ?? 100;
     const lr = opts.lr ?? 0.03;
     const label = opts.label || "K-QA-TRAIN";
     const semRegion = cluster.regions && cluster.regions.sem;
     const motorRegion = cluster.regions && cluster.regions.motor;
+    const directPromptAlt = opts.directPromptAlt !== false;
+    const keyTokenTile = opts.keyTokenTile !== false;
+    const antiPairs = opts.antiPairs !== false && qaList.length >= 2;
+    const antiLrScale = opts.antiLrScale ?? 0.5;
     if (!semRegion || !motorRegion) {
       console.warn(`[Curriculum][${label}] skipped \u2014 sem or motor region not available`);
       return { trained: 0, skipped: qaList.length };
     }
-    let trained = 0, skipped = 0;
+    let trained = 0, skipped = 0, altTrained = 0, antiFires = 0;
     const startMs = Date.now();
-    this._hb(`[Curriculum][${label}] START \u2014 ${qaList.length} Q\u2192A training pairs \xD7 ${reps} reps (teacher-modeling question-answer behavior; pairs are HELD-OUT-DISTINCT from EXAM_BANKS for valid testing)`);
+    this._hb(`[Curriculum][${label}] START \u2014 ${qaList.length} Q\u2192A training pairs \xD7 ${reps} reps (teacher-modeling; HELD-OUT-DISTINCT from EXAM_BANKS; direct-alt=${directPromptAlt} \xB7 keyTokenTile=${keyTokenTile} \xB7 anti-pairs=${antiPairs})`);
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return { trained, skipped };
-      for (const entry of qaList) {
+      for (let qIdx = 0; qIdx < qaList.length; qIdx++) {
+        const entry = qaList[qIdx];
         if (!entry || !entry.question || !entry.expectedAnswer) {
           skipped++;
           continue;
@@ -18566,14 +18720,61 @@ var Curriculum = class _Curriculum {
           skipped++;
           continue;
         }
+        const keyToken = this._extractKeyToken(entry.question);
+        const keyEmb = keyToken && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(keyToken) : null;
         try {
           this._clearSpikes();
           this._writeTiledPattern(semRegion, qEmb, false);
+          if (keyTokenTile && keyEmb && keyEmb.length > 0) {
+            this._writeTiledPatternOffset(semRegion, keyEmb, false, 0.5);
+          }
           this._writeTiledPattern(motorRegion, motorPattern, false);
           await this._teachHebbian(lr);
           trained++;
         } catch (err) {
           skipped++;
+        }
+        if (directPromptAlt && keyToken) {
+          try {
+            const directPromptText = `${keyToken}:`;
+            const directEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function" ? sharedEmbeddings.getSentenceEmbedding(directPromptText) : null;
+            if (directEmb && directEmb.length > 0) {
+              this._clearSpikes();
+              this._writeTiledPattern(semRegion, directEmb, false);
+              if (keyTokenTile && keyEmb && keyEmb.length > 0) {
+                this._writeTiledPatternOffset(semRegion, keyEmb, false, 0.5);
+              }
+              this._writeTiledPattern(motorRegion, motorPattern, false);
+              await this._teachHebbian(lr);
+              altTrained++;
+            }
+          } catch {
+          }
+        }
+        if (antiPairs) {
+          let wrongIdx = Math.floor(Math.random() * qaList.length);
+          if (wrongIdx === qIdx) wrongIdx = (wrongIdx + 1) % qaList.length;
+          const wrongEntry = qaList[wrongIdx];
+          if (wrongEntry && wrongEntry.expectedAnswer) {
+            const wrongAnswer = String(wrongEntry.expectedAnswer).toLowerCase();
+            const wrongLetter = wrongAnswer.charAt(0);
+            if (wrongLetter && wrongLetter !== targetLetter) {
+              const wrongMotorPattern = encodeLetter(wrongLetter);
+              if (wrongMotorPattern && wrongMotorPattern.length > 0) {
+                try {
+                  this._clearSpikes();
+                  this._writeTiledPattern(semRegion, qEmb, false);
+                  if (keyTokenTile && keyEmb && keyEmb.length > 0) {
+                    this._writeTiledPatternOffset(semRegion, keyEmb, false, 0.5);
+                  }
+                  this._writeTiledPattern(motorRegion, wrongMotorPattern, false);
+                  await this._teachAntiHebbian(lr * antiLrScale);
+                  antiFires++;
+                } catch {
+                }
+              }
+            }
+          }
         }
       }
       await _microtask();
@@ -18595,8 +18796,172 @@ var Curriculum = class _Curriculum {
       }
     } catch {
     }
-    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} Q\u2192A Hebbian updates across ${qaList.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${weightReport}`);
-    return { trained, skipped };
+    const altReport = directPromptAlt ? ` \xB7 alt-fires=${altTrained}` : "";
+    const antiReport = antiPairs ? ` \xB7 anti-fires=${antiFires}` : "";
+    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${weightReport}`);
+    return { trained, altTrained, antiFires, skipped };
+  }
+  /**
+   * Key-token extraction for Q-A training — lightweight attention-lite
+   * (Bahdanau 2014 spirit, no scoring network). Pattern-matches common
+   * K-grade question forms and returns the discriminating noun/letter/
+   * digit so the Q-A sem pattern can carry both the full-sentence bag
+   * AND the specific token that makes one question different from
+   * another. Returns lowercase token or null when no pattern matches.
+   */
+  _extractKeyToken(question) {
+    if (!question || typeof question !== "string") return null;
+    const q = question.toLowerCase().trim();
+    const patterns = [
+      // "what letter comes after/before X?" → X
+      /\b(?:what|which)\s+letter\s+(?:comes?|is|goes?)\s+(?:after|before|next(?:\s+to)?)\s+([a-z0-9]+)/,
+      // "what comes after X" / "what is after X"
+      /\b(?:what|which)\s+(?:comes?|is|goes?)\s+(?:after|before|next(?:\s+to)?)\s+([a-z0-9]+)/,
+      // "what rhymes with X" → X
+      /\brhymes?\s+with\s+([a-z]+)/,
+      // "what sound does X make" → X
+      /\bsound\s+does\s+([a-z]+)\s+make/,
+      // "how many X are in Y" → Y (the container is discriminator)
+      /\bhow\s+many\s+[a-z]+\s+(?:are\s+in|in)\s+([a-z]+)/,
+      // "what is X plus Y" → concat
+      /\bwhat\s+is\s+(\d+)\s+plus\s+(\d+)/,
+      // "what is X minus Y"
+      /\bwhat\s+is\s+(\d+)\s+minus\s+(\d+)/,
+      // "count from X" → X
+      /\bcount\s+from\s+([a-z0-9]+)/,
+      // "spell X" → X
+      /\bspell\s+([a-z]+)/,
+      // "starts with" — next token after "starts with"
+      /\bstarts?\s+with\s+([a-z]+)/,
+      // fallback: last single-quoted or question-mark-preceded token
+      /\b([a-z0-9]+)\??\s*$/
+    ];
+    for (const p of patterns) {
+      const m = q.match(p);
+      if (m) {
+        if (m[2]) return `${m[1]}_${m[2]}`;
+        if (m[1]) return m[1];
+      }
+    }
+    return null;
+  }
+  /**
+   * Return a top-K-by-magnitude filtered copy of an embedding. Keeps the
+   * K dims with the largest absolute value, zeros the rest. Used for
+   * motor-region sparsification in `_teachAssociationPairs` so the
+   * trained motor pattern only fires on the most discriminating
+   * embedding dims instead of the full GloVe bag (~15-25% of dims active
+   * shrinks toward ~5%). Forces basin competition per Maass 2000 WTA
+   * circuit theory. Returns the input unchanged when `feat.length <= K`.
+   */
+  _topKEmbedding(feat, K) {
+    if (!feat || feat.length === 0 || K <= 0 || feat.length <= K) return feat;
+    const pairs = new Array(feat.length);
+    for (let i = 0; i < feat.length; i++) {
+      pairs[i] = { idx: i, abs: Math.abs(feat[i]) };
+    }
+    pairs.sort((a, b) => b.abs - a.abs);
+    const keep = new Uint8Array(feat.length);
+    for (let i = 0; i < K; i++) keep[pairs[i].idx] = 1;
+    const out = feat.constructor ? new feat.constructor(feat.length) : new Float32Array(feat.length);
+    for (let i = 0; i < feat.length; i++) {
+      if (keep[i]) out[i] = feat[i];
+    }
+    return out;
+  }
+  /**
+   * Cheap question detector — surface cue only, no cortex reads. Used
+   * by `_studentTestProbe` to decide whether to fire the teach-side
+   * sem pattern injection on top of the natural visual pathway. False
+   * positives are harmless (an extra sem injection on a statement),
+   * false negatives cost probe accuracy on Q-A tests.
+   */
+  _isQuestionLike(text) {
+    if (!text || typeof text !== "string") return false;
+    const lower = text.toLowerCase().trim();
+    if (!lower) return false;
+    if (lower.endsWith("?")) return true;
+    if (/^(what|who|where|when|why|how|which|whose|spell|count|rhymes|starts?)\b/.test(lower)) return true;
+    return false;
+  }
+  /**
+   * Inject an embedding into a fractional offset slice of a cluster
+   * region via `injectEmbeddingToRegion` semantics. Mirrors the teach-
+   * side `_writeTiledPatternOffset` but uses externalCurrent injection
+   * instead of direct spike writes, so the Rulkov dynamics pick up the
+   * signal on the next tick the same way live-chat does. Used by the
+   * probe path to apply the dual-tile sem pattern that teach-time
+   * training wrote.
+   */
+  _injectEmbeddingToRegionOffset(cluster, regionName, emb, strength, offsetFrac) {
+    if (!cluster || !cluster.regions || !emb || emb.length === 0) return;
+    const region = cluster.regions[regionName];
+    if (!region) return;
+    const regionSize = region.end - region.start;
+    if (regionSize <= 0) return;
+    const offset = Math.max(0, Math.min(0.99, offsetFrac || 0));
+    const sliceStart = region.start + Math.floor(regionSize * offset);
+    const sliceSize = region.end - sliceStart;
+    if (sliceSize <= 0) return;
+    const gSize = Math.max(1, Math.floor(sliceSize / emb.length));
+    const haveProxy = !!(cluster._gpuProxy && cluster._gpuProxy.writeCurrentSlice);
+    const fwdIndices = haveProxy ? [] : null;
+    const fwdValues = haveProxy ? [] : null;
+    for (let d = 0; d < emb.length; d++) {
+      const value = emb[d] * 8 * (strength ?? 1);
+      const startNeuron = sliceStart + d * gSize;
+      for (let n = 0; n < gSize; n++) {
+        const idx = startNeuron + n;
+        if (idx >= region.end) break;
+        cluster.externalCurrent[idx] += value;
+        if (fwdIndices && value !== 0) {
+          fwdIndices.push(idx - region.start);
+          fwdValues.push(value);
+        }
+      }
+    }
+    if (haveProxy && fwdIndices.length > 0) {
+      try {
+        cluster._gpuProxy.writeCurrentSlice(regionName, fwdIndices, fwdValues);
+      } catch {
+      }
+    }
+  }
+  /**
+   * Tile a feature vector into a fractional offset slice of a region.
+   * `offset` is in [0, 1) giving the starting fraction of the region;
+   * the tile extends from `region.start + offset·size` to end-of-region.
+   * Used by `_teachQABinding` to overlay the key-token pattern in the
+   * second half of sem alongside the full-sentence pattern in the
+   * first half.
+   */
+  _writeTiledPatternOffset(region, feat, binarize, offset) {
+    const cluster = this.cluster;
+    if (!cluster || !region || !feat || feat.length === 0) return;
+    const size = region.end - region.start;
+    const slideStart = region.start + Math.floor(size * (offset || 0));
+    const slideSize = region.end - slideStart;
+    if (slideSize <= 0) return;
+    const gSize = Math.max(1, Math.floor(slideSize / feat.length));
+    const haveProxy = !!(cluster._gpuProxy && cluster._gpuProxy.writeSpikeSlice);
+    const sparseIndices = haveProxy ? [] : null;
+    for (let d = 0; d < feat.length; d++) {
+      if (feat[d] > 0) {
+        for (let n = 0; n < gSize; n++) {
+          const idx = slideStart + d * gSize + n;
+          if (idx < region.end) {
+            cluster.lastSpikes[idx] = 1;
+            if (sparseIndices) sparseIndices.push(idx);
+          }
+        }
+      }
+    }
+    if (haveProxy && sparseIndices.length > 0) {
+      try {
+        cluster._gpuProxy.writeSpikeSlice(sparseIndices);
+      } catch {
+      }
+    }
   }
   async _teachAssociationPairs(pairs, opts = {}) {
     const cluster = this.cluster;
@@ -18620,9 +18985,11 @@ var Curriculum = class _Curriculum {
     const overloadMax = opts.overloadMax ?? 0.3;
     const antiPairs = opts.antiPairs !== false && pairs.length >= 2;
     const antiLrScale = opts.antiLrScale ?? 0.5;
-    let trained = 0, skipped = 0, antiFires = 0;
+    const motorWTA = opts.motorWTA !== false && !binarize;
+    const motorTopK = opts.motorTopK ?? 15;
+    let trained = 0, skipped = 0, antiFires = 0, wtaApplied = 0;
     const startMs = Date.now();
-    this._hb(`[Curriculum][${label}] START \u2014 ${pairs.length} pairs \xD7 ${reps} reps \xB7 soft-writes=${!binarize} \xB7 row-norm=${normalizeAfter} \xB7 anti-pairs=${antiPairs}`);
+    this._hb(`[Curriculum][${label}] START \u2014 ${pairs.length} pairs \xD7 ${reps} reps \xB7 soft-writes=${!binarize} \xB7 row-norm=${normalizeAfter} \xB7 anti-pairs=${antiPairs} \xB7 motor-WTA=${motorWTA}/${motorTopK}`);
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return { trained, skipped };
       for (let pairIdx = 0; pairIdx < pairs.length; pairIdx++) {
@@ -18638,10 +19005,12 @@ var Curriculum = class _Curriculum {
           skipped++;
           continue;
         }
+        const outEmbMotor = motorWTA ? this._topKEmbedding(outEmb, motorTopK) : outEmb;
+        if (motorWTA && outEmbMotor !== outEmb) wtaApplied++;
         try {
           this._clearSpikes();
           this._writeTiledPattern(semRegion, inEmb, binarize);
-          this._writeTiledPattern(motorRegion, outEmb, binarize);
+          this._writeTiledPattern(motorRegion, outEmbMotor, binarize);
           if (fineTypeRegion && relationTagId !== null) {
             const fineSize = fineTypeRegion.end - fineTypeRegion.start;
             const band = Math.floor(fineSize / 6);
@@ -18664,10 +19033,11 @@ var Curriculum = class _Curriculum {
             if (wrongOut && wrongOut !== outputWord) {
               const wrongEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(wrongOut) : null;
               if (wrongEmb && wrongEmb.length > 0) {
+                const wrongEmbMotor = motorWTA ? this._topKEmbedding(wrongEmb, motorTopK) : wrongEmb;
                 try {
                   this._clearSpikes();
                   this._writeTiledPattern(semRegion, inEmb, binarize);
-                  this._writeTiledPattern(motorRegion, wrongEmb, binarize);
+                  this._writeTiledPattern(motorRegion, wrongEmbMotor, binarize);
                   if (fineTypeRegion && relationTagId !== null) {
                     const fineSize = fineTypeRegion.end - fineTypeRegion.start;
                     const band = Math.floor(fineSize / 6);
@@ -18739,7 +19109,8 @@ var Curriculum = class _Curriculum {
     }
     const elapsedSec = ((Date.now() - startMs) / 1e3).toFixed(1);
     const antiReport = antiPairs ? ` \xB7 anti-fires=${antiFires}` : "";
-    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${normReport}${sepReport}${weightReport}`);
+    const wtaReport = motorWTA ? ` \xB7 motor-WTA=${wtaApplied}/${motorTopK}` : "";
+    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${wtaReport}${normReport}${sepReport}${weightReport}`);
     return { trained, skipped };
   }
   /**

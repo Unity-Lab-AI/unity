@@ -26,6 +26,25 @@ parentPort.on('message', (msg) => {
     propagate(msg);
   } else if (msg.type === 'hebbian') {
     hebbian(msg);
+  } else if (msg.type === 'mem') {
+    // Memory snapshot request. Main thread aggregates these across
+    // all workers so the heartbeat can show `workers=XXXmb` as a
+    // separate labeled field instead of dumping worker heaps into
+    // the "unaccounted" bucket and scaring the operator.
+    try {
+      const mu = process.memoryUsage();
+      parentPort.postMessage({
+        type: 'memSnap',
+        snapId: msg.snapId,
+        heapUsed: mu.heapUsed,
+        heapTotal: mu.heapTotal,
+        external: mu.external,
+        arrayBuffers: mu.arrayBuffers || 0,
+        rss: mu.rss,
+      });
+    } catch {
+      parentPort.postMessage({ type: 'memSnap', snapId: msg.snapId, error: true });
+    }
   } else if (msg.type === 'shutdown') {
     process.exit(0);
   }

@@ -335,6 +335,48 @@ export class SparseMatrix {
   }
 
   /**
+   * BCM plasticity rule (Bienenstock, Cooper, Munro 1982 — J Neurosci
+   * 2:32) — sliding-threshold Hebbian where the sign of the update
+   * depends on whether the post neuron's activity crosses a per-neuron
+   * threshold θ:
+   *
+   *   Δw[i,j] = lr × y[i] × (y[i] − θ[i]) × x[j]
+   *
+   * When y > θ → LTP (the neuron is firing above its moving average,
+   * reinforce the inputs that caused it). When y < θ → LTD (neuron
+   * under-firing, weaken the inputs driving it). θ is a separate
+   * per-neuron state that the caller updates externally (typically as
+   * a low-pass filter on y²). This method is stateless — it only
+   * applies the rule; theta tracking belongs to the owning cluster.
+   *
+   * Complements Oja: Oja's y²w term gives a fixed normalization
+   * target per input dim, BCM's (y − θ) term gives per-neuron
+   * homeostatic scaling against firing-rate drift. Shippable as an
+   * additive pass after the primary Oja update.
+   */
+  bcmUpdate(preSpikes, postSpikes, theta, lr) {
+    const { rows, values, colIdx, rowPtr, wMin, wMax } = this;
+    if (!values || !rowPtr || !colIdx || !theta) return;
+
+    for (let i = 0; i < rows; i++) {
+      const y = postSpikes[i];
+      if (!y) continue;
+      const thetaI = theta[i] || 0;
+      const factor = lr * y * (y - thetaI);
+      if (factor === 0) continue;
+      const start = rowPtr[i];
+      const end = rowPtr[i + 1];
+      for (let k = start; k < end; k++) {
+        const x = preSpikes[colIdx[k]];
+        if (!x) continue;
+        values[k] += factor * x;
+        if (values[k] > wMax) values[k] = wMax;
+        else if (values[k] < wMin) values[k] = wMin;
+      }
+    }
+  }
+
+  /**
    * Per-row L2 normalization — rescales each row's values so its
    * Euclidean norm hits `targetNorm`. Prevents weight runaway /
    * saturation when many teach phases accumulate Hebbian updates
