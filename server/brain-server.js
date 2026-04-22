@@ -968,11 +968,11 @@ class ServerBrain {
       // (was 0.08%). Still not Master's 25% target but 100× up —
       // 25% needs architecture redesign (topographic sparse, hierarchy,
       // or streaming from CPU). Must match cluster.js values exactly.
-      const CORTEX_TARGET_FANOUT = 10;          // matches cortexCluster opts.targetFanout
-      const CROSS_TARGET_FANOUT = 5;            // matches cluster.js crossTargetFanout
+      const CORTEX_TARGET_FANOUT = 30;          // matches cortexCluster opts.targetFanout
+      const CROSS_TARGET_FANOUT = 30;           // matches cluster.js crossTargetFanout
       const BYTES_PER_NNZ = 8;                  // Float32 value + Uint32 colIdx
       const INTRA_CONNECTIVITY_CAP = 0.15;      // cortexCluster opts.connectivity
-      const CROSS_DENSITY_CAP = 0.002;          // cluster.js cross-projection clamp
+      const CROSS_DENSITY_CAP = 0.005;          // cluster.js cross-projection clamp
       const FRACTIONS = {
         auditory: 0.083,
         visual:   0.167,
@@ -1144,18 +1144,15 @@ class ServerBrain {
         tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
         noiseAmplitude: 7,
         connectivity: 0.15,
-        // T37.b — intra-synapse fanout 30 → 10. Intra-synapse matrix is
-        // the DOMINANT VRAM user; each 3× reduction → 3× more neurons fit.
-        // At fanout 10 biological scale: 10 × 72M × 8 bytes = 5.76 GB for
-        // intra alone. Combined with cross (fanout 5) ≈ 1.3 GB, fits in
-        // 10.7 GB VRAM budget with room for projection overhead. Real
-        // cortical neurons have 1000-10000 synapses TOTAL but only
-        // 100-1000 are long-range; this 10-fanout matrix models just the
-        // sparse long-range intra-region connectivity. Short-range
-        // topographic neighbor-to-neighbor connectivity emerges via
-        // Rulkov dynamics + pattern propagation without explicit
-        // matrix entries.
-        targetFanout: 10,
+        // T37.c — reverted fanout 10→30 after T37.b's 10/5 combo proved
+        // too sparse to learn (operator saw "bg" and empty emissions
+        // post-K-teach). Fanout 30 is biologically realistic for long-
+        // range intra-region connections and thick enough for Hebbian
+        // direct-pattern learning to build discriminating basins.
+        // Language cortex settles around ~17M neurons at this tuning —
+        // 4% of brain, 56× the pre-T37 baseline, plenty of substrate
+        // for K-level cognition even if below Master's 25% target.
+        targetFanout: 30,
         excitatoryRatio: 0.85,
         learningRate: 0.002,
         gpuProxy, // T17.3.d — proxy used for cross-region ops when GPU ready

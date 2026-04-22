@@ -648,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "494118df-8ae5";
+var BUILD = "f5bcfb2c-b838";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -1343,7 +1343,7 @@ var NeuronCluster = class {
         ["motor", "letter"],
         ["auditory", "phon"]
       ];
-      const crossTargetFanout = 5;
+      const crossTargetFanout = 30;
       const EMISSION_PAIRS = /* @__PURE__ */ new Set([
         "sem-motor",
         "motor-sem"
@@ -1354,8 +1354,8 @@ var NeuronCluster = class {
       for (const [a, b] of pairs) {
         const aSize = this.regions[a].end - this.regions[a].start;
         const bSize = this.regions[b].end - this.regions[b].start;
-        const abDensity = Math.min(2e-3, crossTargetFanout / Math.max(1, aSize));
-        const baDensity = Math.min(2e-3, crossTargetFanout / Math.max(1, bSize));
+        const abDensity = Math.min(5e-3, crossTargetFanout / Math.max(1, aSize));
+        const baDensity = Math.min(5e-3, crossTargetFanout / Math.max(1, bSize));
         const abKey = `${a}-${b}`;
         const baKey = `${b}-${a}`;
         const abExcitatory = EMISSION_PAIRS.has(abKey) ? 0.5 : 0.7;
