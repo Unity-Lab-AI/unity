@@ -648,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "2964f941-6396";
+var BUILD = "75a6636c-75ae";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -10024,11 +10024,49 @@ var Curriculum = class _Curriculum {
     const TRACKED = /* @__PURE__ */ new Set();
     for (const name of Object.getOwnPropertyNames(proto)) {
       if (typeof proto[name] !== "function") continue;
-      if (!(name.startsWith("_teach") || name === "_runStudentBattery" || name === "_measureEmissionCapability" || name === "_runCell" || name.endsWith("KReal") || name.startsWith("run"))) continue;
-      if (name === "constructor" || name === "runSubjectGrade" || name === "runFullSubjectCurriculum" || name === "runAllSubjects" || name === "runCompleteCurriculum" || name === "runFromCorpora" || name === "runFullCurriculum") continue;
+      if (!name.startsWith("_teach")) continue;
       TRACKED.add(name);
     }
+    const TRACKED_NO_SKIP = /* @__PURE__ */ new Set(["_runStudentBattery", "_measureEmissionCapability"]);
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      if (typeof proto[name] !== "function") continue;
+      if (TRACKED_NO_SKIP.has(name)) TRACKED_NO_SKIP.add(name);
+    }
+    const buildPhaseKey = (name) => {
+      const cellKey = this.cluster?._currentCellKey;
+      return cellKey ? `${cellKey}:${name}` : null;
+    };
     for (const name of TRACKED) {
+      const original = this[name].bind(this);
+      this[name] = async (...args) => {
+        const cl = this.cluster;
+        const phaseKey = buildPhaseKey(name);
+        if (cl && phaseKey && Array.isArray(cl.passedPhases) && cl.passedPhases.includes(phaseKey)) {
+          this._hb(`[Curriculum] \u2933 PHASE SKIPPED \u2014 ${phaseKey} (already passed; resumed from persisted passedPhases \u2014 weights carried forward via brain-weights.bin)`);
+          return;
+        }
+        const prev = cl ? cl._activePhase : null;
+        if (cl) cl._activePhase = { name, startAt: Date.now() };
+        try {
+          const result = await original(...args);
+          if (cl && phaseKey) {
+            if (!Array.isArray(cl.passedPhases)) cl.passedPhases = [];
+            if (!cl.passedPhases.includes(phaseKey)) cl.passedPhases.push(phaseKey);
+            if (typeof this._saveCheckpoint === "function") {
+              try {
+                this._saveCheckpoint(phaseKey);
+              } catch {
+              }
+            }
+          }
+          return result;
+        } finally {
+          if (cl) cl._activePhase = prev;
+        }
+      };
+    }
+    for (const name of TRACKED_NO_SKIP) {
+      if (!proto[name]) continue;
       const original = this[name].bind(this);
       this[name] = async (...args) => {
         const cl = this.cluster;
@@ -11909,6 +11947,8 @@ var Curriculum = class _Curriculum {
     }
     const wasInCurriculum = cluster._inCurriculumMode;
     cluster._inCurriculumMode = true;
+    const wasCellKey = cluster._currentCellKey;
+    cluster._currentCellKey = cellKey;
     cluster._probeGateActive = true;
     let _aliveTick = 0;
     let _priorRssMb = 0;
@@ -11958,6 +11998,7 @@ var Curriculum = class _Curriculum {
       clearInterval(_aliveHbId);
       cluster._inCurriculumMode = wasInCurriculum;
       cluster._probeGateActive = false;
+      cluster._currentCellKey = wasCellKey;
     }
     if (result) {
       try {

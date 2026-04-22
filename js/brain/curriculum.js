@@ -426,21 +426,85 @@ export class Curriculum {
 
     // Auto-wrap every teach + probe method so the CELL ALIVE heartbeat
     // in runSubjectGrade can report which phase Unity is grinding right
-    // now. Sets cluster._activePhase on entry, restores prior value on
-    // exit (handles nested calls cleanly). Zero caller-site changes —
-    // every _teachX method + _runStudentBattery + _measureEmissionCapability
-    // gets this instrumentation transparently. Without it the operator
-    // only sees "CELL ALIVE science/kindergarten +355s elapsed" with no
-    // indication of which teach method is currently running.
+    // now AND so Savestart.bat can skip phases that already completed
+    // in a prior run. Zero caller-site changes — every _teachX method +
+    // _runStudentBattery + _measureEmissionCapability gets both
+    // instrumentation and phase-resume via prototype iteration.
+    //
+    // For each wrapped call:
+    //   1. Build phase key: `${cluster._currentCellKey}:${methodName}`
+    //      where runSubjectGrade sets _currentCellKey = "subject/grade"
+    //   2. Skip if key is in `cluster.passedPhases` + log the skip
+    //   3. Set cluster._activePhase = { name, startAt } on entry
+    //   4. Run the original method
+    //   5. On successful completion, append the key to
+    //      cluster.passedPhases + fire _saveCheckpoint so the marker
+    //      persists. This extends T31's phase-level resume (which was
+    //      ELA-K-only via hand-wrapped _phaseTick) to EVERY cell runner
+    //      across all 6 subjects × all pre-K + K grades.
+    //   6. Restore prior _activePhase (nested-call safe).
+    //
+    // Only wraps _teach* methods — top-level cell runners (runXKReal,
+    // runXPreK) are NOT wrapped because they orchestrate phases and
+    // need to run fresh to re-issue the skip-checks. Same for
+    // runSubjectGrade / runAllSubjects / runFromCorpora (orchestrators).
     const proto = Object.getPrototypeOf(this);
     const TRACKED = new Set();
     for (const name of Object.getOwnPropertyNames(proto)) {
       if (typeof proto[name] !== 'function') continue;
-      if (!(name.startsWith('_teach') || name === '_runStudentBattery' || name === '_measureEmissionCapability' || name === '_runCell' || name.endsWith('KReal') || name.startsWith('run'))) continue;
-      if (name === 'constructor' || name === 'runSubjectGrade' || name === 'runFullSubjectCurriculum' || name === 'runAllSubjects' || name === 'runCompleteCurriculum' || name === 'runFromCorpora' || name === 'runFullCurriculum') continue;
+      if (!name.startsWith('_teach')) continue;
       TRACKED.add(name);
     }
+    // Non-teach methods that still benefit from phase-tracking for
+    // visibility but should NOT auto-skip (operator needs fresh
+    // readings on each gate probe).
+    const TRACKED_NO_SKIP = new Set(['_runStudentBattery', '_measureEmissionCapability']);
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      if (typeof proto[name] !== 'function') continue;
+      if (TRACKED_NO_SKIP.has(name)) TRACKED_NO_SKIP.add(name);
+    }
+    const buildPhaseKey = (name) => {
+      const cellKey = this.cluster?._currentCellKey;
+      return cellKey ? `${cellKey}:${name}` : null;
+    };
     for (const name of TRACKED) {
+      const original = this[name].bind(this);
+      this[name] = async (...args) => {
+        const cl = this.cluster;
+        const phaseKey = buildPhaseKey(name);
+        // Skip-check — if this phase completed in a prior run and was
+        // persisted via saveWeights' passedPhases field, skip it.
+        // Weights carried forward via brain-weights.bin so the skipped
+        // phase's training is not lost — just not re-run.
+        if (cl && phaseKey && Array.isArray(cl.passedPhases) && cl.passedPhases.includes(phaseKey)) {
+          this._hb(`[Curriculum] ⤳ PHASE SKIPPED — ${phaseKey} (already passed; resumed from persisted passedPhases — weights carried forward via brain-weights.bin)`);
+          return;
+        }
+        const prev = cl ? cl._activePhase : null;
+        if (cl) cl._activePhase = { name, startAt: Date.now() };
+        try {
+          const result = await original(...args);
+          // Mark phase as passed + fire checkpoint save so the marker
+          // survives Savestart resume. Only runs on successful return
+          // (exceptions skip the mark, as they should — a throwing
+          // phase didn't really complete).
+          if (cl && phaseKey) {
+            if (!Array.isArray(cl.passedPhases)) cl.passedPhases = [];
+            if (!cl.passedPhases.includes(phaseKey)) cl.passedPhases.push(phaseKey);
+            if (typeof this._saveCheckpoint === 'function') {
+              try { this._saveCheckpoint(phaseKey); } catch { /* non-fatal */ }
+            }
+          }
+          return result;
+        } finally {
+          if (cl) cl._activePhase = prev;
+        }
+      };
+    }
+    // Tracked-no-skip methods just get the active-phase visibility
+    // without the passedPhases check/append.
+    for (const name of TRACKED_NO_SKIP) {
+      if (!proto[name]) continue;
       const original = this[name].bind(this);
       this[name] = async (...args) => {
         const cl = this.cluster;
@@ -2626,6 +2690,13 @@ export class Curriculum {
 
     const wasInCurriculum = cluster._inCurriculumMode;
     cluster._inCurriculumMode = true;
+    // Cell-context beacon for the constructor auto-wrap. Each wrapped
+    // teach method reads cluster._currentCellKey to build its phase
+    // key so skip-and-persist works across EVERY cell (not just ELA-K
+    // which had hand-wrapped _phaseTick). Auto-wrap now covers all 6
+    // subjects × pre-K + K grades. Restored on exit.
+    const wasCellKey = cluster._currentCellKey;
+    cluster._currentCellKey = cellKey;
     // Pause main brain compute_batch dispatch for the ENTIRE cell run
     // (teach phases + gate probes). Teach phases block the JS event
     // loop for minutes to hours at biological scale — any compute_batch
@@ -2709,6 +2780,7 @@ export class Curriculum {
       clearInterval(_aliveHbId);
       cluster._inCurriculumMode = wasInCurriculum;
       cluster._probeGateActive = false;
+      cluster._currentCellKey = wasCellKey;
     }
 
     // Student-test battery — grade-appropriate questions that test
