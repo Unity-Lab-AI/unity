@@ -597,8 +597,46 @@ y<sub>n+1</sub> = y<sub>n</sub> &minus; &mu; &middot; (x<sub>n</sub> &minus; &si
 negative pair (X, Y&prime;) with Y&prime; &ne; Y: &Delta;W = &minus;&eta;&prime; &middot; y &middot; x  (anti-Hebbian)</div>
       <div class="eq-desc">
         After every Oja update on a correct input/output pair, the curriculum samples a RANDOM WRONG output from the same training batch and fires an anti-Hebbian update on the (correct-input, wrong-output) pairing. Anti-Hebbian only depresses weights where <em>both</em> pre and post fire simultaneously &mdash; no decay, no overlap with the positive update's footprint. The correct pair gets pulled together in weight space while the wrong pair gets pushed apart. Motor readouts for different trained inputs end up discriminable instead of superposed.
-        <p style="margin-top:6px">Rate scaled: &eta;&prime; = 0.5 &middot; &eta; so negative pressure doesn't overwhelm the positive Oja update. Implemented via <code>SparseMatrix.antiHebbianUpdate()</code> on the recurrent intra-cluster matrix; the curriculum wrapper <code>_teachAssociationPairs</code> enables it by default (<code>antiPairs: true</code>).</p>
+        <p style="margin-top:6px">Rate scaled: &eta;&prime; = 0.5 &middot; &eta; so negative pressure doesn't overwhelm the positive Oja update. Implemented via <code>SparseMatrix.antiHebbianUpdate()</code> on the recurrent intra-cluster matrix AND on every GPU-bound cross-projection via the <code>sign(lr)</code> branch in the WebGPU plasticity shader (negative lr selects pure co-active decrement mode).</p>
         <p class="mod-bio" style="margin-top:6px">Biology: Mirrors LTD (long-term depression) at cortical synapses under discriminative training regimes. Contrastive learning is also well-established in the hippocampus during pattern separation (dentate gyrus, Rolls 2010).</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Rescorla &amp; Wagner 1972: learning is driven by the gap between predicted and actual outcome, not by co-occurrence alone. The brain runs its current synaptic weights forward to predict what should fire next, compares against what actually fires, and updates weights in proportion to the surprise. Friston's free-energy principle generalizes this as the brain minimizing prediction error at every level.">Predictive-Coding Error Gradient (Rescorla-Wagner Delta Rule)</span></div>
+      <div class="eq">predicted = W &middot; lastSpikes
+error = clamp(target &minus; predicted / max(predicted), &minus;1, +1)
+&Delta;W = &eta; &middot; 0.3 &middot; error &middot; lastSpikes</div>
+      <div class="eq-desc">
+        Before each primary Oja update, Unity's cortex runs its <em>current</em> intra-cluster weights forward to predict what the target pattern should look like, then compares against the actual target. Positive error (target fired but prediction didn't) drives LTP; negative error (prediction fired but target didn't) drives LTD. The remaining gap is then what the Oja update addresses. Friston 2010 free-energy principle — the brain minimizes prediction error at every plasticity pass, not just at the behavioural level.
+        <p style="margin-top:6px">Implemented via <code>Curriculum._teachPredictiveError(lr)</code>. Runs on the intra-cluster recurrent matrix (CPU CSR stays live at biological scale). Scaled 0.3&times; against the main Oja rate so over-correction doesn't destabilize learned bindings.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Predictive coding in visual / prefrontal cortex (Rao &amp; Ballard 1999). Dopaminergic reward-prediction error (Schultz 1997) is the three-factor version of the same delta-rule pattern.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="GABAergic interneurons in real cortex suppress neurons in competing circuits when their own circuit fires — this is WHY attention focuses on one thing, why only one word comes out of your mouth at a time, why your hand reaches for ONE cup and not all the cups. Without lateral inhibition, every trained output piles into the same basin and the brain can't discriminate between them.">Lateral Inhibition (GABAergic Cross-Bucket Suppression)</span></div>
+      <div class="eq">motor partitioned into N=26 buckets (letter alphabet)
+primaryBucket = argmax(bucketCount)  // most firing neurons
+crossBucketPost[i] = lastSpikes[motor.start + i] &and; (bucket(i) &ne; primaryBucket)
+&Delta;W_intra = &minus;&eta; &middot; 0.3 &middot; pre &middot; crossBucketPost  (anti-Hebbian)</div>
+      <div class="eq-desc">
+        After every positive teach event writes the motor target, Unity's curriculum runs a lateral-inhibition overlay that depresses recurrent weights driving activity across motor BUCKETS different from the dominant one. Functional signature of biological GABAergic cross-inhibition (lateral connections in cortical layer 2/3 carry inhibitory weights from firing columns to neighbouring columns) implemented as a training-signal overlay instead of fixed-negative-weight init. Same effect on future propagates: when bucket A fires, it less strongly excites buckets B &ne; A.
+        <p style="margin-top:6px">Implemented via <code>Curriculum._teachLateralInhibition(lr, numBuckets=26)</code>. Fires from <code>_teachAssociationPairs</code> and <code>_teachQABinding</code>. The 0.3&times; scale keeps the inhibition gentle enough that recurrent circuitry doesn't starve.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Lateral inhibition is ubiquitous across cortex (Kandel Ch 28). GABAergic parvalbumin-positive interneurons mediate the cross-column suppression that underlies attentional selection and winner-take-all behaviour in sensory + motor systems.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Every K-grade question has a SHAPE (the template) and a DETAIL (the key token). &quot;What letter comes after a?&quot; and &quot;What letter comes after b?&quot; share the same shape but differ in detail. Template tagging lets Unity's cortex route by shape AND detail independently — so the same template basin fires for &quot;what letter comes after __?&quot; no matter what fills the blank, and the key-token pattern supplies the blank's identity.">Question Template Conditioning</span></div>
+      <div class="eq">templateId = classifyQuestionTemplate(question)  // 0-6 or &minus;1
+templateZoneStart = fineType.start + &lfloor;fineSize &middot; 0.75&rfloor;
+slotSize = &lfloor;(fineType.end &minus; templateZoneStart) / 7&rfloor;
+lastSpikes[slot[templateId]] := 1  (one-hot template tag)</div>
+      <div class="eq-desc">
+        The upper 25% of the <code>fineType</code> cortex region is reserved as a question-template sub-region, split into 7 equal slots for the 7 recognized K-grade question forms (what-letter-comes-after / rhymes-or-sound / how-many-in / arithmetic / count-from / spell-or-starts-with / generic-question). Every question at teach AND probe time lights up its template slot in addition to the sentence + key-token sem pattern. The template tag is ORTHOGONAL to the key token — two questions with the same template but different key tokens share the template basin while differing in the sem pattern, so <code>sem &rarr; motor</code> learns template-conditioned answer routing independent of specific vocabulary.
+        <p style="margin-top:6px">Implemented via <code>Curriculum._classifyQuestionTemplate</code>, <code>_writeQuestionTemplateTag</code>, and <code>_injectQuestionTemplateTag</code>. Teach side writes spikes directly; probe and live-chat sides inject current so Rulkov dynamics carry it into downstream regions on the next tick.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Prefrontal cortex encodes abstract task rules and templates (Miller &amp; Cohen 2001). Separating schema from content is how humans generalize question patterns across vocabulary without retraining.</p>
       </div>
     </div>
 

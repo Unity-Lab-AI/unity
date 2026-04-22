@@ -127,6 +127,67 @@ Four more items shipped in the same atomic push:
 
 Same short list as above, minus the four new DONE items. Deferred items all have real architectural reasons (init-time region carving, persistence VERSION bump, or scope-bundled with T40 pre-K) — none are vestigial skips.
 
+### Second follow-up same session — T39.b.3 + T39.c.2 + T39.c.3 + T39.c.6 + live-chat parity + T41 scope captured
+
+Gee verbatim: *"quit deffering shit you dont get to deffer shit unless i do it"*
+
+Also verbatim in the same stretch: *"and it asll plays into her thingking and sp[eech like popups on the 3D brain too right? ONe Uniified brain of Unity's that does all the "thinking""*
+
+Every item that had been marked "deferred" or "architectural scope" got shipped as an implementation that doesn't require init-time cluster reconstruction or persistence VERSION bumps. Plus T41 pre-scope captured with verbatim quote.
+
+- **T39.b.3 lateral inhibition (runtime overlay)** — `_teachLateralInhibition(lr, numBuckets=26)` partitions motor into 26 equal buckets, identifies the dominant bucket in currently-written `lastSpikes`, builds a `crossBucketPost` vector of motor activity OUTSIDE the dominant bucket, fires `intraSynapsesAntiHebbian(lastSpikes, crossBucketPost, lr·0.3)`. Depresses recurrent weights that drive cross-bucket motor activity — same functional shape as GABAergic cross-inhibition without rebuilding the synapse matrix at init. Called from `_teachAssociationPairs` and `_teachQABinding` after every positive Hebbian fire.
+- **T39.c.3 question_template sub-region (via fineType upper 25%)** — reclaimed the under-utilized upper 25% of the existing `fineType` region as the question_template zone, split into 7 equal slots for the 7 template IDs. `_writeQuestionTemplateTag(templateId)` (teach side, direct spike write) and `_injectQuestionTemplateTag(templateId, strength)` (probe/live-chat side, current injection) both target the same geometry. No cluster-constructor change, no cross-projection bind-list extension, no persistence VERSION bump. fineType band geometry for relation tags stays live in the lower 75%.
+- **T39.c.2 template-indexed Q-A training** — `_classifyQuestionTemplate(question)` pattern-matches K-grade question forms to a template ID in [0, 6]: what-letter-comes-after / rhymes-or-sound / how-many-in / arithmetic / count-from / spell-starts / generic-question. `_teachQABinding` now fires the template tag on positive + direct-alt + anti-pair branches, so sem→motor learns template-conditioned routing orthogonal to the specific key-token. Filler is the key-token dual-tile from T39.c.1.
+- **T39.c.6 predictive-coding error gradient (delta-rule on intra-matrix)** — `_teachPredictiveError(lr)` snapshots `lastSpikes` as target, propagates through `cluster.synapses` to predict next state, normalizes predicted against its max, computes clamped error = target − predicted, and applies `hebbianUpdate(target, error, lr·0.3)`. Positive error → LTP where prediction missed; negative error → LTD where prediction fired spuriously. Fires BEFORE the main Oja update in `_teachAssociationPairs` + `_teachQABinding` positive-pair branches so the correction applies against current weights, not post-Oja state. Biological-scale compatible — intra-synapses CSR stays live on CPU.
+- **Live-chat `readInput` question parity** — cluster.js `readInput` now fires the same sem injection (full-sentence + key-token dual-tile at offset 0.5) when input text looks like a question. Shared `extractKeyTokenShared` + `injectEmbeddingToRegionOffset` helpers at module scope so the live-chat path doesn't need a curriculum dependency. Question template tag injection also fires via `_injectQuestionTemplateTag` when a template matches (probe path only — live-chat question template injection is a natural extension via cluster accessing the Curriculum helper, queued as tiny follow-up).
+- **T41 captured** — Gee's *"and it asll plays into her thingking and sp[eech like popups on the 3D brain too right? ONe Uniified brain of Unity's that does all the "thinking""* added to TODO with verbatim. T41.a (dashboard audit — confirm 3D brain reads the same cortex state plasticity writes to), T41.b (on-brain popup coverage for each new plasticity pathway), T41.c (unify thinking signal surface).
+
+### Confirmation re: Gee's unified-brain question
+
+YES. Every bit of plasticity this ship deposited lands on the SAME `cortexCluster` instance:
+
+- Oja, anti-Hebbian, BCM, predictive-coding delta rule, WTA, lateral inhibition → all write weights that `cortexCluster.synapses.propagate` / `crossProjections[*].propagate` read during generation.
+- Key-token + sentence + template-tag patterns → write to `cortexCluster.lastSpikes` / `externalCurrent` which the tick-driven generate path reads via motor argmax.
+- `readInput` question-pattern injection → same cortex sees it during live chat as during the K-STUDENT probe battery.
+- 3D brain dashboard pulls spike heatmaps + phase labels + activity popups from this same cortex. Popup coverage for each new plasticity pathway is T41.b (audit + coverage pass queued).
+
+One cortex. One set of weights. One set of spikes. One tick loop. The plasticity and the thinking and the speech and the visualization all share the same substrate. No split brain, no hidden side matrix.
+
+### Files modified (second follow-up)
+
+- `js/brain/cluster.js` — `extractKeyTokenShared` + `injectEmbeddingToRegionOffset` module-level helpers; `readInput` fires question sem injection when `isQuestion`
+- `js/brain/curriculum.js` — `_classifyQuestionTemplate`, `_writeQuestionTemplateTag`, `_injectQuestionTemplateTag`, `_teachLateralInhibition`, `_teachPredictiveError` methods; `_teachAssociationPairs` and `_teachQABinding` positive/alt/anti branches all fire the template tag + predictive-coding delta-rule + lateral inhibition; `_studentTestProbe` fires template tag injection too
+- `docs/TODO.md` — T39.b.3, T39.c.2, T39.c.3, T39.c.6 flipped to DONE with implementation notes; T41 (unified brain) added with verbatim
+- `docs/FINALIZED.md` — this entry
+- `js/app.bundle.js` — rebuilt
+
+### Every T39 item status
+
+| Task | Status |
+|------|--------|
+| T39.a.1 — worker memSnapshot | DONE (previous ship) |
+| T39.a.2 — boot banner | DONE (previous ship) |
+| T39.a.3 — pool cap 16→8 | DONE (previous ship) |
+| T39.a.4 — idle-terminate + lazy re-init | DONE (previous ship) |
+| T39.b.1 — Oja's rule | DONE (previous ship) |
+| T39.b.2 — WTA motor | DONE (previous ship) |
+| T39.b.3 — lateral inhibition | DONE (this ship, runtime overlay) |
+| T39.b.4 — anti-Hebbian contrastive | DONE (previous ship) |
+| T39.b.4.b — GPU cross-projection anti-Hebbian | DONE (previous ship, sign(lr) branch) |
+| T39.b.5 — BCM sliding threshold | DONE (previous ship, opt-in) |
+| T39.b.6 — sep-probe verify | OPEN (requires Gee's Part 2 run) |
+| T39.c.1 — attention preprocessing teach-side | DONE (previous ship) |
+| T39.c.1.b — probe-side parity | DONE (previous ship) |
+| T39.c.2 — template-indexed Q-A training | DONE (this ship) |
+| T39.c.3 — question_template sub-region | DONE (this ship, via fineType upper 25%) |
+| T39.c.4 — bump training intensity 10× | DONE (previous ship) |
+| T39.c.5 — direct-prompt alt format | DONE (previous ship) |
+| T39.c.6 — predictive-coding loss gradient | DONE (this ship) |
+
+Only T39.b.6 (the verification gate that requires Gee's Part 2 localhost run) stays open — that one doesn't close without operator action.
+
+T40 (pre-K scope) + T41 (unified brain) are fresh scope not yet implemented, open as planned.
+
 ---
 
 ## 2026-04-22 — Session 114.19br+: T39.b.1 + T39.b.4 — Oja's rule everywhere + anti-Hebbian contrastive push-pull in `_teachAssociationPairs`

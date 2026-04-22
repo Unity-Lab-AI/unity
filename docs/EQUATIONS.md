@@ -834,6 +834,56 @@ The shader branches on sign of `lr`: positive runs Oja (`w' = w·(1−η) + η·
 
 Push-pull training is also active in `_teachQABinding`: for every correct Q→A pair trained, the method samples a wrong answer from a different pair in the batch and fires anti-Hebbian on the (same-question, wrong-answer) combination at `0.5 · lr`. Plus every Q-A pair trains BOTH the natural-sentence format and a compressed `${keyToken}:` direct-prompt alt format, with the key token (`_extractKeyToken`) tiled into sem's second half alongside the full-sentence embedding in the first half — lightweight Bahdanau-2014 attention without a scoring network.
 
+**Question-template conditioning** (`_classifyQuestionTemplate` + `_writeQuestionTemplateTag`):
+
+```
+templateId = classifyQuestionTemplate(question)  // 0-6, or -1 no-match
+// 0: what letter comes after/before X
+// 1: rhymes / sound does
+// 2: how many ... in ...
+// 3: arithmetic plus/minus
+// 4: count from
+// 5: spell / starts with
+// 6: generic question
+
+// Write one-hot template slot into upper 25% of fineType during teach:
+templateZoneStart = fineType.start + floor(fineSize · 0.75)
+slotSize = floor((fineType.end - templateZoneStart) / 7)
+slot[templateId] = { start: templateZoneStart + templateId·slotSize, end: ... }
+lastSpikes[slot[templateId]] := 1
+```
+
+At probe time `_injectQuestionTemplateTag` injects the same slot via `externalCurrent` so the Rulkov dynamics pick it up on the next tick. Template tag is ORTHOGONAL to the key token — two questions sharing a template ("what letter comes after a?" vs "what letter comes after b?") produce identical template tags but different key-token sem patterns, so sem→motor weights learn to route by (template × key-token) combination.
+
+**Lateral inhibition** (`_teachLateralInhibition`, GABAergic cross-bucket suppression):
+
+```
+// After writing motor pattern into lastSpikes:
+motor partitioned into N=26 equal buckets
+bucketCount[b] = count of active motor neurons in bucket b
+primaryBucket = argmax(bucketCount)
+crossBucketPost[i] = lastSpikes[motor.start + i] ∧ (bucket(i) ≠ primaryBucket)
+
+// Depress recurrent intra-synapse weights driving cross-bucket motor:
+Δw = −lr · 0.3 · pre · crossBucketPost  (anti-Hebbian on intra-synapses)
+```
+
+Runtime overlay, not init-time carve — depression rides the training signal so the intra-matrix learns GABAergic cross-inhibition without rebuilding the synapse matrix with signed weights. Fires on every positive teach event in `_teachAssociationPairs` and `_teachQABinding`.
+
+**Predictive-coding error gradient** (`_teachPredictiveError`, Rescorla-Wagner delta rule / Friston 2010 free-energy):
+
+```
+target = lastSpikes snapshot
+predicted = synapses.propagate(target)  // intra-matrix next-step prediction
+predicted_norm[i] = predicted[i] / max(predicted)
+error[i] = clamp(target[i] - predicted_norm[i], -1, +1)
+
+// Error-weighted Hebbian on intra-synapses:
+Δw = lr · 0.3 · error · target
+```
+
+Positive error → LTP where prediction missed (target fired, prediction didn't). Negative error → LTD where prediction fired spuriously (prediction fired, target didn't). Fires BEFORE the main Oja update so the delta-rule correction applies against current weights rather than post-Oja state.
+
 **Read direction** uses: `visual_to_letter`, `letter_to_phon`, `phon_to_sem`, `sem_to_fineType`, `auditory_to_phon`.
 
 **Write direction** uses: `sem_to_fineType`, `sem_to_motor`, `motor_to_letter`, `letter_to_visual`, `sem_to_phon` (efference copy).
