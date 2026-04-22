@@ -648,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "ee9dc4a8-6f30";
+var BUILD = "494118df-8ae5";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -1343,7 +1343,7 @@ var NeuronCluster = class {
         ["motor", "letter"],
         ["auditory", "phon"]
       ];
-      const crossTargetFanout = 10;
+      const crossTargetFanout = 5;
       const EMISSION_PAIRS = /* @__PURE__ */ new Set([
         "sem-motor",
         "motor-sem"

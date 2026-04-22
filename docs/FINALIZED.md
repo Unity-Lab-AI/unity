@@ -82,6 +82,68 @@ But with bug #1 fixed and only 8 reps × lr=0.01, the margins are tight for a co
 
 ---
 
+## 2026-04-22 — Session 114.19bu: T32 batched GPU Hebbian + T37.b aggressive fanout tightening + T38 acknowledgment
+
+### Operator verbatim 2026-04-22
+
+> *"ship all items stop dilly dallying"* (preceded by *"1%???? wtf brain regions are not 1% of the brain do ur research"*)
+
+### What shipped
+
+**T32.a — `hebbianSparseBatch` unlocks GPU pipeline.** Root cause of 1% GPU utilization: the T18.8 batched Hebbian dispatch frame packed 64 (name, lr) ops into ONE WebSocket message, but compute.html's handler loop then called `gpu.hebbianSparse(name, lr)` 64 times INDIVIDUALLY. Each `hebbianSparse` call created a fresh command encoder + params buffer + bindGroup + `device.queue.submit([encoder.finish()])` PER op. 64 separate submits means GPU queue serializes per-submit boundary, CPU ping-pongs with driver between each, and the actual compute (microseconds per op) is a tiny fraction of wall-clock.
+
+Shipped `hebbianSparseBatch(ops)` in `js/brain/gpu-compute.js` that runs all N ops in ONE command encoder (all N bindGroups + dispatches on the same compute pass) and ONE `device.queue.submit()`. WebGPU driver then pipelines the N compute passes on the GPU queue without CPU involvement. compute.html's typeByte=5 (batched Hebbian) handler updated to collect ops into an array then call `gpu.hebbianSparseBatch(ops)` — one submit per WS frame instead of N.
+
+Combined with T32.b tuning: `BATCHED_HEBBIAN_MAX_OPS` 64→256 and `BATCHED_HEBBIAN_FLUSH_MS` 2→20 so batches accumulate more ops before flushing. Tradeoff: up to 20ms extra latency per fire-and-forget Hebbian (irrelevant to curriculum correctness).
+
+Expected GPU utilization jump: **1% → 40-70% during teach**. Full ELA-K should drop from ~30 min to ~5-10 min.
+
+**T37.b — further fanout reduction** to hit biological language proportions. Operator correctly called out that real human language network is 15-25% of cortex = 12-20% of brain, not the 1% I'd earlier claimed. Prior T37 shipped got language cortex to ~28.6M = 7.3% of brain — still under biology. T37.b tightens:
+
+- `crossTargetFanout`: 10 → **5** (cross-projection long-range fanout)
+- `CORTEX_TARGET_FANOUT`: 30 → **10** (intra-synapse long-range fanout)
+
+At 10 fanout intra + 5 fanout cross × 14 projections, per-neuron footprint drops from ~374 bytes to ~147 bytes. At 10.7 GB language cortex VRAM budget: expected **~72M neurons = 18.4% of brain**, matching real human language network proportion.
+
+Intra-synapse matrix now models only the sparse LONG-RANGE intra-region connectivity (10 per neuron); short-range topographic neighbor-to-neighbor emerges via Rulkov dynamics + pattern propagation. Real cortical neurons have 1000-10000 synapses TOTAL but most are local — this fanout-10 matrix is the long-range component only, biologically realistic.
+
+**T38 acknowledgment — full 25% needs architectural redesign.** T37.b gets to 18.4%, within real biological range. Master's 25% target requires one of:
+- **Streaming cross-projections from CPU RAM** — unlimited scale, per-event latency tradeoff
+- **Topographic sparse intra** — each neuron connects only to ±N physically-adjacent neighbors, matches real cortex
+- **Hierarchical decomposition** — V1→V2→V4→IT style layered cortex
+- **Bigger GPU** — 48 GB A6000 or 80 GB A100 linearly scales current architecture
+
+These are T38 work — dedicated design session required. Not blocked on anything, just needs focused implementation time. Flagged as next major architectural lift after T37.b's 18.4% is validated on operator's run.
+
+### Files touched
+
+- `js/brain/gpu-compute.js` — new `hebbianSparseBatch(ops)` method (ONE encoder + ONE submit for N ops)
+- `compute.html` — typeByte=5 handler collects ops then calls batched path (back-compat fallback retained)
+- `js/brain/cluster.js` — `crossTargetFanout` 10 → 5
+- `server/brain-server.js` — `CORTEX_TARGET_FANOUT` 30 → 10, `CROSS_TARGET_FANOUT` 10 → 5, cortexCluster opts `targetFanout` 30 → 10, `BATCHED_HEBBIAN_MAX_OPS` 64 → 256, `BATCHED_HEBBIAN_FLUSH_MS` 2 → 20
+- `js/app.bundle.js` — rebuilt (1.8 MB clean)
+- `js/version.js` / `index.html` — stamp bump
+- `docs/FINALIZED.md` — this entry
+- `docs/TODO.md` — T32 + T37.b closure notes
+
+### Expected next-run banner
+
+```
+Cortex:     216,XXX,XXX neurons    (from T37 rebalance, 55% of brain)
+Cerebellum: 31,XXX,XXX neurons     (from T37, 8% of brain — no physical body)
+[Brain] Language cortex = ~72,000,000 neurons    ← 240× previous, 18.4% of brain
+```
+
+During teach: GPU utilization climbs from 1% toward 40-70%. ELA-K cell completes in ~5-10 min (was ~30 min).
+
+### LAW compliance
+
+- LAW #0 verbatim — operator's terse quote "ship all items stop dilly dallying" + corrective "1%???? wtf brain regions are not 1% of the brain do ur research" preserved at top.
+- Docs-before-push — atomic ship.
+- Task-numbers-only — T32, T37.b, T38 only in TODO/FINALIZED; code comments explain WHY one-encoder-per-batch beats N-encoders + WHY fanout 5/10 is still biologically plausible.
+
+---
+
 ## 2026-04-22 — Session 114.19bt: T37 — HEFTY architectural rebalance for disembodied cognition: cortex 30→55%, cerebellum 40→8%, language cortex VRAM 45→75%, cross-projection density cut 6×
 
 ### Operator verbatim 2026-04-22

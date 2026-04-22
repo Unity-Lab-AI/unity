@@ -1608,6 +1608,71 @@ export class GPUCompute {
    * @param {string} name
    * @param {number} lr — learning rate
    */
+  /**
+   * T32 — BATCHED Hebbian dispatch. Runs N Hebbian ops in ONE command
+   * encoder + ONE device.queue.submit(). Previous single-op hebbianSparse
+   * created fresh encoder + fresh paramsBuf + fresh bindGroup + individual
+   * submit PER op. At T18.8 batched WS frames (64 ops per frame) that was
+   * 64 separate submits per batch → GPU queue serializes per-submit,
+   * CPU ping-pongs with driver between submits → GPU utilization sub-1%
+   * at teach velocity even though shader ops are microseconds each.
+   *
+   * Batched path amortizes all the non-compute overhead across N ops:
+   * single encoder, single pass, 64 bindGroups (cheap), 64 dispatches,
+   * single submit. WebGPU driver queues the dispatches and the GPU
+   * pipelines them without any CPU involvement between compute passes.
+   * Expected GPU utilization jump: 1% → 50%+ during teach.
+   *
+   * @param {Array<{name: string, lr: number}>} ops — N Hebbian ops
+   * @returns {boolean} true on success
+   */
+  hebbianSparseBatch(ops) {
+    if (!this._available || !Array.isArray(ops) || ops.length === 0) return false;
+    const device = this._device;
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this._pipelines.plasticity);
+    const paramsBufs = [];
+    let dispatched = 0;
+    for (const { name, lr } of ops) {
+      const entry = this._sparseMatrices[name];
+      if (!entry) continue;
+      const bound = !!entry.binding;
+      const srcBuf = bound
+        ? this._buffers[entry.binding.srcCluster].spikes
+        : entry.preSpikes;
+      const dstBuf = bound
+        ? this._buffers[entry.binding.dstCluster].spikes
+        : entry.postSpikes;
+      const srcOffset = bound ? entry.binding.srcRegion.start : 0;
+      const dstOffset = bound ? entry.binding.dstRegion.start : 0;
+      const paramsView = new ArrayBuffer(32);
+      new Uint32Array(paramsView, 0, 2).set([entry.rows, entry.nnz]);
+      new Float32Array(paramsView, 8, 4).set([lr, 1.0, -2.0, 2.0]);
+      new Uint32Array(paramsView, 24, 2).set([srcOffset, dstOffset]);
+      const paramsBuf = this._createBuffer(new Uint8Array(paramsView), GPUBufferUsage.UNIFORM);
+      paramsBufs.push(paramsBuf);
+      const bindGroup = device.createBindGroup({
+        layout: this._pipelines.plasticity.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: paramsBuf } },
+          { binding: 1, resource: { buffer: entry.values } },
+          { binding: 2, resource: { buffer: entry.colIdx } },
+          { binding: 3, resource: { buffer: entry.rowPtr } },
+          { binding: 4, resource: { buffer: srcBuf } },
+          { binding: 5, resource: { buffer: dstBuf } },
+        ],
+      });
+      pass.setBindGroup(0, bindGroup);
+      pass.dispatchWorkgroups(Math.ceil(entry.rows / 256));
+      dispatched += 1;
+    }
+    pass.end();
+    device.queue.submit([encoder.finish()]);
+    for (const b of paramsBufs) b.destroy();
+    return dispatched;
+  }
+
   hebbianSparse(name, lr) {
     if (!this._available) return false;
     const entry = this._sparseMatrices[name];
