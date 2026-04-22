@@ -82,6 +82,74 @@ But with bug #1 fixed and only 8 reps × lr=0.01, the margins are tight for a co
 
 ---
 
+## 2026-04-22 — Session 114.19bw: T37.d — MOTOR ATTRACTOR UNSTICK (excitatoryRatio 0.85→0.5) + letter→motor diagnostic probe
+
+### Operator verbatim 2026-04-22
+
+> *"sher still isnt responsding correctly"* (showing K-STUDENT output where emissions are "l", "ll", "lll", ..., "llllll" — all just the letter 'l' repeated) + *"this is a masajor problem"*
+
+### Root cause — motor attractor fixation at bucket 11 ('l')
+
+Reading the K-STUDENT log pattern carefully:
+- Most questions → "" (empty — motor never fired)
+- When motor DID fire → "l", "ll", "lll", "llll", "lllll", or "llllll"
+
+Every firing emission is LETTER 'L' repeated. That's NOT random — random would produce varied letters across 181 questions. It's the motor argmax locked on bucket 11 (letter 'l' in LETTER_INVENTORY).
+
+**Mechanism**: intra-synapse matrix on cortexCluster was constructed with `excitatoryRatio: 0.85` (85% positive-weight connections). At biological scale (17M neurons) × random init × 85% positive bias = whichever motor bucket randomly sums highest at init becomes a **global attractor**. Every sem→motor propagate lands → motor activates → intra self-loop reinforces bucket 11 → argmax decodes to 'l' → commit 'l' → clear motor → sem still has input word → propagates → motor activates → picks 'l' again → repeat until motor quiescence. Emission length varies with how long sem-side activation persists.
+
+Training via sparse cross-projection Hebbian (fanout 30) couldn't deposit enough counter-signal to overcome the 85%-positive self-reinforcement. The learned weights are technically accumulating, but during propagate the intra-motor self-loop dominates.
+
+### What shipped
+
+**1. `excitatoryRatio: 0.85 → 0.5`** for cortexCluster intra-synapse matrix. Zero-mean weights: each neuron's incoming connections sum to ~0 before training → no dominant bucket wins by random-sum → motor argmax follows cross-projection signal from training.
+
+Biologically: real cortex IS 80% excitatory at the cell level, but balanced by GABA inhibitory interneurons that our sparse matrix doesn't model separately. 50/50 at the matrix level gives the same net effect as 80% excitatory + balancing inhibitory.
+
+**2. `LETTER→MOTOR DIAG` probe** added after `_teachLetterNaming` completes. For each of 26 letters: inject letter one-hot into letter region, propagate through `letter_to_motor`, decode motor argmax, record which letter came out. Prints distribution + per-letter results. If all 26 letters decode to the same output → `⚠⚠ MOTOR STUCK — every letter decodes to the same output`. If under 10 distinct outputs → `⚠ motor under-discriminates`. If 26 distinct → training landed correctly.
+
+This diagnostic fires RIGHT AFTER the letter-naming teach phase completes, giving operator an immediate verdict on whether the motor attractor is unstuck. Replaces guessing from K-STUDENT output 150+ questions later.
+
+### Expected next-run outcome
+
+If excitatoryRatio fix alone is sufficient:
+```
+[Curriculum][LETTER→MOTOR DIAG] distribution: a:1 b:1 c:1 d:1 ... z:1 (26 distinct)
+[Curriculum][LETTER→MOTOR DIAG] first 8: a→a b→b c→c d→d e→e f→f g→g h→h
+```
+
+If motor is still stuck but to a different letter (random init seed changed):
+```
+[Curriculum][LETTER→MOTOR DIAG] distribution: m:26 (1 distinct)
+[Curriculum][LETTER→MOTOR DIAG] ⚠⚠ MOTOR STUCK — every letter decodes to the same output
+```
+
+The second case means fanout/training is STILL the root bottleneck and we need further fixes beyond excitatoryRatio. First case means T37.d unlocked learning and subsequent cells + K-STUDENT battery will produce real answers.
+
+### If MOTOR STUCK fires next run — additional fixes queued
+
+- Bump `_teachLetterNaming` reps 18 → 60 + lr explicit to 0.1 (flood letter→motor with training signal to overcome residual init bias)
+- Normalize cross-projection weights after teach to remove random-init skew
+- Add per-letter motor-bucket inhibition so no single bucket can dominate all outputs
+- Consider deterministic zero init for letter_to_motor (no random weights, only trained weights) so training signal has no competing init
+
+### Files touched
+
+- `server/brain-server.js` — cortexCluster opts `excitatoryRatio: 0.85 → 0.5`
+- `js/brain/curriculum.js` — `_teachLetterNaming` extended with post-teach LETTER→MOTOR DIAG probe
+- `js/app.bundle.js` — rebuilt
+- `js/version.js` / `index.html` — stamp bump
+- `docs/FINALIZED.md` — this entry
+- `docs/TODO.md` — T37.d closure note
+
+### LAW compliance
+
+- LAW #0 verbatim — operator's quote + K-STUDENT log snippet preserved. Note of "this is a masajor problem" captured.
+- Docs-before-push — atomic ship.
+- Task-numbers-only — T37.d in TODO/FINALIZED; code comments explain WHY 50/50 excitatoryRatio kills the attractor fixation.
+
+---
+
 ## 2026-04-22 — Session 114.19bv: T37.c fanout correction — T37.b's fanout 5/10 was too sparse to learn, reverted to 30/30
 
 ### Operator verbatim 2026-04-22

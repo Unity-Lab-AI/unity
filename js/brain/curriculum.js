@@ -3614,6 +3614,66 @@ export class Curriculum {
     }
     const dt = ((Date.now() - t0) / 1000).toFixed(1);
     this._hb(`[Curriculum] _teachLetterNaming DONE in ${dt}s (26 letters × ${reps} reps)`);
+    // T37.d DIAGNOSTIC — after _teachLetterNaming, probe every letter
+    // directly via letter_to_motor propagate and report motor argmax
+    // distribution. This catches motor-attractor stickiness IMMEDIATELY
+    // (operator saw Q83-170 all emitting "l" — motor argmax locked on
+    // bucket 11 regardless of input). After this diagnostic shows e.g.
+    // { l: 26 } the attractor is stuck; { a: 1, b: 1, ..., z: 1 } means
+    // training landed and each letter routes to itself correctly.
+    try {
+      const cluster = this.cluster;
+      const letterProj = cluster?.crossProjections?.letter_to_motor;
+      const motorRegion = cluster?.regions?.motor;
+      const letterRegion = cluster?.regions?.letter;
+      if (letterProj && letterProj.propagate && motorRegion && letterRegion && letterProj.values) {
+        const letterSize = letterRegion.end - letterRegion.start;
+        const invSize = inventorySize();
+        const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
+        const results = [];
+        const distribution = new Map();
+        for (const letter of LETTERS) {
+          const oneHot = encodeLetter(letter);
+          const gSize = Math.max(1, Math.floor(letterSize / oneHot.length));
+          const letterInput = new Float64Array(letterSize);
+          for (let d = 0; d < oneHot.length; d++) {
+            if (oneHot[d] <= 0) continue;
+            for (let n = 0; n < gSize; n++) {
+              const idx = d * gSize + n;
+              if (idx < letterSize) letterInput[idx] = 1;
+            }
+          }
+          const out = letterProj.propagate(letterInput);
+          if (!out || out.length === 0) { results.push(`${letter}→∅`); continue; }
+          const readoutSize = Math.min(invSize, 26);
+          const mGroup = Math.max(1, Math.floor(out.length / readoutSize));
+          const motorReadout = new Float64Array(readoutSize);
+          for (let d = 0; d < readoutSize; d++) {
+            let sum = 0;
+            for (let n = 0; n < mGroup; n++) {
+              const idx = d * mGroup + n;
+              if (idx < out.length) sum += out[idx];
+            }
+            motorReadout[d] = sum;
+          }
+          const decoded = decodeLetter(motorReadout) || '?';
+          results.push(`${letter}→${decoded}`);
+          distribution.set(decoded, (distribution.get(decoded) || 0) + 1);
+        }
+        const distStr = [...distribution.entries()].sort((a,b) => b[1]-a[1]).map(([k,v]) => `${k}:${v}`).join(' ');
+        const diagStr = results.slice(0, 8).join(' ') + (results.length > 8 ? ' ...' : '');
+        this._hb(`[Curriculum][LETTER→MOTOR DIAG] distribution: ${distStr}`);
+        this._hb(`[Curriculum][LETTER→MOTOR DIAG] first 8: ${diagStr}`);
+        const stuck = distribution.size === 1;
+        if (stuck) {
+          this._hb(`[Curriculum][LETTER→MOTOR DIAG] ⚠⚠ MOTOR STUCK — every letter decodes to the same output. Attractor fixation or weight bias dominating training signal. Investigate excitatoryRatio + cross-projection init.`);
+        } else if (distribution.size < 10) {
+          this._hb(`[Curriculum][LETTER→MOTOR DIAG] ⚠ motor under-discriminates — only ${distribution.size}/26 distinct outputs. Training signal weak relative to init bias.`);
+        }
+      }
+    } catch (err) {
+      this._hb(`[Curriculum][LETTER→MOTOR DIAG] probe failed: ${err?.message || err}`);
+    }
   }
 
   /**
