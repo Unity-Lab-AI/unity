@@ -107,6 +107,70 @@ import { sharedEmbeddings } from './embeddings.js';
 // patterns get decoded to letters via argmax over the inventory.
 import { encodeLetter, decodeLetter, inventorySize, inventorySnapshot } from './letter-input.js';
 
+// Question key-token extraction + fractional-offset region injection.
+// Duplicated here (vs importing from curriculum.js) so `readInput` stays
+// available on the standalone cluster path without a circular curriculum
+// dependency. Pattern list mirrors `Curriculum._extractKeyToken` — keep
+// them in sync when adding new K-grade question forms.
+function extractKeyTokenShared(question) {
+  if (!question || typeof question !== 'string') return null;
+  const q = question.toLowerCase().trim();
+  const patterns = [
+    /\b(?:what|which)\s+letter\s+(?:comes?|is|goes?)\s+(?:after|before|next(?:\s+to)?)\s+([a-z0-9]+)/,
+    /\b(?:what|which)\s+(?:comes?|is|goes?)\s+(?:after|before|next(?:\s+to)?)\s+([a-z0-9]+)/,
+    /\brhymes?\s+with\s+([a-z]+)/,
+    /\bsound\s+does\s+([a-z]+)\s+make/,
+    /\bhow\s+many\s+[a-z]+\s+(?:are\s+in|in)\s+([a-z]+)/,
+    /\bwhat\s+is\s+(\d+)\s+plus\s+(\d+)/,
+    /\bwhat\s+is\s+(\d+)\s+minus\s+(\d+)/,
+    /\bcount\s+from\s+([a-z0-9]+)/,
+    /\bspell\s+([a-z]+)/,
+    /\bstarts?\s+with\s+([a-z]+)/,
+    /\b([a-z0-9]+)\??\s*$/,
+  ];
+  for (const p of patterns) {
+    const m = q.match(p);
+    if (m) {
+      if (m[2]) return `${m[1]}_${m[2]}`;
+      if (m[1]) return m[1];
+    }
+  }
+  return null;
+}
+
+function injectEmbeddingToRegionOffset(cluster, regionName, emb, strength, offsetFrac) {
+  if (!cluster || !cluster.regions || !emb || emb.length === 0) return;
+  const region = cluster.regions[regionName];
+  if (!region) return;
+  const regionSize = region.end - region.start;
+  if (regionSize <= 0) return;
+  const offset = Math.max(0, Math.min(0.99, offsetFrac || 0));
+  const sliceStart = region.start + Math.floor(regionSize * offset);
+  const sliceSize = region.end - sliceStart;
+  if (sliceSize <= 0) return;
+  const gSize = Math.max(1, Math.floor(sliceSize / emb.length));
+  const haveProxy = !!(cluster._gpuProxy && cluster._gpuProxy.writeCurrentSlice);
+  const fwdIndices = haveProxy ? [] : null;
+  const fwdValues = haveProxy ? [] : null;
+  for (let d = 0; d < emb.length; d++) {
+    const value = emb[d] * 8 * (strength ?? 1.0);
+    const startNeuron = sliceStart + d * gSize;
+    for (let n = 0; n < gSize; n++) {
+      const idx = startNeuron + n;
+      if (idx >= region.end) break;
+      cluster.externalCurrent[idx] += value;
+      if (fwdIndices && value !== 0) {
+        fwdIndices.push(idx - region.start);
+        fwdValues.push(value);
+      }
+    }
+  }
+  if (haveProxy && fwdIndices.length > 0) {
+    try { cluster._gpuProxy.writeCurrentSlice(regionName, fwdIndices, fwdValues); }
+    catch { /* non-fatal — CPU injection already landed */ }
+  }
+}
+
 // T14.6 — sentence terminators recognized as end-of-utterance in the
 // motor emission loop. Letters are letters; terminators are just the
 // ones that also signal "stop." Period/question/exclamation only —
@@ -1329,6 +1393,29 @@ export class NeuronCluster {
     const addressesUser = wordSet.has('unity') || wordSet.has('you') || wordSet.has('your') || wordSet.has("you're");
     const isSelfReference = wordSet.has('i') || wordSet.has('im') || wordSet.has("i'm") || wordSet.has('my') || wordSet.has('me') || wordSet.has('myself');
     const isQuestion = intent === 'question';
+
+    // Question pattern injection — when the input looks like a question,
+    // fire the same dual-tile sem pattern that `_teachQABinding` writes
+    // during training: full sentence embedding into sem's first half +
+    // extracted key token into sem's second half. Live chat answers now
+    // see the same pattern geometry the learned sem→motor routes were
+    // trained on. Mirrors the probe-side injection in
+    // `Curriculum._studentTestProbe` so chat Q-A behaves the same as
+    // the K-STUDENT battery.
+    if (isQuestion && this.regions && this.regions.sem && typeof sharedEmbeddings?.getSentenceEmbedding === 'function') {
+      try {
+        const qEmb = sharedEmbeddings.getSentenceEmbedding(text);
+        if (qEmb && qEmb.length > 0 && typeof this.injectEmbeddingToRegion === 'function') {
+          this.injectEmbeddingToRegion('sem', qEmb, 0.6);
+          const keyToken = extractKeyTokenShared(text);
+          const keyEmb = keyToken && typeof sharedEmbeddings.getEmbedding === 'function'
+            ? sharedEmbeddings.getEmbedding(keyToken) : null;
+          if (keyEmb && keyEmb.length > 0) {
+            injectEmbeddingToRegionOffset(this, 'sem', keyEmb, 0.6, 0.5);
+          }
+        }
+      } catch { /* non-fatal — fallback to natural pathway only */ }
+    }
 
     return { text, words, intent, isSelfReference, addressesUser, isQuestion };
   }

@@ -968,6 +968,15 @@ export class Curriculum {
             // offset (0.5) the teach-side `_writeTiledPatternOffset` uses.
             this._injectEmbeddingToRegionOffset(cluster, 'sem', keyEmb, 0.6, 0.5);
           }
+          // Question-template tag — mirror the teach-side
+          // `_writeQuestionTemplateTag` write by current-injecting the
+          // same slot so fineType fires the template pattern on the
+          // next tick. Lets sem→motor route the template-conditioned
+          // basin during generation.
+          const templateId = this._classifyQuestionTemplate(question);
+          if (templateId >= 0 && typeof this._injectQuestionTemplateTag === 'function') {
+            this._injectQuestionTemplateTag(templateId, 0.6);
+          }
           // Let the injection propagate a few ticks into downstream
           // regions before generate fires, so motor has sem-routed
           // currents to work with instead of pure visual pathway residue.
@@ -8461,6 +8470,150 @@ export class Curriculum {
    * signal rides the recurrent intra-cluster matrix which keeps CPU
    * CSR live through the probe path.
    */
+  /**
+   * Predictive-coding error-gradient pass (Friston 2010 free-energy
+   * principle / Rescorla-Wagner delta rule applied to plasticity).
+   * Before the primary Hebbian update fires, this method propagates
+   * the current `lastSpikes` through the intra-cluster synapse matrix
+   * to get the PREDICTED next-tick spike state, compares it against
+   * the actual target pattern, and applies an error-weighted Hebbian
+   * correction. Weights that misfired get depressed; weights that
+   * underfired get strengthened. The remaining prediction gap is then
+   * what the main Oja update addresses.
+   *
+   *   predicted = intraW · lastSpikes   (SparseMatrix.propagate)
+   *   error     = target − predicted_normalized     (clamped ±1)
+   *   Δw        = lr · error · lastSpikes · 0.3
+   *
+   * The 0.3 scale keeps the predictive correction gentler than the
+   * primary Oja pass so over-correction doesn't destabilize learned
+   * bindings. Runs on CPU using the intra-cluster CSR, which stays
+   * live at biological scale for probe paths. Silent no-op when the
+   * matrix is null (post T24.a selective-free of a rarely-used
+   * projection) or when the size vector can't be propagated.
+   *
+   * Complements Oja: Oja's y²·w decay is per-input normalization;
+   * this delta-rule update is per-sample error correction. Stacking
+   * both gives homeostatic plasticity PLUS predictive-error minimization.
+   */
+  async _teachPredictiveError(lr) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.synapses) return;
+    if (typeof cluster.synapses.propagate !== 'function') return;
+    const values = cluster.synapses.values;
+    if (!values || values.length === 0) return;
+    const size = cluster.size;
+    if (!size) return;
+    try {
+      // Target snapshot from the current write.
+      const target = new Float64Array(size);
+      for (let i = 0; i < size; i++) target[i] = cluster.lastSpikes[i] ? 1 : 0;
+      // Predicted next-step via intra-matrix propagate. For biological
+      // scale this is ~nnz work where nnz is intra-cluster fanout × size.
+      const predicted = cluster.synapses.propagate(target);
+      if (!predicted || predicted.length === 0) return;
+      // Normalize predicted against its max so the error signal is in
+      // roughly [0, 1] range comparable to binary target spikes.
+      let maxP = 1e-6;
+      for (let i = 0; i < predicted.length; i++) {
+        const v = predicted[i];
+        if (v > maxP) maxP = v;
+      }
+      // Build error vector clamped to [-1, 1]. Positive error = target
+      // fired but prediction missed → LTP-sign Hebbian. Negative error
+      // = prediction fired but target didn't → LTD-sign.
+      const error = new Float64Array(size);
+      const n = Math.min(size, predicted.length);
+      for (let i = 0; i < n; i++) {
+        const p = predicted[i] / maxP;
+        let e = target[i] - p;
+        if (e > 1) e = 1;
+        else if (e < -1) e = -1;
+        error[i] = e;
+      }
+      // Apply via hebbianUpdate (not ojaUpdate) because we want the
+      // RAW delta-rule gradient, not the y²·w decay Oja would layer on.
+      if (typeof cluster.synapses.hebbianUpdate === 'function') {
+        cluster.synapses.hebbianUpdate(target, error, lr * 0.3);
+      }
+    } catch { /* non-fatal — predictive correction is best-effort */ }
+  }
+
+  /**
+   * Lateral inhibition via a runtime post-write overlay. Implements the
+   * biological GABAergic cross-bucket suppression on the motor region
+   * without rebuilding the cluster's synapse matrix with mandatory-
+   * negative weights at init. Runs after a motor pattern is written
+   * into `cluster.lastSpikes`:
+   *
+   *   1. Partition motor into N buckets (default 26 for letter emission).
+   *   2. Pick the DOMINANT bucket (most firing neurons among `lastSpikes`).
+   *   3. Build a "cross-bucket post" vector — the active motor spikes
+   *      in OTHER buckets (i.e. everything that fired outside the
+   *      dominant bucket).
+   *   4. Fire anti-Hebbian on intra-cluster synapses with (pre=lastSpikes,
+   *      post=crossBucketPost) at `lr × 0.3`. Depresses recurrent
+   *      intra-synapse weights that were driving cross-bucket motor
+   *      activity, leaving the dominant bucket unaffected.
+   *
+   * Net effect on future propagates: when ANY motor neuron fires, it
+   * less strongly excites motor neurons in DIFFERENT buckets. Same
+   * functional signature as fixed-negative-weight lateral inhibition
+   * in the intra-matrix, but shipped as a runtime training signal so
+   * no cluster reconstruction is needed.
+   */
+  async _teachLateralInhibition(lr, numBuckets = 26) {
+    const cluster = this.cluster;
+    if (!cluster) return;
+    const motorRegion = cluster.regions && cluster.regions.motor;
+    if (!motorRegion || motorRegion.end <= motorRegion.start) return;
+    const motorSize = motorRegion.end - motorRegion.start;
+    const bucketSize = Math.max(1, Math.floor(motorSize / numBuckets));
+    if (bucketSize * numBuckets > motorSize) return;
+
+    // Identify the dominant bucket by active-neuron count in lastSpikes.
+    const bucketCounts = new Array(numBuckets).fill(0);
+    for (let i = 0; i < motorSize; i++) {
+      if (cluster.lastSpikes[motorRegion.start + i]) {
+        const b = Math.min(numBuckets - 1, Math.floor(i / bucketSize));
+        bucketCounts[b]++;
+      }
+    }
+    let primaryBucket = 0;
+    let maxCount = 0;
+    for (let b = 0; b < numBuckets; b++) {
+      if (bucketCounts[b] > maxCount) { maxCount = bucketCounts[b]; primaryBucket = b; }
+    }
+    if (maxCount === 0) return;
+
+    // Build the cross-bucket post vector — 1 where motor fires outside
+    // the primary bucket, 0 everywhere else (including primary bucket,
+    // non-motor regions, and silent motor positions).
+    const crossBucketPost = new Uint8Array(cluster.size);
+    let crossCount = 0;
+    for (let i = 0; i < motorSize; i++) {
+      if (cluster.lastSpikes[motorRegion.start + i]) {
+        const b = Math.min(numBuckets - 1, Math.floor(i / bucketSize));
+        if (b !== primaryBucket) {
+          crossBucketPost[motorRegion.start + i] = 1;
+          crossCount++;
+        }
+      }
+    }
+    if (crossCount === 0) return;
+
+    // Anti-Hebbian on intra-synapses against the cross-bucket vector.
+    // Scales at 0.3 so lateral inhibition is gentler than the primary
+    // positive-pair Oja update — too aggressive would starve the
+    // recurrent circuitry entirely.
+    const inhibitLr = Math.abs(lr) * 0.3;
+    if (typeof cluster.intraSynapsesAntiHebbian === 'function') {
+      await cluster.intraSynapsesAntiHebbian(cluster.lastSpikes, crossBucketPost, inhibitLr);
+    } else if (cluster.synapses && typeof cluster.synapses.antiHebbianUpdate === 'function') {
+      cluster.synapses.antiHebbianUpdate(cluster.lastSpikes, crossBucketPost, inhibitLr);
+    }
+  }
+
   async _teachAntiHebbian(lr) {
     const cluster = this.cluster;
     if (!cluster) return;
@@ -8784,6 +8937,7 @@ export class Curriculum {
         const keyEmb = keyToken && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
           ? sharedEmbeddings.getEmbedding(keyToken)
           : null;
+        const templateId = this._classifyQuestionTemplate(entry.question);
         try {
           // ─── Natural-sentence positive pair ────────────────────────
           this._clearSpikes();
@@ -8795,8 +8949,19 @@ export class Curriculum {
             // combine without overwriting each other.
             this._writeTiledPatternOffset(semRegion, keyEmb, false, 0.5);
           }
+          // Question-template tag — one-hot into fineType upper 25%
+          // slot for this template ID. Creates a template-conditioned
+          // routing signal orthogonal to the sentence bag and key
+          // token, so "what letter comes after X?" and "what rhymes
+          // with X?" with the same X activate different sem→motor
+          // basins via template presence in fineType.
+          if (templateId >= 0) this._writeQuestionTemplateTag(templateId);
           this._writeTiledPattern(motorRegion, motorPattern, false);
+          try { await this._teachPredictiveError(lr); }
+          catch { /* non-fatal */ }
           await this._teachHebbian(lr);
+          try { await this._teachLateralInhibition(lr); }
+          catch { /* non-fatal */ }
           trained++;
         } catch (err) {
           skipped++;
@@ -8815,6 +8980,7 @@ export class Curriculum {
               if (keyTokenTile && keyEmb && keyEmb.length > 0) {
                 this._writeTiledPatternOffset(semRegion, keyEmb, false, 0.5);
               }
+              if (templateId >= 0) this._writeQuestionTemplateTag(templateId);
               this._writeTiledPattern(motorRegion, motorPattern, false);
               await this._teachHebbian(lr);
               altTrained++;
@@ -8839,6 +9005,7 @@ export class Curriculum {
                   if (keyTokenTile && keyEmb && keyEmb.length > 0) {
                     this._writeTiledPatternOffset(semRegion, keyEmb, false, 0.5);
                   }
+                  if (templateId >= 0) this._writeQuestionTemplateTag(templateId);
                   this._writeTiledPattern(motorRegion, wrongMotorPattern, false);
                   await this._teachAntiHebbian(lr * antiLrScale);
                   antiFires++;
@@ -8870,6 +9037,120 @@ export class Curriculum {
     const antiReport = antiPairs ? ` · anti-fires=${antiFires}` : '';
     this._hb(`[Curriculum][${label}] DONE — ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${weightReport}`);
     return { trained, altTrained, antiFires, skipped };
+  }
+
+  /**
+   * Classify a question into a template ID 0-6 based on its form.
+   * Template ID is orthogonal to the key token — two questions can
+   * share a template ("what letter comes after a?" and "what letter
+   * comes after b?" both map to template 0) but have different key
+   * tokens. Written as a one-hot pattern into the upper 25% of the
+   * fineType region so cross-projection Hebbian can learn
+   * template-conditioned routing independently of the specific token.
+   *
+   * Returns template ID in [0, 6] or -1 when no template matches (then
+   * the question is treated as generic — no template tag written).
+   *
+   * Templates:
+   *   0 — "what letter comes after/before X"
+   *   1 — "what rhymes with X" / "what sound does X make"
+   *   2 — "how many X are in Y"
+   *   3 — arithmetic "what is X plus/minus Y"
+   *   4 — "count from X"
+   *   5 — "spell X" / "starts with X"
+   *   6 — catch-all question
+   */
+  _classifyQuestionTemplate(question) {
+    if (!question || typeof question !== 'string') return -1;
+    const q = question.toLowerCase().trim();
+    if (!q) return -1;
+    if (/\b(?:what|which)\s+letter\s+(?:comes?|is|goes?)\s+(?:after|before|next(?:\s+to)?)/.test(q)) return 0;
+    if (/\b(?:what|which)\s+(?:comes?|is|goes?)\s+(?:after|before|next(?:\s+to)?)/.test(q)) return 0;
+    if (/\brhymes?\s+with|sound\s+does\s+[a-z]+\s+make/.test(q)) return 1;
+    if (/\bhow\s+many\s+[a-z]+\s+(?:are\s+in|in)/.test(q)) return 2;
+    if (/\bwhat\s+is\s+\d+\s+(?:plus|minus)\s+\d+/.test(q)) return 3;
+    if (/\bcount\s+from/.test(q)) return 4;
+    if (/\bspell\b|\bstarts?\s+with/.test(q)) return 5;
+    if (q.endsWith('?') || /^(what|who|where|when|why|how|which|whose)\b/.test(q)) return 6;
+    return -1;
+  }
+
+  /**
+   * Write a one-hot question-template tag into the upper 25% of the
+   * fineType region. Reserves fineType[0.75·size .. size] as the
+   * question_template sub-region — the lower 75% still carries
+   * relation-tag bands 0-5 used by `_teachAssociationPairs`. Called
+   * from both teach (`_teachQABinding`) and probe (`_studentTestProbe`
+   * + `readInput`) paths so weights learn template-conditioned routing
+   * AND probes see the same template pattern that teaching wrote.
+   *
+   * NUM_TEMPLATE_SLOTS is 7 — matches the `_classifyQuestionTemplate`
+   * return range [0, 6]. Each template owns an equal band inside the
+   * question_template zone.
+   */
+  _writeQuestionTemplateTag(templateId) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.regions) return;
+    const fineType = cluster.regions.fineType;
+    if (!fineType || fineType.end <= fineType.start) return;
+    if (templateId < 0 || templateId > 6) return;
+    const fineSize = fineType.end - fineType.start;
+    const templateZoneStart = fineType.start + Math.floor(fineSize * 0.75);
+    const templateZoneSize = fineType.end - templateZoneStart;
+    if (templateZoneSize <= 0) return;
+    const NUM_TEMPLATE_SLOTS = 7;
+    const slotSize = Math.max(1, Math.floor(templateZoneSize / NUM_TEMPLATE_SLOTS));
+    const slotStart = templateZoneStart + templateId * slotSize;
+    const slotEnd = Math.min(fineType.end, slotStart + slotSize);
+    const haveProxy = !!(cluster._gpuProxy && cluster._gpuProxy.writeSpikeSlice);
+    const sparseIndices = haveProxy ? [] : null;
+    for (let i = slotStart; i < slotEnd; i++) {
+      cluster.lastSpikes[i] = 1;
+      if (sparseIndices) sparseIndices.push(i);
+    }
+    if (haveProxy && sparseIndices.length > 0) {
+      try { cluster._gpuProxy.writeSpikeSlice(sparseIndices); }
+      catch { /* non-fatal */ }
+    }
+  }
+
+  /**
+   * Inject a question-template tag via current injection (live-chat and
+   * probe paths that use injectEmbedding semantics rather than direct
+   * spike writes). Same geometry as `_writeQuestionTemplateTag` — a
+   * slot-sized band inside the upper 25% of fineType — but populated
+   * through externalCurrent so Rulkov dynamics pick it up on the next
+   * tick instead of immediate force-fire.
+   */
+  _injectQuestionTemplateTag(templateId, strength = 0.6) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.regions) return;
+    const fineType = cluster.regions.fineType;
+    if (!fineType || fineType.end <= fineType.start) return;
+    if (templateId < 0 || templateId > 6) return;
+    const fineSize = fineType.end - fineType.start;
+    const templateZoneStart = fineType.start + Math.floor(fineSize * 0.75);
+    const templateZoneSize = fineType.end - templateZoneStart;
+    if (templateZoneSize <= 0) return;
+    const NUM_TEMPLATE_SLOTS = 7;
+    const slotSize = Math.max(1, Math.floor(templateZoneSize / NUM_TEMPLATE_SLOTS));
+    const slotStart = templateZoneStart + templateId * slotSize;
+    const slotEnd = Math.min(fineType.end, slotStart + slotSize);
+    const haveProxy = !!(cluster._gpuProxy && cluster._gpuProxy.writeCurrentSlice);
+    const fwdIndices = haveProxy ? [] : null;
+    const fwdValues = haveProxy ? [] : null;
+    const value = 8 * strength;
+    for (let i = slotStart; i < slotEnd; i++) {
+      cluster.externalCurrent[i] += value;
+      if (fwdIndices) {
+        fwdIndices.push(i - fineType.start);
+        fwdValues.push(value);
+      }
+    }
+    if (haveProxy && fwdIndices.length > 0) {
+      try { cluster._gpuProxy.writeCurrentSlice('fineType', fwdIndices, fwdValues); }
+      catch { /* non-fatal */ }
+    }
   }
 
   /**
@@ -9139,7 +9420,18 @@ export class Curriculum {
             const tagVal = binarize ? 1 : 0.5;
             for (let i = tagStart; i < tagEnd; i++) cluster.lastSpikes[i] = tagVal;
           }
+          // Predictive-coding error-gradient pass BEFORE the main teach
+          // so the delta-rule correction fires against the current
+          // weights' prediction, not the post-Oja state.
+          try { await this._teachPredictiveError(lr); }
+          catch { /* non-fatal */ }
           await this._teachHebbian(lr);
+          // Runtime lateral inhibition overlay — depress recurrent
+          // weights that drive activity across different "buckets" of
+          // motor. GABAergic cross-inhibition functional shape without
+          // rebuilding the synapse matrix at init.
+          try { await this._teachLateralInhibition(lr); }
+          catch { /* non-fatal */ }
           trained++;
         } catch (err) {
           skipped++;

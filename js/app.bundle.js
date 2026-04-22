@@ -754,7 +754,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "d2567083-4676";
+var BUILD = "709754d3-c71a";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -1369,6 +1369,65 @@ function clusterSizesFor(totalNeurons) {
     out[name] = Math.floor(totalNeurons * frac);
   }
   return out;
+}
+function extractKeyTokenShared(question) {
+  if (!question || typeof question !== "string") return null;
+  const q = question.toLowerCase().trim();
+  const patterns = [
+    /\b(?:what|which)\s+letter\s+(?:comes?|is|goes?)\s+(?:after|before|next(?:\s+to)?)\s+([a-z0-9]+)/,
+    /\b(?:what|which)\s+(?:comes?|is|goes?)\s+(?:after|before|next(?:\s+to)?)\s+([a-z0-9]+)/,
+    /\brhymes?\s+with\s+([a-z]+)/,
+    /\bsound\s+does\s+([a-z]+)\s+make/,
+    /\bhow\s+many\s+[a-z]+\s+(?:are\s+in|in)\s+([a-z]+)/,
+    /\bwhat\s+is\s+(\d+)\s+plus\s+(\d+)/,
+    /\bwhat\s+is\s+(\d+)\s+minus\s+(\d+)/,
+    /\bcount\s+from\s+([a-z0-9]+)/,
+    /\bspell\s+([a-z]+)/,
+    /\bstarts?\s+with\s+([a-z]+)/,
+    /\b([a-z0-9]+)\??\s*$/
+  ];
+  for (const p of patterns) {
+    const m = q.match(p);
+    if (m) {
+      if (m[2]) return `${m[1]}_${m[2]}`;
+      if (m[1]) return m[1];
+    }
+  }
+  return null;
+}
+function injectEmbeddingToRegionOffset(cluster, regionName, emb, strength, offsetFrac) {
+  if (!cluster || !cluster.regions || !emb || emb.length === 0) return;
+  const region = cluster.regions[regionName];
+  if (!region) return;
+  const regionSize = region.end - region.start;
+  if (regionSize <= 0) return;
+  const offset = Math.max(0, Math.min(0.99, offsetFrac || 0));
+  const sliceStart = region.start + Math.floor(regionSize * offset);
+  const sliceSize = region.end - sliceStart;
+  if (sliceSize <= 0) return;
+  const gSize = Math.max(1, Math.floor(sliceSize / emb.length));
+  const haveProxy = !!(cluster._gpuProxy && cluster._gpuProxy.writeCurrentSlice);
+  const fwdIndices = haveProxy ? [] : null;
+  const fwdValues = haveProxy ? [] : null;
+  for (let d = 0; d < emb.length; d++) {
+    const value = emb[d] * 8 * (strength ?? 1);
+    const startNeuron = sliceStart + d * gSize;
+    for (let n = 0; n < gSize; n++) {
+      const idx = startNeuron + n;
+      if (idx >= region.end) break;
+      cluster.externalCurrent[idx] += value;
+      if (fwdIndices && value !== 0) {
+        fwdIndices.push(idx - region.start);
+        fwdValues.push(value);
+      }
+    }
+  }
+  if (haveProxy && fwdIndices.length > 0) {
+    try {
+      cluster._gpuProxy.writeCurrentSlice(regionName, fwdIndices, fwdValues);
+    } catch {
+    }
+  }
 }
 var T14_TERMINATORS = /* @__PURE__ */ new Set([".", "?", "!"]);
 var NeuronCluster = class {
@@ -2240,6 +2299,20 @@ var NeuronCluster = class {
     const addressesUser = wordSet.has("unity") || wordSet.has("you") || wordSet.has("your") || wordSet.has("you're");
     const isSelfReference = wordSet.has("i") || wordSet.has("im") || wordSet.has("i'm") || wordSet.has("my") || wordSet.has("me") || wordSet.has("myself");
     const isQuestion = intent === "question";
+    if (isQuestion && this.regions && this.regions.sem && typeof sharedEmbeddings?.getSentenceEmbedding === "function") {
+      try {
+        const qEmb = sharedEmbeddings.getSentenceEmbedding(text);
+        if (qEmb && qEmb.length > 0 && typeof this.injectEmbeddingToRegion === "function") {
+          this.injectEmbeddingToRegion("sem", qEmb, 0.6);
+          const keyToken = extractKeyTokenShared(text);
+          const keyEmb = keyToken && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(keyToken) : null;
+          if (keyEmb && keyEmb.length > 0) {
+            injectEmbeddingToRegionOffset(this, "sem", keyEmb, 0.6, 0.5);
+          }
+        }
+      } catch {
+      }
+    }
     return { text, words, intent, isSelfReference, addressesUser, isQuestion };
   }
   /**
@@ -10648,6 +10721,10 @@ var Curriculum = class _Curriculum {
           if (keyEmb && keyEmb.length > 0 && typeof this._injectEmbeddingToRegionOffset === "function") {
             this._injectEmbeddingToRegionOffset(cluster, "sem", keyEmb, 0.6, 0.5);
           }
+          const templateId = this._classifyQuestionTemplate(question);
+          if (templateId >= 0 && typeof this._injectQuestionTemplateTag === "function") {
+            this._injectQuestionTemplateTag(templateId, 0.6);
+          }
           if (typeof cluster.step === "function") {
             for (let t = 0; t < 5; t++) {
               try {
@@ -18434,6 +18511,131 @@ var Curriculum = class _Curriculum {
    * signal rides the recurrent intra-cluster matrix which keeps CPU
    * CSR live through the probe path.
    */
+  /**
+   * Predictive-coding error-gradient pass (Friston 2010 free-energy
+   * principle / Rescorla-Wagner delta rule applied to plasticity).
+   * Before the primary Hebbian update fires, this method propagates
+   * the current `lastSpikes` through the intra-cluster synapse matrix
+   * to get the PREDICTED next-tick spike state, compares it against
+   * the actual target pattern, and applies an error-weighted Hebbian
+   * correction. Weights that misfired get depressed; weights that
+   * underfired get strengthened. The remaining prediction gap is then
+   * what the main Oja update addresses.
+   *
+   *   predicted = intraW · lastSpikes   (SparseMatrix.propagate)
+   *   error     = target − predicted_normalized     (clamped ±1)
+   *   Δw        = lr · error · lastSpikes · 0.3
+   *
+   * The 0.3 scale keeps the predictive correction gentler than the
+   * primary Oja pass so over-correction doesn't destabilize learned
+   * bindings. Runs on CPU using the intra-cluster CSR, which stays
+   * live at biological scale for probe paths. Silent no-op when the
+   * matrix is null (post T24.a selective-free of a rarely-used
+   * projection) or when the size vector can't be propagated.
+   *
+   * Complements Oja: Oja's y²·w decay is per-input normalization;
+   * this delta-rule update is per-sample error correction. Stacking
+   * both gives homeostatic plasticity PLUS predictive-error minimization.
+   */
+  async _teachPredictiveError(lr) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.synapses) return;
+    if (typeof cluster.synapses.propagate !== "function") return;
+    const values = cluster.synapses.values;
+    if (!values || values.length === 0) return;
+    const size = cluster.size;
+    if (!size) return;
+    try {
+      const target = new Float64Array(size);
+      for (let i = 0; i < size; i++) target[i] = cluster.lastSpikes[i] ? 1 : 0;
+      const predicted = cluster.synapses.propagate(target);
+      if (!predicted || predicted.length === 0) return;
+      let maxP = 1e-6;
+      for (let i = 0; i < predicted.length; i++) {
+        const v = predicted[i];
+        if (v > maxP) maxP = v;
+      }
+      const error = new Float64Array(size);
+      const n = Math.min(size, predicted.length);
+      for (let i = 0; i < n; i++) {
+        const p = predicted[i] / maxP;
+        let e = target[i] - p;
+        if (e > 1) e = 1;
+        else if (e < -1) e = -1;
+        error[i] = e;
+      }
+      if (typeof cluster.synapses.hebbianUpdate === "function") {
+        cluster.synapses.hebbianUpdate(target, error, lr * 0.3);
+      }
+    } catch {
+    }
+  }
+  /**
+   * Lateral inhibition via a runtime post-write overlay. Implements the
+   * biological GABAergic cross-bucket suppression on the motor region
+   * without rebuilding the cluster's synapse matrix with mandatory-
+   * negative weights at init. Runs after a motor pattern is written
+   * into `cluster.lastSpikes`:
+   *
+   *   1. Partition motor into N buckets (default 26 for letter emission).
+   *   2. Pick the DOMINANT bucket (most firing neurons among `lastSpikes`).
+   *   3. Build a "cross-bucket post" vector — the active motor spikes
+   *      in OTHER buckets (i.e. everything that fired outside the
+   *      dominant bucket).
+   *   4. Fire anti-Hebbian on intra-cluster synapses with (pre=lastSpikes,
+   *      post=crossBucketPost) at `lr × 0.3`. Depresses recurrent
+   *      intra-synapse weights that were driving cross-bucket motor
+   *      activity, leaving the dominant bucket unaffected.
+   *
+   * Net effect on future propagates: when ANY motor neuron fires, it
+   * less strongly excites motor neurons in DIFFERENT buckets. Same
+   * functional signature as fixed-negative-weight lateral inhibition
+   * in the intra-matrix, but shipped as a runtime training signal so
+   * no cluster reconstruction is needed.
+   */
+  async _teachLateralInhibition(lr, numBuckets = 26) {
+    const cluster = this.cluster;
+    if (!cluster) return;
+    const motorRegion = cluster.regions && cluster.regions.motor;
+    if (!motorRegion || motorRegion.end <= motorRegion.start) return;
+    const motorSize = motorRegion.end - motorRegion.start;
+    const bucketSize = Math.max(1, Math.floor(motorSize / numBuckets));
+    if (bucketSize * numBuckets > motorSize) return;
+    const bucketCounts = new Array(numBuckets).fill(0);
+    for (let i = 0; i < motorSize; i++) {
+      if (cluster.lastSpikes[motorRegion.start + i]) {
+        const b = Math.min(numBuckets - 1, Math.floor(i / bucketSize));
+        bucketCounts[b]++;
+      }
+    }
+    let primaryBucket = 0;
+    let maxCount = 0;
+    for (let b = 0; b < numBuckets; b++) {
+      if (bucketCounts[b] > maxCount) {
+        maxCount = bucketCounts[b];
+        primaryBucket = b;
+      }
+    }
+    if (maxCount === 0) return;
+    const crossBucketPost = new Uint8Array(cluster.size);
+    let crossCount = 0;
+    for (let i = 0; i < motorSize; i++) {
+      if (cluster.lastSpikes[motorRegion.start + i]) {
+        const b = Math.min(numBuckets - 1, Math.floor(i / bucketSize));
+        if (b !== primaryBucket) {
+          crossBucketPost[motorRegion.start + i] = 1;
+          crossCount++;
+        }
+      }
+    }
+    if (crossCount === 0) return;
+    const inhibitLr = Math.abs(lr) * 0.3;
+    if (typeof cluster.intraSynapsesAntiHebbian === "function") {
+      await cluster.intraSynapsesAntiHebbian(cluster.lastSpikes, crossBucketPost, inhibitLr);
+    } else if (cluster.synapses && typeof cluster.synapses.antiHebbianUpdate === "function") {
+      cluster.synapses.antiHebbianUpdate(cluster.lastSpikes, crossBucketPost, inhibitLr);
+    }
+  }
   async _teachAntiHebbian(lr) {
     const cluster = this.cluster;
     if (!cluster) return;
@@ -18722,14 +18924,24 @@ var Curriculum = class _Curriculum {
         }
         const keyToken = this._extractKeyToken(entry.question);
         const keyEmb = keyToken && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(keyToken) : null;
+        const templateId = this._classifyQuestionTemplate(entry.question);
         try {
           this._clearSpikes();
           this._writeTiledPattern(semRegion, qEmb, false);
           if (keyTokenTile && keyEmb && keyEmb.length > 0) {
             this._writeTiledPatternOffset(semRegion, keyEmb, false, 0.5);
           }
+          if (templateId >= 0) this._writeQuestionTemplateTag(templateId);
           this._writeTiledPattern(motorRegion, motorPattern, false);
+          try {
+            await this._teachPredictiveError(lr);
+          } catch {
+          }
           await this._teachHebbian(lr);
+          try {
+            await this._teachLateralInhibition(lr);
+          } catch {
+          }
           trained++;
         } catch (err) {
           skipped++;
@@ -18744,6 +18956,7 @@ var Curriculum = class _Curriculum {
               if (keyTokenTile && keyEmb && keyEmb.length > 0) {
                 this._writeTiledPatternOffset(semRegion, keyEmb, false, 0.5);
               }
+              if (templateId >= 0) this._writeQuestionTemplateTag(templateId);
               this._writeTiledPattern(motorRegion, motorPattern, false);
               await this._teachHebbian(lr);
               altTrained++;
@@ -18767,6 +18980,7 @@ var Curriculum = class _Curriculum {
                   if (keyTokenTile && keyEmb && keyEmb.length > 0) {
                     this._writeTiledPatternOffset(semRegion, keyEmb, false, 0.5);
                   }
+                  if (templateId >= 0) this._writeQuestionTemplateTag(templateId);
                   this._writeTiledPattern(motorRegion, wrongMotorPattern, false);
                   await this._teachAntiHebbian(lr * antiLrScale);
                   antiFires++;
@@ -18800,6 +19014,121 @@ var Curriculum = class _Curriculum {
     const antiReport = antiPairs ? ` \xB7 anti-fires=${antiFires}` : "";
     this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${weightReport}`);
     return { trained, altTrained, antiFires, skipped };
+  }
+  /**
+   * Classify a question into a template ID 0-6 based on its form.
+   * Template ID is orthogonal to the key token — two questions can
+   * share a template ("what letter comes after a?" and "what letter
+   * comes after b?" both map to template 0) but have different key
+   * tokens. Written as a one-hot pattern into the upper 25% of the
+   * fineType region so cross-projection Hebbian can learn
+   * template-conditioned routing independently of the specific token.
+   *
+   * Returns template ID in [0, 6] or -1 when no template matches (then
+   * the question is treated as generic — no template tag written).
+   *
+   * Templates:
+   *   0 — "what letter comes after/before X"
+   *   1 — "what rhymes with X" / "what sound does X make"
+   *   2 — "how many X are in Y"
+   *   3 — arithmetic "what is X plus/minus Y"
+   *   4 — "count from X"
+   *   5 — "spell X" / "starts with X"
+   *   6 — catch-all question
+   */
+  _classifyQuestionTemplate(question) {
+    if (!question || typeof question !== "string") return -1;
+    const q = question.toLowerCase().trim();
+    if (!q) return -1;
+    if (/\b(?:what|which)\s+letter\s+(?:comes?|is|goes?)\s+(?:after|before|next(?:\s+to)?)/.test(q)) return 0;
+    if (/\b(?:what|which)\s+(?:comes?|is|goes?)\s+(?:after|before|next(?:\s+to)?)/.test(q)) return 0;
+    if (/\brhymes?\s+with|sound\s+does\s+[a-z]+\s+make/.test(q)) return 1;
+    if (/\bhow\s+many\s+[a-z]+\s+(?:are\s+in|in)/.test(q)) return 2;
+    if (/\bwhat\s+is\s+\d+\s+(?:plus|minus)\s+\d+/.test(q)) return 3;
+    if (/\bcount\s+from/.test(q)) return 4;
+    if (/\bspell\b|\bstarts?\s+with/.test(q)) return 5;
+    if (q.endsWith("?") || /^(what|who|where|when|why|how|which|whose)\b/.test(q)) return 6;
+    return -1;
+  }
+  /**
+   * Write a one-hot question-template tag into the upper 25% of the
+   * fineType region. Reserves fineType[0.75·size .. size] as the
+   * question_template sub-region — the lower 75% still carries
+   * relation-tag bands 0-5 used by `_teachAssociationPairs`. Called
+   * from both teach (`_teachQABinding`) and probe (`_studentTestProbe`
+   * + `readInput`) paths so weights learn template-conditioned routing
+   * AND probes see the same template pattern that teaching wrote.
+   *
+   * NUM_TEMPLATE_SLOTS is 7 — matches the `_classifyQuestionTemplate`
+   * return range [0, 6]. Each template owns an equal band inside the
+   * question_template zone.
+   */
+  _writeQuestionTemplateTag(templateId) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.regions) return;
+    const fineType = cluster.regions.fineType;
+    if (!fineType || fineType.end <= fineType.start) return;
+    if (templateId < 0 || templateId > 6) return;
+    const fineSize = fineType.end - fineType.start;
+    const templateZoneStart = fineType.start + Math.floor(fineSize * 0.75);
+    const templateZoneSize = fineType.end - templateZoneStart;
+    if (templateZoneSize <= 0) return;
+    const NUM_TEMPLATE_SLOTS = 7;
+    const slotSize = Math.max(1, Math.floor(templateZoneSize / NUM_TEMPLATE_SLOTS));
+    const slotStart = templateZoneStart + templateId * slotSize;
+    const slotEnd = Math.min(fineType.end, slotStart + slotSize);
+    const haveProxy = !!(cluster._gpuProxy && cluster._gpuProxy.writeSpikeSlice);
+    const sparseIndices = haveProxy ? [] : null;
+    for (let i = slotStart; i < slotEnd; i++) {
+      cluster.lastSpikes[i] = 1;
+      if (sparseIndices) sparseIndices.push(i);
+    }
+    if (haveProxy && sparseIndices.length > 0) {
+      try {
+        cluster._gpuProxy.writeSpikeSlice(sparseIndices);
+      } catch {
+      }
+    }
+  }
+  /**
+   * Inject a question-template tag via current injection (live-chat and
+   * probe paths that use injectEmbedding semantics rather than direct
+   * spike writes). Same geometry as `_writeQuestionTemplateTag` — a
+   * slot-sized band inside the upper 25% of fineType — but populated
+   * through externalCurrent so Rulkov dynamics pick it up on the next
+   * tick instead of immediate force-fire.
+   */
+  _injectQuestionTemplateTag(templateId, strength = 0.6) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.regions) return;
+    const fineType = cluster.regions.fineType;
+    if (!fineType || fineType.end <= fineType.start) return;
+    if (templateId < 0 || templateId > 6) return;
+    const fineSize = fineType.end - fineType.start;
+    const templateZoneStart = fineType.start + Math.floor(fineSize * 0.75);
+    const templateZoneSize = fineType.end - templateZoneStart;
+    if (templateZoneSize <= 0) return;
+    const NUM_TEMPLATE_SLOTS = 7;
+    const slotSize = Math.max(1, Math.floor(templateZoneSize / NUM_TEMPLATE_SLOTS));
+    const slotStart = templateZoneStart + templateId * slotSize;
+    const slotEnd = Math.min(fineType.end, slotStart + slotSize);
+    const haveProxy = !!(cluster._gpuProxy && cluster._gpuProxy.writeCurrentSlice);
+    const fwdIndices = haveProxy ? [] : null;
+    const fwdValues = haveProxy ? [] : null;
+    const value = 8 * strength;
+    for (let i = slotStart; i < slotEnd; i++) {
+      cluster.externalCurrent[i] += value;
+      if (fwdIndices) {
+        fwdIndices.push(i - fineType.start);
+        fwdValues.push(value);
+      }
+    }
+    if (haveProxy && fwdIndices.length > 0) {
+      try {
+        cluster._gpuProxy.writeCurrentSlice("fineType", fwdIndices, fwdValues);
+      } catch {
+      }
+    }
   }
   /**
    * Key-token extraction for Q-A training — lightweight attention-lite
@@ -19019,7 +19348,15 @@ var Curriculum = class _Curriculum {
             const tagVal = binarize ? 1 : 0.5;
             for (let i = tagStart; i < tagEnd; i++) cluster.lastSpikes[i] = tagVal;
           }
+          try {
+            await this._teachPredictiveError(lr);
+          } catch {
+          }
           await this._teachHebbian(lr);
+          try {
+            await this._teachLateralInhibition(lr);
+          } catch {
+          }
           trained++;
         } catch (err) {
           skipped++;
