@@ -648,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "6e3b9746-d4d2";
+var BUILD = "5abe0be1-3d68";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -15574,6 +15574,11 @@ var Curriculum = class _Curriculum {
         await this._teachAssociationPairs(seqPairs, { reps: 12, label: "ELA-K-ALPHABET-SEQ", relationTagId: 5 });
         _phaseDone("_teachAlphabetSequencePairs");
       }
+      if (_phaseTick("_teachQABinding")) {
+        const qaTrain = TRAIN_BANKS["ela/kindergarten"] || [];
+        await this._teachQABinding(qaTrain, { reps: 15, label: "ELA-K-QA-TRAIN" });
+        _phaseDone("_teachQABinding");
+      }
       this._elaKRemakeDone = true;
     }
     return await this._gateElaKReal();
@@ -16541,6 +16546,10 @@ var Curriculum = class _Curriculum {
         ["ten-minus-five", "five"],
         ["five-minus-one", "four"]
       ], { reps: 8, label: "MATH-K-ARITH-WORDS", relationTagId: 4 });
+      const mathQA = TRAIN_BANKS["math/kindergarten"] || [];
+      if (mathQA.length > 0) {
+        await this._teachQABinding(mathQA, { reps: 15, label: "MATH-K-QA-TRAIN" });
+      }
       this._mathKTransformsDone = true;
     }
     return await this._gateMathKReal();
@@ -18362,6 +18371,112 @@ var Curriculum = class _Curriculum {
   // `_saveBinaryWeights` streaming binary format — every cross-
   // projection CSR captured. Restart + Savestart.bat preserves the
   // learned state across reboots.
+  // ─── _teachQABinding — TEACHER-MODELING OF QUESTION→ANSWER BEHAVIOR ──
+  //
+  // Operator correctly identified the missing piece: "does she know
+  // what a question is and how to respond to questions?" — NO, because
+  // the curriculum taught primitives (letter identity, alphabet sequence,
+  // word embeddings, opposites, categories) but NEVER trained explicit
+  // question-form sentence → answer letter mappings. Real K kids learn
+  // Q-A through teacher-modeling: "teacher asks, student answers" over
+  // hundreds of repetitions. We skipped this step.
+  //
+  // This method takes a list of {question, expectedAnswer} pairs from
+  // TRAIN_BANKS (HELD-OUT-DISTINCT from EXAM_BANKS per T23.b.2 overlap
+  // check) and trains the brain:
+  //   1. Embed the full question sentence via sharedEmbeddings.getSentenceEmbedding
+  //   2. Tile the sentence embedding into sem region (pattern activation
+  //      matching what live-chat + K-STUDENT probe paths produce)
+  //   3. Encode first letter of answer into motor region via encodeLetter
+  //   4. Fire _teachHebbian — sem→motor cross-projection learns the
+  //      sentence-pattern → answer-letter binding
+  //
+  // After training, when the K-STUDENT battery asks a question with
+  // similar phrasing (different specific letter/word per held-out
+  // discipline), the sem pattern activates and sem→motor routes to
+  // the appropriate answer letter via learned pattern completion.
+  // Training on held-out-distinct pairs means pass rates reflect
+  // GENERALIZATION, not memorization.
+  //
+  // @param {Array<{question, expectedAnswer, standard?}>} qaList
+  // @param {object} [opts]
+  // @param {number} [opts.reps=12] training reps
+  // @param {number} [opts.lr=0.03] Hebbian rate
+  // @param {string} [opts.label='K-QA-TRAIN'] log label
+  async _teachQABinding(qaList, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return { trained: 0, skipped: 0 };
+    if (!Array.isArray(qaList) || qaList.length === 0) {
+      this._hb(`[Curriculum][${opts.label || "QA-TRAIN"}] SKIPPED \u2014 TRAIN_BANKS entry is empty for this cell`);
+      return { trained: 0, skipped: 0 };
+    }
+    const reps = opts.reps ?? 12;
+    const lr = opts.lr ?? 0.03;
+    const label = opts.label || "K-QA-TRAIN";
+    const semRegion = cluster.regions && cluster.regions.sem;
+    const motorRegion = cluster.regions && cluster.regions.motor;
+    if (!semRegion || !motorRegion) {
+      console.warn(`[Curriculum][${label}] skipped \u2014 sem or motor region not available`);
+      return { trained: 0, skipped: qaList.length };
+    }
+    let trained = 0, skipped = 0;
+    const startMs = Date.now();
+    this._hb(`[Curriculum][${label}] START \u2014 ${qaList.length} Q\u2192A training pairs \xD7 ${reps} reps (teacher-modeling question-answer behavior; pairs are HELD-OUT-DISTINCT from EXAM_BANKS for valid testing)`);
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return { trained, skipped };
+      for (const entry of qaList) {
+        if (!entry || !entry.question || !entry.expectedAnswer) {
+          skipped++;
+          continue;
+        }
+        const qEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function" ? sharedEmbeddings.getSentenceEmbedding(entry.question) : null;
+        if (!qEmb || qEmb.length === 0) {
+          skipped++;
+          continue;
+        }
+        const answerText = String(entry.expectedAnswer).toLowerCase();
+        const targetLetter = answerText.charAt(0);
+        if (!targetLetter) {
+          skipped++;
+          continue;
+        }
+        const motorPattern = encodeLetter(targetLetter);
+        if (!motorPattern || motorPattern.length === 0) {
+          skipped++;
+          continue;
+        }
+        try {
+          this._clearSpikes();
+          this._writeTiledPattern(semRegion, qEmb, false);
+          this._writeTiledPattern(motorRegion, motorPattern, false);
+          await this._teachHebbian(lr);
+          trained++;
+        } catch (err) {
+          skipped++;
+        }
+      }
+      await _microtask();
+    }
+    const elapsedSec = ((Date.now() - startMs) / 1e3).toFixed(1);
+    let weightReport = "";
+    try {
+      const proj = cluster.crossProjections && cluster.crossProjections.sem_to_motor;
+      if (proj && proj.values && proj.values.length > 0) {
+        const vals = proj.values;
+        let sumAbs = 0, maxAbs = 0;
+        const N = Math.min(vals.length, 1e5);
+        for (let k = 0; k < N; k++) {
+          const a = vals[k] < 0 ? -vals[k] : vals[k];
+          sumAbs += a;
+          if (a > maxAbs) maxAbs = a;
+        }
+        weightReport = ` \xB7 sem_to_motor |W| mean=${(sumAbs / N).toFixed(4)} max=${maxAbs.toFixed(4)}`;
+      }
+    } catch {
+    }
+    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} Q\u2192A Hebbian updates across ${qaList.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${weightReport}`);
+    return { trained, skipped };
+  }
   async _teachAssociationPairs(pairs, opts = {}) {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return { trained: 0, skipped: 0 };
