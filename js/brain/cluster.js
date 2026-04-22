@@ -2114,12 +2114,12 @@ export class NeuronCluster {
           try { binding = hint.resolve(name, this.crossProjections[name]); }
           catch { binding = null; }
         }
-        targets.push({ key, proj: this.crossProjections[name], binding });
+        targets.push({ key, name, proj: this.crossProjections[name], binding });
       }
     }
     let uploaded = 0;
     let boundCount = 0;
-    for (const { key, proj, binding } of targets) {
+    for (const { key, name: projName, proj, binding } of targets) {
       try {
         const matrix = {
           rows: proj.rows,
@@ -2203,7 +2203,17 @@ export class NeuronCluster {
               // guard, so probe scoring stays correct-shape even when
               // the CPU array is gone.
             ]);
-            if (PROBE_CRITICAL_CPU_CSR.has(key)) {
+            // Whitelist is keyed by UNPREFIXED projection name
+            // (letter_to_phon etc.) — not the cluster-prefixed upload
+            // key (cortex_letter_to_phon). Prior check against `key`
+            // ALWAYS failed because the `${this.name}_` prefix never
+            // matches the whitelist entries, so every CPU CSR got
+            // freed — including the 3 that READ/TALK/DYN-PROD probes
+            // need. Preflight then reported `G-` for every projection
+            // and Phase 1's PROBE_CRITICAL Hebbian hit null rowPtr →
+            // frozen Phase 1 at iter 0 letter 'a' right after the
+            // _crossRegionHebbian first-call diag.
+            if (PROBE_CRITICAL_CPU_CSR.has(projName)) {
               console.log(`[CPU-CSR-free] keeping probe-critical ${key} CPU arrays resident (${_freedMB}MB) — needed for READ/TALK/DYN-PROD gate probes.`);
             } else {
               // Free the CPU CSR. `SparseMatrix.propagate` has a
