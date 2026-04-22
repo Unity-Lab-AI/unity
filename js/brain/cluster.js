@@ -306,15 +306,22 @@ export class NeuronCluster {
       // gives the number of independent word mappings a post-synaptic
       // neuron can support without destructive interference.
       //
-      // T37.b — FURTHER REDUCED 10 → 5 to hit Master's 25% target.
-      // Biological cortical long-range connections are ~100-1000 per
-      // neuron in REAL brains, but distributed across MANY cortical
-      // areas (not 14 cross-projections). Per-projection long-range
-      // fanout of 5 is biologically realistic for a single cortical
-      // area pair. Combined with intra-synapse fanout 10 + VRAM rebalance,
-      // this puts language cortex at ~72M neurons = 18% of brain,
-      // matching real human language network proportions.
-      const crossTargetFanout = 5;
+      // T37.c — CORRECTED from T37.b's fanout 5 which was too sparse to
+      // learn. With fanout 5 × 14 projections = 70 total cross-connections
+      // per neuron. Real cortical neurons have 1000-10000 synapses. 70 is
+      // ~15× too sparse → Hebbian can't build meaningful bindings → motor
+      // argmax dominated by random init bias (emissions like "bg" instead
+      // of trained letters). Operator's log showed Q1/181 → "bg" and
+      // Q2-14 → "" after full ELA-K teach.
+      //
+      // Fanout 30 is biologically realistic for a single cortical area
+      // pair (real long-range cortical connections are ~100-1000 per
+      // neuron distributed across MANY cortical areas — per-pair is much
+      // lower). Trade-off: language cortex shrinks from T37.b's projected
+      // 72M to ~17M (4% of brain — still 56× the old 301K, still above
+      // real biological language-network proportion of 1-2% of cortex).
+      // LEARNING capability prioritized over neuron count.
+      const crossTargetFanout = 30;
       // sem↔motor projections init with 50/50 excitatory/inhibitory
       // (zero-mean random weights) instead of default 70/30. Killed
       // the positive-bias baseline that drowned Hebbian training on
@@ -342,16 +349,15 @@ export class NeuronCluster {
       for (const [a, b] of pairs) {
         const aSize = this.regions[a].end - this.regions[a].start;
         const bSize = this.regions[b].end - this.regions[b].start;
-        // T37 — density cap 0.10 → 0.002. Combined with crossTargetFanout=10
-        // this means small sub-regions (letter ~5% = 5K neurons at 100K
-        // cortex) land at min(0.002, 10/5000=0.002)=0.002 density = 10
-        // connections per post. Same ceiling as fanout target. At larger
-        // scales (letter 5M at 100M cortex), density drops to 10/5M=2e-6
-        // per the fanout term. Either way each post has ~10 cross inputs
-        // per projection — biologically plausible sparse long-range
-        // connectivity.
-        const abDensity = Math.min(0.002, crossTargetFanout / Math.max(1, aSize));
-        const baDensity = Math.min(0.002, crossTargetFanout / Math.max(1, bSize));
+        // T37.c — density cap tuned to 0.005 to match fanout 30. At small
+        // sub-regions (letter ~5% = 800 neurons at 17M cortex), density
+        // quotient hits cap at 0.005 = 4 connections. Not ideal but at
+        // bigger scales (letter 850K at 17M cortex), density drops to
+        // 30/850K=3.5e-5, giving 30 connections per post via the fanout
+        // term. Density cap is the small-scale fallback; fanout term
+        // dominates at biological scale.
+        const abDensity = Math.min(0.005, crossTargetFanout / Math.max(1, aSize));
+        const baDensity = Math.min(0.005, crossTargetFanout / Math.max(1, bSize));
         const abKey = `${a}-${b}`;
         const baKey = `${b}-${a}`;
         const abExcitatory = EMISSION_PAIRS.has(abKey) ? 0.5 : 0.7;

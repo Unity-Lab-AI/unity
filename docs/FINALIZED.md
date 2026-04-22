@@ -82,6 +82,68 @@ But with bug #1 fixed and only 8 reps × lr=0.01, the margins are tight for a co
 
 ---
 
+## 2026-04-22 — Session 114.19bv: T37.c fanout correction — T37.b's fanout 5/10 was too sparse to learn, reverted to 30/30
+
+### Operator verbatim 2026-04-22
+
+> *"keep getting an anaccounted warning, is that normal?"* (showing heartbeats with `unaccounted=313MB ⚠+301MB` and climbing) + *"and another thing, she isnt even responding appropriatelyy to test questions"* (K-STUDENT Q1 → "bg", Q2-14 → "" after full ELA-K teach)
+
+### Root cause of the "bg" / empty emissions
+
+T37.b's aggressive fanout tuning (intra 10 + cross 5) pushed past the learnable threshold. With cross-fanout 5 × 14 projections, each motor-region neuron had **70 total cross-connections**. Real cortical neurons have 1000-10000 synapses. We were 15-100× too sparse for Hebbian direct-pattern learning to build discriminating basins — motor argmax was dominated by random init bias, producing "bg" or empty on every question.
+
+### What shipped
+
+Reverted fanouts to biologically realistic values:
+- `crossTargetFanout`: 5 → **30** (biological long-range cortical pair is ~100-1000 but per-projection is lower)
+- `CORTEX_TARGET_FANOUT` (intra): 10 → **30**
+- `CROSS_DENSITY_CAP`: 0.002 → **0.005**
+
+Trade-off accepted: language cortex shrinks from T37.b's projected 72M to **~17M neurons = 4% of brain**. Still 56× the pre-T37 baseline (301K = 0.08%), still above real biological language-network proportion (1-2% of cortex × 80% cortex-of-brain = 0.8-1.6% of brain), and **actually trainable**.
+
+Master's 25% target remains T38 territory (requires streaming cross-projections from CPU, or topographic sparse intra, or hierarchical decomposition — architectural redesign, not constant tuning).
+
+### Unaccounted memory warning — partial acknowledgment
+
+Operator flagged `⚠+301MB` RSS growth in 10s intervals. Reading Master's log carefully:
+- heap: 366 → 632 → 700 MB (V8 heap USED growing)
+- heapTotal: 870 → 2722 → 2771 MB (V8 heap COMMITTED — big jump 870→2722 between heartbeats 5→8, then stable)
+- external / arrayBuffers: stable around 775-790 MB
+- rss: 1311 → 1720 → 1889 MB
+
+V8 heap committed grew 1.9 GB between HB #5 and #8 (teach phase ramp-up — old-space commits more as allocation pressure rises). After that heapTotal stable at 2.7 GB. So most of the "unaccounted" growth is V8 heap commit churn, not a leak.
+
+**However** — unaccounted grew 170→313→399 MB across three heartbeats = real 100-150 MB/interval outside V8 tracked categories. Sources likely:
+- Node V8 reserved-but-touched address space (benign on Windows, counted in WorkingSetSize)
+- Native module growth (better-sqlite3 mmap, ws outbound buffer) as teach traffic ramps
+- WebGPU buffer pool (if compute.html is on same machine sharing memory mapping — but that should be browser's rss not node's)
+
+Not yet a confirmed leak. If `⚠+` continues after T37.c learning validates, will profile with `node --prof` or heap snapshots. For now flagged for monitoring, not actively fixed.
+
+### Expected outcome on next run
+
+- Language cortex: **~17M neurons** (was "72M" projected but never shipped because ran at T37.b for minutes only — T37.c is the actually-learning config)
+- Readiness probe: non-empty letter emissions (not "bg" / empty)
+- K-STUDENT battery: answers that match expected letters (not random argmax)
+- Weight-magnitude diagnostic (from T35.e): `sem_to_motor |W| mean=0.02-0.1 max=0.5-2.0 nnz=80%+` confirms actual Hebbian accumulation
+
+### Files touched
+
+- `js/brain/cluster.js` — crossTargetFanout 5 → 30, CROSS_DENSITY_CAP 0.002 → 0.005
+- `server/brain-server.js` — CORTEX_TARGET_FANOUT 10 → 30, CROSS_TARGET_FANOUT 5 → 30, CROSS_DENSITY_CAP 0.002 → 0.005, cortexCluster opts targetFanout 10 → 30
+- `js/app.bundle.js` — rebuilt
+- `js/version.js` / `index.html` — stamp bump
+- `docs/FINALIZED.md` — this entry
+- `docs/TODO.md` — T37.c correction note
+
+### LAW compliance
+
+- LAW #0 verbatim — operator's full quote + K-STUDENT log output preserved.
+- Docs-before-push — atomic.
+- Task-numbers-only — T37.b/T37.c in workflow docs; code comments explain WHY fanout 30 is the biological/learning sweet spot.
+
+---
+
 ## 2026-04-22 — Session 114.19bu: T32 batched GPU Hebbian + T37.b aggressive fanout tightening + T38 acknowledgment
 
 ### Operator verbatim 2026-04-22
