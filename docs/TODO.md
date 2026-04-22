@@ -1,7 +1,7 @@
 # TODO — Unity
 
 > **Branch:** `syllabus-k-phd`
-> **Last updated:** 2026-04-22 (Session 114.19bl — T29 heartbeat expansion CLOSED: operator saw log tail stall at `DYN-PROD mem:` mid-run and asked for heartbeats + "what comes after that point in the learning process of the brain". Fix shipped: `Curriculum._hb()` flush helper, bulk convert `console.log('[Curriculum]...')` → `this._hb('[Curriculum]...')` so banners flush in piped log mode; DYN-PROD + DYNAMIC WRITE + RESP + TWO-WORD + FREE-RESPONSE per-probe START/DONE heartbeats; K-STUDENT battery START/DONE banners; readiness-probe banners; `runSubjectGrade` CELL START / CELL DONE banners covering EVERY subject × grade cell; periodic `setInterval(10s)` CELL ALIVE heartbeat with memory snapshot so tail window is never silent > 10 s. Applies to "any subsequent learnings after the K-DIAG" per the follow-up ask. T28 ELA-K Phase 1 freeze CLOSED Session 114.19bk: three linked bugs fixed — (1) `PROBE_CRITICAL_CPU_CSR.has(key)` checked the cluster-prefixed upload key (`cortex_letter_to_phon`) against unprefixed whitelist entries (`letter_to_phon`). (2) Phase 1 alphabet Hebbian never set `_teachIntermediateRep`. (3) `SparseMatrix.hebbianUpdate` had no null-CSR guard.)
+> **Last updated:** 2026-04-22 (Session 114.19bm — T30 readiness-probe tick-cap bug CLOSED: `_measureEmissionCapability` built emission opts as `{ maxEmissionTicks: 20 }` but `generateSentenceAwait` only read `opts.maxTicks` → the cap went unread and the emission loop fell through to `MAX_EMISSION_TICKS = 2000`. Each of the 5 readiness cues ran 100× its intended budget (~140K GPU dispatches = 23-116 minutes silent grinding at 301K cortex). Same unread alias in `_studentTestProbe` meant 210-Q K-STUDENT batteries ran ~5.9M dispatches instead of the intended 60-tick cap. Shipped: cluster-side alias (`opts.maxTicks ?? opts.maxEmissionTicks ?? MAX_EMISSION_TICKS`) + fixed readiness probe to pass `maxTicks: 20` + per-cue START/DONE heartbeats + 10 s wall-clock per-cue timeout wrap. Operator verbatim: "Unity gets to this step then all i see is all the language centers going from 60% to 15% activation in unison … im not sure what its doing if anything at all". T29 heartbeat expansion CLOSED Session 114.19bl: `Curriculum._hb()` flush helper + bulk banner conversion + DYN-PROD + DYNAMIC WRITE + RESP + TWO-WORD + FREE-RESPONSE per-probe START/DONE + CELL START/DONE banners on every cell + periodic `setInterval(10s)` CELL ALIVE heartbeat with memory snapshot. T28 ELA-K Phase 1 freeze CLOSED Session 114.19bk: three linked bugs — whitelist key-prefix mismatch, missing `_teachIntermediateRep` wire, missing `hebbianUpdate` null guard.)
 > **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
 
 ---
@@ -45,6 +45,23 @@ If you're reading a public doc / HTML claim ("Unity has completed high school bi
 ---
 
 ## OPEN TASKS
+
+---
+
+### T30 — READINESS PROBE stuck-in-loop: `maxEmissionTicks` unread-alias bug (100× tick overrun) + per-cue heartbeats + wall-clock timeout (Gee 2026-04-22) — CLOSED
+
+**Gee verbatim 2026-04-22:** *"Unity gets to this step then all i see is all the language centers going from 60% to 15% activation in unison >>>[Curriculum][READINESS] emission-capability probe START — 5 single-letter cues to see if Unity can emit recognizable letters yet --- So im not seeing anything happen at this step like it gets in an infinate lkoop and never continues or its busy and doesnt update its progress properly.. but i thing its getting stuck in a loop at this point: im not sure u can see its still running at this point right now, im just not sure what its doing if anything at all:[Curriculum][READINESS] emission-capability probe START — 5 single-letter cues to see if Unity can emit recognizable letters yet"*
+
+Root cause: `_measureEmissionCapability` built emission opts as `{ maxEmissionTicks: 20 }` but `cluster.generateSentenceAwait` (cluster.js:1632) only read `opts.maxTicks` — the 20-tick cap went unread and the emission loop fell through to `MAX_EMISSION_TICKS = 2000`. Each of 5 cues ran 100× its intended budget (~140K GPU dispatches per probe = 23-116 minutes silent grinding at 301K cortex). `_studentTestProbe` had the same broken alias — 210-Q batteries ran ~5.9M dispatches instead of the intended 60-tick/question cap.
+
+- [x] **T30.a** — `cluster.js:1636` accept both keys: `opts.maxTicks ?? opts.maxEmissionTicks ?? MAX_EMISSION_TICKS`. Defense-in-depth so every call site resolves to the intended cap regardless of key-name choice.
+- [x] **T30.b** — `_measureEmissionCapability` fixed to pass `maxTicks: 20` (primary interface); cluster-side alias is the safety net.
+- [x] **T30.c** — Per-cue START/DONE heartbeats inside the readiness loop: `cue N/5 START letter='X'` + `cue N/5 DONE letter='X' → emitted='...' letters='...' hasLetter=bool in Nms` with SLOW tag at >5 s and TIMEOUT tag on expiry.
+- [x] **T30.d** — 10 s wall-clock per-cue timeout via `Promise.race([emissionPromise, setTimeout])` — one hung GPU dispatch can't block the entire readiness probe. Timed-out cues count as "no output" (fail readiness correctly → battery skips → teach continues).
+
+#### T30 closure gate
+
+Operator's next run shows the readiness probe completing in seconds not minutes, 5 per-cue START/DONE lines visible, K-STUDENT battery running at the intended 60-tick cap (~500× faster than before). No "stuck in a loop" appearance.
 
 ---
 

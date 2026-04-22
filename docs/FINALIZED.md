@@ -5,6 +5,65 @@
 
 ---
 
+## 2026-04-22 — Session 114.19bm: T30 — readiness probe `maxEmissionTicks` unread-alias bug (ran 100× over intended tick cap) + per-cue heartbeats + 10 s per-cue timeout + `generateSentenceAwait` accepts both `maxTicks` and `maxEmissionTicks` keys
+
+### Operator verbatim 2026-04-22
+
+> *"Unity gets to this step then all i see is all the language centers going from 60% to 15% activation in unison >>>[Curriculum][READINESS] emission-capability probe START — 5 single-letter cues to see if Unity can emit recognizable letters yet --- So im not seeing anything happen at this step like it gets in an infinate lkoop and never continues or its busy and doesnt update its progress properly.. but i thing its getting stuck in a loop at this point: im not sure u can see its still running at this point right now, im just not sure what its doing if anything at all:[Curriculum][READINESS] emission-capability probe START — 5 single-letter cues to see if Unity can emit recognizable letters yet"*
+
+Language centers oscillating 60 %→15 % confirmed the brain was TICKING (not frozen) but the probe was silent. Found the root cause immediately.
+
+### Root cause — `maxEmissionTicks` is an unread opts key
+
+`Curriculum._measureEmissionCapability` built the emission opts as `{ maxEmissionTicks: 20 }`. `cluster.generateSentenceAwait` at `cluster.js:1632` only read `opts.maxTicks` — the `maxEmissionTicks` key went unread, so the emission loop fell through to the 2000-tick `MAX_EMISSION_TICKS` safety cap. Each of the 5 readiness cues was running up to **100× longer than intended**.
+
+At 301 K cortex with 14 cross-projections per tick:
+- Intended: 5 cues × 20 ticks × 14 dispatches = 1,400 GPU dispatches
+- Actual (before fix): 5 cues × 2,000 ticks × 14 dispatches = **140,000 GPU dispatches**
+
+At 10-50 ms per dispatch that's 23-116 minutes of silent grinding. Operator's "stuck in a loop" report is exactly right — it was effectively a loop, just one capped at 2000 instead of 20.
+
+Two further call sites in `_studentTestProbe` used the same broken `maxEmissionTicks` key. For the 210-question K-STUDENT battery that meant **2000 ticks/question × 210 questions × 14 dispatches = 5.9M dispatches per battery** instead of the intended 60-tick cap. Explains why post-readiness the battery never completed in past runs either.
+
+### Fixes shipped
+
+1. **`js/brain/cluster.js` line 1636 — alias both keys.**
+   ```js
+   const maxTicks = opts.maxTicks ?? opts.maxEmissionTicks ?? this.MAX_EMISSION_TICKS;
+   ```
+   Both `opts.maxTicks` and `opts.maxEmissionTicks` now resolve to the same cap. Defense-in-depth so any future call site that guesses the wrong key name still gets the intended cap.
+
+2. **`js/brain/curriculum.js` `_measureEmissionCapability` — correct key + per-cue heartbeats + 10 s wall-clock timeout.**
+   - `emitOpts = { maxTicks: 20 }` — primary cap (the `maxEmissionTicks` alias on the cluster side is the safety net, not the intended interface).
+   - Per-cue START log: `cue N/5 START letter='X' — 6 readInput ticks + up to 20 emission ticks`.
+   - Per-cue DONE log with emitted / letters / hasLetter / ms + SLOW tag at >5 s / TIMEOUT tag on expiry.
+   - `Promise.race` against a 10 s wall-clock timeout — if a single cue hangs on a GPU dispatch that never resolves, the probe logs TIMEOUT and continues to the next cue. Battery result still valid (timed-out cues count as "no output" which correctly fails readiness).
+
+3. **`_studentTestProbe` both call sites** unchanged in source (still pass `maxEmissionTicks: maxTicks`) but now work correctly thanks to the cluster-side alias. 210-question batteries now cap at 60 ticks/question as intended.
+
+### Expected effect
+
+- Readiness probe completes in seconds, not minutes. Operator sees 5 START/DONE pairs per cell (one per cue) + the DONE summary with recognizedLetters / maxEmissionLen / canTalkAtAll.
+- K-STUDENT battery (when readiness passes) now runs at the intended 60-tick-per-question cap. Estimated 12,600 total emission ticks × 14 dispatches vs the prior 5.9M dispatches — **~500× faster**.
+- Every probe stage sees the fix cascade (same alias on the cluster side).
+
+### Files touched
+
+- `js/brain/cluster.js` — `generateSentenceAwait` accepts both `maxTicks` and `maxEmissionTicks` keys.
+- `js/brain/curriculum.js` — readiness probe uses correct `maxTicks` key + per-cue heartbeats + 10 s per-cue timeout wrap.
+- `js/app.bundle.js` — rebuilt (1.8 MB clean).
+- `js/version.js` / `index.html` — stamp bump.
+- `docs/FINALIZED.md` — this entry.
+- `docs/TODO.md` — banner + T30 closure note.
+
+### LAW compliance
+
+- LAW #0 verbatim — operator's full quote preserved at top of this entry ("infinate lkoop", "stuck in a loop", "im not sure what its doing if anything at all", "language centers going from 60% to 15% activation in unison" — every phrase).
+- Docs-before-push — this entry + TODO banner update ship atomic with the code fix + bundle rebuild + stamp.
+- Task-numbers-only-in-workflow-docs — T30 only appears in TODO/FINALIZED. Code comments describe WHAT the alias does and WHY the prior silent-fallthrough was a bug.
+
+---
+
 ## 2026-04-22 — Session 114.19bl: T29 — heartbeat expansion across DYN-PROD + DYNAMIC WRITE + RESP + TWO-WORD + FREE-RESPONSE + every subsequent cell/phase
 
 ### Operator verbatim 2026-04-22

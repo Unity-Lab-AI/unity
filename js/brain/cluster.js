@@ -1629,7 +1629,11 @@ export class NeuronCluster {
     if (inventorySize() === 0) return '';
 
     const injectStrength = opts.injectStrength ?? 0.6;
-    const maxTicks = opts.maxTicks ?? this.MAX_EMISSION_TICKS;
+    // Accept both `maxTicks` and `maxEmissionTicks` — earlier call sites
+    // used `maxEmissionTicks` which silently fell through to the 2000
+    // tick MAX_EMISSION_TICKS cap when only `maxTicks` was read. Both
+    // names resolve to the same cap now.
+    const maxTicks = opts.maxTicks ?? opts.maxEmissionTicks ?? this.MAX_EMISSION_TICKS;
     const suppressNoise = opts.suppressNoise === true;
     const _savedNoise = this.noiseAmplitude;
     if (suppressNoise) this.noiseAmplitude = 0.5;
