@@ -754,7 +754,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "9f614d1a-764c";
+var BUILD = "8a889261-1e8e";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -8514,13 +8514,69 @@ var ELA_KINDERGARTEN_EXAM = [
     source: "authored",
     methodology: { prompt: "how do you know when two words rhyme?", keywords: ["end", "same", "sound", "ending", "match", "last"], minKeywords: 1 }
   },
-  { q: "what word rhymes with dog?", a: "log", variants: ["log", "fog", "hog", "frog", "jog"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
-  { q: "what word rhymes with sun?", a: "fun", variants: ["fun", "run", "bun", "one", "done"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
-  { q: "what word rhymes with bed?", a: "red", variants: ["red", "head", "said", "fed", "led"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
-  { q: "what word rhymes with bee?", a: "tree", variants: ["tree", "see", "three", "me", "free", "knee"], standard: "K.RF.2a", difficulty: 1, source: "authored" },
-  { q: "how many syllables are in the word baby?", a: "two", variants: ["two", "2"], standard: "K.RF.2b", difficulty: 2, source: "authored" },
-  { q: "how many syllables are in the word elephant?", a: "three", variants: ["three", "3"], standard: "K.RF.2b", difficulty: 2, source: "authored" },
-  { q: "how many syllables are in the word cat?", a: "one", variants: ["one", "1"], standard: "K.RF.2b", difficulty: 1, source: "authored" },
+  {
+    q: "what word rhymes with dog?",
+    a: "log",
+    variants: ["log", "fog", "hog", "frog", "jog"],
+    standard: "K.RF.2a",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you know when two words rhyme?", keywords: ["end", "same", "sound", "ending", "match", "last"], minKeywords: 1 }
+  },
+  {
+    q: "what word rhymes with sun?",
+    a: "fun",
+    variants: ["fun", "run", "bun", "one", "done"],
+    standard: "K.RF.2a",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you know when two words rhyme?", keywords: ["end", "same", "sound", "ending", "match", "last"], minKeywords: 1 }
+  },
+  {
+    q: "what word rhymes with bed?",
+    a: "red",
+    variants: ["red", "head", "said", "fed", "led"],
+    standard: "K.RF.2a",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you know when two words rhyme?", keywords: ["end", "same", "sound", "ending", "match", "last"], minKeywords: 1 }
+  },
+  {
+    q: "what word rhymes with bee?",
+    a: "tree",
+    variants: ["tree", "see", "three", "me", "free", "knee"],
+    standard: "K.RF.2a",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you know when two words rhyme?", keywords: ["end", "same", "sound", "ending", "match", "last"], minKeywords: 1 }
+  },
+  {
+    q: "how many syllables are in the word baby?",
+    a: "two",
+    variants: ["two", "2"],
+    standard: "K.RF.2b",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how do you count syllables in a word?", keywords: ["clap", "count", "break", "parts", "beats", "sound", "chunks"], minKeywords: 1 }
+  },
+  {
+    q: "how many syllables are in the word elephant?",
+    a: "three",
+    variants: ["three", "3"],
+    standard: "K.RF.2b",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how do you count syllables in a word?", keywords: ["clap", "count", "break", "parts", "beats", "sound", "chunks"], minKeywords: 1 }
+  },
+  {
+    q: "how many syllables are in the word cat?",
+    a: "one",
+    variants: ["one", "1"],
+    standard: "K.RF.2b",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you count syllables in a word?", keywords: ["clap", "count", "break", "parts", "beats", "sound", "chunks"], minKeywords: 1 }
+  },
   {
     q: "what is the first sound in cat?",
     a: "c",
@@ -8530,13 +8586,69 @@ var ELA_KINDERGARTEN_EXAM = [
     source: "DIBELS-8-sample",
     methodology: { prompt: "how do you find the first sound in a word?", keywords: ["start", "begin", "first", "front", "beginning", "listen"], minKeywords: 1 }
   },
-  { q: "what is the first sound in dog?", a: "d", variants: ["d", "duh", "d sound"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what is the first sound in map?", a: "m", variants: ["m", "muh", "mm"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what is the first sound in sun?", a: "s", variants: ["s", "sss", "suh"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what is the first sound in fish?", a: "f", variants: ["f", "fff", "fuh"], standard: "K.RF.2d", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what is the last sound in cat?", a: "t", variants: ["t", "tuh"], standard: "K.RF.2d", difficulty: 2, source: "authored" },
-  { q: "what is the last sound in dog?", a: "g", variants: ["g", "guh"], standard: "K.RF.2d", difficulty: 2, source: "authored" },
-  { q: "what is the middle sound in cat?", a: "a", variants: ["a", "ah", "short a"], standard: "K.RF.2d", difficulty: 3, source: "authored" },
+  {
+    q: "what is the first sound in dog?",
+    a: "d",
+    variants: ["d", "duh", "d sound"],
+    standard: "K.RF.2d",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you find the first sound in a word?", keywords: ["start", "begin", "first", "front", "beginning", "listen"], minKeywords: 1 }
+  },
+  {
+    q: "what is the first sound in map?",
+    a: "m",
+    variants: ["m", "muh", "mm"],
+    standard: "K.RF.2d",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you find the first sound in a word?", keywords: ["start", "begin", "first", "front", "beginning", "listen"], minKeywords: 1 }
+  },
+  {
+    q: "what is the first sound in sun?",
+    a: "s",
+    variants: ["s", "sss", "suh"],
+    standard: "K.RF.2d",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you find the first sound in a word?", keywords: ["start", "begin", "first", "front", "beginning", "listen"], minKeywords: 1 }
+  },
+  {
+    q: "what is the first sound in fish?",
+    a: "f",
+    variants: ["f", "fff", "fuh"],
+    standard: "K.RF.2d",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you find the first sound in a word?", keywords: ["start", "begin", "first", "front", "beginning", "listen"], minKeywords: 1 }
+  },
+  {
+    q: "what is the last sound in cat?",
+    a: "t",
+    variants: ["t", "tuh"],
+    standard: "K.RF.2d",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how do you find the last sound in a word?", keywords: ["end", "last", "after", "final", "listen"], minKeywords: 1 }
+  },
+  {
+    q: "what is the last sound in dog?",
+    a: "g",
+    variants: ["g", "guh"],
+    standard: "K.RF.2d",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how do you find the last sound in a word?", keywords: ["end", "last", "after", "final", "listen"], minKeywords: 1 }
+  },
+  {
+    q: "what is the middle sound in cat?",
+    a: "a",
+    variants: ["a", "ah", "short a"],
+    standard: "K.RF.2d",
+    difficulty: 3,
+    source: "authored",
+    methodology: { prompt: "how do you find the middle sound in a word?", keywords: ["middle", "between", "vowel", "center", "inside"], minKeywords: 1 }
+  },
   {
     q: "blend these sounds: c-a-t",
     a: "cat",
@@ -8546,15 +8658,87 @@ var ELA_KINDERGARTEN_EXAM = [
     source: "DIBELS-8-sample",
     methodology: { prompt: "how do you put sounds together to make a word?", keywords: ["blend", "together", "put", "join", "connect", "merge", "combine"], minKeywords: 1 }
   },
-  { q: "blend these sounds: d-o-g", a: "dog", variants: ["dog"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
-  { q: "blend these sounds: s-u-n", a: "sun", variants: ["sun"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
-  { q: "blend these sounds: m-a-p", a: "map", variants: ["map"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
-  { q: "blend these sounds: b-e-d", a: "bed", variants: ["bed"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
-  { q: "blend these sounds: p-i-g", a: "pig", variants: ["pig"], standard: "K.RF.2e", difficulty: 2, source: "DIBELS-8-sample" },
-  { q: "blend these sounds: h-a-t", a: "hat", variants: ["hat"], standard: "K.RF.2e", difficulty: 2, source: "authored" },
-  { q: "blend these sounds: r-u-n", a: "run", variants: ["run"], standard: "K.RF.2e", difficulty: 2, source: "authored" },
-  { q: "blend these sounds: t-o-p", a: "top", variants: ["top"], standard: "K.RF.2e", difficulty: 2, source: "authored" },
-  { q: "blend these sounds: b-i-g", a: "big", variants: ["big"], standard: "K.RF.2e", difficulty: 2, source: "authored" },
+  {
+    q: "blend these sounds: d-o-g",
+    a: "dog",
+    variants: ["dog"],
+    standard: "K.RF.2e",
+    difficulty: 2,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you put sounds together to make a word?", keywords: ["blend", "together", "put", "join", "connect", "merge", "combine"], minKeywords: 1 }
+  },
+  {
+    q: "blend these sounds: s-u-n",
+    a: "sun",
+    variants: ["sun"],
+    standard: "K.RF.2e",
+    difficulty: 2,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you put sounds together to make a word?", keywords: ["blend", "together", "put", "join", "connect", "merge", "combine"], minKeywords: 1 }
+  },
+  {
+    q: "blend these sounds: m-a-p",
+    a: "map",
+    variants: ["map"],
+    standard: "K.RF.2e",
+    difficulty: 2,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you put sounds together to make a word?", keywords: ["blend", "together", "put", "join", "connect", "merge", "combine"], minKeywords: 1 }
+  },
+  {
+    q: "blend these sounds: b-e-d",
+    a: "bed",
+    variants: ["bed"],
+    standard: "K.RF.2e",
+    difficulty: 2,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you put sounds together to make a word?", keywords: ["blend", "together", "put", "join", "connect", "merge", "combine"], minKeywords: 1 }
+  },
+  {
+    q: "blend these sounds: p-i-g",
+    a: "pig",
+    variants: ["pig"],
+    standard: "K.RF.2e",
+    difficulty: 2,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you put sounds together to make a word?", keywords: ["blend", "together", "put", "join", "connect", "merge", "combine"], minKeywords: 1 }
+  },
+  {
+    q: "blend these sounds: h-a-t",
+    a: "hat",
+    variants: ["hat"],
+    standard: "K.RF.2e",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how do you put sounds together to make a word?", keywords: ["blend", "together", "put", "join", "connect", "merge", "combine"], minKeywords: 1 }
+  },
+  {
+    q: "blend these sounds: r-u-n",
+    a: "run",
+    variants: ["run"],
+    standard: "K.RF.2e",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how do you put sounds together to make a word?", keywords: ["blend", "together", "put", "join", "connect", "merge", "combine"], minKeywords: 1 }
+  },
+  {
+    q: "blend these sounds: t-o-p",
+    a: "top",
+    variants: ["top"],
+    standard: "K.RF.2e",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how do you put sounds together to make a word?", keywords: ["blend", "together", "put", "join", "connect", "merge", "combine"], minKeywords: 1 }
+  },
+  {
+    q: "blend these sounds: b-i-g",
+    a: "big",
+    variants: ["big"],
+    standard: "K.RF.2e",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how do you put sounds together to make a word?", keywords: ["blend", "together", "put", "join", "connect", "merge", "combine"], minKeywords: 1 }
+  },
   // K.RF.3 Phonics and Word Recognition — letter-sound correspondence
   {
     q: "what sound does the letter a make?",
@@ -8565,40 +8749,288 @@ var ELA_KINDERGARTEN_EXAM = [
     source: "DIBELS-8-sample",
     methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
   },
-  { q: "what sound does the letter b make?", a: "b", variants: ["b", "buh", "bee"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter c make?", a: "c", variants: ["c", "k", "kuh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter d make?", a: "d", variants: ["d", "duh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter e make?", a: "e", variants: ["e", "eh", "ee"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter f make?", a: "f", variants: ["f", "fuh", "fff"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter g make?", a: "g", variants: ["g", "guh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter h make?", a: "h", variants: ["h", "huh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter i make?", a: "i", variants: ["i", "ih", "eye"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter j make?", a: "j", variants: ["j", "juh", "jay"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter k make?", a: "k", variants: ["k", "kuh", "kay"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter l make?", a: "l", variants: ["l", "luh", "el"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter m make?", a: "m", variants: ["m", "muh", "em"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter n make?", a: "n", variants: ["n", "nuh", "en"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter o make?", a: "o", variants: ["o", "oh", "ah"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter p make?", a: "p", variants: ["p", "puh", "pee"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter q make?", a: "q", variants: ["q", "kw", "cue"], standard: "K.RF.3a", difficulty: 2, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter r make?", a: "r", variants: ["r", "ruh", "ar"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter s make?", a: "s", variants: ["s", "suh", "sss"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter t make?", a: "t", variants: ["t", "tuh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter u make?", a: "u", variants: ["u", "uh", "you"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter v make?", a: "v", variants: ["v", "vuh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter w make?", a: "w", variants: ["w", "wuh"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter x make?", a: "x", variants: ["x", "ks"], standard: "K.RF.3a", difficulty: 2, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter y make?", a: "y", variants: ["y", "yuh", "why"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "what sound does the letter z make?", a: "z", variants: ["z", "zuh", "zz"], standard: "K.RF.3a", difficulty: 1, source: "DIBELS-8-sample" },
+  {
+    q: "what sound does the letter b make?",
+    a: "b",
+    variants: ["b", "buh", "bee"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter c make?",
+    a: "c",
+    variants: ["c", "k", "kuh"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter d make?",
+    a: "d",
+    variants: ["d", "duh"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter e make?",
+    a: "e",
+    variants: ["e", "eh", "ee"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter f make?",
+    a: "f",
+    variants: ["f", "fuh", "fff"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter g make?",
+    a: "g",
+    variants: ["g", "guh"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter h make?",
+    a: "h",
+    variants: ["h", "huh"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter i make?",
+    a: "i",
+    variants: ["i", "ih", "eye"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter j make?",
+    a: "j",
+    variants: ["j", "juh", "jay"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter k make?",
+    a: "k",
+    variants: ["k", "kuh", "kay"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter l make?",
+    a: "l",
+    variants: ["l", "luh", "el"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter m make?",
+    a: "m",
+    variants: ["m", "muh", "em"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter n make?",
+    a: "n",
+    variants: ["n", "nuh", "en"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter o make?",
+    a: "o",
+    variants: ["o", "oh", "ah"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter p make?",
+    a: "p",
+    variants: ["p", "puh", "pee"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter q make?",
+    a: "q",
+    variants: ["q", "kw", "cue"],
+    standard: "K.RF.3a",
+    difficulty: 2,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter r make?",
+    a: "r",
+    variants: ["r", "ruh", "ar"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter s make?",
+    a: "s",
+    variants: ["s", "suh", "sss"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter t make?",
+    a: "t",
+    variants: ["t", "tuh"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter u make?",
+    a: "u",
+    variants: ["u", "uh", "you"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter v make?",
+    a: "v",
+    variants: ["v", "vuh"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter w make?",
+    a: "w",
+    variants: ["w", "wuh"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter x make?",
+    a: "x",
+    variants: ["x", "ks"],
+    standard: "K.RF.3a",
+    difficulty: 2,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter y make?",
+    a: "y",
+    variants: ["y", "yuh", "why"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
+  {
+    q: "what sound does the letter z make?",
+    a: "z",
+    variants: ["z", "zuh", "zz"],
+    standard: "K.RF.3a",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you know what sound a letter makes?", keywords: ["learn", "remember", "hear", "practice", "alphabet", "teacher", "say"], minKeywords: 1 }
+  },
   { q: "what letter makes the /m/ sound?", a: "m", variants: ["m"], standard: "K.RF.3a", difficulty: 1, source: "AIMSweb-sample" },
   { q: "what letter makes the /s/ sound?", a: "s", variants: ["s"], standard: "K.RF.3a", difficulty: 1, source: "AIMSweb-sample" },
   { q: "what letter makes the /p/ sound?", a: "p", variants: ["p"], standard: "K.RF.3a", difficulty: 1, source: "AIMSweb-sample" },
-  { q: "what is the short a sound?", a: "a", variants: ["a", "ah", "as in cat"], standard: "K.RF.3b", difficulty: 2, source: "authored" },
-  { q: "what is the long a sound?", a: "ay", variants: ["ay", "a", "as in cake"], standard: "K.RF.3b", difficulty: 3, source: "authored" },
-  { q: "what is the short e sound?", a: "e", variants: ["e", "eh", "as in bed"], standard: "K.RF.3b", difficulty: 2, source: "authored" },
-  { q: "what is the short i sound?", a: "i", variants: ["i", "ih", "as in pig"], standard: "K.RF.3b", difficulty: 2, source: "authored" },
-  { q: "what is the short o sound?", a: "o", variants: ["o", "ah", "as in hot"], standard: "K.RF.3b", difficulty: 2, source: "authored" },
-  { q: "what is the short u sound?", a: "u", variants: ["u", "uh", "as in sun"], standard: "K.RF.3b", difficulty: 2, source: "authored" },
+  {
+    q: "what is the short a sound?",
+    a: "a",
+    variants: ["a", "ah", "as in cat"],
+    standard: "K.RF.3b",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how can you tell a vowel is short?", keywords: ["short", "quick", "vowel", "cat", "example", "closed"], minKeywords: 1 }
+  },
+  {
+    q: "what is the long a sound?",
+    a: "ay",
+    variants: ["ay", "a", "as in cake"],
+    standard: "K.RF.3b",
+    difficulty: 3,
+    source: "authored",
+    methodology: { prompt: "how can you tell a vowel is long?", keywords: ["long", "name", "vowel", "cake", "example", "open"], minKeywords: 1 }
+  },
+  {
+    q: "what is the short e sound?",
+    a: "e",
+    variants: ["e", "eh", "as in bed"],
+    standard: "K.RF.3b",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how can you tell a vowel is short?", keywords: ["short", "quick", "vowel", "bed", "example", "closed"], minKeywords: 1 }
+  },
+  {
+    q: "what is the short i sound?",
+    a: "i",
+    variants: ["i", "ih", "as in pig"],
+    standard: "K.RF.3b",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how can you tell a vowel is short?", keywords: ["short", "quick", "vowel", "pig", "example", "closed"], minKeywords: 1 }
+  },
+  {
+    q: "what is the short o sound?",
+    a: "o",
+    variants: ["o", "ah", "as in hot"],
+    standard: "K.RF.3b",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how can you tell a vowel is short?", keywords: ["short", "quick", "vowel", "hot", "example", "closed"], minKeywords: 1 }
+  },
+  {
+    q: "what is the short u sound?",
+    a: "u",
+    variants: ["u", "uh", "as in sun"],
+    standard: "K.RF.3b",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how can you tell a vowel is short?", keywords: ["short", "quick", "vowel", "sun", "example", "closed"], minKeywords: 1 }
+  },
   // K.RF.3c High-frequency sight words
   { q: "read this word: the", a: "the", variants: ["the"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
   { q: "read this word: and", a: "and", variants: ["and"], standard: "K.RF.3c", difficulty: 1, source: "Fountas-Pinnell-sample" },
@@ -8621,16 +9053,96 @@ var ELA_KINDERGARTEN_EXAM = [
   { q: "read this word: can", a: "can", variants: ["can"], standard: "K.RF.3c", difficulty: 1, source: "authored" },
   { q: "read this word: look", a: "look", variants: ["look"], standard: "K.RF.3c", difficulty: 1, source: "authored" },
   // K.RF.3d CVC word reading
-  { q: "read this cvc word: cat", a: "cat", variants: ["cat"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
-  { q: "read this cvc word: dog", a: "dog", variants: ["dog"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
-  { q: "read this cvc word: sun", a: "sun", variants: ["sun"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
-  { q: "read this cvc word: map", a: "map", variants: ["map"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
-  { q: "read this cvc word: bed", a: "bed", variants: ["bed"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
-  { q: "read this cvc word: pig", a: "pig", variants: ["pig"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
-  { q: "read this cvc word: hat", a: "hat", variants: ["hat"], standard: "K.RF.3d", difficulty: 1, source: "AIMSweb-sample" },
-  { q: "read this cvc word: run", a: "run", variants: ["run"], standard: "K.RF.3d", difficulty: 1, source: "authored" },
-  { q: "read this cvc word: top", a: "top", variants: ["top"], standard: "K.RF.3d", difficulty: 1, source: "authored" },
-  { q: "read this cvc word: big", a: "big", variants: ["big"], standard: "K.RF.3d", difficulty: 1, source: "authored" },
+  {
+    q: "read this cvc word: cat",
+    a: "cat",
+    variants: ["cat"],
+    standard: "K.RF.3d",
+    difficulty: 1,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you read a word with three letters?", keywords: ["sound", "blend", "letter", "each", "together", "say"], minKeywords: 1 }
+  },
+  {
+    q: "read this cvc word: dog",
+    a: "dog",
+    variants: ["dog"],
+    standard: "K.RF.3d",
+    difficulty: 1,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you read a word with three letters?", keywords: ["sound", "blend", "letter", "each", "together", "say"], minKeywords: 1 }
+  },
+  {
+    q: "read this cvc word: sun",
+    a: "sun",
+    variants: ["sun"],
+    standard: "K.RF.3d",
+    difficulty: 1,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you read a word with three letters?", keywords: ["sound", "blend", "letter", "each", "together", "say"], minKeywords: 1 }
+  },
+  {
+    q: "read this cvc word: map",
+    a: "map",
+    variants: ["map"],
+    standard: "K.RF.3d",
+    difficulty: 1,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you read a word with three letters?", keywords: ["sound", "blend", "letter", "each", "together", "say"], minKeywords: 1 }
+  },
+  {
+    q: "read this cvc word: bed",
+    a: "bed",
+    variants: ["bed"],
+    standard: "K.RF.3d",
+    difficulty: 1,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you read a word with three letters?", keywords: ["sound", "blend", "letter", "each", "together", "say"], minKeywords: 1 }
+  },
+  {
+    q: "read this cvc word: pig",
+    a: "pig",
+    variants: ["pig"],
+    standard: "K.RF.3d",
+    difficulty: 1,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you read a word with three letters?", keywords: ["sound", "blend", "letter", "each", "together", "say"], minKeywords: 1 }
+  },
+  {
+    q: "read this cvc word: hat",
+    a: "hat",
+    variants: ["hat"],
+    standard: "K.RF.3d",
+    difficulty: 1,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you read a word with three letters?", keywords: ["sound", "blend", "letter", "each", "together", "say"], minKeywords: 1 }
+  },
+  {
+    q: "read this cvc word: run",
+    a: "run",
+    variants: ["run"],
+    standard: "K.RF.3d",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you read a word with three letters?", keywords: ["sound", "blend", "letter", "each", "together", "say"], minKeywords: 1 }
+  },
+  {
+    q: "read this cvc word: top",
+    a: "top",
+    variants: ["top"],
+    standard: "K.RF.3d",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you read a word with three letters?", keywords: ["sound", "blend", "letter", "each", "together", "say"], minKeywords: 1 }
+  },
+  {
+    q: "read this cvc word: big",
+    a: "big",
+    variants: ["big"],
+    standard: "K.RF.3d",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you read a word with three letters?", keywords: ["sound", "blend", "letter", "each", "together", "say"], minKeywords: 1 }
+  },
   // K.RL.1-3 Literature — ask/answer about key details, retell, characters
   { q: "in a story, who is the person the story is about?", a: "character", variants: ["character", "main character", "hero"], standard: "K.RL.3", difficulty: 2, source: "authored" },
   { q: "where a story happens is called the?", a: "setting", variants: ["setting", "place"], standard: "K.RL.3", difficulty: 2, source: "authored" },
@@ -8786,9 +9298,33 @@ var MATH_KINDERGARTEN_EXAM = [
     source: "AIMSweb-sample",
     methodology: { prompt: "how do you count to a big number?", keywords: ["one", "start", "order", "next", "add", "count", "number", "sequence"], minKeywords: 1 }
   },
-  { q: "count to twenty", a: "twenty", variants: ["twenty", "20"], standard: "K.CC.1", difficulty: 2, source: "AIMSweb-sample" },
-  { q: "count by tens to fifty", a: "fifty", variants: ["fifty", "50"], standard: "K.CC.1", difficulty: 3, source: "AIMSweb-sample" },
-  { q: "count by tens to one hundred", a: "one hundred", variants: ["one hundred", "100", "hundred"], standard: "K.CC.1", difficulty: 3, source: "AIMSweb-sample" },
+  {
+    q: "count to twenty",
+    a: "twenty",
+    variants: ["twenty", "20"],
+    standard: "K.CC.1",
+    difficulty: 2,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you count to a big number?", keywords: ["one", "start", "order", "next", "add", "count", "number", "sequence"], minKeywords: 1 }
+  },
+  {
+    q: "count by tens to fifty",
+    a: "fifty",
+    variants: ["fifty", "50"],
+    standard: "K.CC.1",
+    difficulty: 3,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you count by tens?", keywords: ["ten", "skip", "add", "group", "tens", "multiples"], minKeywords: 1 }
+  },
+  {
+    q: "count by tens to one hundred",
+    a: "one hundred",
+    variants: ["one hundred", "100", "hundred"],
+    standard: "K.CC.1",
+    difficulty: 3,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you count by tens?", keywords: ["ten", "skip", "add", "group", "tens", "multiples"], minKeywords: 1 }
+  },
   // K.CC.2 Count forward from a given number
   {
     q: "what comes after five?",
@@ -8799,17 +9335,105 @@ var MATH_KINDERGARTEN_EXAM = [
     source: "AIMSweb-sample",
     methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
   },
-  { q: "what comes after seven?", a: "eight", variants: ["eight", "8"], standard: "K.CC.2", difficulty: 1, source: "AIMSweb-sample" },
-  { q: "what comes after ten?", a: "eleven", variants: ["eleven", "11"], standard: "K.CC.2", difficulty: 2, source: "AIMSweb-sample" },
-  { q: "what comes after twelve?", a: "thirteen", variants: ["thirteen", "13"], standard: "K.CC.2", difficulty: 2, source: "AIMSweb-sample" },
-  { q: "what comes after nineteen?", a: "twenty", variants: ["twenty", "20"], standard: "K.CC.2", difficulty: 2, source: "AIMSweb-sample" },
-  { q: "what comes after twenty-nine?", a: "thirty", variants: ["thirty", "30"], standard: "K.CC.2", difficulty: 3, source: "AIMSweb-sample" },
-  { q: "what comes after one?", a: "two", variants: ["two", "2"], standard: "K.CC.2", difficulty: 1, source: "authored" },
-  { q: "what comes after two?", a: "three", variants: ["three", "3"], standard: "K.CC.2", difficulty: 1, source: "authored" },
-  { q: "what comes after three?", a: "four", variants: ["four", "4"], standard: "K.CC.2", difficulty: 1, source: "authored" },
-  { q: "what comes after four?", a: "five", variants: ["five", "5"], standard: "K.CC.2", difficulty: 1, source: "authored" },
-  { q: "what comes after eight?", a: "nine", variants: ["nine", "9"], standard: "K.CC.2", difficulty: 1, source: "authored" },
-  { q: "what comes after nine?", a: "ten", variants: ["ten", "10"], standard: "K.CC.2", difficulty: 1, source: "authored" },
+  {
+    q: "what comes after seven?",
+    a: "eight",
+    variants: ["eight", "8"],
+    standard: "K.CC.2",
+    difficulty: 1,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
+  },
+  {
+    q: "what comes after ten?",
+    a: "eleven",
+    variants: ["eleven", "11"],
+    standard: "K.CC.2",
+    difficulty: 2,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
+  },
+  {
+    q: "what comes after twelve?",
+    a: "thirteen",
+    variants: ["thirteen", "13"],
+    standard: "K.CC.2",
+    difficulty: 2,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
+  },
+  {
+    q: "what comes after nineteen?",
+    a: "twenty",
+    variants: ["twenty", "20"],
+    standard: "K.CC.2",
+    difficulty: 2,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
+  },
+  {
+    q: "what comes after twenty-nine?",
+    a: "thirty",
+    variants: ["thirty", "30"],
+    standard: "K.CC.2",
+    difficulty: 3,
+    source: "AIMSweb-sample",
+    methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
+  },
+  {
+    q: "what comes after one?",
+    a: "two",
+    variants: ["two", "2"],
+    standard: "K.CC.2",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
+  },
+  {
+    q: "what comes after two?",
+    a: "three",
+    variants: ["three", "3"],
+    standard: "K.CC.2",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
+  },
+  {
+    q: "what comes after three?",
+    a: "four",
+    variants: ["four", "4"],
+    standard: "K.CC.2",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
+  },
+  {
+    q: "what comes after four?",
+    a: "five",
+    variants: ["five", "5"],
+    standard: "K.CC.2",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
+  },
+  {
+    q: "what comes after eight?",
+    a: "nine",
+    variants: ["nine", "9"],
+    standard: "K.CC.2",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
+  },
+  {
+    q: "what comes after nine?",
+    a: "ten",
+    variants: ["ten", "10"],
+    standard: "K.CC.2",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you figure out the next number after any number?", keywords: ["add", "plus", "one", "next", "count", "up", "more"], minKeywords: 1 }
+  },
   // K.CC.3 Write numbers 0-20
   { q: "write the number five", a: "5", variants: ["5", "five"], standard: "K.CC.3", difficulty: 1, source: "authored" },
   { q: "write the number ten", a: "10", variants: ["10", "ten"], standard: "K.CC.3", difficulty: 1, source: "authored" },
@@ -8859,14 +9483,78 @@ var MATH_KINDERGARTEN_EXAM = [
     source: "DIBELS-8-sample",
     methodology: { prompt: "how do you add two numbers together?", keywords: ["add", "plus", "together", "put", "combine", "count", "total", "sum"], minKeywords: 1 }
   },
-  { q: "two plus two is?", a: "four", variants: ["four", "4"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "three plus one is?", a: "four", variants: ["four", "4"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "two plus three is?", a: "five", variants: ["five", "5"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "four plus two is?", a: "six", variants: ["six", "6"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "five plus zero is?", a: "five", variants: ["five", "5"], standard: "K.OA.1", difficulty: 1, source: "DIBELS-8-sample" },
-  { q: "three plus three is?", a: "six", variants: ["six", "6"], standard: "K.OA.1", difficulty: 1, source: "authored" },
-  { q: "four plus four is?", a: "eight", variants: ["eight", "8"], standard: "K.OA.1", difficulty: 1, source: "authored" },
-  { q: "five plus five is?", a: "ten", variants: ["ten", "10"], standard: "K.OA.1", difficulty: 2, source: "authored" },
+  {
+    q: "two plus two is?",
+    a: "four",
+    variants: ["four", "4"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you add two numbers together?", keywords: ["add", "plus", "together", "put", "combine", "count", "total", "sum"], minKeywords: 1 }
+  },
+  {
+    q: "three plus one is?",
+    a: "four",
+    variants: ["four", "4"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you add two numbers together?", keywords: ["add", "plus", "together", "put", "combine", "count", "total", "sum"], minKeywords: 1 }
+  },
+  {
+    q: "two plus three is?",
+    a: "five",
+    variants: ["five", "5"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you add two numbers together?", keywords: ["add", "plus", "together", "put", "combine", "count", "total", "sum"], minKeywords: 1 }
+  },
+  {
+    q: "four plus two is?",
+    a: "six",
+    variants: ["six", "6"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you add two numbers together?", keywords: ["add", "plus", "together", "put", "combine", "count", "total", "sum"], minKeywords: 1 }
+  },
+  {
+    q: "five plus zero is?",
+    a: "five",
+    variants: ["five", "5"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "DIBELS-8-sample",
+    methodology: { prompt: "how do you add zero to a number?", keywords: ["zero", "nothing", "same", "unchanged", "identity"], minKeywords: 1 }
+  },
+  {
+    q: "three plus three is?",
+    a: "six",
+    variants: ["six", "6"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you add two numbers together?", keywords: ["add", "plus", "together", "put", "combine", "count", "total", "sum"], minKeywords: 1 }
+  },
+  {
+    q: "four plus four is?",
+    a: "eight",
+    variants: ["eight", "8"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you add two numbers together?", keywords: ["add", "plus", "together", "put", "combine", "count", "total", "sum"], minKeywords: 1 }
+  },
+  {
+    q: "five plus five is?",
+    a: "ten",
+    variants: ["ten", "10"],
+    standard: "K.OA.1",
+    difficulty: 2,
+    source: "authored",
+    methodology: { prompt: "how do you add two numbers together?", keywords: ["add", "plus", "together", "put", "combine", "count", "total", "sum"], minKeywords: 1 }
+  },
   {
     q: "two minus one is?",
     a: "one",
@@ -8876,10 +9564,42 @@ var MATH_KINDERGARTEN_EXAM = [
     source: "authored",
     methodology: { prompt: "how do you subtract one number from another?", keywords: ["minus", "take", "away", "remove", "less", "subtract", "fewer"], minKeywords: 1 }
   },
-  { q: "three minus one is?", a: "two", variants: ["two", "2"], standard: "K.OA.1", difficulty: 1, source: "authored" },
-  { q: "four minus two is?", a: "two", variants: ["two", "2"], standard: "K.OA.1", difficulty: 1, source: "authored" },
-  { q: "five minus three is?", a: "two", variants: ["two", "2"], standard: "K.OA.1", difficulty: 1, source: "authored" },
-  { q: "six minus two is?", a: "four", variants: ["four", "4"], standard: "K.OA.1", difficulty: 1, source: "authored" },
+  {
+    q: "three minus one is?",
+    a: "two",
+    variants: ["two", "2"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you subtract one number from another?", keywords: ["minus", "take", "away", "remove", "less", "subtract", "fewer"], minKeywords: 1 }
+  },
+  {
+    q: "four minus two is?",
+    a: "two",
+    variants: ["two", "2"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you subtract one number from another?", keywords: ["minus", "take", "away", "remove", "less", "subtract", "fewer"], minKeywords: 1 }
+  },
+  {
+    q: "five minus three is?",
+    a: "two",
+    variants: ["two", "2"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you subtract one number from another?", keywords: ["minus", "take", "away", "remove", "less", "subtract", "fewer"], minKeywords: 1 }
+  },
+  {
+    q: "six minus two is?",
+    a: "four",
+    variants: ["four", "4"],
+    standard: "K.OA.1",
+    difficulty: 1,
+    source: "authored",
+    methodology: { prompt: "how do you subtract one number from another?", keywords: ["minus", "take", "away", "remove", "less", "subtract", "fewer"], minKeywords: 1 }
+  },
   // K.OA.3 Decompose numbers ≤ 10 into pairs
   { q: "what two numbers add to five?", a: "two and three", variants: ["two and three", "2 and 3", "one and four", "0 and 5"], standard: "K.OA.3", difficulty: 2, source: "authored" },
   { q: "what two numbers add to ten?", a: "five and five", variants: ["five and five", "5 and 5", "six and four", "seven and three"], standard: "K.OA.3", difficulty: 2, source: "authored" },
