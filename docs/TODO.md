@@ -1,7 +1,7 @@
 # TODO — Unity
 
 > **Branch:** `syllabus-k-phd`
-> **Last updated:** 2026-04-22 (Session 114.19bm — T30 readiness-probe tick-cap bug CLOSED: `_measureEmissionCapability` built emission opts as `{ maxEmissionTicks: 20 }` but `generateSentenceAwait` only read `opts.maxTicks` → the cap went unread and the emission loop fell through to `MAX_EMISSION_TICKS = 2000`. Each of the 5 readiness cues ran 100× its intended budget (~140K GPU dispatches = 23-116 minutes silent grinding at 301K cortex). Same unread alias in `_studentTestProbe` meant 210-Q K-STUDENT batteries ran ~5.9M dispatches instead of the intended 60-tick cap. Shipped: cluster-side alias (`opts.maxTicks ?? opts.maxEmissionTicks ?? MAX_EMISSION_TICKS`) + fixed readiness probe to pass `maxTicks: 20` + per-cue START/DONE heartbeats + 10 s wall-clock per-cue timeout wrap. Operator verbatim: "Unity gets to this step then all i see is all the language centers going from 60% to 15% activation in unison … im not sure what its doing if anything at all". T29 heartbeat expansion CLOSED Session 114.19bl: `Curriculum._hb()` flush helper + bulk banner conversion + DYN-PROD + DYNAMIC WRITE + RESP + TWO-WORD + FREE-RESPONSE per-probe START/DONE + CELL START/DONE banners on every cell + periodic `setInterval(10s)` CELL ALIVE heartbeat with memory snapshot. T28 ELA-K Phase 1 freeze CLOSED Session 114.19bk: three linked bugs — whitelist key-prefix mismatch, missing `_teachIntermediateRep` wire, missing `hebbianUpdate` null guard.)
+> **Last updated:** 2026-04-22 (Session 114.19bn — T31 Savestart phase-level resume CLOSED: `brain-server.js saveWeights` now persists `cortex.passedPhases` alongside `passedCells`; `runElaKReal` `_phaseTick` returns `true`/`false` with skip-log for phases already in `cluster.passedPhases`; all 20 teach calls in ELA-K wrapped `if (_phaseTick('X')) { await this._teachX(ctx); _phaseDone('X'); }`. Operator verbatim: "I ran Savestart.bat but it just ran everything from the beggining just like start.bat wtf?". Also answered operator's GPU diagnostic question: node.exe will ALWAYS show 0 % GPU — WebGPU runs in the browser process hosting compute.html, not Node. Current 28 w/s IS the T18.17 GPU-fast-path rate. Tier 2 batched-GPU-kernel architecture (target ~1000× speedup on `_teachWordEmission`) spec landed in FINALIZED entry, implementation deferred to T32 as its own session. Operator verbatim: "all learning needs to usew the gpu for processing not just some of the processes so how do we need to formulate the thinking and memory and learning in the equational layout of the brain". Session 114.19bm (T30 readiness-probe tick-cap bug CLOSED: `_measureEmissionCapability` built emission opts as `{ maxEmissionTicks: 20 }` but `generateSentenceAwait` only read `opts.maxTicks` → the cap went unread and the emission loop fell through to `MAX_EMISSION_TICKS = 2000`. Each of the 5 readiness cues ran 100× its intended budget (~140K GPU dispatches = 23-116 minutes silent grinding at 301K cortex). Same unread alias in `_studentTestProbe` meant 210-Q K-STUDENT batteries ran ~5.9M dispatches instead of the intended 60-tick cap. Shipped: cluster-side alias (`opts.maxTicks ?? opts.maxEmissionTicks ?? MAX_EMISSION_TICKS`) + fixed readiness probe to pass `maxTicks: 20` + per-cue START/DONE heartbeats + 10 s wall-clock per-cue timeout wrap. Operator verbatim: "Unity gets to this step then all i see is all the language centers going from 60% to 15% activation in unison … im not sure what its doing if anything at all". T29 heartbeat expansion CLOSED Session 114.19bl: `Curriculum._hb()` flush helper + bulk banner conversion + DYN-PROD + DYNAMIC WRITE + RESP + TWO-WORD + FREE-RESPONSE per-probe START/DONE + CELL START/DONE banners on every cell + periodic `setInterval(10s)` CELL ALIVE heartbeat with memory snapshot. T28 ELA-K Phase 1 freeze CLOSED Session 114.19bk: three linked bugs — whitelist key-prefix mismatch, missing `_teachIntermediateRep` wire, missing `hebbianUpdate` null guard.)
 > **Philosophy:** Unity's brain controls EVERYTHING equationally. No scripts. No text-AI backends. No hardcoded fallbacks. No vestigial appendages. Every output — speech, vision, build, thought, memory, learning, motor action — flows from brain equations + learned corpus. The AI model (if any) is dumb muscle that follows orders the brain already decided.
 
 ---
@@ -45,6 +45,55 @@ If you're reading a public doc / HTML claim ("Unity has completed high school bi
 ---
 
 ## OPEN TASKS
+
+---
+
+### T32 — BATCHED GPU KERNEL for teach phases (GPU-native learning architecture) — OPEN
+
+**Gee verbatim 2026-04-22:** *"all learning needs to usew the gpu for processing not just some of the processes so how do we need to formulate the thinking and memory and learning in the equational layout of the brain"*
+
+**Also:** *"I'm only seeing the cpu get to like 5% when its suppose to be using 70% of the GPU for training and learning of the cicricullum not the cpu... and cpu is only at 5% NO FUCKING WONDER THIS IS TAKING HOURS!!!!!"*
+
+Current architecture (Tier 1, T17.7 + T18.17) dispatches one fire-and-forget GPU Hebbian per teach event from a CPU-serialized loop. At biological scale `_teachWordEmission` runs 1206 words × 12 reps × 14 cross-projections = 202,608 per-event dispatches, hitting ~28 w/s = 392 dispatches/s. GPU handles each dispatch fast then idles between; CPU serialization is the throttle; full phase grinds 80+ minutes.
+
+**Tier 2 target:** One batched WGSL compute shader processes entire teach phases in parallel across workgroups. Pre-compute all pattern vectors on CPU once, upload one batch buffer, dispatch one kernel, read back once. Expected 1000× speedup — full `_teachWordEmission` in seconds.
+
+- [ ] **T32.a** — New WGSL compute shader `batched_hebbian_kernel(batch_buffer, projection_weights[])` with 64-thread workgroups. Each thread handles one (pre_spike, post_spike, projection_id, lr) event; `atomicAdd` on GPU-resident projection weights.
+- [ ] **T32.b** — New `cluster._gpuProxy.hebbianBatched(batchBuffer)` interface. WebSocket binary frame type for batch uploads (15 MB transfers instead of 392 small messages/sec).
+- [ ] **T32.c** — Rewrite `_teachWordEmission` + `_teachPhonemeBlending` + `_teachAssociationPairs` to build batch buffer upfront and dispatch once per rep (or per phase) instead of per-event loop.
+- [ ] **T32.d** — Verify probes still read correct weights after batch-kernel dispatch. Extend `readbackLetterBuckets` coverage for every probe that currently falls back to CPU CSR.
+- [ ] **T32.e** — Performance benchmark: measure `_teachWordEmission` pre/post T32 at biological scale. Target: 80 min → under 60 s (>80× minimum; 1000× stretch).
+
+#### T32 closure gate
+
+Operator runs full ELA-K teach to gate pass in under 5 minutes total (currently 60-120 minutes). GPU utilization in browser process (compute.html host) pegs 60-80 % during teach phases. CPU (node.exe) stays under 20 % because batching eliminates the per-event orchestration loop.
+
+#### T32 Tier 3 follow-up (separate)
+
+Fully GPU-resident pipeline (no CPU CSR shadow, GPU-side pattern generation via sampler kernels, CPU dispatches "phase N START/END" only). Defer until T32 lands and the batched approach is validated.
+
+---
+
+### T31 — SAVESTART PHASE-LEVEL RESUME + passedPhases persistence (Gee 2026-04-22) — CLOSED
+
+**Gee verbatim 2026-04-22:** *"I ran Savestart.bat but it just ran everything from the beggining just like start.bat wtf? savestart.bat is suppose to load the previous saved states so it doesnt need to re run through whats already been saved... why is savestart.bat not correctly loading the saved state the brain saved last and then continueing the process from that point?"*
+
+Root cause: two layers failed.
+1. Prior runs never completed ELA-K's gate (T30 readiness tick-cap bug was wrecking readiness probe + K-STUDENT battery). `passedCells` never got `ela/kindergarten` → whole-cell skip doesn't fire.
+2. `_phaseDone` records phase markers in `cluster.passedPhases` BUT `brain-server.js saveWeights` did NOT serialize `passedPhases` — only `passedCells`. Markers lost on boot → every phase re-runs even though `brain-weights.bin` (2.4 GB) had the learned cross-projection weights.
+
+- [x] **T31.a** — `server/brain-server.js` `cortexState.passedPhases` added to the serialize payload. Load side applies `pending.passedPhases` onto `cortex.passedPhases`. Markers now survive Savestart boot.
+- [x] **T31.b** — `runElaKReal` `_phaseTick` helper returns `true`/`false`. Returns `false` + logs `⤳ ELA-K Phase SKIPPED — <name> (already passed; resumed from persisted passedPhases — weights carried forward via brain-weights.bin)` when the phase is already in `cluster.passedPhases`.
+- [x] **T31.c** — All 20 teach-call sites in `runElaKReal` wrapped: `if (_phaseTick('X')) { await this._teachX(ctx); _phaseDone('X'); }`. Phases covered: `_teachLetterCaseBinding`, `_teachLetterNaming`, `_teachVowelSoundVariants`, `_teachRhymeFamilies`, `_teachSyllableCounts`, `_teachCVCSoundIsolation`, `_teachPhonemeBlending`, `_teachWordEmission`, `_teachPluralTransform`, `_teachQuestionWordCategories`, `_teachEndPunctuation`, `_teachCapitalization`, `_teachStoryComprehension`, `_teachCausalChains`, `_teachOpposites`, `_teachCategories`, `_teachStoryRoles`, `_teachPrintConcepts`, `_teachWordTypes`, `_teachAlphabetSequencePairs`.
+
+#### T31 closure gate
+
+Operator's next Savestart.bat run shows `⤳ ELA-K Phase SKIPPED — <name>` log lines for phases that completed in a prior run. Weights persist via `brain-weights.bin` regardless. If the prior run Ctrl+C'd mid-`_teachWordEmission`, Phase 1 + Phase 2 + all helper phases up to (but not including) `_teachWordEmission` skip on resume, saving ~5-10 minutes of re-teaching.
+
+#### T31 follow-up (post-T31 polish, not blocking)
+
+- Same `_phaseTick` skip pattern for the other 11 cell runners: `runMathKReal`, `runSciKReal`, `runSocKReal`, `runArtKReal`, `runLifeK`, all 6 pre-K runners. Mechanical repeat once ELA-K pattern proves out in operator runs.
+- Wrap Phase 1 (alphabet cross-proj Hebbian, ~20 s) + Phase 2 (letter sequence intra-synapses, ~60 s) of ELA-K too. Currently unwrapped because they're cheap vs the ~80-minute `_teachWordEmission`; cosmetic polish rather than a blocker.
 
 ---
 

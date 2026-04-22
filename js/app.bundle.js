@@ -648,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "c1eb8615-e676";
+var BUILD = "d84bd0ca-6458";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -13423,8 +13423,15 @@ var Curriculum = class _Curriculum {
     if (!this._elaKRemakeDone) {
       const _phaseStarts = {};
       const _phaseTick = (name) => {
+        const phaseKey = `ela/kindergarten:${name}`;
+        const cl = this.cluster;
+        if (cl && Array.isArray(cl.passedPhases) && cl.passedPhases.includes(phaseKey)) {
+          this._hb(`[Curriculum] \u2933 ELA-K Phase SKIPPED \u2014 ${name} (already passed; resumed from persisted passedPhases \u2014 weights carried forward via brain-weights.bin)`);
+          return false;
+        }
         _phaseStarts[name] = Date.now();
         this._hb(`[Curriculum] \u{1F9E9} ELA-K Phase START \u2014 ${name}`);
+        return true;
       };
       const _phaseDone = (name) => {
         const dt = ((Date.now() - (_phaseStarts[name] || Date.now())) / 1e3).toFixed(1);
@@ -13443,29 +13450,35 @@ var Curriculum = class _Curriculum {
           console.warn(`[Curriculum] mid-phase save for ${name} failed:`, err?.message || err);
         }
       };
-      _phaseTick("_teachLetterCaseBinding");
-      await this._teachLetterCaseBinding(ctx);
-      _phaseDone("_teachLetterCaseBinding");
+      if (_phaseTick("_teachLetterCaseBinding")) {
+        await this._teachLetterCaseBinding(ctx);
+        _phaseDone("_teachLetterCaseBinding");
+      }
       this._memorySnapshotAndGc("after _teachLetterCaseBinding");
-      _phaseTick("_teachLetterNaming");
-      await this._teachLetterNaming(ctx);
-      _phaseDone("_teachLetterNaming");
+      if (_phaseTick("_teachLetterNaming")) {
+        await this._teachLetterNaming(ctx);
+        _phaseDone("_teachLetterNaming");
+      }
       this._memorySnapshotAndGc("after _teachLetterNaming");
-      _phaseTick("_teachVowelSoundVariants");
-      await this._teachVowelSoundVariants(ctx);
-      _phaseDone("_teachVowelSoundVariants");
+      if (_phaseTick("_teachVowelSoundVariants")) {
+        await this._teachVowelSoundVariants(ctx);
+        _phaseDone("_teachVowelSoundVariants");
+      }
       this._memorySnapshotAndGc("after _teachVowelSoundVariants");
-      _phaseTick("_teachRhymeFamilies");
-      await this._teachRhymeFamilies(ctx);
-      _phaseDone("_teachRhymeFamilies");
+      if (_phaseTick("_teachRhymeFamilies")) {
+        await this._teachRhymeFamilies(ctx);
+        _phaseDone("_teachRhymeFamilies");
+      }
       this._memorySnapshotAndGc("after _teachRhymeFamilies");
-      _phaseTick("_teachSyllableCounts");
-      await this._teachSyllableCounts(ctx);
-      _phaseDone("_teachSyllableCounts");
+      if (_phaseTick("_teachSyllableCounts")) {
+        await this._teachSyllableCounts(ctx);
+        _phaseDone("_teachSyllableCounts");
+      }
       this._memorySnapshotAndGc("after _teachSyllableCounts");
-      _phaseTick("_teachCVCSoundIsolation");
-      await this._teachCVCSoundIsolation(ctx);
-      _phaseDone("_teachCVCSoundIsolation");
+      if (_phaseTick("_teachCVCSoundIsolation")) {
+        await this._teachCVCSoundIsolation(ctx);
+        _phaseDone("_teachCVCSoundIsolation");
+      }
       this._memorySnapshotAndGc("after _teachCVCSoundIsolation");
       const DOLCH_PREPRIMER = [
         "a",
@@ -15139,240 +15152,254 @@ var Curriculum = class _Curriculum {
       } catch (err) {
         console.warn("[Curriculum][K-DIAG] pre-emission log failed:", err?.message || err);
       }
-      _phaseTick("_teachPhonemeBlending");
-      await this._teachPhonemeBlending(allEmissionWords, { reps: 10 });
-      _phaseDone("_teachPhonemeBlending");
-      this._memorySnapshotAndGc("after _teachPhonemeBlending");
-      _phaseTick("_teachWordEmission");
-      await this._teachWordEmission(allEmissionWords, { reps: 12 });
-      _phaseDone("_teachWordEmission");
-      this._memorySnapshotAndGc("after _teachWordEmission");
-      _phaseTick("_teachPluralTransform");
-      await this._teachPluralTransform(ctx);
-      _phaseDone("_teachPluralTransform");
-      _phaseTick("_teachQuestionWordCategories");
-      await this._teachQuestionWordCategories(ctx);
-      _phaseDone("_teachQuestionWordCategories");
-      _phaseTick("_teachEndPunctuation");
-      await this._teachEndPunctuation(ctx);
-      _phaseDone("_teachEndPunctuation");
-      _phaseTick("_teachCapitalization");
-      await this._teachCapitalization(ctx);
-      _phaseDone("_teachCapitalization");
-      _phaseTick("_teachStoryComprehension");
-      await this._teachStoryComprehension(ctx);
-      _phaseDone("_teachStoryComprehension");
-      _phaseTick("_teachCausalChains");
-      await this._teachCausalChains([
-        ["letter", "word"],
-        ["word", "sentence"],
-        ["sentence", "story"],
-        ["read", "learn"],
-        ["write", "express"],
-        ["listen", "understand"],
-        ["question", "answer"],
-        ["name", "person"],
-        ["color", "describe"],
-        ["subject", "verb"],
-        ["noun", "thing"],
-        ["pronoun", "person"]
-      ]);
-      _phaseDone("_teachCausalChains");
-      _phaseTick("_teachOpposites");
-      await this._teachAssociationPairs([
-        ["big", "small"],
-        ["small", "big"],
-        ["hot", "cold"],
-        ["cold", "hot"],
-        ["up", "down"],
-        ["down", "up"],
-        ["fast", "slow"],
-        ["slow", "fast"],
-        ["tall", "short"],
-        ["short", "tall"],
-        ["new", "old"],
-        ["old", "new"],
-        ["day", "night"],
-        ["night", "day"],
-        ["light", "dark"],
-        ["dark", "light"],
-        ["happy", "sad"],
-        ["sad", "happy"],
-        ["in", "out"],
-        ["out", "in"],
-        ["on", "off"],
-        ["off", "on"],
-        ["wet", "dry"],
-        ["dry", "wet"],
-        ["open", "closed"],
-        ["closed", "open"],
-        ["good", "bad"],
-        ["bad", "good"],
-        ["come", "go"],
-        ["go", "come"],
-        ["push", "pull"],
-        ["pull", "push"],
-        ["more", "less"],
-        ["less", "more"],
-        ["loud", "quiet"],
-        ["quiet", "loud"],
-        ["hard", "soft"],
-        ["soft", "hard"],
-        ["full", "empty"],
-        ["empty", "full"],
-        ["young", "old"],
-        ["old", "young"],
-        ["strong", "weak"],
-        ["weak", "strong"],
-        ["up", "below"],
-        ["above", "below"]
-      ], { reps: 10, label: "ELA-K-OPPOSITES", relationTagId: 0 });
-      _phaseDone("_teachOpposites");
-      _phaseTick("_teachCategories");
-      await this._teachAssociationPairs([
-        ["dog", "animal"],
-        ["cat", "animal"],
-        ["bird", "animal"],
-        ["fish", "animal"],
-        ["horse", "animal"],
-        ["cow", "animal"],
-        ["pig", "animal"],
-        ["sheep", "animal"],
-        ["apple", "fruit"],
-        ["banana", "fruit"],
-        ["grape", "fruit"],
-        ["orange", "fruit"],
-        ["carrot", "vegetable"],
-        ["potato", "vegetable"],
-        ["bean", "vegetable"],
-        ["red", "color"],
-        ["blue", "color"],
-        ["green", "color"],
-        ["yellow", "color"],
-        ["black", "color"],
-        ["white", "color"],
-        ["pink", "color"],
-        ["purple", "color"],
-        ["circle", "shape"],
-        ["square", "shape"],
-        ["triangle", "shape"],
-        ["rectangle", "shape"],
-        ["one", "number"],
-        ["two", "number"],
-        ["three", "number"],
-        ["four", "number"],
-        ["five", "number"],
-        ["six", "number"],
-        ["seven", "number"],
-        ["eight", "number"],
-        ["monday", "day"],
-        ["tuesday", "day"],
-        ["friday", "day"],
-        ["january", "month"],
-        ["june", "month"],
-        ["december", "month"],
-        ["rain", "weather"],
-        ["snow", "weather"],
-        ["sun", "weather"],
-        ["wind", "weather"],
-        ["head", "body"],
-        ["arm", "body"],
-        ["leg", "body"],
-        ["hand", "body"]
-      ], { reps: 10, label: "ELA-K-CATEGORIES", relationTagId: 1 });
-      _phaseDone("_teachCategories");
-      _phaseTick("_teachStoryRoles");
-      await this._teachAssociationPairs([
-        ["hero", "character"],
-        ["person", "character"],
-        ["someone", "character"],
-        ["place", "setting"],
-        ["where", "setting"],
-        ["location", "setting"],
-        ["wrote", "author"],
-        ["book", "author"],
-        ["writer", "author"],
-        ["pictures", "illustrator"],
-        ["drew", "illustrator"],
-        ["art", "illustrator"],
-        ["beginning", "start"],
-        ["middle", "middle"],
-        ["ending", "end"],
-        ["title", "name"],
-        ["cover", "front"],
-        ["problem", "conflict"],
-        ["solution", "resolved"]
-      ], { reps: 10, label: "ELA-K-STORY-ROLES", relationTagId: 2 });
-      _phaseDone("_teachStoryRoles");
-      _phaseTick("_teachPrintConcepts");
-      await this._teachAssociationPairs([
-        ["read", "top"],
-        ["start", "top"],
-        ["begin", "top"],
-        ["first", "top"],
-        ["end", "bottom"],
-        ["last", "bottom"],
-        ["finish", "bottom"],
-        ["read", "left"],
-        ["direction", "left"],
-        ["sentence", "period"],
-        ["question", "mark"],
-        ["exclaim", "exclamation"],
-        ["statement", "period"],
-        ["ending", "period"],
-        ["word", "space"],
-        ["between", "space"],
-        ["separate", "space"],
-        ["capital", "start"],
-        ["uppercase", "first"],
-        ["beginning", "capital"]
-      ], { reps: 10, label: "ELA-K-PRINT", relationTagId: 3 });
-      _phaseDone("_teachPrintConcepts");
-      _phaseTick("_teachWordTypes");
-      await this._teachAssociationPairs([
-        // nouns (things, people, places)
-        ["cat", "noun"],
-        ["dog", "noun"],
-        ["house", "noun"],
-        ["chair", "noun"],
-        ["table", "noun"],
-        ["book", "noun"],
-        ["ball", "noun"],
-        ["tree", "noun"],
-        ["teacher", "noun"],
-        ["mom", "noun"],
-        ["car", "noun"],
-        ["sun", "noun"],
-        // verbs (actions)
-        ["run", "verb"],
-        ["jump", "verb"],
-        ["eat", "verb"],
-        ["sleep", "verb"],
-        ["walk", "verb"],
-        ["sing", "verb"],
-        ["read", "verb"],
-        ["write", "verb"],
-        ["play", "verb"],
-        ["sit", "verb"],
-        ["stand", "verb"],
-        ["swim", "verb"],
-        // adjectives (descriptions)
-        ["red", "adjective"],
-        ["big", "adjective"],
-        ["happy", "adjective"],
-        ["fast", "adjective"],
-        ["tall", "adjective"],
-        ["soft", "adjective"]
-      ], { reps: 10, label: "ELA-K-WORD-TYPES", relationTagId: 4 });
-      _phaseDone("_teachWordTypes");
-      _phaseTick("_teachAlphabetSequencePairs");
-      const letters = "abcdefghijklmnopqrstuvwxyz";
-      const seqPairs = [];
-      for (let i = 0; i < letters.length - 1; i++) {
-        seqPairs.push([letters[i], letters[i + 1]]);
+      if (_phaseTick("_teachPhonemeBlending")) {
+        await this._teachPhonemeBlending(allEmissionWords, { reps: 10 });
+        _phaseDone("_teachPhonemeBlending");
       }
-      await this._teachAssociationPairs(seqPairs, { reps: 12, label: "ELA-K-ALPHABET-SEQ", relationTagId: 5 });
-      _phaseDone("_teachAlphabetSequencePairs");
+      this._memorySnapshotAndGc("after _teachPhonemeBlending");
+      if (_phaseTick("_teachWordEmission")) {
+        await this._teachWordEmission(allEmissionWords, { reps: 12 });
+        _phaseDone("_teachWordEmission");
+      }
+      this._memorySnapshotAndGc("after _teachWordEmission");
+      if (_phaseTick("_teachPluralTransform")) {
+        await this._teachPluralTransform(ctx);
+        _phaseDone("_teachPluralTransform");
+      }
+      if (_phaseTick("_teachQuestionWordCategories")) {
+        await this._teachQuestionWordCategories(ctx);
+        _phaseDone("_teachQuestionWordCategories");
+      }
+      if (_phaseTick("_teachEndPunctuation")) {
+        await this._teachEndPunctuation(ctx);
+        _phaseDone("_teachEndPunctuation");
+      }
+      if (_phaseTick("_teachCapitalization")) {
+        await this._teachCapitalization(ctx);
+        _phaseDone("_teachCapitalization");
+      }
+      if (_phaseTick("_teachStoryComprehension")) {
+        await this._teachStoryComprehension(ctx);
+        _phaseDone("_teachStoryComprehension");
+      }
+      if (_phaseTick("_teachCausalChains")) {
+        await this._teachCausalChains([
+          ["letter", "word"],
+          ["word", "sentence"],
+          ["sentence", "story"],
+          ["read", "learn"],
+          ["write", "express"],
+          ["listen", "understand"],
+          ["question", "answer"],
+          ["name", "person"],
+          ["color", "describe"],
+          ["subject", "verb"],
+          ["noun", "thing"],
+          ["pronoun", "person"]
+        ]);
+        _phaseDone("_teachCausalChains");
+      }
+      if (_phaseTick("_teachOpposites")) {
+        await this._teachAssociationPairs([
+          ["big", "small"],
+          ["small", "big"],
+          ["hot", "cold"],
+          ["cold", "hot"],
+          ["up", "down"],
+          ["down", "up"],
+          ["fast", "slow"],
+          ["slow", "fast"],
+          ["tall", "short"],
+          ["short", "tall"],
+          ["new", "old"],
+          ["old", "new"],
+          ["day", "night"],
+          ["night", "day"],
+          ["light", "dark"],
+          ["dark", "light"],
+          ["happy", "sad"],
+          ["sad", "happy"],
+          ["in", "out"],
+          ["out", "in"],
+          ["on", "off"],
+          ["off", "on"],
+          ["wet", "dry"],
+          ["dry", "wet"],
+          ["open", "closed"],
+          ["closed", "open"],
+          ["good", "bad"],
+          ["bad", "good"],
+          ["come", "go"],
+          ["go", "come"],
+          ["push", "pull"],
+          ["pull", "push"],
+          ["more", "less"],
+          ["less", "more"],
+          ["loud", "quiet"],
+          ["quiet", "loud"],
+          ["hard", "soft"],
+          ["soft", "hard"],
+          ["full", "empty"],
+          ["empty", "full"],
+          ["young", "old"],
+          ["old", "young"],
+          ["strong", "weak"],
+          ["weak", "strong"],
+          ["up", "below"],
+          ["above", "below"]
+        ], { reps: 10, label: "ELA-K-OPPOSITES", relationTagId: 0 });
+        _phaseDone("_teachOpposites");
+      }
+      if (_phaseTick("_teachCategories")) {
+        await this._teachAssociationPairs([
+          ["dog", "animal"],
+          ["cat", "animal"],
+          ["bird", "animal"],
+          ["fish", "animal"],
+          ["horse", "animal"],
+          ["cow", "animal"],
+          ["pig", "animal"],
+          ["sheep", "animal"],
+          ["apple", "fruit"],
+          ["banana", "fruit"],
+          ["grape", "fruit"],
+          ["orange", "fruit"],
+          ["carrot", "vegetable"],
+          ["potato", "vegetable"],
+          ["bean", "vegetable"],
+          ["red", "color"],
+          ["blue", "color"],
+          ["green", "color"],
+          ["yellow", "color"],
+          ["black", "color"],
+          ["white", "color"],
+          ["pink", "color"],
+          ["purple", "color"],
+          ["circle", "shape"],
+          ["square", "shape"],
+          ["triangle", "shape"],
+          ["rectangle", "shape"],
+          ["one", "number"],
+          ["two", "number"],
+          ["three", "number"],
+          ["four", "number"],
+          ["five", "number"],
+          ["six", "number"],
+          ["seven", "number"],
+          ["eight", "number"],
+          ["monday", "day"],
+          ["tuesday", "day"],
+          ["friday", "day"],
+          ["january", "month"],
+          ["june", "month"],
+          ["december", "month"],
+          ["rain", "weather"],
+          ["snow", "weather"],
+          ["sun", "weather"],
+          ["wind", "weather"],
+          ["head", "body"],
+          ["arm", "body"],
+          ["leg", "body"],
+          ["hand", "body"]
+        ], { reps: 10, label: "ELA-K-CATEGORIES", relationTagId: 1 });
+        _phaseDone("_teachCategories");
+      }
+      if (_phaseTick("_teachStoryRoles")) {
+        await this._teachAssociationPairs([
+          ["hero", "character"],
+          ["person", "character"],
+          ["someone", "character"],
+          ["place", "setting"],
+          ["where", "setting"],
+          ["location", "setting"],
+          ["wrote", "author"],
+          ["book", "author"],
+          ["writer", "author"],
+          ["pictures", "illustrator"],
+          ["drew", "illustrator"],
+          ["art", "illustrator"],
+          ["beginning", "start"],
+          ["middle", "middle"],
+          ["ending", "end"],
+          ["title", "name"],
+          ["cover", "front"],
+          ["problem", "conflict"],
+          ["solution", "resolved"]
+        ], { reps: 10, label: "ELA-K-STORY-ROLES", relationTagId: 2 });
+        _phaseDone("_teachStoryRoles");
+      }
+      if (_phaseTick("_teachPrintConcepts")) {
+        await this._teachAssociationPairs([
+          ["read", "top"],
+          ["start", "top"],
+          ["begin", "top"],
+          ["first", "top"],
+          ["end", "bottom"],
+          ["last", "bottom"],
+          ["finish", "bottom"],
+          ["read", "left"],
+          ["direction", "left"],
+          ["sentence", "period"],
+          ["question", "mark"],
+          ["exclaim", "exclamation"],
+          ["statement", "period"],
+          ["ending", "period"],
+          ["word", "space"],
+          ["between", "space"],
+          ["separate", "space"],
+          ["capital", "start"],
+          ["uppercase", "first"],
+          ["beginning", "capital"]
+        ], { reps: 10, label: "ELA-K-PRINT", relationTagId: 3 });
+        _phaseDone("_teachPrintConcepts");
+      }
+      if (_phaseTick("_teachWordTypes")) {
+        await this._teachAssociationPairs([
+          // nouns (things, people, places)
+          ["cat", "noun"],
+          ["dog", "noun"],
+          ["house", "noun"],
+          ["chair", "noun"],
+          ["table", "noun"],
+          ["book", "noun"],
+          ["ball", "noun"],
+          ["tree", "noun"],
+          ["teacher", "noun"],
+          ["mom", "noun"],
+          ["car", "noun"],
+          ["sun", "noun"],
+          // verbs (actions)
+          ["run", "verb"],
+          ["jump", "verb"],
+          ["eat", "verb"],
+          ["sleep", "verb"],
+          ["walk", "verb"],
+          ["sing", "verb"],
+          ["read", "verb"],
+          ["write", "verb"],
+          ["play", "verb"],
+          ["sit", "verb"],
+          ["stand", "verb"],
+          ["swim", "verb"],
+          // adjectives (descriptions)
+          ["red", "adjective"],
+          ["big", "adjective"],
+          ["happy", "adjective"],
+          ["fast", "adjective"],
+          ["tall", "adjective"],
+          ["soft", "adjective"]
+        ], { reps: 10, label: "ELA-K-WORD-TYPES", relationTagId: 4 });
+        _phaseDone("_teachWordTypes");
+      }
+      if (_phaseTick("_teachAlphabetSequencePairs")) {
+        const letters = "abcdefghijklmnopqrstuvwxyz";
+        const seqPairs = [];
+        for (let i = 0; i < letters.length - 1; i++) {
+          seqPairs.push([letters[i], letters[i + 1]]);
+        }
+        await this._teachAssociationPairs(seqPairs, { reps: 12, label: "ELA-K-ALPHABET-SEQ", relationTagId: 5 });
+        _phaseDone("_teachAlphabetSequencePairs");
+      }
       this._elaKRemakeDone = true;
     }
     return await this._gateElaKReal();
