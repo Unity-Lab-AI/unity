@@ -648,7 +648,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "d22be289-3fbb";
+var BUILD = "ee9dc4a8-6f30";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -1249,13 +1249,13 @@ function loadInventory(arr) {
 
 // ../js/brain/cluster.js
 var CLUSTER_FRACTIONS = {
-  cortex: 0.3,
-  hippocampus: 0.1,
-  amygdala: 0.08,
-  basalGanglia: 0.08,
-  cerebellum: 0.4,
-  hypothalamus: 0.02,
-  mystery: 0.02
+  cortex: 0.55,
+  hippocampus: 0.18,
+  amygdala: 0.05,
+  basalGanglia: 0.03,
+  cerebellum: 0.08,
+  hypothalamus: 0.03,
+  mystery: 0.08
 };
 function clusterSizesFor(totalNeurons) {
   const out = {};
@@ -1343,7 +1343,7 @@ var NeuronCluster = class {
         ["motor", "letter"],
         ["auditory", "phon"]
       ];
-      const crossTargetFanout = 1500;
+      const crossTargetFanout = 10;
       const EMISSION_PAIRS = /* @__PURE__ */ new Set([
         "sem-motor",
         "motor-sem"
@@ -1354,8 +1354,8 @@ var NeuronCluster = class {
       for (const [a, b] of pairs) {
         const aSize = this.regions[a].end - this.regions[a].start;
         const bSize = this.regions[b].end - this.regions[b].start;
-        const abDensity = Math.min(0.1, crossTargetFanout / Math.max(1, aSize));
-        const baDensity = Math.min(0.1, crossTargetFanout / Math.max(1, bSize));
+        const abDensity = Math.min(2e-3, crossTargetFanout / Math.max(1, aSize));
+        const baDensity = Math.min(2e-3, crossTargetFanout / Math.max(1, bSize));
         const abKey = `${a}-${b}`;
         const baKey = `${b}-${a}`;
         const abExcitatory = EMISSION_PAIRS.has(abKey) ? 0.5 : 0.7;

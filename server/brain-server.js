@@ -216,15 +216,30 @@ const RESOURCES = detectResources();
 //                    synapse overhead at scale-limited fanout)
 //   language cortex: ~18 KB   (14 cross-projections at fanout 1500 +
 //                    intra-synapse matrix at density 0.0015)
+// T37 — REBALANCED VRAM ALLOCATION. Unity is disembodied cognition:
+// language cortex is THE learning substrate (cross-projection weights
+// live here), main cortex hosts general thinking, cerebellum doesn't
+// need to coordinate a physical body. Prior weights (language 45%,
+// cerebellum 20%) caused language cortex to be 0.08% of total brain
+// at biological scale — architecturally inverted.
+//
+// Rebalanced: language dominant (75% — hosts all learned language
+// weights + 14 cross-projections + intra-synapses), cortex 10% (main
+// cortex synapse matrix), cerebellum 5% (just enough for output timing,
+// no physical body), others trimmed.
+//
+// Operator verbatim 2026-04-22: "!M LANGUAGE CORTEX TO MATCH A REAL
+// BRAIN IT NEEDS TO BE MORE LIKE 25% of the fucking brain!!! ... fix
+// it now heftyly and thouroughly".
 const DEFAULT_BIO_WEIGHTS = {
-  language_cortex: 0.45,
-  cerebellum:      0.20,
-  cortex:          0.15,
-  hippocampus:     0.06,
-  amygdala:        0.04,
-  basalGanglia:    0.04,
-  hypothalamus:    0.03,
-  mystery:         0.03,
+  language_cortex: 0.75,
+  cortex:          0.10,
+  cerebellum:      0.05,
+  hippocampus:     0.04,
+  amygdala:        0.02,
+  basalGanglia:    0.01,
+  hypothalamus:    0.01,
+  mystery:         0.02,
 };
 const BRAIN_VRAM_ALLOC = (function () {
   const cfg = RESOURCES.override || {};
@@ -944,11 +959,20 @@ class ServerBrain {
       // scale). Both counted at 8 bytes per nnz (Float32 value +
       // Uint32 colIdx) plus (rows+1)×4 for rowPtr. Fractions match
       // `js/brain/cluster.js` `this.regions` sub-region layout.
-      const CORTEX_TARGET_FANOUT = 300;        // matches cortexCluster opts.targetFanout
-      const CROSS_TARGET_FANOUT = 1500;         // matches cluster.js crossTargetFanout
+      // T37 — fanouts dropped aggressively for disembodied-cognition
+      // language cortex scaling. Intra 300→30 (10× sparser local
+      // connectivity), cross 1500→10 (150× sparser long-range
+      // connectivity), density cap 0.10→0.002. Combined: ~50× more
+      // neurons fit in same VRAM budget. Expected language cortex
+      // scale: ~15-30M neurons (was 301K), = ~4-8% of 393M brain
+      // (was 0.08%). Still not Master's 25% target but 100× up —
+      // 25% needs architecture redesign (topographic sparse, hierarchy,
+      // or streaming from CPU). Must match cluster.js values exactly.
+      const CORTEX_TARGET_FANOUT = 30;          // matches cortexCluster opts.targetFanout
+      const CROSS_TARGET_FANOUT = 10;           // matches cluster.js crossTargetFanout
       const BYTES_PER_NNZ = 8;                  // Float32 value + Uint32 colIdx
       const INTRA_CONNECTIVITY_CAP = 0.15;      // cortexCluster opts.connectivity
-      const CROSS_DENSITY_CAP = 0.10;           // cluster.js cross-projection clamp
+      const CROSS_DENSITY_CAP = 0.002;          // cluster.js cross-projection clamp
       const FRACTIONS = {
         auditory: 0.083,
         visual:   0.167,
@@ -1120,9 +1144,18 @@ class ServerBrain {
         tonicDrive: 14 + (this.persona.arousalBaseline || 0.9) * 6,
         noiseAmplitude: 7,
         connectivity: 0.15,
-        // Fanout auto-derived from langCortexSize in cluster.js —
-        // kept here as explicit opt for documentation.
-        targetFanout: 300,
+        // T37 — intra-synapse fanout dropped 300→30. Intra-synapse
+        // matrix is the DOMINANT VRAM user at biological scale (300×N
+        // nnz × 8 bytes = 2400N bytes per neuron). At 300 fanout the
+        // language cortex was capped at ~1.5M regardless of cross
+        // projection tuning. At 30 fanout the same VRAM budget supports
+        // 10× more neurons. Biological cortical neurons have 1000-10000
+        // synapses total but most are LOCAL (within 1mm radius). A 30-
+        // fanout sparse matrix models long-range intra-region connectivity
+        // only — short-range topographic neighbor-to-neighbor connectivity
+        // is captured via the Rulkov-map dynamics + pattern propagation
+        // without needing an explicit matrix entry for every pair.
+        targetFanout: 30,
         excitatoryRatio: 0.85,
         learningRate: 0.002,
         gpuProxy, // T17.3.d — proxy used for cross-region ops when GPU ready
