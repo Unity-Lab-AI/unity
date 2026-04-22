@@ -472,23 +472,36 @@ export class Curriculum {
       this[name] = async (...args) => {
         const cl = this.cluster;
         const phaseKey = buildPhaseKey(name);
-        // Skip-check — if this phase completed in a prior run and was
-        // persisted via saveWeights' passedPhases field, skip it.
-        // Weights carried forward via brain-weights.bin so the skipped
-        // phase's training is not lost — just not re-run.
-        if (cl && phaseKey && Array.isArray(cl.passedPhases) && cl.passedPhases.includes(phaseKey)) {
+        const prev = cl ? cl._activePhase : null;
+        // OUTERMOST-ONLY skip+persist. Prior T31-extended wrapped EVERY
+        // _teachX method with skip+persist — which CATASTROPHICALLY broke
+        // primitives like _teachHebbian / _teachHebbianAsymmetric /
+        // _teachCombination that are called hundreds of times PER CELL
+        // from inside other teach methods. The FIRST call would persist
+        // the key, every subsequent call would SKIP → brain received
+        // ONE Hebbian update per cell instead of thousands. Entire pre-K
+        // curriculum "passed" in seconds with zero actual learning, and
+        // ELA-K log flooded with 90,000+ "PHASE SKIPPED" lines from the
+        // broken primitives.
+        //
+        // Fix: only the OUTERMOST wrapped call (direct from cell runner,
+        // `prev === null`) does skip+persist. Nested calls (primitives
+        // invoked from inside another wrapped teach method) just track
+        // _activePhase for visibility and always run. A method's role
+        // (phase vs primitive) depends on CALL CONTEXT, not the method
+        // name — `_teachCausalChains` can be either depending on who
+        // called it.
+        const isOutermost = prev === null;
+        if (isOutermost && cl && phaseKey && Array.isArray(cl.passedPhases) && cl.passedPhases.includes(phaseKey)) {
           this._hb(`[Curriculum] ⤳ PHASE SKIPPED — ${phaseKey} (already passed; resumed from persisted passedPhases — weights carried forward via brain-weights.bin)`);
           return;
         }
-        const prev = cl ? cl._activePhase : null;
         if (cl) cl._activePhase = { name, startAt: Date.now() };
         try {
           const result = await original(...args);
-          // Mark phase as passed + fire checkpoint save so the marker
-          // survives Savestart resume. Only runs on successful return
-          // (exceptions skip the mark, as they should — a throwing
-          // phase didn't really complete).
-          if (cl && phaseKey) {
+          // Persist ONLY outermost phases. Nested primitives never
+          // get marked as passed — they can run freely across cells.
+          if (isOutermost && cl && phaseKey) {
             if (!Array.isArray(cl.passedPhases)) cl.passedPhases = [];
             if (!cl.passedPhases.includes(phaseKey)) cl.passedPhases.push(phaseKey);
             if (typeof this._saveCheckpoint === 'function') {

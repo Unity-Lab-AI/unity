@@ -82,6 +82,81 @@ But with bug #1 fixed and only 8 reps × lr=0.01, the margins are tight for a co
 
 ---
 
+## 2026-04-22 — Session 114.19bs: T36 — auto-wrap persistence catastrophically broke every Hebbian primitive: FIRST call persisted, every subsequent call SKIPPED → ZERO learning
+
+### Operator verbatim 2026-04-22 — log snippet (truncated from 90,000+ skip lines)
+
+```
+[Curriculum] 🧩 ELA-K Phase START — _teachLetterCaseBinding
+[Brain] Binary weights saved 4 sections, 2412.3 MB → brain-weights.bin
+[Brain] State saved v3 at t=0.4s (trigger=cell-pass:ela/kindergarten:_teachHebbian)
+[Curriculum] ⤳ PHASE SKIPPED — ela/kindergarten:_teachHebbian (already passed...)
+[Curriculum] ⤳ PHASE SKIPPED — ela/kindergarten:_teachHebbian (already passed...)
+... [×90,000+ lines] ...
+[Curriculum] ▶ CELL ALIVE ela/kindergarten — +10s elapsed · phase=_teachLetterNaming (+2s) · heap=134/146MB ext=3311MB ab=3283MB rss=3309MB (unaccounted=0MB)
+```
+
+Prior log line: *"something is wrong!! i used start.bat and its skipping everything"* — operator caught this the first time it printed a cell pass reason.
+
+### Root cause
+
+T31-extended constructor auto-wrap applied skip+persist to EVERY `_teach*` method on the Curriculum prototype. That included PRIMITIVES like `_teachHebbian`, `_teachHebbianAsymmetric`, `_teachHebbianPairReinforce`, `_teachCombination`, `_teachVocabList`, `_teachSentenceList` which are called HUNDREDS of times per cell from inside other (phase-level) teach methods.
+
+The failure mode:
+1. Phase runner `_teachLetterCaseBinding` starts
+2. Inner loop fires first iteration → calls `this._teachHebbianAsymmetric(pre, post, lr)`
+3. Wrapper checks passedPhases — not there → runs the Hebbian → appends `ela/kindergarten:_teachHebbianAsymmetric` to passedPhases → fires `_saveCheckpoint`
+4. Next iteration of inner loop → calls `_teachHebbianAsymmetric` AGAIN → wrapper checks passedPhases → `'ela/kindergarten:_teachHebbianAsymmetric'` IS in passedPhases → SKIPS with `⤳ PHASE SKIPPED` log
+5. Every subsequent call in the cell skips → Unity gets ONE Hebbian update per cell instead of the thousands intended
+
+Pre-K "passed" in seconds because the same bug hit every pre-K cell's primitives — 6 cells × instant-skip-after-first-call = instant pre-K "completion" with zero real learning. Then ELA-K ran, `_teachLetterCaseBinding` logged 90,000+ skip lines per rep × per letter × per sub-projection.
+
+### Fix: OUTERMOST-ONLY skip+persist
+
+The auto-wrap's skip+persist is now gated on `isOutermost = (prev === null)` — true only when the wrapped method is called DIRECTLY from a cell runner (not from inside another wrapped method). Nested calls (primitives invoked from inside phase-level teach methods) just track `_activePhase` for heartbeat visibility and always execute.
+
+Call semantics post-fix:
+- `runElaKReal` → `_teachLetterCaseBinding` (outermost → skip+persist)
+  - Inner: `_teachHebbianAsymmetric` (nested → always run, no skip, no persist)
+    - Inner: `_crossRegionHebbian` (not wrapped, direct cluster call)
+  - Inner: `_teachCombination` (nested → always run)
+    - Inner: `_teachHebbian` (nested → always run)
+
+A method's role (phase vs primitive) is now determined by CALL CONTEXT at runtime, not by the method name. Same method can be phase-level in one caller and primitive in another — both work correctly.
+
+### What shipped
+
+- `js/brain/curriculum.js` constructor auto-wrap — `isOutermost` gate on skip+persist. Comment block explains the catastrophic failure mode + fix rationale so future Claude doesn't "simplify" the condition.
+- `js/app.bundle.js` — rebuilt (1.8 MB clean)
+- `js/version.js` / `index.html` — stamp bump
+- `docs/FINALIZED.md` — this entry
+- `docs/TODO.md` — T36 closure in banner
+
+### Caveat for next run
+
+Code-hash changed (curriculum.js modified) → auto-clear will wipe the poisoned `passedPhases` state from the broken run. Next `start.bat` boot starts fresh with:
+- Real pre-K teach durations (~3-5 min per cell, not instant)
+- Actual Hebbian updates on every inner-loop iteration
+- Real training signal accumulating into sem_to_motor weights
+- `sem_to_motor |W| mean=X max=Y nnz=Z/N` diagnostic (from T35.e) should show non-zero weights growing
+
+If the weight-magnitude diagnostic still shows `mean=0.0000` after a few teach phases, T35's `_writeTiledPattern` fix isn't the only issue and we hunt deeper.
+
+### Files touched
+
+- `js/brain/curriculum.js` — auto-wrap isOutermost fix
+- `js/app.bundle.js` — rebuild
+- `js/version.js` / `index.html` — stamp
+- `docs/FINALIZED.md` + `docs/TODO.md` — docs
+
+### LAW compliance
+
+- LAW #0 verbatim — operator's quote preserved ("something is wrong!! i used start.bat and its skipping everything"). Log snippet captured verbatim.
+- Docs-before-push — atomic ship.
+- Task-numbers-only — T36 in TODO/FINALIZED; code comments describe WHAT outermost-only gate does and WHY nested skip+persist breaks primitives.
+
+---
+
 ## 2026-04-22 — Session 114.19bq: T34 — readback timeout + drainWait + SAB leak in stepAwait pool fallback (Art-K gate PROD 0/9 unblocker)
 
 ### Operator verbatim 2026-04-22 — log snippet captured
