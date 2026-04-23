@@ -387,20 +387,26 @@ var init_sparse_matrix = __esm({
         if (!values || values.length === 0) return 0;
         const tn = Number.isFinite(targetNorm) && targetNorm > 0 ? targetNorm : 1;
         let rowsNormalized = 0;
+        const wBound = Math.min(Math.abs(wMin), Math.abs(wMax));
         for (let i = 0; i < rows; i++) {
           const start = rowPtr[i];
           const end = rowPtr[i + 1];
           if (end <= start) continue;
-          let sumSq = 0;
-          for (let k = start; k < end; k++) sumSq += values[k] * values[k];
+          let sumSq = 0, maxAbs = 0;
+          for (let k = start; k < end; k++) {
+            const v = values[k];
+            sumSq += v * v;
+            const a = v < 0 ? -v : v;
+            if (a > maxAbs) maxAbs = a;
+          }
           if (sumSq <= 0) continue;
-          const scale = tn / Math.sqrt(sumSq);
+          let scale = tn / Math.sqrt(sumSq);
+          if (maxAbs > 0 && scale * maxAbs > wBound) {
+            scale = wBound / maxAbs;
+          }
           if (scale === 1) continue;
           for (let k = start; k < end; k++) {
-            let v = values[k] * scale;
-            if (v > wMax) v = wMax;
-            else if (v < wMin) v = wMin;
-            values[k] = v;
+            values[k] = values[k] * scale;
           }
           rowsNormalized += 1;
         }
@@ -834,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "d0aa6be3-b419";
+var BUILD = "211b4cb1-e7c8";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -13979,20 +13985,17 @@ var Curriculum = class _Curriculum {
           const extMb = Number(mb(mu.external));
           const abMb = Number(mb(mu.arrayBuffers || 0));
           let v8PhysMb = heapTotalMb;
-          let v8MallocMb = 0;
           if (_v8stats && typeof _v8stats.getHeapStatistics === "function") {
             try {
               const s = _v8stats.getHeapStatistics();
               v8PhysMb = Number(mb(s.total_physical_size || 0));
-              v8MallocMb = Number(mb(s.malloced_memory || 0));
             } catch {
             }
           }
           const workerHeapMb = _cachedWorkerMem ? _cachedWorkerMem.totalHeapUsedMb | 0 : 0;
           const workerExtMb = _cachedWorkerMem ? _cachedWorkerMem.totalExternalMb | 0 : 0;
           const workerTotalMb = workerHeapMb + workerExtMb;
-          const nonAbExtMb = Math.max(0, extMb - abMb);
-          const nativeMb = Math.max(0, rssMb - v8PhysMb - nonAbExtMb - workerTotalMb);
+          const nativeMb = Math.max(0, rssMb - heapMb - extMb - workerTotalMb);
           _priorRssMb = rssMb;
           if (_nativeBaselineMb === null) _nativeBaselineMb = nativeMb;
           const nativeDeltaMb = nativeMb - _nativeBaselineMb;
@@ -21271,8 +21274,8 @@ var Curriculum = class _Curriculum {
     }
     const relationTagId = typeof opts.relationTagId === "number" ? opts.relationTagId : null;
     const binarize = opts.binarize === true;
-    const normalizeAfter = opts.normalizeAfter !== false;
-    const normTarget = opts.normTarget ?? 1;
+    const normalizeAfter = opts.normalizeAfter === true;
+    const normTarget = opts.normTarget ?? 0.3;
     const runSeparationProbe = opts.separationProbe !== false;
     const overloadMax = opts.overloadMax ?? 0.3;
     const antiPairs = opts.antiPairs !== false && pairs.length >= 2;
@@ -21407,7 +21410,9 @@ var Curriculum = class _Curriculum {
           if (a > 1e-6) nnz++;
         }
         const meanAbs = sumAbs / N;
-        weightReport = ` \xB7 sem_to_motor |W| mean=${meanAbs.toFixed(4)} max=${maxAbs.toFixed(4)} nnz=${nnz}/${N}`;
+        const gpuBound = !!proj._gpuBound;
+        const label2 = gpuBound ? `sem_to_motor |W| mean=${meanAbs.toFixed(4)} max=${maxAbs.toFixed(4)} nnz=${nnz}/${N} (CPU shadow \xB7 GPU bound, values frozen \u2014 read sep-probe cosine for authoritative signal)` : `sem_to_motor |W| mean=${meanAbs.toFixed(4)} max=${maxAbs.toFixed(4)} nnz=${nnz}/${N}`;
+        weightReport = ` \xB7 ${label2}`;
       }
     } catch {
     }

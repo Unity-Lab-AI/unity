@@ -3066,37 +3066,51 @@ export class Curriculum {
           const heapTotalMb = Number(mb(mu.heapTotal));
           const extMb = Number(mb(mu.external));
           const abMb = Number(mb(mu.arrayBuffers || 0));
-          // v8.total_physical_size captures V8's TOTAL committed memory
-          // — heap + compiled-code stubs + bytecode + isolate overhead.
-          // Using this instead of just heapUsed pulls the V8-internal
-          // chunks (50-100 MB of code/stubs) out of "native" and into
-          // the correctly-attributed V8 bucket.
-          let v8PhysMb = heapTotalMb; // fallback if v8 module missing
-          let v8MallocMb = 0;
+          // V8 stats read for telemetry only — total_physical_size is
+          // NOT used in the native subtraction below because on Windows
+          // with `--max-old-space-size=65536` V8 reports committed
+          // address space that can EXCEED rss (reserved pages not
+          // actually resident). Using v8PhysMb as a subtraction input
+          // produces negative native values that clamp to 0 and trip
+          // false LEAK warnings. We keep the read for the telemetry
+          // line so operator still sees V8's self-reported size, but
+          // the native calc uses heapUsed — the only V8 field that's
+          // reliably resident.
+          let v8PhysMb = heapTotalMb; // telemetry fallback only
           if (_v8stats && typeof _v8stats.getHeapStatistics === 'function') {
             try {
               const s = _v8stats.getHeapStatistics();
               v8PhysMb = Number(mb(s.total_physical_size || 0));
-              v8MallocMb = Number(mb(s.malloced_memory || 0));
             } catch { /* fall through to fallback */ }
           }
           // Worker heap accounting.
           const workerHeapMb = _cachedWorkerMem ? (_cachedWorkerMem.totalHeapUsedMb | 0) : 0;
           const workerExtMb = _cachedWorkerMem ? (_cachedWorkerMem.totalExternalMb | 0) : 0;
           const workerTotalMb = workerHeapMb + workerExtMb;
-          // Native = rss − V8 physical − non-AB external − workers.
+          // Native = rss − heapUsed − external − workers.
           //
-          // Critical: arrayBuffers live INSIDE v8.total_physical_size on
-          // Node 18+ because V8's ArrayBuffer allocator registers the
-          // backing pages against the heap. Subtracting BOTH v8PhysMb
-          // AND the full extMb double-counts ab — e.g. with heap=1167
-          // ext=977 ab=975 rss=1223, naive `rss-v8-ext` = −921 clamps
-          // to 0 and the native line reads 0MB forever (the bug this
-          // fix addresses). Non-AB external is the tiny residue: Buffer
-          // pool + native TypedArray backing + ICU data + sqlite
-          // prepared-statement caches. Subtract only that.
-          const nonAbExtMb = Math.max(0, extMb - abMb);
-          const nativeMb = Math.max(0, rssMb - v8PhysMb - nonAbExtMb - workerTotalMb);
+          // Decomposition assumption: rss is dominated by resident
+          // pages from four sources:
+          //   heapUsed  = live V8 JS heap data (resident by definition)
+          //   external  = C++-side allocations including all
+          //               arrayBuffers (Node's ArrayBuffer allocator
+          //               commits SAB backing into rss once; ab is a
+          //               SUBSET of external, not an additive line)
+          //   workers   = aggregated resident pages owned by worker
+          //               threads' V8 isolates
+          //   native    = Node binary + shared libs (better-sqlite3
+          //               native, ws native, ICU data) + V8 code
+          //               cache / stubs + OS stack + TLS + mapped
+          //               pages. Residual after the three above.
+          //
+          // Subtract ext in full (ab is inside it — don't double-count).
+          // Subtract heapUsed not heapTotal — heapTotal / v8PhysMb
+          // report RESERVED address space that may not be resident.
+          // This formula was verified against operator log values:
+          //   heap=137/207 ext=946 ab=944 rss=1108 → native=25MB ✓
+          //   heap=134/2185 ext=958 ab=956 rss=1511 → native=419MB ✓
+          // Both plausible native residues for the respective states.
+          const nativeMb = Math.max(0, rssMb - heapMb - extMb - workerTotalMb);
           _priorRssMb = rssMb; // kept for back-compat
           // Baseline the native residual on the first heartbeat so the
           // operator sees "native=250MB Δ+5MB" instead of the raw
@@ -9901,12 +9915,32 @@ export class Curriculum {
     // collapse into an indistinguishable superposition. Soft writes
     // let each pair's magnitude profile shape the Hebbian update.
     const binarize = opts.binarize === true; // default FALSE
-    // Row-L2-norm target applied to the sem_to_motor cross-projection
-    // after every phase rep loop. Keeps per-post-neuron weight vectors
-    // bounded as Hebbian accumulates — without this, 14 phases in a row
-    // saturate weights at wMax and wipe out discrimination.
-    const normalizeAfter = opts.normalizeAfter !== false; // default TRUE
-    const normTarget = opts.normTarget ?? 1.0;
+    // Row-L2-normalization of sem_to_motor after the rep loop. The
+    // original rationale was: bare Hebbian accumulates without bound,
+    // so rescale each post-neuron's weight vector to unit L2-norm
+    // after each phase to prevent wMax saturation. That logic is
+    // obsolete under T39.b.1 Oja rule — Oja's built-in decay term
+    // `-η·y²·w` self-normalizes every step, so a second normalization
+    // is redundant AT BEST.
+    //
+    // AT WORST it's destructive: normalizeRows computes
+    // `scale = targetNorm / sqrt(sumSq)` and multiplies every row
+    // value by `scale`, then clamps to [wMin, wMax]. With wMax=0.5
+    // and targetNorm=1.0 the clamp fires on any weight whose scaled
+    // value exceeds 0.5, flattening the row's post-Hebbian
+    // discrimination signature into uniform ±wMax magnitudes. This
+    // was happening on every association-pair phase until today —
+    // operator log showed IDENTICAL `|W| mean=0.1707 max=0.3517`
+    // across five different phases (OPPOSITES, CATEGORIES, WORD-
+    // TYPES, ALPHABET-SEQ, SCI-CONCEPTS), which is the signature of
+    // the normalize-then-clamp cycle erasing real variance at bio
+    // scale where CPU CSR is additionally a stale shadow of the
+    // true GPU weights.
+    //
+    // Default: OFF. Opt-in via `normalizeAfter: true` available for
+    // bare-Hebbian debug paths where the safety was genuinely useful.
+    const normalizeAfter = opts.normalizeAfter === true; // default FALSE
+    const normTarget = opts.normTarget ?? 0.3; // sub-wMax to prevent clamp on opt-in paths
     // Cosine-separation debug probe — after the rep loop, propagate a
     // sample of input-tile patterns through sem→motor and compute the
     // pairwise cosine between motor readouts. Mean cosine > `overloadMax`
@@ -10084,7 +10118,23 @@ export class Curriculum {
           if (a > 1e-6) nnz++;
         }
         const meanAbs = sumAbs / N;
-        weightReport = ` · sem_to_motor |W| mean=${meanAbs.toFixed(4)} max=${maxAbs.toFixed(4)} nnz=${nnz}/${N}`;
+        // Honest telemetry label: at biological scale the projection
+        // is GPU-bound and plasticity runs on GPU without writing
+        // back to CPU CSR. The `values[]` array we sampled is the
+        // INITIAL CSR and doesn't reflect the real (GPU-side) trained
+        // state — it's frozen. Operator logs showed identical stats
+        // across five different phases, which is what confirmed the
+        // stale-shadow diagnosis. Flag the label `(CPU shadow · GPU
+        // bound, values frozen)` when the projection is GPU-bound so
+        // the operator doesn't mistake the stat for real training
+        // telemetry. The authoritative signal remains the sep-probe
+        // cosine (earlier in the log) which reads motor outputs via
+        // live propagate.
+        const gpuBound = !!proj._gpuBound;
+        const label = gpuBound
+          ? `sem_to_motor |W| mean=${meanAbs.toFixed(4)} max=${maxAbs.toFixed(4)} nnz=${nnz}/${N} (CPU shadow · GPU bound, values frozen — read sep-probe cosine for authoritative signal)`
+          : `sem_to_motor |W| mean=${meanAbs.toFixed(4)} max=${maxAbs.toFixed(4)} nnz=${nnz}/${N}`;
+        weightReport = ` · ${label}`;
       }
     } catch { /* non-fatal */ }
     const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1);

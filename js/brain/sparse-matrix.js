@@ -487,21 +487,47 @@ export class SparseMatrix {
     const values = this.values;
     if (!values || values.length === 0) return 0;
     const tn = Number.isFinite(targetNorm) && targetNorm > 0 ? targetNorm : 1.0;
+    // Clamp-aware scale cap. If the naive scale would push any
+    // weight past wMax or wMin, the post-clamp distribution no
+    // longer has targetNorm anyway AND the distinguishing
+    // magnitudes carved by training get flattened uniformly to
+    // the clamp. Prior behaviour was:
+    //   scale = targetNorm / sqrt(sumSq)    (could be ≫1)
+    //   foreach k: value[k] *= scale; clamp to [wMin, wMax]
+    // which flattened post-Hebbian row signatures into uniform
+    // ±wMax magnitudes whenever targetNorm > row-max · sqrt(nnz).
+    //
+    // Clamp-aware variant:
+    //   naiveScale = targetNorm / sqrt(sumSq)
+    //   maxAllowed = min(wMax / maxAbs, |wMin| / maxAbs)
+    //   scale = min(naiveScale, maxAllowed)    (never clamps)
+    // If the cap is tighter than the naive scale, the row ends
+    // up with L2-norm < targetNorm but preserves relative
+    // magnitudes — which is what L2 normalization is FOR (to
+    // keep directions while bounding magnitudes). That is the
+    // behaviour every downstream consumer expects; the prior
+    // clamp-after was silently giving them something different.
     let rowsNormalized = 0;
+    const wBound = Math.min(Math.abs(wMin), Math.abs(wMax));
     for (let i = 0; i < rows; i++) {
       const start = rowPtr[i];
       const end = rowPtr[i + 1];
       if (end <= start) continue;
-      let sumSq = 0;
-      for (let k = start; k < end; k++) sumSq += values[k] * values[k];
+      let sumSq = 0, maxAbs = 0;
+      for (let k = start; k < end; k++) {
+        const v = values[k];
+        sumSq += v * v;
+        const a = v < 0 ? -v : v;
+        if (a > maxAbs) maxAbs = a;
+      }
       if (sumSq <= 0) continue;
-      const scale = tn / Math.sqrt(sumSq);
+      let scale = tn / Math.sqrt(sumSq);
+      if (maxAbs > 0 && scale * maxAbs > wBound) {
+        scale = wBound / maxAbs;
+      }
       if (scale === 1) continue;
       for (let k = start; k < end; k++) {
-        let v = values[k] * scale;
-        if (v > wMax) v = wMax;
-        else if (v < wMin) v = wMin;
-        values[k] = v;
+        values[k] = values[k] * scale;
       }
       rowsNormalized += 1;
     }
