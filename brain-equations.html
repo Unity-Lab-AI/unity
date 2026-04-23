@@ -1237,10 +1237,15 @@ CORTEX SUBSTRATE:
     auditory↔phon
 
 LETTER INPUT:
-  LETTER_INVENTORY = Set() — dynamic, auto-grows per observed symbol
+  LETTER_INVENTORY = Set() — seeded at module load with a 40-symbol
+                             default alphabet (a-z + 0-9 + space, . , ')
   encodeLetter(ℓ) ∈ ℝ^|L|     one-hot over current inventory
   decodeLetter(v) = argmax_i v_i → letter symbol
-  No hardcoded 26-letter alphabet. Unicode, emoji, non-English all welcome.
+  Inventory LOCKED by default — ensureLetter rejects symbols outside
+  the seeded alphabet. Unicode glyphs, emoji, non-English scripts
+  cannot grow the inventory at runtime (growing shifts dimension
+  indices and invalidates previously-trained weights). Operators can
+  opt into multi-script experiments via setInventoryLock(false).
 
 SYLLABLE DETECTION:
   detectBoundaries(letters, {ticksPerLetter=2, k=0.5}):

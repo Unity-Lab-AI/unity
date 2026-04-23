@@ -428,6 +428,26 @@ export class NeuronCluster {
       const EMISSION_PAIRS = new Set([
         'sem-motor', 'motor-sem',
       ]);
+      // Motor-bound projections get a HIGHER fan-in than the default
+      // cross-projection fanout. The motor region sits at the convergence
+      // of several parallel input pathways (sem, phon, letter) and is
+      // asked to discriminate between K-grade answer letters (26) given
+      // a growing curriculum of 46+ association pairs per phase × 4-6
+      // phases per grade. At the default fanout of 30 each motor neuron
+      // gets only ~10 inputs per source pathway after the cortex-area
+      // density cap — not enough slots to carve separable basins for
+      // all the trained pairs, which the operator's persistent
+      // `sep-probe mean-cos ≈ 0.5` warnings expose.
+      //
+      // Bump to 60 for motor-targeting projections (2× the default).
+      // Still biologically plausible — real pyramidal neurons carry
+      // 1000-10000 synaptic inputs distributed across many cortical
+      // areas; 60 per per-area pair is well under that bound.
+      const MOTOR_BOUND_PAIRS = new Set([
+        'sem-motor', 'motor-sem',
+        'letter-motor', 'motor-letter',
+        'phon-motor', 'motor-phon',
+      ]);
       // Progress logging so cluster construction doesn't look like a
       // hang at large sizes. Each cross-projection init can take
       // seconds-to-minutes at M+ neuron scale.
@@ -444,10 +464,20 @@ export class NeuronCluster {
         // 30/850K=3.5e-5, giving 30 connections per post via the fanout
         // term. Density cap is the small-scale fallback; fanout term
         // dominates at biological scale.
-        const abDensity = Math.min(0.005, crossTargetFanout / Math.max(1, aSize));
-        const baDensity = Math.min(0.005, crossTargetFanout / Math.max(1, bSize));
         const abKey = `${a}-${b}`;
         const baKey = `${b}-${a}`;
+        // Per-pair fanout — motor-bound projections get 2× the default
+        // to support discriminating K-grade answer letters across many
+        // trained pairs. Everything else uses the default fanout.
+        const abFanout = MOTOR_BOUND_PAIRS.has(abKey) ? crossTargetFanout * 2 : crossTargetFanout;
+        const baFanout = MOTOR_BOUND_PAIRS.has(baKey) ? crossTargetFanout * 2 : crossTargetFanout;
+        // Density cap — 0.005 is the default; motor-bound pairs get a
+        // matching 0.01 cap (2×) so the fanout term can actually land
+        // at smaller source sizes.
+        const abCap = MOTOR_BOUND_PAIRS.has(abKey) ? 0.01 : 0.005;
+        const baCap = MOTOR_BOUND_PAIRS.has(baKey) ? 0.01 : 0.005;
+        const abDensity = Math.min(abCap, abFanout / Math.max(1, aSize));
+        const baDensity = Math.min(baCap, baFanout / Math.max(1, bSize));
         const abExcitatory = EMISSION_PAIRS.has(abKey) ? 0.5 : 0.7;
         const baExcitatory = EMISSION_PAIRS.has(baKey) ? 0.5 : 0.7;
         const abTime = Date.now();

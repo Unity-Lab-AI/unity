@@ -44,6 +44,35 @@
 // same corpora. Persistence (T14.16) keeps them in sync across restarts.
 const LETTER_INVENTORY = new Set();
 
+// Default English alphabet + digits + basic punctuation + space. Seeded
+// at module load so the inventory is NEVER empty — downstream callers
+// (encodeLetter, decodeLetter, the motor argmax path) always have a
+// stable 40-dim one-hot space even before any corpus has been read.
+// The insertion order here defines the one-hot dimension assignment,
+// which is persisted and reloaded via serializeInventory /
+// loadInventory — as long as this seeding runs before any weight load,
+// dimensions line up across restarts.
+const DEFAULT_ALPHABET = [
+  // Lowercase English (26)
+  'a','b','c','d','e','f','g','h','i','j','k','l','m',
+  'n','o','p','q','r','s','t','u','v','w','x','y','z',
+  // Digits (10)
+  '0','1','2','3','4','5','6','7','8','9',
+  // Whitespace + basic punctuation (4)
+  ' ','.',',','\'',
+];
+for (const ch of DEFAULT_ALPHABET) LETTER_INVENTORY.add(ch);
+
+// Inventory lock — when true, ensureLetter silently REJECTS any symbol
+// outside the current inventory instead of growing it. Default ON so
+// random unicode seen in corpora can't pollute the letter region.
+// Operators can disable with `setInventoryLock(false)` for experimental
+// multi-script work. Readiness-probe operator log was showing Unity
+// emitting 'mcaa' for a letter='a' cue, which is the signature of the
+// motor argmax decoding to inventory dimensions that should never have
+// been present — lock closes that leak.
+let _inventoryLocked = true;
+
 // Module-level cache of one-hot vectors per letter. Rebuilt whenever the
 // inventory grows (because growing adds a new dimension to every vector).
 // Key is the lowercased letter; value is a Float32Array of length
@@ -77,11 +106,37 @@ export function ensureLetter(letter) {
   if (!letter) return;
   const key = String(letter).toLowerCase();
   if (!LETTER_INVENTORY.has(key)) {
+    // Lock rejection — reject unknown symbols when the inventory is
+    // locked. Default policy: only a-z + 0-9 + basic punctuation can
+    // participate in the letter region. Unicode glyphs from random
+    // corpora cannot grow the inventory at runtime because doing so
+    // invalidates every previously-trained one-hot dimension's
+    // meaning (new dim shifts existing dim indices). Operators can
+    // pass a custom alphabet at boot via `loadInventory(arr)` then
+    // re-lock — or run unlocked via `setInventoryLock(false)` for
+    // experimental multi-script work.
+    if (_inventoryLocked) return;
     LETTER_INVENTORY.add(key);
     // Invalidate cache — all cached vectors are now wrong-sized
     _oneHotCache.clear();
     _cachedInventorySize = 0;
   }
+}
+
+/**
+ * Enable / disable the inventory lock at runtime. Defaults to TRUE at
+ * module load. When locked, `ensureLetter` silently rejects symbols
+ * outside the current inventory. Returns the previous lock state.
+ */
+export function setInventoryLock(locked) {
+  const prev = _inventoryLocked;
+  _inventoryLocked = !!locked;
+  return prev;
+}
+
+/** Returns the current lock state — telemetry / diagnostics only. */
+export function isInventoryLocked() {
+  return _inventoryLocked;
 }
 
 /**
@@ -140,6 +195,9 @@ export function ensureLetters(letters) {
     if (!l) continue;
     const key = String(l).toLowerCase();
     if (!LETTER_INVENTORY.has(key)) {
+      // Locked: silently skip symbols outside the current inventory.
+      // Same policy as ensureLetter above.
+      if (_inventoryLocked) continue;
       LETTER_INVENTORY.add(key);
       grew = true;
     }
@@ -218,6 +276,11 @@ export function loadInventory(arr) {
  */
 export function resetInventory() {
   LETTER_INVENTORY.clear();
+  // Re-seed the default alphabet so the inventory is never empty.
+  // Callers that want a truly empty inventory (uncommon — only the
+  // earliest boot paths) can `setInventoryLock(false)` then load
+  // their own seed via `loadInventory(arr)`.
+  for (const ch of DEFAULT_ALPHABET) LETTER_INVENTORY.add(ch);
   _oneHotCache.clear();
   _cachedInventorySize = 0;
 }

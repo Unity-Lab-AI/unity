@@ -1031,26 +1031,53 @@ export class Curriculum {
     for (const cue of PROBES) {
       _cueIdx += 1;
       const _cueStart = Date.now();
-      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} START letter='${cue}' — 6 readInput ticks + up to 20 emission ticks`);
+      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} START letter='${cue}' — direct letter-region injection + up to 20 emission ticks`);
       let emitted = '';
       let timedOut = false;
       try {
-        if (typeof cluster.readInput === 'function') {
+        // DIRECT letter-region injection — bypass readInput's text
+        // parsing pipeline entirely. A single-letter probe is not a
+        // sentence to read; it's a stimulus-response test: inject the
+        // letter one-hot into cluster.regions.letter, propagate a few
+        // ticks, then let generateSentenceAwait read motor argmax.
+        //
+        // The prior `readInput(cue, { ticks: 6 })` path treated the
+        // cue as text and routed through visual → letter → phon → sem
+        // with GloVe embedding contamination along the way, so the
+        // letter region never received a clean one-hot signal. The
+        // operator's `'mcaa'` emission for a cue='a' probe was the
+        // signature of motor argmax decoding against that polluted
+        // activation pattern. Direct injection gives the cue a clean
+        // letter one-hot to work with.
+        if (typeof cluster.injectLetter === 'function') {
+          cluster.injectLetter(cue, 1.0);
+          // Propagate a few ticks so the letter pattern has time to
+          // cross letter → motor before the emission loop reads it.
+          if (typeof cluster.step === 'function') {
+            for (let t = 0; t < 4; t++) {
+              try { cluster.step(0.001); } catch { break; }
+            }
+          }
+        } else if (typeof cluster.readInput === 'function') {
+          // Fallback — if injectLetter isn't wired (unusual), keep
+          // the old readInput path so probes don't silently skip.
           await cluster.readInput(cue, { ticks: 6 });
         }
-        const semSeed = (typeof cluster.getSemanticReadout === 'function') ? cluster.getSemanticReadout() : null;
-        // BUG FIX: pass `maxTicks` (the key generateSentenceAwait reads
-        // at cluster.js line 1632) not `maxEmissionTicks` (unread alias).
-        // Prior code let the probe loop run up to 2000 ticks per cue.
+        // Deliberately SKIP the getSemanticReadout seed — it would
+        // pull sem-region state, which for a single-letter probe
+        // holds noise or residue from the prior cue. Emission must
+        // run off the just-injected letter pattern alone.
         const emitOpts = { maxTicks: 20 };
-        if (semSeed) emitOpts.injectStrength = 0.6;
         // Race the emission against a 10 s wall-clock timeout so a hung
         // GPU dispatch can't freeze the readiness probe indefinitely.
         // If the timeout wins, we log and continue to the next cue —
         // the probe result is still valid (slower cues = emission path
         // isn't ready yet = readiness fails, battery skips, teach
         // continues).
-        const emissionPromise = cluster.generateSentenceAwait(semSeed, emitOpts);
+        // Pass null semSeed — direct letter injection above already
+        // drove the letter region; emission runs off propagate-
+        // derived motor currents, not a sem-region seed.
+        const emissionPromise = cluster.generateSentenceAwait(null, emitOpts);
         const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ _timeout: true }), PER_CUE_TIMEOUT_MS));
         const raw = await Promise.race([emissionPromise, timeoutPromise]);
         if (raw && raw._timeout) {
@@ -5978,9 +6005,23 @@ export class Curriculum {
     const motorRegion = cluster?.regions?.motor;
     if (!semRegion || !motorRegion) return { templatesTaught: 0, skipped: bank.length };
     const lr = 0.03;
-    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH START — ${byTemplate.size} template forms × up to ${reps} reps each`);
-    try { this._pushBrainEvent?.('teach', 'fineType', `STRUCT START: ${cellKey} · ${byTemplate.size} templates`, { cellKey, templateCount: byTemplate.size }); } catch {}
-    for (const [templateId, samples] of byTemplate) {
+    // Budget cap — never teach more than this many templates per
+    // pre-gate enrichment pass. Prior code had no cap; operator saw
+    // the system freeze after a VOCAB-COVERAGE 0% warning on
+    // science/kindergarten where the pregate chain kicked off a
+    // structure-teach for every template with no interleaving or
+    // progress signal. 12 templates is more than any K-grade cell
+    // has unique forms for (usually 5-7). When a cell somehow
+    // produces more, we take the first 12 deterministically and
+    // log the skip.
+    const MAX_TEMPLATES_PER_PASS = 12;
+    const templates = Array.from(byTemplate.keys()).slice(0, MAX_TEMPLATES_PER_PASS);
+    const droppedForBudget = byTemplate.size - templates.length;
+    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH START — ${templates.length} template forms × up to ${reps} reps each${droppedForBudget > 0 ? ` (dropped ${droppedForBudget} over budget cap)` : ''}`);
+    try { this._pushBrainEvent?.('teach', 'fineType', `STRUCT START: ${cellKey} · ${templates.length} templates`, { cellKey, templateCount: templates.length }); } catch {}
+    let _lastYield = Date.now();
+    for (const templateId of templates) {
+      const samples = byTemplate.get(templateId);
       // Use the first sample's question + answer as the anchor for
       // the template binding. Structure teach is per-template, not
       // per-question — the template tag is what carries the structure.
@@ -6002,10 +6043,27 @@ export class Curriculum {
           this._writeTiledPattern(motorRegion, motorPattern, false);
           await this._teachHebbian(lr);
         } catch { /* non-fatal */ }
+        // Event-loop yield every 250ms. At biological scale each
+        // _teachHebbian fires a GPU dispatch that may take 100-500ms
+        // and internally awaits, so the for loop already yields —
+        // but when GPU is cold and the dispatch returns fast, we
+        // can accumulate dozens of reps in a tight synchronous burst
+        // that starves the heartbeat + dashboard broadcasts. An
+        // explicit setImmediate break lets interleaved work (state
+        // broadcast, heartbeat log, client socket draining) run.
+        if (Date.now() - _lastYield > 250) {
+          await new Promise(resolve => setImmediate(resolve));
+          _lastYield = Date.now();
+        }
       }
       taught++;
+      // Heartbeat after each template so operator sees progress.
+      // When the system appears to freeze at `STRUCTURE-TEACH START`
+      // a per-template log confirms whether we're making forward
+      // progress vs genuinely stuck.
+      this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH progress — template ${taught}/${templates.length} done (${droppedForBudget > 0 ? 'budget-capped' : 'all templates'})`);
     }
-    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH DONE — ${taught} template forms × ${reps} reps (skipped ${skipped})`);
+    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH DONE — ${taught} template forms × ${reps} reps (skipped ${skipped}${droppedForBudget > 0 ? `, budget-dropped ${droppedForBudget}` : ''})`);
     try { this._pushBrainEvent?.('teach', 'fineType', `STRUCT DONE: ${cellKey} · ${taught}`, { cellKey, taught, skipped }); } catch {}
     return { templatesTaught: taught, skipped };
   }
