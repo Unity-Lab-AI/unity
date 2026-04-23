@@ -840,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "1c81f5a7-58dc";
+var BUILD = "c7f4b09b-a968";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -14123,6 +14123,8 @@ var Curriculum = class _Curriculum {
       cluster._probeGateActive = false;
       cluster._currentCellKey = wasCellKey;
     }
+    const _batteryWasCellKey = cluster._currentCellKey;
+    if (cluster) cluster._currentCellKey = cellKey;
     if (result) {
       try {
         const bank = this._studentQuestionBank(subject, grade);
@@ -14271,6 +14273,7 @@ var Curriculum = class _Curriculum {
         this._saveCheckpoint(cellKey);
       }
     }
+    if (cluster) cluster._currentCellKey = _batteryWasCellKey;
     this._memorySnapshotAndGc(`cell-exit ${subject}/${grade} pass=${!!(result && result.pass)}`);
     const _cellMs = Date.now() - _cellStart;
     const _cellPass = !!(result && result.pass);
