@@ -1670,34 +1670,60 @@ class ServerBrain {
   getState() {
     const clusterStates = {};
     for (const [name, cluster] of Object.entries(this.clusters)) {
+      const size = cluster.size || 1;
+      const spikeCount = cluster.spikeCount | 0;
+      // Dashboard + 3D brain expect firingRate AND spikeRate as a
+      // ratio in [0, 1] — spikeCount/size. Server previously put raw
+      // count-per-substep EMA into `firingRate` which showed as huge
+      // numbers that rounded to "0%" after the dashboard's Math.round
+      // (count × 100) overflowed the expected 0-100 band. Surface
+      // both field names (spikeRate canonical, firingRate alias) so
+      // old clients reading either name get the correct ratio.
+      const spikeRate = Math.min(1, Math.max(0, spikeCount / size));
       clusterStates[name] = {
-        size: cluster.size,
-        spikeCount: cluster.spikeCount,
-        firingRate: cluster.firingRate,
+        size,
+        spikeCount,
+        spikeRate,
+        firingRate: spikeRate,
         // T18.4.c — GPU voltage-mean telemetry (Rulkov x, averaged across
         // every neuron in the cluster via GPU atomic reduction). Undefined
         // on first few ticks until compute.html reports it back.
         meanVoltage: typeof cluster.meanVoltage === 'number' ? cluster.meanVoltage : null,
       };
     }
-    // T17.3.f — emit language cortex sub-region activity as pseudo-clusters
+    // Emit language cortex sub-region activity as pseudo-clusters
     // (keys: lang_motor, lang_phon, lang_sem, lang_letter, lang_visual,
     // lang_auditory, lang_fineType, lang_free) so the 3D brain can render
     // Broca's, Wernicke's, angular gyrus, VWFA, V1, Heschl's, temporal pole,
     // and PFC as filled-in sub-volumes between the existing 7 regions.
-    // Spike counts derived from cortexCluster.lastSpikes sliced per-region.
-    if (this.cortexCluster && this.cortexCluster.regions && this.cortexCluster.lastSpikes) {
+    //
+    // At biological scale the GPU owns cortex spike state — the CPU
+    // `cortexCluster.lastSpikes` Uint8Array stays zero. Prefer the
+    // GPU-reported per-region counts captured by `_computeCortex-
+    // Divergence` from each compute_batch result. Fall back to CPU
+    // shadow only when the GPU readback hasn't arrived yet
+    // (first few ticks after boot).
+    if (this.cortexCluster && this.cortexCluster.regions) {
+      const gpuRS = this._lastCortexRegionSpikes;
+      const gpuFresh = gpuRS && this._lastCortexRegionSpikesAt
+        && (Date.now() - this._lastCortexRegionSpikesAt) < 5000;
       const ls = this.cortexCluster.lastSpikes;
       for (const [regName, region] of Object.entries(this.cortexCluster.regions)) {
         const size = region.end - region.start;
         let spikeCount = 0;
-        for (let i = region.start; i < region.end && i < ls.length; i++) {
-          if (ls[i]) spikeCount++;
+        if (gpuFresh && typeof gpuRS[regName] === 'number') {
+          spikeCount = gpuRS[regName] | 0;
+        } else if (ls) {
+          for (let i = region.start; i < region.end && i < ls.length; i++) {
+            if (ls[i]) spikeCount++;
+          }
         }
+        const spikeRate = Math.min(1, Math.max(0, spikeCount / Math.max(1, size)));
         clusterStates[`lang_${regName}`] = {
           size,
           spikeCount,
-          firingRate: spikeCount / Math.max(1, size),
+          spikeRate,
+          firingRate: spikeRate,
         };
       }
     }
@@ -1881,6 +1907,16 @@ class ServerBrain {
    */
   _computeCortexDivergence(perCluster) {
     const cortexEntry = perCluster.cortex;
+    // Capture GPU-reported per-region spike counts so getState can
+    // surface them on `lang_*` pseudo-clusters. At biological scale
+    // the CPU `cortexCluster.lastSpikes` shadow stays zero (GPU owns
+    // the state) — without this capture the 3D brain viz shows
+    // 0/N (0.00%) for every cortex sub-region even though the GPU
+    // is actively firing millions of spikes across them.
+    if (cortexEntry && cortexEntry.regionSpikes) {
+      this._lastCortexRegionSpikes = cortexEntry.regionSpikes;
+      this._lastCortexRegionSpikesAt = Date.now();
+    }
     if (!cortexEntry || !cortexEntry.regionSpikes) {
       this._cortexDivergence = 0;
       this._cortexDivergenceByRegion = {};
