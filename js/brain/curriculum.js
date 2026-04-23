@@ -3218,6 +3218,18 @@ export class Curriculum {
     // language pipeline live chat uses. Appended to every cell result
     // so the substrate pass/fail is augmented with a real educational
     // assessment. Runs for every subject × every grade at pre-K + K.
+    //
+    // Dashboard fix: the `finally` block above restored
+    // `_currentCellKey` to `wasCellKey` (null at top level) after the
+    // cell runner exited — but the student battery is conceptually
+    // part of the same cell evaluation and runs for several minutes
+    // at biological scale. Without re-setting the key here, the
+    // dashboard's Current Training card shows `cellStatus='idle' ·
+    // 0 phases` during the whole battery window even though the cell
+    // key and phase are clearly active. Re-apply the key for the
+    // battery duration and restore at the end.
+    const _batteryWasCellKey = cluster._currentCellKey;
+    if (cluster) cluster._currentCellKey = cellKey;
     if (result) {
       try {
         const bank = this._studentQuestionBank(subject, grade);
@@ -3423,6 +3435,11 @@ export class Curriculum {
         this._saveCheckpoint(cellKey);
       }
     }
+    // Restore the cell-key beacon the finally-block put on hold while
+    // we ran the battery. Dashboard Current Training card flips back
+    // to `idle` status as soon as this restoration happens, which is
+    // correct — the cell truly IS done at this point.
+    if (cluster) cluster._currentCellKey = _batteryWasCellKey;
     this._memorySnapshotAndGc(`cell-exit ${subject}/${grade} pass=${!!(result && result.pass)}`);
     const _cellMs = Date.now() - _cellStart;
     const _cellPass = !!(result && result.pass);
