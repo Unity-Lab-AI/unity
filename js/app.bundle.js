@@ -834,7 +834,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "ced4f7e5-cb55";
+var BUILD = "da45999c-8327";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -11972,16 +11972,23 @@ var Curriculum = class _Curriculum {
     } : null;
     const cellKey = cluster && cluster._currentCellKey ? cluster._currentCellKey : null;
     const currentCellPassedPhases = cellKey && Array.isArray(cluster?.passedPhases) ? cluster.passedPhases.filter((k) => k && k.startsWith(`${cellKey}:`)).length : 0;
+    let cellStatus = "idle";
+    if (cellKey) {
+      const inPassedList = cluster && Array.isArray(cluster.passedCells) && cluster.passedCells.includes(cellKey);
+      cellStatus = inPassedList ? "passed" : "in-progress";
+    }
     return {
       currentSubject: this._currentSubject || null,
       currentGrade: this._currentGrade || null,
       currentLabel: this._currentSubjectLabel || null,
       currentGradeLabel: this._currentGrade ? GRADE_LABELS[this._currentGrade] || this._currentGrade : null,
       currentCellKey: cellKey,
+      cellStatus,
       activePhase,
       cellPhasesCompleted: this._currentCellPhasesCompleted | 0,
       cellPhasesPersisted: currentCellPassedPhases,
       cellStartAt: this._currentCellStartAt || null,
+      cellElapsedMs: this._currentCellStartAt ? Date.now() - this._currentCellStartAt : 0,
       perSubject,
       passedCellsTotal: cluster && Array.isArray(cluster.passedCells) ? cluster.passedCells.length : 0,
       subjects: SUBJECTS.slice()
