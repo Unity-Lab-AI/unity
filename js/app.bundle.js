@@ -834,7 +834,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "5f74f507-9ef4";
+var BUILD = "7e87ca2b-17c6";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -45708,21 +45708,21 @@ function renderLandingTab(tab, s) {
   const bp = s.oscillations?.bandPower ?? s.sharedMood?.bandPower ?? {};
   switch (tab) {
     case "neurons": {
-      const smoothedFiring = s.clusters ? Object.values(s.clusters).reduce((sum, c) => sum + (c.firingRate || 0), 0) : spikes;
+      const totalCount = s.clusters ? Object.values(s.clusters).reduce((sum, c) => sum + (c.spikeCount || 0), 0) : spikes;
       const totalN = s.totalNeurons ?? 1e3;
       let html = card("Neuron Population", `
         ${metric("Total", totalN.toLocaleString(), "#ff4d9a")}
-        ${metric("Firing rate (EMA)", Math.round(smoothedFiring).toLocaleString(), "#22c55e")}
-        ${metric("Rate %", (smoothedFiring / totalN * 100).toFixed(2) + "%", "#00e5ff")}
+        ${metric("Firing rate", totalCount.toLocaleString(), "#22c55e")}
+        ${metric("Rate %", (totalCount / totalN * 100).toFixed(2) + "%", "#00e5ff")}
       `);
       if (s.clusters) {
         const colors = { cortex: "#ff4d9a", hippocampus: "#a855f7", amygdala: "#ef4444", basalGanglia: "#22c55e", cerebellum: "#00e5ff", hypothalamus: "#f59e0b", mystery: "#c084fc" };
-        const maxPct = Math.max(1, ...Object.values(s.clusters).map((c) => c.size ? (c.firingRate || 0) / c.size * 100 : 0));
-        html += card("Cluster Activity (EMA rate)", Object.entries(s.clusters).map(([name, c]) => {
-          const rate = c.firingRate || 0;
-          const pct = c.size ? rate / c.size * 100 : 0;
+        const maxPct = Math.max(1, ...Object.values(s.clusters).map((c) => c.size ? (c.spikeCount || 0) / c.size * 100 : 0));
+        html += card("Cluster Activity", Object.entries(s.clusters).map(([name, c]) => {
+          const count = c.spikeCount || 0;
+          const pct = c.size ? count / c.size * 100 : 0;
           const barPct = maxPct > 0 ? pct / maxPct * 100 : 0;
-          return `<div style="margin:4px 0;">${metric(name, `${Math.round(rate).toLocaleString()}/${c.size.toLocaleString()} (${pct.toFixed(2)}%)`, colors[name] || "#fff")}${bar(barPct, colors[name] || "#fff")}</div>`;
+          return `<div style="margin:4px 0;">${metric(name, `${count.toLocaleString()}/${c.size.toLocaleString()} (${pct.toFixed(2)}%)`, colors[name] || "#fff")}${bar(barPct, colors[name] || "#fff")}</div>`;
         }).join(""));
       }
       el.innerHTML = html;

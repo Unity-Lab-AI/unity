@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-04-22 — Session 114.19ca: T39.d.1 — 3D brain page (index.html neurons tab) showed 0 firing across every cluster while dashboard read it fine — ratio-vs-count units mismatch in app.js renderer
+
+### Operator verbatim 2026-04-22
+
+> *"3D brain html still shows zeros acroos the board: Neuron Population Total 178,857,104 Firing rate (EMA) 3 Rate % 0.00% Cluster Activity (EMA rate) cortex 0/71,542,842 (0.00%) hippocampus 0/28,617,137 (0.00%) amygdala 0/14,308,568 (0.00%) basalGanglia 0/7,154,284 (0.00%) cerebellum 0/35,771,421 (0.00%) hypothalamus 0/7,154,284 (0.00%) mystery 0/14,308,568 (0.00%) lang_auditory 0/50,740 (0.00%) ... lang_motor 0/20,174 (0.00%) --- but the dashboard shows it just fine"*
+
+### Root cause
+
+Earlier this session the server-side fix made `brain-server.js getState()` emit both `spikeRate` AND `firingRate` as ratios in `[0, 1]` (spikeCount / size) so the dashboard's percentage computation would produce the expected 0-100 band. Dashboard was updated to consume the ratio.
+
+The 3D brain page neurons tab (`js/app.js:566-584`) was NOT updated. It continued reading `c.firingRate` with the interpretation that it was a raw neuron count and computed per-cluster percentage as `rate / c.size * 100` — dividing an already-normalized `[0, 1]` ratio by the cluster size a second time. With cortex size ~71M and `rate ≈ 0.02`, the per-cluster percentage collapsed to `~2.79e-10` which rounded to `0.00%`. Sum across clusters (`smoothedFiring = sum(c.firingRate)`) gave something like `0.5-3.0` which rounded to "3" in the top-line "Firing rate (EMA)" metric. Top-line Rate % (`smoothedFiring / totalN × 100`) gave `3 / 178M × 100 ≈ 1.68e-6%` which rounded to "0.00%".
+
+Dashboard wasn't affected because `dashboard.html:357` consumed `c.spikeCount / c.size * 100` directly — `spikeCount` is unambiguously a raw count, no normalization overlap.
+
+### Fix
+
+`js/app.js` neurons tab now mirrors the dashboard's pattern: use `c.spikeCount` (raw count) throughout.
+
+- Top-line total = `Σ c.spikeCount` across all clusters
+- Top-line Rate % = `totalCount / totalN × 100`
+- Per-cluster count display = `c.spikeCount`
+- Per-cluster percentage = `c.spikeCount / c.size × 100`
+- Bar scale = same percentage relative to max-active cluster
+
+Card title changed from "Cluster Activity (EMA rate)" to "Cluster Activity" because the server-emitted field is instantaneous. The prior EMA claim was aspirational — the label should match the data.
+
+### Why this happened — doc note
+
+When the server-side ratio fix shipped earlier in the session, only the dashboard consumer was verified. The 3D brain page reads from the same WebSocket snapshot but through `js/app.js`, which was missed. Lesson for future consumer-switches: when a server field changes units (count → ratio, or vice versa), grep every `.spikeRate` / `.firingRate` reader in the entire JS tree — not just the one the operator's screenshot called out.
+
+### Files touched
+
+- `js/app.js:566-584` — switch neurons tab to `spikeCount` units, align with dashboard
+- `js/app.bundle.js` — rebuilt
+- `docs/TODO.md` — T39.d.1 entry appended under T39 closure section with verbatim operator quote
+- `docs/FINALIZED.md` — this session entry
+
+### Regression harness
+
+`scripts/smoke-tip-top.mjs` — 63/63 green (renderer-only change, no exported API surface).
+
+---
+
 ## 2026-04-22 — Session 114.19bz: T39.a.5 — `native=0MB` forever bug (memory heartbeat formula double-counted arrayBuffers) + `workers=0MB~(0)` cosmetic polish when pool is idle-terminated
 
 ### Operator verbatim 2026-04-22
