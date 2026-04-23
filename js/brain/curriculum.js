@@ -10107,9 +10107,26 @@ export class Curriculum {
     // word) survive and weak background dims get pruned.
     const motorWTA = opts.motorWTA !== false && !binarize;
     const motorTopK = opts.motorTopK ?? 15;
-    let trained = 0, skipped = 0, antiFires = 0, wtaApplied = 0;
+    // SEM-side top-K sparsification (Olshausen & Field 1996 sparse
+    // coding — each input activates only the most distinctive dims,
+    // so semantically similar inputs produce orthogonal-ish sparse
+    // codes instead of dense overlapping activation patterns). Raw
+    // GloVe embeddings for K-grade content words cluster tightly in
+    // cosine space (cat/dog/bird/fish mutual cosine ≈ 0.4-0.6 by
+    // construction — they co-occur in identical corpus contexts).
+    // Tiling those raw embeddings into sem produces similar sem
+    // patterns → sem→motor weights trained on them cannot
+    // discriminate even with distinct motor targets → sep-probe
+    // mean-cos persistently ≈ 0.5. Top-K on sem forces discrimination
+    // at the source: only the 30 most-distinctive dims fire per word,
+    // and while similar words share SOME top-30 dims they share
+    // FEWER than in raw GloVe. Same mechanism motor-WTA uses, applied
+    // upstream on the input side.
+    const semWTA = opts.semWTA !== false && !binarize;
+    const semTopK = opts.semTopK ?? 30;
+    let trained = 0, skipped = 0, antiFires = 0, wtaApplied = 0, semWtaApplied = 0;
     const startMs = Date.now();
-    this._hb(`[Curriculum][${label}] START — ${pairs.length} pairs × ${reps} reps · soft-writes=${!binarize} · row-norm=${normalizeAfter} · anti-pairs=${antiPairs} · motor-WTA=${motorWTA}/${motorTopK}`);
+    this._hb(`[Curriculum][${label}] START — ${pairs.length} pairs × ${reps} reps · soft-writes=${!binarize} · row-norm=${normalizeAfter} · anti-pairs=${antiPairs} · motor-WTA=${motorWTA}/${motorTopK} · sem-WTA=${semWTA}/${semTopK}`);
     try { this._pushBrainEvent?.('teach', 'sem', `ASSOC START: ${label} · ${pairs.length}×${reps}`, { label, pairs: pairs.length, reps }); } catch {}
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return { trained, skipped };
@@ -10125,9 +10142,14 @@ export class Curriculum {
         // Pre-compute WTA-filtered motor embedding (top-K by magnitude).
         const outEmbMotor = motorWTA ? this._topKEmbedding(outEmb, motorTopK) : outEmb;
         if (motorWTA && outEmbMotor !== outEmb) wtaApplied++;
+        // SEM-side sparse code — top-K on the input embedding so similar
+        // K-grade content words produce more-orthogonal sem patterns than
+        // raw GloVe would. Fires the same _topKEmbedding helper as motor.
+        const inEmbSem = semWTA ? this._topKEmbedding(inEmb, semTopK) : inEmb;
+        if (semWTA && inEmbSem !== inEmb) semWtaApplied++;
         try {
           this._clearSpikes();
-          this._writeTiledPattern(semRegion, inEmb, binarize);
+          this._writeTiledPattern(semRegion, inEmbSem, binarize);
           this._writeTiledPattern(motorRegion, outEmbMotor, binarize);
           if (fineTypeRegion && relationTagId !== null) {
             const fineSize = fineTypeRegion.end - fineTypeRegion.start;
@@ -10173,7 +10195,11 @@ export class Curriculum {
                 const wrongEmbMotor = motorWTA ? this._topKEmbedding(wrongEmb, motorTopK) : wrongEmb;
                 try {
                   this._clearSpikes();
-                  this._writeTiledPattern(semRegion, inEmb, binarize);
+                  // Use the same top-K sem input as the positive pair —
+                  // so anti-Hebbian depression lands on the SAME sem
+                  // pattern geometry the positive Oja update wrote to,
+                  // not a denser one that would target different weights.
+                  this._writeTiledPattern(semRegion, inEmbSem, binarize);
                   this._writeTiledPattern(motorRegion, wrongEmbMotor, binarize);
                   // Relation tag fires on NEG pair too so the relation
                   // channel doesn't learn to classify positive vs negative
@@ -10225,7 +10251,16 @@ export class Curriculum {
     let collapseFlag = '';
     if (runSeparationProbe && pairs.length >= 2) {
       try {
-        const sep = this._checkSemBasinSeparation(pairs, { semRegion, motorRegion, overloadMax, sampleSize: 8 });
+        // Pass semTopK into the probe so the diagnostic measures the
+        // SAME sem pattern geometry the teach wrote. Without this the
+        // probe samples raw GloVe (dense, high-overlap) while the teach
+        // trained against top-K (sparse, lower-overlap) — sep-probe
+        // would systematically overestimate mean-cos and fire spurious
+        // ⚠OVERLOAD warnings even when training actually discriminates.
+        const sep = this._checkSemBasinSeparation(pairs, {
+          semRegion, motorRegion, overloadMax, sampleSize: 8,
+          semWTA, semTopK,
+        });
         if (sep && typeof sep.meanCos === 'number') {
           const overload = sep.meanCos > overloadMax;
           // Collapse detector: motor readouts all near-zero (cosine
@@ -10281,7 +10316,9 @@ export class Curriculum {
     } catch { /* non-fatal */ }
     const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1);
     const antiReport = antiPairs ? ` · anti-fires=${antiFires}` : '';
-    const wtaReport = motorWTA ? ` · motor-WTA=${wtaApplied}/${motorTopK}` : '';
+    const wtaReport = motorWTA
+      ? ` · motor-WTA=${wtaApplied}/${motorTopK}${semWTA ? ` · sem-WTA=${semWtaApplied}/${semTopK}` : ''}`
+      : (semWTA ? ` · sem-WTA=${semWtaApplied}/${semTopK}` : '');
     this._hb(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${wtaReport}${normReport}${sepReport}${weightReport}`);
     try { this._pushBrainEvent?.('teach', 'motor', `ASSOC DONE: ${label} · ${trained}/${antiFires}`, { label, trained, antiFires, wtaApplied, elapsedSec }); } catch {}
     return { trained, skipped };
@@ -10324,20 +10361,33 @@ export class Curriculum {
     // directly (no slicing needed). Also normalizes in-place on the
     // returned vector (which is a fresh array so no state corruption).
     const semSize = semRegion.end - semRegion.start;
+    // Honor sem-WTA if the teach used it — so the probe fires against
+    // the same sparse top-K sem code the Hebbian training wrote.
+    const semWTA = opts.semWTA !== false;
+    const semTopK = opts.semTopK ?? 30;
     for (let i = 0; i < pairs.length && readouts.length < sampleSize; i += step) {
       const pair = pairs[i];
       if (!Array.isArray(pair) || pair.length < 2) continue;
       const [inputWord] = pair;
-      const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
+      const rawEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
         ? sharedEmbeddings.getEmbedding(inputWord) : null;
-      if (!inEmb || inEmb.length === 0) continue;
+      if (!rawEmb || rawEmb.length === 0) continue;
+      // Apply top-K filter BEFORE tiling so the probe pattern matches
+      // what `_teachAssociationPairs` wrote during the rep loop.
+      const inEmb = semWTA ? this._topKEmbedding(rawEmb, semTopK) : rawEmb;
       // Build sem-sized input (local index space). Tile the embedding
       // the same way _writeTiledPattern would, but into a fresh
-      // Float64Array whose index 0 maps to semRegion.start.
+      // Float64Array whose index 0 maps to semRegion.start. With
+      // top-K, `inEmb[d]` is zero for all dims outside the top-K set,
+      // so only those dims fire in semInput — matching the teach-side
+      // sparse pattern.
       const semInput = new Float64Array(semSize);
       const gSize = Math.max(1, Math.floor(semSize / inEmb.length));
       for (let d = 0; d < inEmb.length; d++) {
-        if (inEmb[d] <= 0) continue;
+        // Fire on ANY non-zero top-K dim (positive OR negative) so the
+        // sparse code's full active set shapes the probe pattern, not
+        // just the positive half.
+        if (inEmb[d] === 0) continue;
         for (let n = 0; n < gSize; n++) {
           const idx = d * gSize + n;
           if (idx < semSize) semInput[idx] = 1;
