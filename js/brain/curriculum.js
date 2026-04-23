@@ -3056,12 +3056,19 @@ export class Curriculum {
           const workerHeapMb = _cachedWorkerMem ? (_cachedWorkerMem.totalHeapUsedMb | 0) : 0;
           const workerExtMb = _cachedWorkerMem ? (_cachedWorkerMem.totalExternalMb | 0) : 0;
           const workerTotalMb = workerHeapMb + workerExtMb;
-          // Native = rss − (V8 physical + external + workers). This
-          // is the Node executable + loaded shared libraries
-          // (better-sqlite3 native, ws native, ICU data) + OS process
-          // overhead (stack, TLS, mapped pages). Healthy value is a
-          // FLAT baseline; growth here is the real leak signal.
-          const nativeMb = Math.max(0, rssMb - v8PhysMb - extMb - workerTotalMb);
+          // Native = rss − V8 physical − non-AB external − workers.
+          //
+          // Critical: arrayBuffers live INSIDE v8.total_physical_size on
+          // Node 18+ because V8's ArrayBuffer allocator registers the
+          // backing pages against the heap. Subtracting BOTH v8PhysMb
+          // AND the full extMb double-counts ab — e.g. with heap=1167
+          // ext=977 ab=975 rss=1223, naive `rss-v8-ext` = −921 clamps
+          // to 0 and the native line reads 0MB forever (the bug this
+          // fix addresses). Non-AB external is the tiny residue: Buffer
+          // pool + native TypedArray backing + ICU data + sqlite
+          // prepared-statement caches. Subtract only that.
+          const nonAbExtMb = Math.max(0, extMb - abMb);
+          const nativeMb = Math.max(0, rssMb - v8PhysMb - nonAbExtMb - workerTotalMb);
           _priorRssMb = rssMb; // kept for back-compat
           // Baseline the native residual on the first heartbeat so the
           // operator sees "native=250MB Δ+5MB" instead of the raw
@@ -3088,8 +3095,15 @@ export class Curriculum {
             }
           }
           const deltaStr = nativeDeltaMb === 0 ? 'Δ±0' : (nativeDeltaMb > 0 ? `Δ+${nativeDeltaMb}` : `Δ${nativeDeltaMb}`);
+          // Idle-terminated pool reports workerCount=0; the `~` marker
+          // was introduced for "couldn't reach workers in 500ms, used
+          // poolSize × 30MB fallback." When the pool is genuinely gone
+          // (T39.a.4 idle watchdog fired), drop the `~` — zero is not
+          // an estimate, it's the real answer.
           const workerTag = _cachedWorkerMem
-            ? ` workers=${workerHeapMb}MB${_cachedWorkerMem.estimated ? '~' : ''}(${_cachedWorkerMem.workerCount})`
+            ? (_cachedWorkerMem.workerCount === 0
+                ? ' workers=0MB(idle-terminated)'
+                : ` workers=${workerHeapMb}MB${_cachedWorkerMem.estimated ? '~' : ''}(${_cachedWorkerMem.workerCount})`)
             : ' workers=?MB';
           // New format — every byte attributed:
           //   heap = V8 JS heap used
