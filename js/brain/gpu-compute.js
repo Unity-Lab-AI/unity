@@ -297,8 +297,8 @@ const PLASTICITY_SHADER = /* wgsl */`
       // entries. No post-alone decay — that's Oja's job on positive
       // passes, and applying it here would inadvertently PUMP UP
       // weights where only post fires (y²·w inversion). Used by the
-      // contrastive push-pull in `_teachAssociationPairs` /
-      // `_teachQABinding`: caller samples a wrong pair and fires
+      // contrastive push-pull in _teachAssociationPairs /
+      // _teachQABinding: caller samples a wrong pair and fires
       // this mode at |lr| to push that co-activation apart.
       for (var k = start; k < end; k++) {
         let j = colIdx[k];

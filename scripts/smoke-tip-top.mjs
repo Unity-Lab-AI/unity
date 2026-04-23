@@ -127,6 +127,18 @@ const results = {};
   const src = fs.readFileSync(ABS('js/brain/gpu-compute.js'), 'utf8');
   results.gpu_signLrBranch = src.includes('if (params.lr >= 0.0)') && src.includes('ANTI-HEBBIAN');
   results.gpu_ojaInShader = src.includes('OJA mode') || src.includes('Oja');
+  // The module MUST parse cleanly as an ES module — compute.html
+  // imports it directly, and a shader-embedded backtick (accidentally
+  // closing the outer JS template literal) would break the browser
+  // load silently with the server logging "compute client connected
+  // then disconnected".
+  try {
+    await import(abs('js/brain/gpu-compute.js'));
+    results.gpu_module_parses = true;
+  } catch (err) {
+    results.gpu_module_parses = false;
+    results.gpu_module_parse_error = err.message;
+  }
 }
 
 // 9. Dashboard — Current Training card + Brain Events card
