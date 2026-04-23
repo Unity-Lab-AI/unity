@@ -1,5 +1,11 @@
 var __defProp = Object.defineProperty;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
+  get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
+}) : x)(function(x) {
+  if (typeof require !== "undefined") return require.apply(this, arguments);
+  throw Error('Dynamic require of "' + x + '" is not supported');
+});
 var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
@@ -828,7 +834,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "33356b72-293e";
+var BUILD = "ced4f7e5-cb55";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -13905,8 +13911,15 @@ var Curriculum = class _Curriculum {
     cluster._probeGateActive = true;
     let _aliveTick = 0;
     let _priorRssMb = 0;
-    const _unaccRolling = [];
-    const UNACC_WINDOW = 6;
+    const _nativeRolling = [];
+    const NATIVE_WINDOW = 6;
+    let _nativeBaselineMb = null;
+    let _v8stats = null;
+    try {
+      _v8stats = __require("node:v8");
+    } catch {
+      _v8stats = null;
+    }
     let _cachedWorkerMem = null;
     let _memSnapInFlight = false;
     const _aliveHbId = setInterval(() => {
@@ -13935,30 +13948,43 @@ var Curriculum = class _Curriculum {
           const heapTotalMb = Number(mb(mu.heapTotal));
           const extMb = Number(mb(mu.external));
           const abMb = Number(mb(mu.arrayBuffers || 0));
+          let v8PhysMb = heapTotalMb;
+          let v8MallocMb = 0;
+          if (_v8stats && typeof _v8stats.getHeapStatistics === "function") {
+            try {
+              const s = _v8stats.getHeapStatistics();
+              v8PhysMb = Number(mb(s.total_physical_size || 0));
+              v8MallocMb = Number(mb(s.malloced_memory || 0));
+            } catch {
+            }
+          }
           const workerHeapMb = _cachedWorkerMem ? _cachedWorkerMem.totalHeapUsedMb | 0 : 0;
           const workerExtMb = _cachedWorkerMem ? _cachedWorkerMem.totalExternalMb | 0 : 0;
           const workerTotalMb = workerHeapMb + workerExtMb;
-          const unaccountedMb = Math.max(0, rssMb - heapMb - extMb - workerTotalMb);
+          const nativeMb = Math.max(0, rssMb - v8PhysMb - extMb - workerTotalMb);
           _priorRssMb = rssMb;
-          _unaccRolling.push(unaccountedMb);
-          if (_unaccRolling.length > UNACC_WINDOW) _unaccRolling.shift();
-          let unaccTrend = "";
-          if (_unaccRolling.length >= UNACC_WINDOW) {
-            const half = Math.floor(UNACC_WINDOW / 2);
+          if (_nativeBaselineMb === null) _nativeBaselineMb = nativeMb;
+          const nativeDeltaMb = nativeMb - _nativeBaselineMb;
+          _nativeRolling.push(nativeMb);
+          if (_nativeRolling.length > NATIVE_WINDOW) _nativeRolling.shift();
+          let nativeTrend = "";
+          if (_nativeRolling.length >= NATIVE_WINDOW) {
+            const half = Math.floor(NATIVE_WINDOW / 2);
             let sumFirst = 0, sumSecond = 0;
-            for (let i = 0; i < half; i++) sumFirst += _unaccRolling[i];
-            for (let i = half; i < UNACC_WINDOW; i++) sumSecond += _unaccRolling[i];
+            for (let i = 0; i < half; i++) sumFirst += _nativeRolling[i];
+            for (let i = half; i < NATIVE_WINDOW; i++) sumSecond += _nativeRolling[i];
             const avgFirst = sumFirst / half;
-            const avgSecond = sumSecond / (UNACC_WINDOW - half);
+            const avgSecond = sumSecond / (NATIVE_WINDOW - half);
             const trendMb = Math.round(avgSecond - avgFirst);
             if (trendMb > 200) {
-              unaccTrend = ` \u26A0\u26A0LEAK+${trendMb}MB/min`;
+              nativeTrend = ` \u26A0\u26A0LEAK+${trendMb}MB/min`;
             } else if (trendMb > 100) {
-              unaccTrend = ` \u26A0climbing+${trendMb}MB/min`;
+              nativeTrend = ` \u26A0climbing+${trendMb}MB/min`;
             }
           }
+          const deltaStr = nativeDeltaMb === 0 ? "\u0394\xB10" : nativeDeltaMb > 0 ? `\u0394+${nativeDeltaMb}` : `\u0394${nativeDeltaMb}`;
           const workerTag = _cachedWorkerMem ? ` workers=${workerHeapMb}MB${_cachedWorkerMem.estimated ? "~" : ""}(${_cachedWorkerMem.workerCount})` : " workers=?MB";
-          memLabel = ` \xB7 heap=${heapMb}/${heapTotalMb}MB ext=${extMb}MB ab=${abMb}MB rss=${rssMb}MB${workerTag} (unaccounted=${unaccountedMb}MB${unaccTrend})`;
+          memLabel = ` \xB7 heap=${heapMb}/${heapTotalMb}MB v8=${v8PhysMb}MB ext=${extMb}MB ab=${abMb}MB${workerTag} native=${nativeMb}MB(${deltaStr}MB) rss=${rssMb}MB${nativeTrend}`;
         }
       } catch {
       }
