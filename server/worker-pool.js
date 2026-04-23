@@ -72,6 +72,13 @@ class SparseMatmulPool {
         this._workers.push(w);
       }
       this._ready = true;
+      // Reset idle clock. Without this, a pool re-init after idle-
+      // termination inherits the stale `_lastJobAt` from before the
+      // shutdown — the watchdog's next tick sees "idle 52 minutes"
+      // and terminates again immediately. Operator log captured the
+      // thrashing as `idle 3146s → terminate → restart → idle 3177s
+      // → terminate → restart` on a 30-second cadence.
+      this._lastJobAt = Date.now();
       console.log(`[WorkerPool] Started ${this._poolSize} sparse-matmul workers (${os.cpus()?.length} cores available).`);
       console.log(`[WorkerPool] Each worker runs its own V8 heap — expect ~${this._poolSize * 30} MB of worker heap baseline showing as 'workers' in the curriculum heartbeat. That total is NOT a leak; it's the pool's steady-state footprint and stays roughly flat unless a pool call churns external buffers.`);
       // Start idle-termination watchdog. If no propagate/hebbian

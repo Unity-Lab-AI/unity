@@ -876,7 +876,27 @@ export class Curriculum {
         const isFail = r.score < 0.5;
         const shouldLog = isFail || results.length <= 3 || (results.length % 20 === 0);
         if (shouldLog) {
-          this._hb(`[Curriculum][${label}] Q${results.length}/${questions.length} [${r.standard}]: "${q.question.slice(0, 60)}" → "${(r.answer || '').slice(0, 30)}" · score=${r.score.toFixed(2)} match=${r.match.overall}`);
+          // Emission diagnostic tail — only appended when the answer
+          // came back empty. Tells operator WHY she was silent so the
+          // next run is actionable instead of a wall of score=0.00:
+          //   motor-silent  = maxMotorBucket=0, sem→motor didn't fire
+          //   argmax-flicker = high flicker count but 0 committed,
+          //                    basin unstable (multiple winners)
+          //   budget-exhausted = ticksRun hit maxTicks without commit
+          //   no-gpu-read = fell back to CPU readout (at bio scale
+          //                 cortex CPU shadow is zeros, so motor is
+          //                 silent from the probe's viewpoint)
+          let diagTail = '';
+          if ((!r.answer || r.answer.length === 0) && r.emissionDiag) {
+            const d = r.emissionDiag;
+            const why = d.maxMotorBucket === 0
+              ? 'motor-silent'
+              : (d.committedLetters === 0
+                  ? `argmax-flicker(max=${d.maxMotorBucket}, flickers=${d.argmaxFlickers})`
+                  : `budget-exhausted(committed=${d.committedLetters})`);
+            diagTail = ` · ⚑emission: ${why} ticks=${d.ticksRun}${d.gpuReadPath ? '' : ' cpu-readout'}`;
+          }
+          this._hb(`[Curriculum][${label}] Q${results.length}/${questions.length} [${r.standard}]: "${q.question.slice(0, 60)}" → "${(r.answer || '').slice(0, 30)}" · score=${r.score.toFixed(2)} match=${r.match.overall}${diagTail}`);
         }
       } catch (err) {
         const bucket = byStandard.get(q.standard || 'unspecified') || { pass: 0, total: 0 };
@@ -1153,6 +1173,14 @@ export class Curriculum {
     const answer = generated.toLowerCase().trim();
     out.answer = generated;
     out.ticks = (cluster._motorEmissionTicks != null) ? cluster._motorEmissionTicks : 0;
+    // Emission diagnostics — snapshot the diag record generate just
+    // produced so the probe caller can log WHY an empty answer came
+    // back (motor silent / argmax flickered / committed no letters).
+    // Populated by cluster.generateSentenceAwait on every call; stays
+    // on the probe's `out` so batch summarisers see it too.
+    out.emissionDiag = cluster._lastEmissionDiag
+      ? { ...cluster._lastEmissionDiag }
+      : null;
 
     // Methodology — did she produce multi-tick motor activity before
     // emitting, or did she argmax-0 on tick 0 (silent cortex artifact)?
