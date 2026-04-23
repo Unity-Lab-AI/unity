@@ -161,6 +161,50 @@ One cortex. One set of weights. One set of spikes. One tick loop. The plasticity
 - `docs/FINALIZED.md` — this entry
 - `js/app.bundle.js` — rebuilt
 
+### Eighth follow-up same session — T23.c.1 pre-K extraction + T23.e.2 transformer backend auto-wire
+
+Gee verbatim: *"keep working off the todo items some are massive"* and *"is that all there was?"*
+
+**T23.c.1 pre-K extraction (first pass of the full per-grade split)** — 10 pre-K methods moved from the monolithic `js/brain/curriculum.js` (24,877 lines → 24,264 lines, -613) into the new `js/brain/curriculum/pre-K.js` (511 lines). Attach pattern uses `PREK_MIXIN` export + `Object.assign(Curriculum.prototype, PREK_MIXIN)` at the bottom of `curriculum.js` — the attach-function pattern avoids the circular-import TDZ trap that a direct `import { Curriculum }` + top-level `Object.assign` would hit.
+
+Moved:
+
+- Cell runners: `runElaPreK`, `runMathPreK`, `runSciPreK`, `runSocPreK`, `runArtPreK`, `runLifePreK`
+- Pre-K cognitive helpers: `_teachPrekSpatial`, `_teachPrekVisual`, `_teachPrekLogic`, `_teachPrekSelf`
+
+Verified via node smoke test: all 10 methods resolve on `Curriculum.prototype` after the mixin attaches. Bundle builds clean (1.9mb, no regression). Call sites (`_cellRunner` dispatch, cell-to-cell references via `this.X`) continue to work through the mixin-extended prototype.
+
+K-grade extraction (next natural step) deferred to a dedicated session — K methods are spread non-contiguously through ~5-8K lines with gate methods, K-specific teach helpers, and cross-references scattered, which makes a clean atomic extraction harder than pre-K's contiguous block.
+
+**T23.e.2 transformer backend auto-wire** — `js/brain/transformer-backend.js` ships an operator-install auto-attach path. When `DREAM_TRANSFORMER=1` is set AND `@xenova/transformers` is installed in `server/node_modules/`, the shim lazy-loads a text-generation pipeline (default `Xenova/distilgpt2`, override via `DREAM_TRANSFORMER_MODEL` env var) and registers the async generator on `brain.dualBrainArbiter.setTransformerBackend(fn)`. Silent no-op in every other case — left-brain-only path is the default until the operator opts in.
+
+**Operator enablement:**
+
+```
+cd server && npm install @xenova/transformers
+DREAM_TRANSFORMER=1 node brain-server.js
+```
+
+Right brain comes up on next restart. Model options:
+- `distilgpt2` (default, ~100MB) — smallest, fastest
+- `gpt2` — full GPT-2 base
+- `tinyllama` — TinyLlama 1.1B (larger, more coherent)
+- `flan-t5-small` — instruction-tuned
+
+**COMP-todo integration path** queued as `tryAttachWorkerTransformer(brain)` stub in the same module. The eventual distributed version replaces in-process inference with dispatch-through-worker-pool using the same WGSL shaders + SPRS frame protocol Unity's cluster-sharded compute already uses. See `docs/COMP-todo.md` C8 for the full plan. Shim ships BOTH paths so the DualBrainArbiter doesn't care which backend is active.
+
+### Files modified (eighth follow-up)
+
+- `js/brain/curriculum.js` — 613 lines of pre-K methods removed; `import { PREK_MIXIN }` + `Object.assign(Curriculum.prototype, PREK_MIXIN)` added at bottom
+- `js/brain/curriculum/pre-K.js` — full method bodies for the 10 pre-K methods, wrapped in `export const PREK_MIXIN = {...}`
+- `js/brain/transformer-backend.js` — NEW, `tryAttachTransformerBackend(brain)` + `tryAttachWorkerTransformer(brain)` stub
+- `server/brain-server.js` — auto-attaches transformer backend at Brain init when opted in via env flag
+- `docs/TODO.md` — T23.c.1 partial DONE (pre-K extracted, K still pending); T23.e.2 DONE via operator-install auto-wire path
+- `docs/FINALIZED.md` — this entry
+- `js/app.bundle.js` — rebuilt
+
+---
+
 ### Seventh follow-up same session — T23.d.2 CONSTRAINTS.md split + T23.e.4 dual-brain arbiter + T38.d cortex decision logged + T25.e verified + T23.c.1 scaffold
 
 Gee verbatim this ship:
