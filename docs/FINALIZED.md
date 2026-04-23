@@ -5,6 +5,92 @@
 
 ---
 
+## 2026-04-23 — Session 114.19cf: T39.h.2 — the real Math freeze: K-gate body had ~50 synchronous full-cluster propagate() calls back-to-back with no yields
+
+### Operator verbatim 2026-04-23
+
+> *"and you fixed all the other issues listed?"*
+> *"expecially it freezing at the math part?"*
+> *"can u not check the fucking code?"*
+
+Operator was right to push back. My prior answer guessed at the freeze location without reading the gate body. Reading `_gateMathKReal` in full surfaced the real cause.
+
+### Root cause — event-loop starvation in the gate body
+
+Operator's freeze log showed:
+
+```
+[Curriculum][math/kindergarten] STRUCTURE-TEACH progress — template 2/2 done
+[Curriculum][math/kindergarten] STRUCTURE-TEACH DONE — 2 template forms × 6 reps
+← FROZE HERE
+```
+
+`_teachSentenceStructures` returned cleanly. The freeze was everything AFTER it — the body of `_gateMathKReal` itself.
+
+`_gateMathKReal` runs approximately 50 synchronous full-cluster `cluster.synapses.propagate()` calls back-to-back after `_pregateEnrichment` returns:
+
+1. READ/TALK loop (lines 7587-7663) — 10 digits × 2 cross-projection propagates = 20 calls
+2. SEQ loop (lines 7670-7708) — 9 digits × 1 full-cluster propagate = 9 calls
+3. ORDER loop (lines 7751-7759) — 9 × 3 `letter_to_free` propagates = 27 calls
+4. Probe helpers `_probeCombinationCosine` + `_probeCombinationArgmaxTag` × 9 call sites × 8-20 samples each = 80+ samples × 1 full-cluster propagate
+
+At biological scale (6.6M+ neurons) each propagate is 100ms-5s of pure CPU matmul. ~50 × ~2s = ~100 s of blocked event loop where dashboard updates, heartbeat logs, WebSocket state broadcasts, and compute-bridge draining all starve. Operator saw a frozen UI and no more log output from structure-teach-done onward.
+
+`_gateElaKReal` has the same shape — a 26-letter loop with 2+ cross-projection propagates per letter (READ via letter_to_phon + TALK via letter_to_motor). 52+ bio-scale matmuls back-to-back at the top of the gate.
+
+My T39.g.3 fix added yields inside `_teachSentenceStructures` — a DIFFERENT stretch of the pregate chain. That method already returned fine in operator's log. The real freeze was downstream in the gate body, which I hadn't audited.
+
+### Three fixes
+
+**Fix 1 — `_probeCombinationCosine` + `_probeCombinationArgmaxTag` declared `async` + yield inside sample loops.** Each sample fires a full-cluster propagate; previous version processed 10-20 samples per call synchronously. Now yields via `await new Promise(r => setImmediate(r))` every 200ms inside the sample loop.
+
+**Fix 2 — all 9 call sites in `_gateMathKReal` updated to `await` the probes.** Without the await the results would resolve to Promises (not `{pass, total}` objects) and every probe check downstream would silently `undefined` — introducing subtle gate-always-fails behaviour on top of the freeze fix. Addressed.
+
+**Fix 3 — direct-propagate loops in both gates got setImmediate yields at the top of the loop body** with a 200 ms cadence timer:
+- `_gateMathKReal` READ/TALK loop (10 digit iterations)
+- `_gateMathKReal` SEQ loop (9 digit iterations)
+- `_gateMathKReal` ORDER loop (9 digit iterations × 3 readFree calls each)
+- `_gateElaKReal` letter loop (26 letter iterations × 2+ propagates each)
+
+Dashboard + heartbeat + WebSocket broadcasts now get air time between propagate calls instead of starving for the full gate duration.
+
+### What operator will see on next run
+
+Instead of silence after `STRUCTURE-TEACH DONE`, the log continues:
+
+```
+[Curriculum][math/kindergarten] EXAM-VOCAB-TEACH START — N words ...
+[Curriculum][math/kindergarten] EXAM-VOCAB-TEACH DONE — N/N words taught
+[Curriculum][math/kindergarten] STRUCTURE-TEACH START ...
+[Curriculum][math/kindergarten] STRUCTURE-TEACH DONE ...
+[Curriculum] ▶ CELL ALIVE ... (heartbeat fires regularly through the gate probes)
+[Curriculum][K-DIAG] gate probe starting letter loop ...  (ela-K path)
+[Curriculum] ▶ CELL ALIVE ... +Xs elapsed · phase=(gate probe)  (mid-gate heartbeat keeps firing)
+[Curriculum][MATH-K] SUCCESSOR pass=N/10 ...
+[Curriculum] ▶ CELL ALIVE ... (still alive during probes)
+...
+[Curriculum] ═══ CELL DONE ═══ math/kindergarten in Ns — pass=...
+```
+
+The gate still takes minutes at biological scale — that's the real matmul cost — but the dashboard stays alive, the heartbeat fires every 10s, and operator can see forward motion instead of a dead terminal.
+
+### Honest note
+
+Gee was right to catch this. My prior message claimed the Math freeze was fixed by T39.g.3, but T39.g.3 only touched `_teachSentenceStructures` — a different method from the gate body. Reading the gate code end-to-end (instead of reasoning about where the freeze "should be") would have pointed at the sync-propagate chain immediately. Lesson applied: read the code all the way through before claiming a class of bug is closed.
+
+### Files touched
+
+- `js/brain/curriculum.js` — `_probeCombinationCosine` + `_probeCombinationArgmaxTag` async + sample-loop yields; 9 call sites in `_gateMathKReal` updated to `await`; READ/TALK + SEQ + ORDER + ela-K letter loops each got setImmediate yield at top of loop body
+- `js/app.bundle.js` — rebuilt
+- `docs/TODO.md` — T39.h.2 entry with verbatim operator quotes
+- `docs/FINALIZED.md` — this session entry
+
+### Regression harness
+
+`scripts/smoke-tip-top.mjs` — 63/63 green (async conversion is backward-compatible; existing callers now correctly `await` Promise results).
+
+---
+
 ## 2026-04-23 — Session 114.19ce: T39.h.1 — pre-gate teaches missing exam vocabulary via `_teachVocabList` (same primitive as every other vocabulary walk)
 
 ### Operator verbatim 2026-04-23
