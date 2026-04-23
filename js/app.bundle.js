@@ -840,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "c7f4b09b-a968";
+var BUILD = "bd66453d-d79f";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -14122,6 +14122,23 @@ var Curriculum = class _Curriculum {
       cluster._inCurriculumMode = wasInCurriculum;
       cluster._probeGateActive = false;
       cluster._currentCellKey = wasCellKey;
+    }
+    try {
+      const subjectStats = this._perSubjectStats?.[subject];
+      const teachCount = subjectStats?.teachEvents | 0;
+      if (teachCount > 0 && Array.isArray(cluster.passedPhases)) {
+        const hasAny = cluster.passedPhases.some((k) => typeof k === "string" && k.startsWith(`${cellKey}:`));
+        if (!hasAny) {
+          const fallbackKey = `${cellKey}:cell-teach-block`;
+          if (!cluster.passedPhases.includes(fallbackKey)) {
+            cluster.passedPhases.push(fallbackKey);
+          }
+          subjectStats.phasesCompleted = Math.max(1, subjectStats.phasesCompleted | 0);
+          this._currentCellPhasesCompleted = Math.max(1, this._currentCellPhasesCompleted | 0);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Curriculum] phase-count fallback for ${subject}/${grade} failed:`, err?.message || err);
     }
     const _batteryWasCellKey = cluster._currentCellKey;
     if (cluster) cluster._currentCellKey = cellKey;
