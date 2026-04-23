@@ -1814,6 +1814,24 @@ export class NeuronCluster {
     const suppressNoise = opts.suppressNoise === true;
     const _savedNoise = this.noiseAmplitude;
     if (suppressNoise) this.noiseAmplitude = 0.5;
+    // Tonic drive suppression during emission. The gate-active context
+    // pumps cortex `tonicDrive` to ~19 (14 + arousal·6 per engine.js
+    // tonic-control) so motor neurons fire vigorously during probes.
+    // But during emission that elevated drive floods the motor region
+    // ~uniformly — every bucket has high spike count, `readback-
+    // LetterBuckets` returns nearly flat counts, and argmax defaults
+    // to bucket 0 (letter 'a') via first-index tie-break on every
+    // tick. Operator saw Unity emit `'a a a a a a a a a a a a a a a'`
+    // for literally every question across every cell.
+    //
+    // Fix — drop tonicDrive to driveBaseline (1.0 default) during the
+    // emission loop so motor fires ONLY on sem→motor weight-driven
+    // currents, not uniform external pump. Restored in the final
+    // block below. Opt-out via `opts.suppressTonicDrive === false` for
+    // probes that want the full drive (none currently).
+    const _savedTonic = this.tonicDrive;
+    const suppressTonic = opts.suppressTonicDrive !== false;
+    if (suppressTonic) this.tonicDrive = this.driveBaseline ?? 1.0;
 
     if (intentSeed && intentSeed.length > 0 && this.regions.sem) {
       this.injectEmbeddingToRegion('sem', intentSeed, injectStrength);
@@ -1977,6 +1995,7 @@ export class NeuronCluster {
     }
 
     if (suppressNoise) this.noiseAmplitude = _savedNoise;
+    if (suppressTonic) this.tonicDrive = _savedTonic;
     // Snapshot diagnostics so callers can log WHY an empty answer
     // happened. `_motorEmissionTicks` is the legacy field existing
     // callers already read; the richer `_lastEmissionDiag` object

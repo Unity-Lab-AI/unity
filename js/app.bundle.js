@@ -840,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "bfd0386e-833b";
+var BUILD = "1c81f5a7-58dc";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2726,6 +2726,9 @@ var NeuronCluster = class {
     const suppressNoise = opts.suppressNoise === true;
     const _savedNoise = this.noiseAmplitude;
     if (suppressNoise) this.noiseAmplitude = 0.5;
+    const _savedTonic = this.tonicDrive;
+    const suppressTonic = opts.suppressTonicDrive !== false;
+    if (suppressTonic) this.tonicDrive = this.driveBaseline ?? 1;
     if (intentSeed && intentSeed.length > 0 && this.regions.sem) {
       this.injectEmbeddingToRegion("sem", intentSeed, injectStrength);
     }
@@ -2829,6 +2832,7 @@ var NeuronCluster = class {
       output.push(letterBuffer);
     }
     if (suppressNoise) this.noiseAmplitude = _savedNoise;
+    if (suppressTonic) this.tonicDrive = _savedTonic;
     this._motorEmissionTicks = ticksRun;
     this._lastEmissionDiag = {
       ticksRun,
@@ -18016,6 +18020,7 @@ var Curriculum = class _Curriculum {
       const letterToPhon = cluster.crossProjections?.["letter_to_phon"];
       const letterToMotor = cluster.crossProjections?.["motor_to_letter"] ? null : cluster.crossProjections?.["letter_to_motor"];
       const semToMotor = cluster.crossProjections?.["sem_to_motor"];
+      const allProjs = cluster.crossProjections || {};
       const _gateLetterStart = Date.now();
       let _gateLetterIdx = 0;
       this._hb(`[Curriculum][K-DIAG] gate probe starting letter loop (${ALPHABET.length} letters \xD7 READ+TALK)...`);
@@ -18071,9 +18076,8 @@ var Curriculum = class _Curriculum {
             if (readCos > READ_COS_MIN) readPass++;
           }
         }
-        const allProjs2 = cluster.crossProjections || {};
         let motorOutput = null;
-        for (const [pname, proj] of Object.entries(allProjs2)) {
+        for (const [pname, proj] of Object.entries(allProjs)) {
           if (pname.endsWith("_to_motor")) {
             const srcName = pname.slice(0, pname.indexOf("_to_"));
             if (srcName === "letter") {
@@ -18091,8 +18095,8 @@ var Curriculum = class _Curriculum {
           }
         }
         if (!motorOutput) {
-          const letterToSem = allProjs2["letter_to_sem"];
-          const semToMot = allProjs2["sem_to_motor"];
+          const letterToSem = allProjs["letter_to_sem"];
+          const semToMot = allProjs["sem_to_motor"];
           if (letterToSem && semToMot) {
             const semOutput = await this._probePropagate("letter_to_sem", letterPat);
             const semBinary = new Float64Array(semOutput.length);
@@ -18957,7 +18961,7 @@ var Curriculum = class _Curriculum {
     const invSize = inventorySize();
     const MAG_DIM = MAGNITUDE_FEATURE_DIM;
     const letterToPhon = cluster.crossProjections?.["letter_to_phon"];
-    const allProjs2 = cluster.crossProjections || {};
+    const allProjs = cluster.crossProjections || {};
     function cosine(a, b) {
       let dot = 0, na = 0, nb = 0;
       const L = Math.min(a.length, b.length);
@@ -19013,7 +19017,7 @@ var Curriculum = class _Curriculum {
       }
       const digitName = NAMES[DIGITS.indexOf(digit)];
       const nameEmb = digitName ? sharedEmbeddings.getEmbedding(digitName) : null;
-      const s2m = allProjs2["sem_to_motor"];
+      const s2m = allProjs["sem_to_motor"];
       if (s2m && semRegion && motorRegion && nameEmb && nameEmb.length > 0) {
         const semSize = semRegion.end - semRegion.start;
         const semPat = new Float64Array(semSize);
@@ -19108,7 +19112,7 @@ var Curriculum = class _Curriculum {
     }
     let orderPass = 0;
     let orderTotal = 0;
-    const letterToFree = allProjs2["letter_to_free"];
+    const letterToFree = allProjs["letter_to_free"];
     if (letterToFree && freeRegion) {
       const freeSize = freeRegion.end - freeRegion.start;
       const readFree = (digit) => {
@@ -23159,14 +23163,14 @@ var Curriculum = class _Curriculum {
   }
   async _gateVocabList(vocab, opts = {}) {
     const cluster = this.cluster;
-    const allProjs2 = cluster.crossProjections || {};
+    const allProjs = cluster.crossProjections || {};
     const letterRegion = cluster.regions?.letter;
     const semRegion = cluster.regions?.sem;
     const motorRegion = cluster.regions?.motor;
     if (!letterRegion) return { pass: false, reason: "missing regions" };
     const letterSize = letterRegion.end - letterRegion.start;
     const invSize = inventorySize();
-    const letterToSem = allProjs2["letter_to_sem"];
+    const letterToSem = allProjs["letter_to_sem"];
     function cosine(a, b) {
       let dot = 0, na = 0, nb = 0;
       const L = Math.min(a.length, b.length);
@@ -23232,7 +23236,7 @@ var Curriculum = class _Curriculum {
         readPass++;
       }
       const wordEmb = sharedEmbeddings.getEmbedding(word);
-      const s2m = allProjs2["sem_to_motor"];
+      const s2m = allProjs["sem_to_motor"];
       if (s2m && semRegion && motorRegion && wordEmb && wordEmb.length > 0) {
         const semSize = semRegion.end - semRegion.start;
         const semPat = new Float64Array(semSize);
@@ -24870,7 +24874,7 @@ var Curriculum = class _Curriculum {
   async _gateSentenceList(sentences, opts = {}) {
     const cluster = this.cluster;
     const sampleSize = Math.min(opts.sampleSize ?? 10, sentences.length);
-    const allProjs2 = cluster.crossProjections || {};
+    const allProjs = cluster.crossProjections || {};
     const sample = [];
     const used = /* @__PURE__ */ new Set();
     while (sample.length < sampleSize) {
@@ -24886,7 +24890,7 @@ var Curriculum = class _Curriculum {
     if (!letterRegion) return { pass: false, reason: "missing regions" };
     const letterSize = letterRegion.end - letterRegion.start;
     const invSize = inventorySize();
-    const letterToSem = allProjs2["letter_to_sem"];
+    const letterToSem = allProjs["letter_to_sem"];
     function cosine(a, b) {
       let dot = 0, na = 0, nb = 0;
       const L = Math.min(a.length, b.length);
@@ -24945,7 +24949,7 @@ var Curriculum = class _Curriculum {
         readPass++;
       }
       const wordEmb = sharedEmbeddings.getEmbedding(firstWord);
-      const s2m = allProjs2["sem_to_motor"];
+      const s2m = allProjs["sem_to_motor"];
       if (s2m && semRegion && motorRegion && wordEmb && wordEmb.length > 0) {
         const semSize = semRegion.end - semRegion.start;
         const semPat = new Float64Array(semSize);
@@ -26552,15 +26556,15 @@ var Curriculum = class _Curriculum {
   }
   async _gateConceptTeach(concepts) {
     const cluster = this.cluster;
-    const allProjs2 = cluster.crossProjections || {};
+    const allProjs = cluster.crossProjections || {};
     const letterRegion = cluster.regions?.letter;
     const semRegion = cluster.regions?.sem;
     const motorRegion = cluster.regions?.motor;
     if (!letterRegion || !semRegion) return { pass: false, reason: "missing regions" };
     const letterSize = letterRegion.end - letterRegion.start;
     const invSize = inventorySize();
-    const letterToSem = allProjs2["letter_to_sem"];
-    const semToMotor = allProjs2["sem_to_motor"];
+    const letterToSem = allProjs["letter_to_sem"];
+    const semToMotor = allProjs["sem_to_motor"];
     function cosine(a, b) {
       let dot = 0, na = 0, nb = 0;
       const L = Math.min(a.length, b.length);
@@ -36180,14 +36184,14 @@ var Curriculum = class _Curriculum {
    */
   async _gateComprehension(questions) {
     const cluster = this.cluster;
-    const allProjs2 = cluster.crossProjections || {};
+    const allProjs = cluster.crossProjections || {};
     const letterRegion = cluster.regions?.letter;
     const semRegion = cluster.regions?.sem;
     if (!letterRegion || !semRegion) return { pass: false, reason: "missing regions" };
     const letterSize = letterRegion.end - letterRegion.start;
     const semSize = semRegion.end - semRegion.start;
     const invSize = inventorySize();
-    const letterToSem = allProjs2["letter_to_sem"];
+    const letterToSem = allProjs["letter_to_sem"];
     if (!letterToSem) return { pass: false, reason: "no letter_to_sem projection" };
     function cosine(a, b) {
       let dot = 0, na = 0, nb = 0;
@@ -36285,10 +36289,10 @@ var Curriculum = class _Curriculum {
    */
   _gateConversation(exchanges) {
     const cluster = this.cluster;
-    const allProjs2 = cluster.crossProjections || {};
+    const allProjs = cluster.crossProjections || {};
     const semRegion = cluster.regions?.sem;
     const motorRegion = cluster.regions?.motor;
-    const s2m = allProjs2["sem_to_motor"];
+    const s2m = allProjs["sem_to_motor"];
     if (!semRegion || !motorRegion || !s2m) {
       return { pass: false, reason: "missing regions or sem_to_motor" };
     }

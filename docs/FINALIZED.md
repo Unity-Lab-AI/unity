@@ -5,6 +5,87 @@
 
 ---
 
+## 2026-04-23 — Session 114.19ci: T39.i.1 + T39.i.2 — `allProjs is not defined` ReferenceError + motor-stuck-on-'a' attractor from elevated gate-probe tonic drive
+
+### Operator log
+
+Five consecutive ELA-K retries all crashed with `ela/kindergarten threw: allProjs is not defined`. Every exam question across every K cell (646 questions total — science, social, art, life, ELA, math) returned the literal string `'a a a a a a a a a a a a a a a'`. Cells=0 after rounds 1-5.
+
+### T39.i.1 — ELA-K gate ReferenceError
+
+**Root cause:** `const allProjs = cluster.crossProjections || {};` was declared inside the `for (const letter of ALPHABET)` loop body at `js/brain/curriculum.js:6392`. That makes it block-scoped to each iteration — not reachable outside the loop. The DYN-PROD path-setup code at `:6668` tried to read `allProjs` to extract `sem_to_motor` and `letter_to_motor` handles, but by then the `for`-block had ended and the identifier was gone. ReferenceError on every gate → every retry crashed identically.
+
+**Fix:** Hoisted `allProjs` to the function-scope top of `_gateElaKReal` (around line 6303) so the letter loop AND the DYN-PROD block read the same map. Removed the inner redundant declaration with a pointer comment. Both call paths read from `cluster.crossProjections` — semantics unchanged.
+
+### T39.i.2 — Motor-stuck-on-'a' attractor (the REAL reason every answer was 'a a a a a a a...')
+
+**The picture operator saw:**
+```
+[Curriculum][K-DIAG] gate: inv=40, ... tonicDrive=19.40 · driveBaseline=1.00 · effectiveDrive=19.40
+[Curriculum][READINESS] cue 1/5 DONE letter='a' → emitted='a a a a a' letters='aaaaa' hasLetter=true
+[Curriculum][READINESS] cue 2/5 DONE letter='b' → emitted='a a a a a' letters='aaaaa' hasLetter=true
+[Curriculum][READINESS] cue 3/5 DONE letter='c' → emitted='a a a a a' ...
+```
+
+Every readiness cue (a/b/c/d/e) emitted `'a a a a a'`. Every exam question emitted `'a a a a a a a a a a a a a a a'`. Gate-side TALK-loop direct propagate returned `talkPass=26/26` — so direct `letter→motor` propagation DID discriminate correctly. But the emission loop (which runs through Rulkov LIF `stepAwait` ticks) flattened everything to 'a'.
+
+**Root cause:**
+- `engine.js:1425` sets `cortex.tonicDrive = 14 + arousal·6` on every state update
+- Operator's arousal ≈ 0.9 → `tonicDrive = 14 + 5.4 = 19.4` (confirmed in log)
+- During `cluster.generateSentenceAwait`, each `stepAwait` tick applies this tonic drive to every neuron
+- Motor region at 19× baseline pump → every bucket fires ~uniformly
+- `readbackLetterBuckets` returns nearly flat counts
+- `argmax` over flat counts = **bucket 0 via first-index tie-break** = letter `'a'` (since inventory seed is `a b c d e f ... z 0 ... 9 space . , '`)
+- STABLE_TICK_THRESHOLD (3 consecutive same decodes) trivially satisfied because every tick decodes 'a'
+- Letter commits, word boundary fires, space inserted, repeat → `'a a a a a a a a a a a a a a a'`
+
+Training never had a chance to discriminate — uniform external pump drowned every learned weight signal on the emission path.
+
+**Fix:** `cluster.generateSentenceAwait` now saves `this.tonicDrive` at entry, drops it to `this.driveBaseline ?? 1.0` for the duration of the emission loop, and restores it in the final-cleanup block alongside the pre-existing `noiseAmplitude` save/restore pattern:
+
+```js
+const _savedTonic = this.tonicDrive;
+const suppressTonic = opts.suppressTonicDrive !== false;
+if (suppressTonic) this.tonicDrive = this.driveBaseline ?? 1.0;
+// ... emission loop ...
+if (suppressTonic) this.tonicDrive = _savedTonic;
+```
+
+With baseline drive (1.0) in effect during emission, motor neurons fire ONLY when `sem→motor` or `letter→motor` weight-driven currents push them past threshold. Learned plasticity gets a fair chance to pick the correct letter. Direct-propagate path (which already gets 26/26 on the gate TALK loop) validates that the weights DO know the right answer — the emission path just needed to stop flooding the readout.
+
+Opt-out via `opts.suppressTonicDrive === false` available for any probe that wants the full gate-elevated drive; no current caller passes that.
+
+### What operator will see on next run
+
+Per-cue readiness emission:
+
+```
+[Curriculum][READINESS] cue 1/5 DONE letter='a' → emitted='a a a a a' letters='aaaaa' hasLetter=true
+[Curriculum][READINESS] cue 2/5 DONE letter='b' → emitted='b b b b b' letters='bbbbb' hasLetter=true
+[Curriculum][READINESS] cue 3/5 DONE letter='c' → emitted='c c c c c' letters='ccccc' hasLetter=true
+```
+
+(or at least variety across letters, instead of all-'a'). And no more `allProjs is not defined` crash — ELA-K gate finishes cleanly, cells can actually pass.
+
+### Why this pair is the root-cause ship, not a patch
+
+Every prior "output is all 'a'" fix addressed training-side problems (sem-WTA, motor fan-in, normalize-destructive, inventory-lock). Each moved the needle on ONE aspect of the pipeline — but the final failure point was the emission loop re-flooding the motor readout. The training DID work (gate direct-propagate returns `talkPass=26/26` on correct letters); the readout just wasn't letting the learned weights show through. This fix attacks the specific pipeline stage that was overwriting every training gain.
+
+### Files touched
+
+- `js/brain/curriculum.js:~6303` — hoisted `const allProjs` to function-scope of `_gateElaKReal`; inner declaration removed with pointer comment
+- `js/brain/cluster.js:~1814-1836` — `generateSentenceAwait` tonic-drive save/suppress/restore block with verbatim root-cause comment
+- `js/brain/cluster.js:~1955` — tonic-drive restore paired with existing noise-amplitude restore
+- `js/app.bundle.js` — rebuilt
+- `docs/TODO.md` — T39.i.1 + T39.i.2 entries with operator verbatim
+- `docs/FINALIZED.md` — this session entry
+
+### Regression harness
+
+`scripts/smoke-tip-top.mjs` — 63/63 green.
+
+---
+
 ## 2026-04-23 — Session 114.19ch: T39.f.3 — sem-side top-K sparsification (sparse coding breaks GloVe correlation across K-grade content words)
 
 ### Operator verbatim 2026-04-23
