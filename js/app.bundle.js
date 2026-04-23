@@ -834,7 +834,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "5abb782f-67af";
+var BUILD = "5f74f507-9ef4";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -13968,7 +13968,8 @@ var Curriculum = class _Curriculum {
           const workerHeapMb = _cachedWorkerMem ? _cachedWorkerMem.totalHeapUsedMb | 0 : 0;
           const workerExtMb = _cachedWorkerMem ? _cachedWorkerMem.totalExternalMb | 0 : 0;
           const workerTotalMb = workerHeapMb + workerExtMb;
-          const nativeMb = Math.max(0, rssMb - v8PhysMb - extMb - workerTotalMb);
+          const nonAbExtMb = Math.max(0, extMb - abMb);
+          const nativeMb = Math.max(0, rssMb - v8PhysMb - nonAbExtMb - workerTotalMb);
           _priorRssMb = rssMb;
           if (_nativeBaselineMb === null) _nativeBaselineMb = nativeMb;
           const nativeDeltaMb = nativeMb - _nativeBaselineMb;
@@ -13990,7 +13991,7 @@ var Curriculum = class _Curriculum {
             }
           }
           const deltaStr = nativeDeltaMb === 0 ? "\u0394\xB10" : nativeDeltaMb > 0 ? `\u0394+${nativeDeltaMb}` : `\u0394${nativeDeltaMb}`;
-          const workerTag = _cachedWorkerMem ? ` workers=${workerHeapMb}MB${_cachedWorkerMem.estimated ? "~" : ""}(${_cachedWorkerMem.workerCount})` : " workers=?MB";
+          const workerTag = _cachedWorkerMem ? _cachedWorkerMem.workerCount === 0 ? " workers=0MB(idle-terminated)" : ` workers=${workerHeapMb}MB${_cachedWorkerMem.estimated ? "~" : ""}(${_cachedWorkerMem.workerCount})` : " workers=?MB";
           memLabel = ` \xB7 heap=${heapMb}/${heapTotalMb}MB v8=${v8PhysMb}MB ext=${extMb}MB ab=${abMb}MB${workerTag} native=${nativeMb}MB(${deltaStr}MB) rss=${rssMb}MB${nativeTrend}`;
         }
       } catch {

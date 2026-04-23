@@ -5,6 +5,45 @@
 
 ---
 
+## 2026-04-22 — Session 114.19bz: T39.a.5 — `native=0MB` forever bug (memory heartbeat formula double-counted arrayBuffers) + `workers=0MB~(0)` cosmetic polish when pool is idle-terminated
+
+### Operator verbatim 2026-04-22
+
+> *"is it normal these all say 0 MB? >>> [Curriculum] ▶ CELL ALIVE ela/kindergarten — +533s elapsed (heartbeat #51) · phase=_teachPhonemeBlending (+408s) · heap=142/1167MB v8=1167MB ext=977MB ab=975MB workers=0MB~(0) native=0MB(Δ-48MB) rss=1223MB"*
+
+### What shipped
+
+**Root cause — double-subtraction:** On Node 18+ `v8.getHeapStatistics().total_physical_size` already includes the ArrayBuffer backing pages — V8's `ArrayBufferAllocator` registers SAB backing against the isolate. The prior heartbeat formula `rss − v8PhysMb − extMb − workerTotalMb` subtracted `extMb` (977 MB, dominated by SABs) on top of `v8PhysMb` (1167 MB, which already contained those SABs). Raw residue: 1223 − 1167 − 977 = −921 MB, clamped to 0 by `Math.max(0, ...)`. The operator saw `native=0MB(Δ-48MB)` on every heartbeat and had no real native-residue signal.
+
+**Proof the overlap exists in the numbers the operator reported:** if `arrayBuffers` were NOT inside `heap_total`, then `rss` would have to be at least `heapTotal (1167)` + `arrayBuffers (975)` = 2142 MB. `rss` was 1223 MB. So the 975 MB of SAB backing IS inside the 1167 MB heap total.
+
+**Fix:** `js/brain/curriculum.js` memory heartbeat now subtracts only non-AB external:
+
+```js
+const nonAbExtMb = Math.max(0, extMb - abMb);
+const nativeMb = Math.max(0, rssMb - v8PhysMb - nonAbExtMb - workerTotalMb);
+```
+
+Non-AB external is the genuine extra residue — Buffer pool, native TypedArray backing that isn't an ArrayBuffer, ICU data, better-sqlite3 prepared-statement caches. Typically 2-20 MB.
+
+**Operator's numbers under new formula:** 1223 − 1167 − (977 − 975) − 0 = **54 MB native**. That's the real Node binary + shared libs + OS overhead, which is what the field is supposed to report.
+
+**`workers=0MB~(0)` cosmetic polish:** When the sparse-matmul worker pool hits T39.a.4's 5-min idle watchdog (GPU-bound plasticity keeps the pool cold at biological scale) it terminates and `_cachedWorkerMem.workerCount` goes to 0. The prior heartbeat still printed `workers=0MB~(0)` with the `~` estimated marker — misleading since the zero is genuine, not a fallback. Fixed: when `workerCount === 0` the line now reads `workers=0MB(idle-terminated)`. The `~` stays for the real fallback path (500ms timeout mid-run on an active pool).
+
+### Files touched
+
+- `js/brain/curriculum.js:3055-3072` — `nonAbExtMb` subtraction, corrected comment explaining the arrayBuffer double-count
+- `js/brain/curriculum.js:3094-3102` — worker tag disambiguates idle-terminated from estimated
+- `docs/TODO.md` — T39.a.5 entry appended under T39 closure section with operator verbatim + proof
+- `docs/FINALIZED.md` — this session entry
+- `js/app.bundle.js` — rebuilt
+
+### Regression harness
+
+`scripts/smoke-tip-top.mjs` — 63/63 green (heartbeat formula is internal; no exported API surface change).
+
+---
+
 ## 2026-04-22 — Session 114.19by: T39.c.4.b — `_teachQABinding` reps 100 → 30 walk-back (Q-A phase was grinding 10+ minutes and blocking ELA-K cell)
 
 ### Operator verbatim 2026-04-22
