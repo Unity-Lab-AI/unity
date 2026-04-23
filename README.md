@@ -85,7 +85,10 @@ LANGUAGE CORTEX (developmental pipeline — see "Language Cortex" section)
     //   anti-Hebbian on wrong transitions: strengthen correct + weaken wrong
     //   3-pathway gate: READ (letter→phon→sem) + THINK (working memory) + TALK (sem→motor→letter)
     //   comprehension gates: association, fill-in-blank, life questions (real tests, not recall)
-    //   crossTargetFanout = 1500 (5× capacity for independent word mappings)
+    //   crossTargetFanout = 30 default; motor-bound projections (sem↔motor,
+    //     letter↔motor, phon↔motor) get 60 per target (2× fan-in) so K-grade
+    //     answer-letter discrimination has enough capacity across many
+    //     trained association pairs
     //   16 equational reasoning methods: addition/subtraction/comparison/
     //     multiplication/place value/fraction/algebra as magnitude transforms,
     //     SVO parsing, comprehension QA, transitive inference, causal chains,

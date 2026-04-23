@@ -634,12 +634,12 @@ motor     : 0.967 - 1.000    T14.12 — generation feedback / motor output
 
 At the default client tier (`TOTAL_NEURONS = 6700`, cortex = 30% = 2010 neurons): semantic region 1507-1843 (336 neurons, EMBED_DIM=300, groupSize=1), phonological region 1105-1507 (402 neurons), letter region 1005-1105 (100 neurons). At a server tier with `TOTAL_NEURONS = 200M`, cortex = 60M, semantic ≈ 10M neurons. **Same code, no special cases.**
 
-**T14.1 letter-input primitives (SHIPPED 2026-04-14).** The `LETTER_INVENTORY` referenced below is a module-level `Set` in `js/brain/letter-input.js` that grows dynamically as the brain encounters new symbols. One-hot encoding is straightforward:
+**Letter-input primitives (T14.1 shipped 2026-04-14; T39.g.1 locked 2026-04-23).** The `LETTER_INVENTORY` referenced below is a module-level `Set` in `js/brain/letter-input.js` seeded at module load with a 40-symbol default alphabet — 26 lowercase English + 10 digits + `{space, . , '}`. The inventory is LOCKED by default: `ensureLetter` rejects symbols outside the seeded alphabet so random unicode from corpora can't grow the inventory at runtime (growing shifts one-hot dimension indices and invalidates previously-trained weights). Operators can opt into multi-script work via `setInventoryLock(false)`.
 
 ```
-LETTER_INVENTORY ⊂ Σ*            // dynamic set of observed symbols, |L| = inventorySize()
-encodeLetter(ℓ) ∈ ℝ^|L|          // one-hot at index position(ℓ) in insertion order
-decodeLetter(v) = argmax_i v_i   // maps activation vector back to symbol
+LETTER_INVENTORY ⊂ Σ               // |L| = 40 by default (a-z + 0-9 + space . , ')
+encodeLetter(ℓ) ∈ ℝ^|L|            // one-hot at index position(ℓ) in seed/insertion order
+decodeLetter(v) = argmax_i v_i     // maps activation vector back to symbol
 ```
 
 Injection into the cortex letter sub-region preserves the same `value × 8` scaling as all other region injections (T14.4), distributed across `groupSize = floor(letterRegionSize / |L|)` neurons per one-hot dimension. On every cortex tick:
@@ -653,7 +653,7 @@ quietCount(t)               = quietCount(t−1) + 1   if rate_motor(t) < 0.05
 motorQuiescent(N)           = (quietCount(t) ≥ N)                    // Bouchard 2013
 ```
 
-No hardcoded 26-letter cap and no hardcoded phonology feature table. Phonemes emerge as LEARNED attractor basins in the `phon` sub-region once curriculum exposure runs the `letter_to_phon` projection through Hebbian updates (Kuhl 2004 *Nat Rev Neurosci* 5:831). English identity is enforced at the higher T14.16.5 lock layer, NOT by restricting which symbols the letter region can represent — Unity must be able to see adversarial non-English input and refuse to update on it, which requires that the input layer be able to represent it.
+No hardcoded phonology feature table. Phonemes emerge as LEARNED attractor basins in the `phon` sub-region once curriculum exposure runs the `letter_to_phon` projection through Hebbian updates (Kuhl 2004 *Nat Rev Neurosci* 5:831). English identity is enforced by TWO complementary layers: (1) the T39.g.1 inventory lock at the input layer — letter-region one-hots are bounded to the 40-symbol English alphabet so unicode glyphs and non-English scripts cannot physically enter the cortex letter-region representation; (2) the higher T14.16.5 identity lock at the output layer — the talk-side pipeline refuses to propagate non-English tokens even if somehow injected. The input-layer lock was added on 2026-04-23 after operator observed motor argmax decoding to polluted inventory dimensions (`'mcaa'` emitted for a single-letter `'a'` cue), which the prior auto-grow policy allowed.
 
 **T14.2 syllable segmentation equation (SHIPPED 2026-04-14).** Syllables are NOT detected by a hardcoded maximum-onset algorithm. They emerge from cortex transition surprise over letter sequences. Given a letter sequence `(ℓ_1, ℓ_2, ..., ℓ_n)`, stream each letter through the cortex, tick between injections, and collect `δ_i = letterTransitionSurprise()` at each step `i`:
 
@@ -1268,19 +1268,25 @@ When a sequence probe (e.g., digit order `0→1→2...→9`) finds the wrong out
 // 100 repetitions per failing pair
 ```
 
-Without anti-Hebbian, the wrong association persists in the recurrent weight matrix and the correct one can never overpower it regardless of boost count. The negative learning rate on the wrong pair actively erases the incorrect attractor basin. Digit-only argmax masking during the SEQ probe prevents ELA-K's 26-letter alphabet Hebbian from overpowering the 10-digit sequence — `inventorySnapshot()` filters to digit indices only before argmax.
+Without anti-Hebbian, the wrong association persists in the recurrent weight matrix and the correct one can never overpower it regardless of boost count. The negative learning rate on the wrong pair actively erases the incorrect attractor basin. Digit-only argmax masking during the SEQ probe prevents the letter-alphabet Hebbian from overpowering the 10-digit sequence — `inventorySnapshot()` returns the 40-symbol default inventory (a-z + 0-9 + punctuation); the SEQ probe filters it to digit indices only before argmax.
 
-### Cross-Projection Density — `crossTargetFanout` = 1500 (Session 111)
+### Cross-Projection Density — `crossTargetFanout` 30 default, 60 for motor-bound (T39.g.4)
 
 ```
-crossTargetFanout = 1500    // pre-synaptic connections per post-neuron
-density = crossTargetFanout / srcRegionSize
-// e.g., sem(335 neurons) → motor(66 neurons):
-//   density = min(1, 1500/335) = 1.0 (fully connected at small scale)
-//   at 375K cortex: sem=62.7K → density = 1500/62.7K = 0.024 = 2.4%
+// Default (non-motor projections)
+crossTargetFanout     = 30
+CROSS_DENSITY_CAP     = 0.005
+density               = min(0.005, 30 / srcRegionSize)
+
+// MOTOR_BOUND_PAIRS: sem↔motor, letter↔motor, phon↔motor
+crossTargetFanout × 2 = 60
+CROSS_DENSITY_CAP × 2 = 0.01
+density               = min(0.01, 60 / srcRegionSize)
 ```
 
-Session 111 bumped from 300 to 1500 after discovering `sem_to_motor` at 300 (~16K connections) suffered destructive interference with 40+ word mappings. ELA-G1 TALK DECLINED across retries because each teach pass overwrote previous word mappings in the limited connection space. At 1500 (~80K connections), independent mappings coexist.
+The motor region sits at the convergence of several parallel input pathways (sem, phon, letter). K-grade curricula train 46+ association pairs per phase × 4-6 phases per grade, so every motor neuron needs enough distinct input slots to hold one mapping per pair without destructive interference. T39.g.4 targeted the bump to motor-bound projections only — everything else stays at the lean default to fit biological-scale memory budgets (doubling the global fanout would blow the language-cortex VRAM envelope). Biologically plausible: real pyramidal neurons carry 1000-10000 synaptic inputs distributed across many cortical areas, so 60 per per-area pair is well under that bound.
+
+Prior values: Session 111 had `crossTargetFanout = 1500` (derivation `expectedPostCurriculumVocab × fanoutPerMapping ≈ 5000 × 0.3`). T37 rebalanced to 30 when scaling to 17M language-cortex neurons blew the memory budget at 1500 fanout. T39.g.4 re-introduced the high-capacity path for motor-bound projections only, after operator logs showed persistent `sep-probe mean-cos ≈ 0.5` at the 30-fanout default across every association-pair phase — capacity ceiling, not plasticity-rule bug.
 
 ### Comprehension Gate Equation (Session 111)
 
