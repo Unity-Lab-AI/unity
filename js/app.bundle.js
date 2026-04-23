@@ -840,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "4e7882ee-7fba";
+var BUILD = "bfd0386e-833b";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -21411,9 +21411,11 @@ var Curriculum = class _Curriculum {
     const antiLrScale = opts.antiLrScale ?? 0.5;
     const motorWTA = opts.motorWTA !== false && !binarize;
     const motorTopK = opts.motorTopK ?? 15;
-    let trained = 0, skipped = 0, antiFires = 0, wtaApplied = 0;
+    const semWTA = opts.semWTA !== false && !binarize;
+    const semTopK = opts.semTopK ?? 30;
+    let trained = 0, skipped = 0, antiFires = 0, wtaApplied = 0, semWtaApplied = 0;
     const startMs = Date.now();
-    this._hb(`[Curriculum][${label}] START \u2014 ${pairs.length} pairs \xD7 ${reps} reps \xB7 soft-writes=${!binarize} \xB7 row-norm=${normalizeAfter} \xB7 anti-pairs=${antiPairs} \xB7 motor-WTA=${motorWTA}/${motorTopK}`);
+    this._hb(`[Curriculum][${label}] START \u2014 ${pairs.length} pairs \xD7 ${reps} reps \xB7 soft-writes=${!binarize} \xB7 row-norm=${normalizeAfter} \xB7 anti-pairs=${antiPairs} \xB7 motor-WTA=${motorWTA}/${motorTopK} \xB7 sem-WTA=${semWTA}/${semTopK}`);
     try {
       this._pushBrainEvent?.("teach", "sem", `ASSOC START: ${label} \xB7 ${pairs.length}\xD7${reps}`, { label, pairs: pairs.length, reps });
     } catch {
@@ -21435,9 +21437,11 @@ var Curriculum = class _Curriculum {
         }
         const outEmbMotor = motorWTA ? this._topKEmbedding(outEmb, motorTopK) : outEmb;
         if (motorWTA && outEmbMotor !== outEmb) wtaApplied++;
+        const inEmbSem = semWTA ? this._topKEmbedding(inEmb, semTopK) : inEmb;
+        if (semWTA && inEmbSem !== inEmb) semWtaApplied++;
         try {
           this._clearSpikes();
-          this._writeTiledPattern(semRegion, inEmb, binarize);
+          this._writeTiledPattern(semRegion, inEmbSem, binarize);
           this._writeTiledPattern(motorRegion, outEmbMotor, binarize);
           if (fineTypeRegion && relationTagId !== null) {
             const fineSize = fineTypeRegion.end - fineTypeRegion.start;
@@ -21472,7 +21476,7 @@ var Curriculum = class _Curriculum {
                 const wrongEmbMotor = motorWTA ? this._topKEmbedding(wrongEmb, motorTopK) : wrongEmb;
                 try {
                   this._clearSpikes();
-                  this._writeTiledPattern(semRegion, inEmb, binarize);
+                  this._writeTiledPattern(semRegion, inEmbSem, binarize);
                   this._writeTiledPattern(motorRegion, wrongEmbMotor, binarize);
                   if (fineTypeRegion && relationTagId !== null) {
                     const fineSize = fineTypeRegion.end - fineTypeRegion.start;
@@ -21513,7 +21517,14 @@ var Curriculum = class _Curriculum {
     let collapseFlag = "";
     if (runSeparationProbe && pairs.length >= 2) {
       try {
-        const sep = this._checkSemBasinSeparation(pairs, { semRegion, motorRegion, overloadMax, sampleSize: 8 });
+        const sep = this._checkSemBasinSeparation(pairs, {
+          semRegion,
+          motorRegion,
+          overloadMax,
+          sampleSize: 8,
+          semWTA,
+          semTopK
+        });
         if (sep && typeof sep.meanCos === "number") {
           const overload = sep.meanCos > overloadMax;
           const collapsed = sep.meanCos < 0.05 && sep.maxCos < 0.05;
@@ -21547,7 +21558,7 @@ var Curriculum = class _Curriculum {
     }
     const elapsedSec = ((Date.now() - startMs) / 1e3).toFixed(1);
     const antiReport = antiPairs ? ` \xB7 anti-fires=${antiFires}` : "";
-    const wtaReport = motorWTA ? ` \xB7 motor-WTA=${wtaApplied}/${motorTopK}` : "";
+    const wtaReport = motorWTA ? ` \xB7 motor-WTA=${wtaApplied}/${motorTopK}${semWTA ? ` \xB7 sem-WTA=${semWtaApplied}/${semTopK}` : ""}` : semWTA ? ` \xB7 sem-WTA=${semWtaApplied}/${semTopK}` : "";
     this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${wtaReport}${normReport}${sepReport}${weightReport}`);
     try {
       this._pushBrainEvent?.("teach", "motor", `ASSOC DONE: ${label} \xB7 ${trained}/${antiFires}`, { label, trained, antiFires, wtaApplied, elapsedSec });
@@ -21576,16 +21587,19 @@ var Curriculum = class _Curriculum {
     const step = Math.max(1, Math.floor(pairs.length / sampleSize));
     const readouts = [];
     const semSize = semRegion.end - semRegion.start;
+    const semWTA = opts.semWTA !== false;
+    const semTopK = opts.semTopK ?? 30;
     for (let i = 0; i < pairs.length && readouts.length < sampleSize; i += step) {
       const pair = pairs[i];
       if (!Array.isArray(pair) || pair.length < 2) continue;
       const [inputWord] = pair;
-      const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(inputWord) : null;
-      if (!inEmb || inEmb.length === 0) continue;
+      const rawEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(inputWord) : null;
+      if (!rawEmb || rawEmb.length === 0) continue;
+      const inEmb = semWTA ? this._topKEmbedding(rawEmb, semTopK) : rawEmb;
       const semInput = new Float64Array(semSize);
       const gSize = Math.max(1, Math.floor(semSize / inEmb.length));
       for (let d = 0; d < inEmb.length; d++) {
-        if (inEmb[d] <= 0) continue;
+        if (inEmb[d] === 0) continue;
         for (let n = 0; n < gSize; n++) {
           const idx = d * gSize + n;
           if (idx < semSize) semInput[idx] = 1;
