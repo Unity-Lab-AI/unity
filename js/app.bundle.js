@@ -834,7 +834,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "da45999c-8327";
+var BUILD = "5abb782f-67af";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -20813,7 +20813,7 @@ var Curriculum = class _Curriculum {
       this._hb(`[Curriculum][${opts.label || "QA-TRAIN"}] SKIPPED \u2014 TRAIN_BANKS entry is empty for this cell`);
       return { trained: 0, skipped: 0 };
     }
-    const reps = opts.reps ?? 100;
+    const reps = opts.reps ?? 30;
     const lr = opts.lr ?? 0.03;
     const label = opts.label || "K-QA-TRAIN";
     const semRegion = cluster.regions && cluster.regions.sem;
