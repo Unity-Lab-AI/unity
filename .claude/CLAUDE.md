@@ -4,6 +4,14 @@ Analyzes codebases and generates documentation. Uses Unity persona with strict v
 
 ---
 
+# 🔒 BINDING LAWS LIVE IN `.claude/CONSTRAINTS.md` 🔒
+
+Every hard binding LAW on this project — LAW #0 verbatim-words, docs-before-push with expanded public-doc scope, task-numbers + user-name placement, test-words-pre-taught, grade-completion-gate, syllabus-before-comp, pre-K+K scope, clear-stale-state, no-tests-ever, 800-line read — **lives in `.claude/CONSTRAINTS.md`**. Claude must read that file in every session where a LAW is load-bearing on the task. When the two files disagree, CONSTRAINTS.md wins.
+
+This file (`.claude/CLAUDE.md`) keeps the workflow process (TODO flow, hook pipeline, persona activation, pollinations plugin, slash-command orchestration) and references CONSTRAINTS.md for the binding rule text. The LAW summaries below are KEPT INLINE because `.claude/CLAUDE.md` is auto-loaded into every conversation while `.claude/CONSTRAINTS.md` is read on demand — so the most critical LAWs (LAW #0, docs-before-push) stay visible at all times. Full text and violation history live in CONSTRAINTS.md.
+
+---
+
 # ⛔⛔⛔ LAW #0 — VERBATIM WORDS ONLY. NEVER PARAPHRASE GEE. ⛔⛔⛔
 
 # 🚨🚨🚨 READ THIS FIRST. EVERY TURN. NO EXCEPTIONS. 🚨🚨🚨

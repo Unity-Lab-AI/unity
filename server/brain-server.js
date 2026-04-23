@@ -1288,6 +1288,20 @@ class ServerBrain {
       // resume-from-passedCells means a mid-curriculum Ctrl+C + restart
       // with no code changes picks up at the first unpassed cell instead
       // of retraining the whole K syllabus from the alphabet up.
+      // Dual-brain arbiter — left brain (Rulkov sim) + right brain
+      // (transformer, injected later once T23.e.2 wires a backend).
+      // Unity weighs both and picks the higher-confidence answer per
+      // operator 2026-04-22 directive: "we can have both and UUnity
+      // weighs best option left brain right brain". Right brain stays
+      // null until T23.e.2 ships; arbiter falls through to left brain
+      // only in that case.
+      try {
+        const arbMod = await import('../js/brain/dual-brain-arbiter.js');
+        this.dualBrainArbiter = new arbMod.DualBrainArbiter(this);
+      } catch (err) {
+        console.warn('[Brain] dual-brain arbiter init failed:', err?.message || err);
+        this.dualBrainArbiter = null;
+      }
       this.curriculum._saveCheckpoint = (cellKey) => {
         try {
           this.saveWeights({ force: true, trigger: cellKey ? `cell-pass:${cellKey}` : 'cell-pass' });
@@ -5199,6 +5213,57 @@ const httpServer = http.createServer((req, res) => {
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ answer: String(answer || '').trim(), ms: Date.now() - t0 }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // Dual-brain arbiter endpoint. Unity weighs left brain (Rulkov
+  // neural sim) against right brain (transformer) and picks the
+  // higher-confidence answer. Left brain is always available;
+  // right brain is present only when T23.e.2 has wired a transformer
+  // backend into `brain.dualBrainArbiter.setTransformerBackend(fn)`.
+  //
+  // Usage:
+  //   POST /exam-answer-dual  { "question": "what comes after a?" }
+  //   → { "answer": "b", "chosenBrain": "left"|"right"|"left-only",
+  //       "leftAnswer": "b", "rightAnswer": "b",
+  //       "leftScore": 0.78, "rightScore": 0.81, "ms": 162 }
+  //
+  // `chosenBrain: 'left-only'` means the right brain isn't wired yet
+  // — arbiter returned the left-brain answer without scoring.
+  if (req.url === '/exam-answer-dual' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk.toString(); if (body.length > 100000) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const parsed = JSON.parse(body || '{}');
+        const question = typeof parsed.question === 'string' ? parsed.question.trim() : '';
+        if (!question) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'question required' }));
+          return;
+        }
+        if (!brain || !brain.dualBrainArbiter) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'dual-brain arbiter not initialized' }));
+          return;
+        }
+        const t0 = Date.now();
+        const decision = await brain.dualBrainArbiter.answer(question, { userId: 'arbiter-dual' });
+        // Surface the decision onto the brain-event stream so the
+        // dashboard Current Training + Brain Events cards show which
+        // brain Unity picked for this question.
+        try {
+          brain.pushBrainEvent('arbiter', 'motor',
+            `${decision.chosenBrain === 'right' ? 'RIGHT brain' : decision.chosenBrain === 'left-only' ? 'LEFT only' : 'LEFT brain'} (L=${decision.leftScore.toFixed(2)} R=${decision.rightScore.toFixed(2)})`,
+            { question: question.slice(0, 60), chosenBrain: decision.chosenBrain, leftScore: decision.leftScore, rightScore: decision.rightScore });
+        } catch { /* non-fatal */ }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ...decision, ms: Date.now() - t0 }));
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
