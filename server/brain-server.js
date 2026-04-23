@@ -1289,18 +1289,35 @@ class ServerBrain {
       // with no code changes picks up at the first unpassed cell instead
       // of retraining the whole K syllabus from the alphabet up.
       // Dual-brain arbiter — left brain (Rulkov sim) + right brain
-      // (transformer, injected later once T23.e.2 wires a backend).
-      // Unity weighs both and picks the higher-confidence answer per
-      // operator 2026-04-22 directive: "we can have both and UUnity
-      // weighs best option left brain right brain". Right brain stays
-      // null until T23.e.2 ships; arbiter falls through to left brain
-      // only in that case.
+      // (transformer via @xenova/transformers when installed + DREAM_
+      // TRANSFORMER=1). Unity weighs both and picks the higher-
+      // confidence answer per operator 2026-04-22 directive: "we can
+      // have both and UUnity weighs best option left brain right brain".
       try {
         const arbMod = await import('../js/brain/dual-brain-arbiter.js');
         this.dualBrainArbiter = new arbMod.DualBrainArbiter(this);
       } catch (err) {
         console.warn('[Brain] dual-brain arbiter init failed:', err?.message || err);
         this.dualBrainArbiter = null;
+      }
+      // Auto-attach transformer backend when the dep is installed AND
+      // the env flag is set. Default OFF — operator opts in via
+      // `cd server && npm install @xenova/transformers` + export
+      // DREAM_TRANSFORMER=1. Silent no-op in every other case so the
+      // left-brain-only path keeps working identically.
+      try {
+        const txMod = await import('../js/brain/transformer-backend.js');
+        const result = await txMod.tryAttachTransformerBackend(this);
+        if (result?.attached) {
+          console.log(`[Brain] transformer backend attached: ${result.modelName} (max ${result.maxTokens} tokens)`);
+        } else if (result?.reason === 'dep-missing' && process.env?.DREAM_TRANSFORMER === '1') {
+          // Operator asked for the right brain but the dep isn't
+          // there — surface the install command so they know what
+          // to run. When the flag is OFF we stay silent (default).
+          console.log(`[Brain] DREAM_TRANSFORMER=1 set but @xenova/transformers not installed. ${result.help}`);
+        }
+      } catch (err) {
+        console.warn('[Brain] transformer backend attach failed:', err?.message || err);
       }
       this.curriculum._saveCheckpoint = (cellKey) => {
         try {
