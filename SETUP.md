@@ -121,7 +121,7 @@ Live at `your-username.github.io/Unity/`. Everything runs client-side — no ser
 │   │   ├── sensory.js            Sensory input pipeline (text/audio/video)
 │   │   ├── motor.js              Motor output (6 BG action channels)
 │   │   ├── curriculum.js        Developmental curriculum K→PhD (6 subjects incl. life experience, 114 cells, direct pattern Hebbian)
-│   │   ├── letter-input.js      Dynamic letter inventory (auto-grows, no 26-char cap)
+│   │   ├── letter-input.js      Letter inventory (seeded a-z + 0-9 + basic punct, locked by default)
 │   │   ├── component-synth.js   Equational component synthesis (cosine-match user request vs templates)
 │   │   ├── visual-cortex.js      V1→V4→IT vision pipeline
 │   │   ├── auditory-cortex.js    Tonotopic processing + efference copy

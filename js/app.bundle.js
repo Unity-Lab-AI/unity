@@ -840,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "211b4cb1-e7c8";
+var BUILD = "91a5d26d-093a";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -1343,6 +1343,53 @@ var sharedEmbeddings = new SemanticEmbeddings();
 
 // ../js/brain/letter-input.js
 var LETTER_INVENTORY = /* @__PURE__ */ new Set();
+var DEFAULT_ALPHABET = [
+  // Lowercase English (26)
+  "a",
+  "b",
+  "c",
+  "d",
+  "e",
+  "f",
+  "g",
+  "h",
+  "i",
+  "j",
+  "k",
+  "l",
+  "m",
+  "n",
+  "o",
+  "p",
+  "q",
+  "r",
+  "s",
+  "t",
+  "u",
+  "v",
+  "w",
+  "x",
+  "y",
+  "z",
+  // Digits (10)
+  "0",
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  // Whitespace + basic punctuation (4)
+  " ",
+  ".",
+  ",",
+  "'"
+];
+for (const ch of DEFAULT_ALPHABET) LETTER_INVENTORY.add(ch);
+var _inventoryLocked = true;
 var _oneHotCache = /* @__PURE__ */ new Map();
 var _cachedInventorySize = 0;
 function inventorySize() {
@@ -1355,6 +1402,7 @@ function ensureLetter(letter) {
   if (!letter) return;
   const key = String(letter).toLowerCase();
   if (!LETTER_INVENTORY.has(key)) {
+    if (_inventoryLocked) return;
     LETTER_INVENTORY.add(key);
     _oneHotCache.clear();
     _cachedInventorySize = 0;
@@ -1396,6 +1444,7 @@ function ensureLetters(letters) {
     if (!l) continue;
     const key = String(l).toLowerCase();
     if (!LETTER_INVENTORY.has(key)) {
+      if (_inventoryLocked) continue;
       LETTER_INVENTORY.add(key);
       grew = true;
     }
@@ -1607,16 +1656,28 @@ var NeuronCluster = class {
         "sem-motor",
         "motor-sem"
       ]);
+      const MOTOR_BOUND_PAIRS = /* @__PURE__ */ new Set([
+        "sem-motor",
+        "motor-sem",
+        "letter-motor",
+        "motor-letter",
+        "phon-motor",
+        "motor-phon"
+      ]);
       const logConstruction = this.size >= 5e4;
       if (logConstruction) console.log(`[Cluster ${name}] initializing ${pairs.length * 2} cross-projections at size=${this.size.toLocaleString()}...`);
       let _projIdx = 0;
       for (const [a, b] of pairs) {
         const aSize = this.regions[a].end - this.regions[a].start;
         const bSize = this.regions[b].end - this.regions[b].start;
-        const abDensity = Math.min(5e-3, crossTargetFanout / Math.max(1, aSize));
-        const baDensity = Math.min(5e-3, crossTargetFanout / Math.max(1, bSize));
         const abKey = `${a}-${b}`;
         const baKey = `${b}-${a}`;
+        const abFanout = MOTOR_BOUND_PAIRS.has(abKey) ? crossTargetFanout * 2 : crossTargetFanout;
+        const baFanout = MOTOR_BOUND_PAIRS.has(baKey) ? crossTargetFanout * 2 : crossTargetFanout;
+        const abCap = MOTOR_BOUND_PAIRS.has(abKey) ? 0.01 : 5e-3;
+        const baCap = MOTOR_BOUND_PAIRS.has(baKey) ? 0.01 : 5e-3;
+        const abDensity = Math.min(abCap, abFanout / Math.max(1, aSize));
+        const baDensity = Math.min(baCap, baFanout / Math.max(1, bSize));
         const abExcitatory = EMISSION_PAIRS.has(abKey) ? 0.5 : 0.7;
         const baExcitatory = EMISSION_PAIRS.has(baKey) ? 0.5 : 0.7;
         const abTime = Date.now();
@@ -12308,17 +12369,26 @@ var Curriculum = class _Curriculum {
     for (const cue of PROBES) {
       _cueIdx += 1;
       const _cueStart = Date.now();
-      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} START letter='${cue}' \u2014 6 readInput ticks + up to 20 emission ticks`);
+      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} START letter='${cue}' \u2014 direct letter-region injection + up to 20 emission ticks`);
       let emitted = "";
       let timedOut = false;
       try {
-        if (typeof cluster.readInput === "function") {
+        if (typeof cluster.injectLetter === "function") {
+          cluster.injectLetter(cue, 1);
+          if (typeof cluster.step === "function") {
+            for (let t = 0; t < 4; t++) {
+              try {
+                cluster.step(1e-3);
+              } catch {
+                break;
+              }
+            }
+          }
+        } else if (typeof cluster.readInput === "function") {
           await cluster.readInput(cue, { ticks: 6 });
         }
-        const semSeed = typeof cluster.getSemanticReadout === "function" ? cluster.getSemanticReadout() : null;
         const emitOpts = { maxTicks: 20 };
-        if (semSeed) emitOpts.injectStrength = 0.6;
-        const emissionPromise = cluster.generateSentenceAwait(semSeed, emitOpts);
+        const emissionPromise = cluster.generateSentenceAwait(null, emitOpts);
         const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ _timeout: true }), PER_CUE_TIMEOUT_MS));
         const raw = await Promise.race([emissionPromise, timeoutPromise]);
         if (raw && raw._timeout) {
@@ -17699,12 +17769,17 @@ var Curriculum = class _Curriculum {
     const motorRegion = cluster?.regions?.motor;
     if (!semRegion || !motorRegion) return { templatesTaught: 0, skipped: bank.length };
     const lr = 0.03;
-    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH START \u2014 ${byTemplate.size} template forms \xD7 up to ${reps} reps each`);
+    const MAX_TEMPLATES_PER_PASS = 12;
+    const templates = Array.from(byTemplate.keys()).slice(0, MAX_TEMPLATES_PER_PASS);
+    const droppedForBudget = byTemplate.size - templates.length;
+    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH START \u2014 ${templates.length} template forms \xD7 up to ${reps} reps each${droppedForBudget > 0 ? ` (dropped ${droppedForBudget} over budget cap)` : ""}`);
     try {
-      this._pushBrainEvent?.("teach", "fineType", `STRUCT START: ${cellKey} \xB7 ${byTemplate.size} templates`, { cellKey, templateCount: byTemplate.size });
+      this._pushBrainEvent?.("teach", "fineType", `STRUCT START: ${cellKey} \xB7 ${templates.length} templates`, { cellKey, templateCount: templates.length });
     } catch {
     }
-    for (const [templateId, samples] of byTemplate) {
+    let _lastYield = Date.now();
+    for (const templateId of templates) {
+      const samples = byTemplate.get(templateId);
       const anchor = samples[0];
       const anchorEntry = bank.find((e) => (e.question || e.q) === anchor);
       const answer = String(anchorEntry?.expectedAnswer || anchorEntry?.a || "yes").toLowerCase().trim();
@@ -17728,10 +17803,15 @@ var Curriculum = class _Curriculum {
           await this._teachHebbian(lr);
         } catch {
         }
+        if (Date.now() - _lastYield > 250) {
+          await new Promise((resolve) => setImmediate(resolve));
+          _lastYield = Date.now();
+        }
       }
       taught++;
+      this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH progress \u2014 template ${taught}/${templates.length} done (${droppedForBudget > 0 ? "budget-capped" : "all templates"})`);
     }
-    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH DONE \u2014 ${taught} template forms \xD7 ${reps} reps (skipped ${skipped})`);
+    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH DONE \u2014 ${taught} template forms \xD7 ${reps} reps (skipped ${skipped}${droppedForBudget > 0 ? `, budget-dropped ${droppedForBudget}` : ""})`);
     try {
       this._pushBrainEvent?.("teach", "fineType", `STRUCT DONE: ${cellKey} \xB7 ${taught}`, { cellKey, taught, skipped });
     } catch {

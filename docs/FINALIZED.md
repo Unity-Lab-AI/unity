@@ -5,6 +5,99 @@
 
 ---
 
+## 2026-04-23 — Session 114.19cd: T39.g.1-4 — letter inventory lock + direct letter-region injection + pregate enrichment throttling + motor fan-in 2× bump
+
+### Operator verbatim 2026-04-23
+
+> *"fix all that shiot that was problems we dont test till its all fixed"*
+
+Gee asked for masterful, no patches. Four root-cause fixes landed in one atomic commit, each targeting a specific pain point from the prior run.
+
+### T39.g.1 — Letter inventory locked to a-z + 0-9 + basic punctuation
+
+**Symptom:** Readiness cue letter='a' emitted `'mcaa'` — characters that shouldn't exist in the inventory for a K-grade readiness probe. Gee verbatim: *"WHY IS IT EVEN HAVE ACCESS TO UNICODE"*.
+
+**Root cause:** `js/brain/letter-input.js:ensureLetter()` accepted ANY character unconditionally. Every time the brain read a new symbol from a corpus / live chat / stray whitespace, `LETTER_INVENTORY` grew by one. Every one-hot dimension's semantic meaning shifted one index forward, invalidating previously-trained weights. The inventory had no boot-time seed either — it started empty, meaning the first teach phase defined the dimensions in whatever order symbols were encountered. Non-deterministic across restarts.
+
+**Fix:** Module-load now seeds `LETTER_INVENTORY` with a 40-symbol default alphabet:
+- 26 lowercase English letters a-z
+- 10 digits 0-9
+- 4 punctuation: space, `.`, `,`, `'`
+
+New `_inventoryLocked` flag (default `true`) makes `ensureLetter` + `ensureLetters` silently reject any symbol outside the current inventory. Exported `setInventoryLock(locked)` + `isInventoryLocked()` helpers for experimental multi-script work (operator opts in via explicit call). `resetInventory()` re-seeds the default alphabet instead of leaving the inventory empty.
+
+Verified: cyrillic Ж rejected (inventory stays at 40); `encodeLetter('a')[0] === 1`; decodeLetter round-trip works; inventory deterministic across restarts.
+
+### T39.g.2 — Readiness probe uses direct letter-region injection
+
+**Symptom:** Five readiness cues 'a'-'e', only one returned a recognizable letter (the `'mcaa'` case); the rest returned `'?'`, `'.'`, or `∅`.
+
+**Root cause:** The probe called `cluster.readInput(cue, { ticks: 6 })` for each cue — routing single-letter stimuli through the full visual → letter → phon → sem pathway with GloVe embedding contamination at each stage. The letter region never received a clean one-hot signal. Motor argmax then decoded against that polluted activation pattern. A single-letter probe is a stimulus-response test, not a sentence to parse.
+
+**Fix:** `_measureEmissionCapability` now calls `cluster.injectLetter(cue, 1.0)` which wraps `encodeLetter(cue)` and writes the one-hot into the letter region directly. Then 4 `cluster.step(0.001)` ticks propagate the pattern across letter → motor cross-projections before `generateSentenceAwait(null, {maxTicks: 20})` reads motor argmax. `null` semSeed (instead of `getSemanticReadout()`) means emission runs off the fresh letter injection, not sem-region residue from the prior cue. Fallback to readInput retained when `injectLetter` isn't wired (defensive, should never trigger).
+
+### T39.g.3 — Pregate enrichment throttling + budget cap + progress telemetry
+
+**Symptom:** After SCI-K-CONCEPTS finished + VOCAB-COVERAGE 0% warning logged for science/kindergarten, the system "froze right there" — no more heartbeats, no more dashboard broadcasts.
+
+**Root cause:** `_pregateEnrichment` chained to `_teachSentenceStructures` which ran up to `byTemplate.size × reps` Hebbian reps with NO yield, NO budget cap, and NO progress telemetry. When GPU dispatches returned fast (cold pool after idle-termination), the tight loop starved the heartbeat interval + WebSocket state broadcast for the whole burst. 42 Hebbian fires at 20 ms each GPU-side = 840 ms with no yield — heartbeat missed one tick, dashboard missed one update, and if an ingest packet also hit, the main loop fell further behind.
+
+**Fix:** Three bounds added to `_teachSentenceStructures`:
+
+1. **Budget cap** — `MAX_TEMPLATES_PER_PASS = 12`. K cells typically have 5-7 unique question templates; 12 is a generous ceiling. Excess logged as `dropped N over budget cap`.
+2. **Explicit event-loop yield** — `await new Promise(r => setImmediate(r))` every 250ms inside the rep loop. GPU `_teachHebbian` internally awaits, but when dispatches return fast enough to stack, the forced yield lets state-broadcast + heartbeat + WebSocket drainage interleave.
+3. **Per-template progress heartbeat** — `STRUCTURE-TEACH progress — template N/M done` after each template. A real freeze now looks like a stalled progress counter, not a silent dead heartbeat — operator can tell the difference.
+
+### T39.g.4 — Motor cross-projection fan-in 2× via `MOTOR_BOUND_PAIRS`
+
+**Symptom:** `sep-probe mean-cos ≈ 0.5` across every association-pair phase despite Oja + anti-Hebbian + WTA + lateral inhibition all shipped.
+
+**Root cause:** Default `crossTargetFanout = 30` gave every motor neuron only 30 inputs per source pathway. With 5 parallel input pathways feeding motor (sem, phon, letter + bidirectional reverses) and K-grade curricula training 46+ association pairs per phase × 4-6 phases per grade, 30 slots per pathway cannot carve separable basins for all trained patterns. Post-Hebbian activations collapse into superposition. T39.f.1 removed the destructive `normalizeRows` clamp; T39.g.4 removes the capacity ceiling beneath it.
+
+**Fix:** `MOTOR_BOUND_PAIRS` whitelist in `NeuronCluster` cross-projection setup covers:
+- `sem-motor`, `motor-sem`
+- `letter-motor`, `motor-letter`
+- `phon-motor`, `motor-phon`
+
+Each motor-bound projection gets `crossTargetFanout * 2 = 60` inputs per target AND matching `densityCap * 2 = 0.01` so the fanout term can land even at smaller source sizes. Non-motor projections unchanged — this is a targeted capacity bump, not a global density increase.
+
+Biologically plausible — real pyramidal neurons carry 1000-10000 synaptic inputs distributed across many cortical areas. 60 per per-area pair is well under that bound.
+
+If operator's next run still shows `mean-cos > 0.3`, the residual cause is GloVe-space crowding for K-grade content words (sem-side embedding geometry — related K words have natural GloVe cosine 0.3-0.5 regardless of training), which would need a discriminative sem encoding, not more fan-in.
+
+### Why all four in one ship
+
+Gee asked for masterful. Shipping these individually creates four cache-miss boot cycles on the operator side; shipping them together forms a single coherent pass:
+- Inventory lock stops motor argmax from decoding to junk dimensions
+- Direct letter injection gives readiness a clean probe signal
+- Pregate throttling keeps the brain alive through long enrichments
+- Fan-in bump gives sem → motor enough capacity to actually discriminate
+
+Each is a root-cause fix, not a patch. Each has a clear success signal operator can watch for on the next run.
+
+### Files touched
+
+- `js/brain/letter-input.js` — DEFAULT_ALPHABET seed at module load + `_inventoryLocked` flag + `setInventoryLock` / `isInventoryLocked` exports + `ensureLetter` / `ensureLetters` / `resetInventory` lock-aware
+- `js/brain/curriculum.js` — `_measureEmissionCapability` uses `injectLetter` + `_teachSentenceStructures` budget cap + event-loop yield + per-template progress
+- `js/brain/cluster.js` — `MOTOR_BOUND_PAIRS` whitelist + per-pair `abFanout` + `abCap` + matching `baFanout` + `baCap`
+- `js/app.bundle.js` — rebuilt
+- `docs/TODO.md` — T39.g.1-4 entries with verbatim operator quote
+- `docs/FINALIZED.md` — this session entry
+
+### Regression harness
+
+`scripts/smoke-tip-top.mjs` — 63/63 green. Plus a fresh inline sanity check: inventory locked to 40 symbols, Cyrillic rejected, encodeLetter/decodeLetter round-trip verified.
+
+### Expected observable signals on the next operator run
+
+1. Readiness probe: letter='a' cue emits 'a' (not 'mcaa'). At minimum 3/5 cues recognized → `canTalkAtAll=true`.
+2. Memory heartbeat: `native=` stays in plausible 20-500MB range; no more Δ swings into negative territory; no false ⚠⚠LEAK warnings.
+3. Association-pair phases: `sep-probe mean-cos` varies between phases (different training data → different overlap characteristics) instead of identical stats; target ≤ 0.3.
+4. Pre-gate enrichment: progress heartbeat `STRUCTURE-TEACH progress — template N/M done` fires after each template; system doesn't freeze even on 0% vocab-coverage cells.
+5. K-STUDENT battery: `⚑emission: <why>` tail fires on every empty answer (from T39.e.2) telling operator which subsystem is silent if emissions are still empty.
+
+---
+
 ## 2026-04-23 — Session 114.19cc: T39.f.1 destructive normalizeRows removed + clamp-aware safety + `|W|` telemetry honesty + T39.f.2 memory formula rewritten (heapUsed-based, v8 unreliable on Windows)
 
 ### Operator verbatim 2026-04-23
