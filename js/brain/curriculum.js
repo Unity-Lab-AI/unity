@@ -651,16 +651,29 @@ export class Curriculum {
     const currentCellPassedPhases = cellKey && Array.isArray(cluster?.passedPhases)
       ? cluster.passedPhases.filter(k => k && k.startsWith(`${cellKey}:`)).length
       : 0;
+    // Cell status — distinguish "in-progress" from "passed" so the
+    // dashboard progress bar doesn't misleadingly cap at 100% while
+    // teach phases still grind on. Cell is "passed" when its cellKey
+    // landed in cluster.passedCells; "in-progress" otherwise once a
+    // cell has been entered.
+    let cellStatus = 'idle';
+    if (cellKey) {
+      const inPassedList = cluster && Array.isArray(cluster.passedCells)
+        && cluster.passedCells.includes(cellKey);
+      cellStatus = inPassedList ? 'passed' : 'in-progress';
+    }
     return {
       currentSubject: this._currentSubject || null,
       currentGrade: this._currentGrade || null,
       currentLabel: this._currentSubjectLabel || null,
       currentGradeLabel: this._currentGrade ? (GRADE_LABELS[this._currentGrade] || this._currentGrade) : null,
       currentCellKey: cellKey,
+      cellStatus,
       activePhase,
       cellPhasesCompleted: this._currentCellPhasesCompleted | 0,
       cellPhasesPersisted: currentCellPassedPhases,
       cellStartAt: this._currentCellStartAt || null,
+      cellElapsedMs: this._currentCellStartAt ? Date.now() - this._currentCellStartAt : 0,
       perSubject,
       passedCellsTotal: cluster && Array.isArray(cluster.passedCells) ? cluster.passedCells.length : 0,
       subjects: SUBJECTS.slice(),

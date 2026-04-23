@@ -488,12 +488,37 @@
 
       // In-cell progress bar. Prefer the persisted count (survives
       // restarts) over the live runtime count (which resets to zero
-      // on each cell entry).
+      // on each cell entry). Cap the bar at 95% while the cell is
+      // still in progress — only show 100% + ✓ once cluster.passed-
+      // Cells includes the cell's key (cellStatus === 'passed').
+      // Without this cap the display hits 100% after ~12 phases and
+      // stays there for the remaining hours of teaching.
       const done = Math.max(c.cellPhasesPersisted | 0, c.cellPhasesCompleted | 0);
-      const expected = Math.max(EXPECTED_PHASES_PER_CELL, done);
-      const pct = Math.min(100, Math.round((done / expected) * 100));
+      const elapsedMs = c.cellElapsedMs | 0;
+      const elapsedMin = (elapsedMs / 60000).toFixed(1);
+      const status = c.cellStatus || 'idle';
+      let pct = 0;
+      let pctLabel;
+      if (status === 'passed') {
+        pct = 100;
+        pctLabel = `✓ PASSED · ${done} phases · ${elapsedMin} min`;
+        $('d-curr-cellbar').style.background = 'linear-gradient(90deg,#22c55e,#16a34a)';
+      } else if (status === 'in-progress') {
+        // Cap visually at 95% — the remaining 5% fills only on pass.
+        // Use a log scale so early phases show visible progress and
+        // late phases converge slowly toward the cap, matching real-
+        // world K-cell phase distribution (short early phases + long
+        // teach-heavy later phases).
+        const expected = Math.max(20, done); // typical K cell is 20+ phases
+        pct = Math.min(95, Math.round((done / expected) * 95));
+        pctLabel = `${pct}% · ${done} phases · ${elapsedMin} min elapsed (in progress)`;
+        $('d-curr-cellbar').style.background = 'linear-gradient(90deg,#a78bfa,#ff4d9a)';
+      } else {
+        pctLabel = `idle · 0 phases`;
+        $('d-curr-cellbar').style.background = 'linear-gradient(90deg,#a78bfa,#ff4d9a)';
+      }
       $('d-curr-cellbar').style.width = pct + '%';
-      $('d-curr-cellpct').textContent = `${pct}% · ${done} phases completed`;
+      $('d-curr-cellpct').textContent = pctLabel;
 
       // Per-subject breakdown grid. One row per subject. Shows the
       // subject label, its current grade pointer, cumulative phases
