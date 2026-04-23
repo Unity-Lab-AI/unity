@@ -139,6 +139,98 @@ export class SparseMatrix {
   }
 
   /**
+   * Topographic connectivity — each neuron connects to its `fanout`
+   * physically-adjacent neighbors in a 1D ring topology with wrap-
+   * around at the boundaries. Same functional shape as the cortical-
+   * column model (local lateral connections dominate; distant ones
+   * are sparse or absent). Critically, nnz scales LINEARLY with size
+   * at a fixed fanout — the random-init scaling is `density × rows²`
+   * which blows up past 100M neurons, topographic stays `rows ×
+   * fanout` so 100M × 30 = 3 B entries (~12 GB at 12 B each) is
+   * achievable where random is 100M × 100M × tiny-density ≈ tens of
+   * terabytes.
+   *
+   * Implementation: for each row i, open a window of `fanout` column
+   * indices centered on i, skipping the self-connection when
+   * rows === cols. Weights split per `excitatoryRatio` same as
+   * `initRandom`. Ring wrap-around handles boundary neurons so the
+   * fanout stays constant instead of degrading at the ends.
+   *
+   * `fanout` should be even-ish so half the connections go each
+   * side; odd values just put one extra on the upper side.
+   */
+  initTopographic(fanout, excitatoryRatio = 0.8, strength = 0.3) {
+    const { rows, cols } = this;
+    const noSelfConnect = (rows === cols);
+    const effFanout = Math.min(Math.max(0, fanout | 0), cols - (noSelfConnect ? 1 : 0));
+    if (effFanout <= 0) {
+      // Degenerate — empty matrix with valid CSR layout.
+      this.values = new Float64Array(0);
+      this.colIdx = new Uint32Array(0);
+      this.rowPtr = new Uint32Array(rows + 1);
+      this.nnz = 0;
+      return;
+    }
+    const totalPre = rows * effFanout;
+    this.values = new Float64Array(totalPre);
+    this.colIdx = new Uint32Array(totalPre);
+    this.rowPtr = new Uint32Array(rows + 1);
+    this.nnz = totalPre;
+    // Window geometry — half the connections below i, the other half
+    // (+1 on odd fanout) above, wrap-around at boundaries. When the
+    // matrix is square (noSelfConnect) we expand the upper side by 1
+    // so that skipping the d=0 self-entry still lands the full
+    // fanout count per row.
+    const half = Math.floor(effFanout / 2);
+    const upper = effFanout - half + (noSelfConnect ? 1 : 0);
+    let idx = 0;
+    this.rowPtr[0] = 0;
+    for (let i = 0; i < rows; i++) {
+      // Fill colIdx for this row with indices [i - half, i + upper)
+      // excluding self when noSelfConnect. Ring-wrap via modulo.
+      let filled = 0;
+      for (let d = -half; d < upper && filled < effFanout; d++) {
+        if (d === 0 && noSelfConnect) continue;
+        let col = i + d;
+        if (col < 0) col += cols;
+        else if (col >= cols) col -= cols;
+        this.colIdx[idx + filled] = col;
+        const sign = Math.random() < excitatoryRatio ? 1 : -1;
+        this.values[idx + filled] = sign * (0.1 + Math.random() * 0.4) * strength;
+        filled++;
+      }
+      // Sort the row's col indices so CSR contract (colIdx ascending
+      // per row) holds — ring-wrap can put a wrapped-low column after
+      // a wrapped-high column so we need the sort for downstream code
+      // that assumes sorted columns (e.g. binary-search probes).
+      if (filled > 1) {
+        const sliceValues = this.values.subarray(idx, idx + filled);
+        const sliceCols = this.colIdx.subarray(idx, idx + filled);
+        // Pair-sort: keep (col, value) together. Simple insertion sort
+        // since filled is always `fanout` (typically 30), so O(n²) is
+        // fine and cheaper than allocating index arrays.
+        for (let a = 1; a < filled; a++) {
+          const keyCol = sliceCols[a];
+          const keyVal = sliceValues[a];
+          let b = a - 1;
+          while (b >= 0 && sliceCols[b] > keyCol) {
+            sliceCols[b + 1] = sliceCols[b];
+            sliceValues[b + 1] = sliceValues[b];
+            b--;
+          }
+          sliceCols[b + 1] = keyCol;
+          sliceValues[b + 1] = keyVal;
+        }
+      }
+      idx += filled;
+      this.rowPtr[i + 1] = idx;
+    }
+    // Tighten nnz if some rows couldn't fill (shouldn't happen with
+    // modulo wrap, but safety).
+    this.nnz = idx;
+  }
+
+  /**
    * Build from an existing dense matrix (for migration).
    * @param {Float64Array} W — dense row-major matrix (rows × cols)
    * @param {number} threshold — minimum |weight| to keep

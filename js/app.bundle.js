@@ -83,6 +83,80 @@ var init_sparse_matrix = __esm({
         }
       }
       /**
+       * Topographic connectivity — each neuron connects to its `fanout`
+       * physically-adjacent neighbors in a 1D ring topology with wrap-
+       * around at the boundaries. Same functional shape as the cortical-
+       * column model (local lateral connections dominate; distant ones
+       * are sparse or absent). Critically, nnz scales LINEARLY with size
+       * at a fixed fanout — the random-init scaling is `density × rows²`
+       * which blows up past 100M neurons, topographic stays `rows ×
+       * fanout` so 100M × 30 = 3 B entries (~12 GB at 12 B each) is
+       * achievable where random is 100M × 100M × tiny-density ≈ tens of
+       * terabytes.
+       *
+       * Implementation: for each row i, open a window of `fanout` column
+       * indices centered on i, skipping the self-connection when
+       * rows === cols. Weights split per `excitatoryRatio` same as
+       * `initRandom`. Ring wrap-around handles boundary neurons so the
+       * fanout stays constant instead of degrading at the ends.
+       *
+       * `fanout` should be even-ish so half the connections go each
+       * side; odd values just put one extra on the upper side.
+       */
+      initTopographic(fanout, excitatoryRatio = 0.8, strength = 0.3) {
+        const { rows, cols } = this;
+        const noSelfConnect = rows === cols;
+        const effFanout = Math.min(Math.max(0, fanout | 0), cols - (noSelfConnect ? 1 : 0));
+        if (effFanout <= 0) {
+          this.values = new Float64Array(0);
+          this.colIdx = new Uint32Array(0);
+          this.rowPtr = new Uint32Array(rows + 1);
+          this.nnz = 0;
+          return;
+        }
+        const totalPre = rows * effFanout;
+        this.values = new Float64Array(totalPre);
+        this.colIdx = new Uint32Array(totalPre);
+        this.rowPtr = new Uint32Array(rows + 1);
+        this.nnz = totalPre;
+        const half = Math.floor(effFanout / 2);
+        const upper = effFanout - half + (noSelfConnect ? 1 : 0);
+        let idx = 0;
+        this.rowPtr[0] = 0;
+        for (let i = 0; i < rows; i++) {
+          let filled = 0;
+          for (let d = -half; d < upper && filled < effFanout; d++) {
+            if (d === 0 && noSelfConnect) continue;
+            let col = i + d;
+            if (col < 0) col += cols;
+            else if (col >= cols) col -= cols;
+            this.colIdx[idx + filled] = col;
+            const sign = Math.random() < excitatoryRatio ? 1 : -1;
+            this.values[idx + filled] = sign * (0.1 + Math.random() * 0.4) * strength;
+            filled++;
+          }
+          if (filled > 1) {
+            const sliceValues = this.values.subarray(idx, idx + filled);
+            const sliceCols = this.colIdx.subarray(idx, idx + filled);
+            for (let a = 1; a < filled; a++) {
+              const keyCol = sliceCols[a];
+              const keyVal = sliceValues[a];
+              let b = a - 1;
+              while (b >= 0 && sliceCols[b] > keyCol) {
+                sliceCols[b + 1] = sliceCols[b];
+                sliceValues[b + 1] = sliceValues[b];
+                b--;
+              }
+              sliceCols[b + 1] = keyCol;
+              sliceValues[b + 1] = keyVal;
+            }
+          }
+          idx += filled;
+          this.rowPtr[i + 1] = idx;
+        }
+        this.nnz = idx;
+      }
+      /**
        * Build from an existing dense matrix (for migration).
        * @param {Float64Array} W — dense row-major matrix (rows × cols)
        * @param {number} threshold — minimum |weight| to keep
@@ -754,7 +828,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "8a889261-1e8e";
+var BUILD = "27e298ee-247a";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -1460,6 +1534,8 @@ var NeuronCluster = class {
     this.connectivity = autoConnectivity;
     this.excitatoryRatio = opts.excitatoryRatio ?? 0.8;
     this.learningRate = opts.learningRate ?? 1e-3;
+    this.topographic = opts.topographic === true || typeof process !== "undefined" && process.env?.DREAM_TOPOGRAPHIC === "1";
+    this.topographicFanout = opts.topographicFanout ?? 30;
     this.gainMultiplier = 1;
     this.emotionalGate = 1;
     this.driveBaseline = 1;
@@ -1475,9 +1551,15 @@ var NeuronCluster = class {
     });
     const _intraStart = Date.now();
     const _logIntra = size >= 5e4;
-    if (_logIntra) console.log(`[Cluster ${name}] initializing intra-cluster synapses ${size.toLocaleString()}\xD7${size.toLocaleString()} density=${this.connectivity.toFixed(4)} (~${Math.round(size * this.connectivity * size).toLocaleString()} nnz)...`);
     this.synapses = new SparseMatrix(size, size, { wMin: -2, wMax: 2 });
-    this.synapses.initRandom(this.connectivity, this.excitatoryRatio, 1);
+    if (this.topographic && size >= 1e4) {
+      const fanout = Math.min(this.topographicFanout, size - 1);
+      if (_logIntra) console.log(`[Cluster ${name}] initializing intra-cluster synapses (TOPOGRAPHIC) ${size.toLocaleString()}\xD7${size.toLocaleString()} fanout=${fanout} (~${(size * fanout).toLocaleString()} nnz)...`);
+      this.synapses.initTopographic(fanout, this.excitatoryRatio, 1);
+    } else {
+      if (_logIntra) console.log(`[Cluster ${name}] initializing intra-cluster synapses ${size.toLocaleString()}\xD7${size.toLocaleString()} density=${this.connectivity.toFixed(4)} (~${Math.round(size * this.connectivity * size).toLocaleString()} nnz)...`);
+      this.synapses.initRandom(this.connectivity, this.excitatoryRatio, 1);
+    }
     if (_logIntra) console.log(`[Cluster ${name}] intra-cluster synapses ready (nnz=${this.synapses.nnz.toLocaleString()}) in ${Date.now() - _intraStart}ms`);
     this.externalCurrent = new Float64Array(size);
     this._incomingProjections = new Float64Array(size);

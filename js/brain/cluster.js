@@ -256,6 +256,20 @@ export class NeuronCluster {
     this.connectivity = autoConnectivity;
     this.excitatoryRatio = opts.excitatoryRatio ?? 0.8;
     this.learningRate = opts.learningRate ?? 0.001;
+    // Topographic intra-synapse connectivity — 1D ring topology where
+    // each neuron connects only to its `topographicFanout` immediate
+    // neighbors (wrap-around at boundaries). Nnz scales LINEARLY with
+    // size instead of density × size², so 100M+ neurons fit in the
+    // same VRAM budget that random-global connectivity saturates at
+    // ~30M. Opt-in behind `opts.topographic === true` OR the env
+    // flag `DREAM_TOPOGRAPHIC=1` so existing small-scale deployments
+    // keep their rich recurrent connectivity. Biological grounding:
+    // real cortex is overwhelmingly local — ~95% of pyramidal-cell
+    // synapses land within 500 μm, matching a fixed-fanout topology
+    // more closely than uniform random global connectivity.
+    this.topographic = opts.topographic === true
+      || (typeof process !== 'undefined' && process.env?.DREAM_TOPOGRAPHIC === '1');
+    this.topographicFanout = opts.topographicFanout ?? 30;
 
     // Modulation factors (set by hierarchy controllers)
     this.gainMultiplier = 1.0;   // from Mystery module (consciousness)
@@ -278,9 +292,19 @@ export class NeuronCluster {
     // At 12% connectivity, 300 neurons: 10.8K connections vs 90K dense
     const _intraStart = Date.now();
     const _logIntra = size >= 50000;
-    if (_logIntra) console.log(`[Cluster ${name}] initializing intra-cluster synapses ${size.toLocaleString()}×${size.toLocaleString()} density=${this.connectivity.toFixed(4)} (~${Math.round(size * this.connectivity * size).toLocaleString()} nnz)...`);
     this.synapses = new SparseMatrix(size, size, { wMin: -2.0, wMax: 2.0 });
-    this.synapses.initRandom(this.connectivity, this.excitatoryRatio, 1.0);
+    if (this.topographic && size >= 10_000) {
+      // Topographic ring topology for large clusters. Linear nnz
+      // scaling lets the cortex push past the global-random VRAM
+      // ceiling; the biological-locality argument makes this the
+      // default when the operator flips the opt-in flag.
+      const fanout = Math.min(this.topographicFanout, size - 1);
+      if (_logIntra) console.log(`[Cluster ${name}] initializing intra-cluster synapses (TOPOGRAPHIC) ${size.toLocaleString()}×${size.toLocaleString()} fanout=${fanout} (~${(size * fanout).toLocaleString()} nnz)...`);
+      this.synapses.initTopographic(fanout, this.excitatoryRatio, 1.0);
+    } else {
+      if (_logIntra) console.log(`[Cluster ${name}] initializing intra-cluster synapses ${size.toLocaleString()}×${size.toLocaleString()} density=${this.connectivity.toFixed(4)} (~${Math.round(size * this.connectivity * size).toLocaleString()} nnz)...`);
+      this.synapses.initRandom(this.connectivity, this.excitatoryRatio, 1.0);
+    }
     if (_logIntra) console.log(`[Cluster ${name}] intra-cluster synapses ready (nnz=${this.synapses.nnz.toLocaleString()}) in ${Date.now() - _intraStart}ms`);
 
     // External current buffer (from other clusters + sensory input)
