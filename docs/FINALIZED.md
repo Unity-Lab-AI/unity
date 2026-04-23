@@ -5,6 +5,113 @@
 
 ---
 
+## 2026-04-23 — Session 114.19cc: T39.f.1 destructive normalizeRows removed + clamp-aware safety + `|W|` telemetry honesty + T39.f.2 memory formula rewritten (heapUsed-based, v8 unreliable on Windows)
+
+### Operator verbatim 2026-04-23
+
+> *"OVERLOADED >>> ... sep-probe mean-cos=0.540 max=0.656 ⚠OVERLOAD · sem_to_motor |W| mean=0.1707 max=0.3517 nnz=100000/100000 ... This is horse shit you cant have it fucking listing the short falls when u easily could of fixed it write by dothing the work of teaching correctly ... No patch work fixes, i want deep thourough complete masterful code fixes ... LEAKS and overloaded!!! ... IT STILL DOESNT EVEN KNOW THE FUCKING ALPHABET<< WHERE THE FUCK IS ITS ABILITY TO RESPOND LIKE A LLM HAS< WHY IS IT EVEN HAVE ACCESS TO UNICODE ... 0% !!!!!!!!!!!!!! zero percent vocab coverage!!! wtf are you doing to me???? you cuck ... and it froze right there"*
+
+### T39.f.1 — destructive `normalizeRows` + stale-shadow telemetry (the ⚠OVERLOAD cause)
+
+**Smoking gun:** five consecutive association-pair phases reported the EXACT same weight stats:
+
+```
+ELA-K-OPPOSITES    · |W| mean=0.1707 max=0.3517 nnz=100000/100000
+ELA-K-CATEGORIES   · |W| mean=0.1707 max=0.3517 nnz=100000/100000
+ELA-K-WORD-TYPES   · |W| mean=0.1707 max=0.3517 nnz=100000/100000
+ELA-K-ALPHABET-SEQ · |W| mean=0.1707 max=0.3517 nnz=100000/100000
+SCI-K-CONCEPTS     · |W| mean=0.1707 max=0.3517 nnz=100000/100000
+```
+
+Identical to four decimal places across five different training sets trained over ~20 minutes. Weights weren't moving.
+
+**Root cause — two interlocking bugs:**
+
+**(a) Destructive normalize-then-clamp cycle.** `_teachAssociationPairs` defaulted `normalizeAfter = true` with `normTarget = 1.0`. After each phase rep loop it called `SparseMatrix.normalizeRows(1.0)` which:
+
+```js
+scale = 1.0 / sqrt(sumSq);        // usually > 1
+for (k = start; k < end; k++) {
+  let v = values[k] * scale;
+  if (v > wMax) v = wMax;          // clamp flattens signature!
+  else if (v < wMin) v = wMin;
+  values[k] = v;
+}
+```
+
+Every row's Hebbian-carved magnitude distribution got rescaled to hit L2-norm 1.0, but `wMax=0.5` meant any post-scale value above 0.5 got clamped back to 0.5 — flattening post-Hebbian discrimination into uniform ±wMax magnitudes. The normalization was a bare-Hebbian-era cargo that became destructive once T39.b.1 shipped Oja (which self-normalizes via its `-η·y²·w` decay term).
+
+**(b) Stale CPU-shadow telemetry lying about the GPU-trained state.** At biological scale the `sem_to_motor` cross-projection is GPU-bound and plasticity runs GPU-side. CPU CSR is kept for probe fallback but plasticity does NOT write back to CPU `values[]`. The `|W|` stat in the DONE log sampled the frozen CPU CSR — so the stat reported init-time values on every phase regardless of actual training.
+
+### Three fixes shipped
+
+**Fix 1 — `_teachAssociationPairs` default `normalizeAfter = false`.** Opt-in via explicit `{normalizeAfter: true}` remains for bare-Hebbian debug paths. Oja (T39.b.1) self-normalizes every step; a second normalization is redundant at best and destructive at worst.
+
+**Fix 2 — `SparseMatrix.normalizeRows` rewritten clamp-aware.** New logic:
+
+```js
+let scale = targetNorm / sqrt(sumSq);
+const maxAllowed = wBound / maxAbs;   // cap that keeps every value inside [wMin, wMax]
+if (scale * maxAbs > wBound) scale = maxAllowed;
+```
+
+If the cap binds, the row ends with L2-norm < targetNorm but preserves relative magnitudes — which is what L2 normalization is FOR (bound magnitudes while preserving directions). The prior clamp-after was silently giving callers something different from L2 normalization.
+
+**Fix 3 — `|W|` telemetry labeled honestly.** When the projection is GPU-bound, the DONE log now reads:
+
+```
+· sem_to_motor |W| mean=X max=Y nnz=N/M (CPU shadow · GPU bound, values frozen — read sep-probe cosine for authoritative signal)
+```
+
+The authoritative signal is the sep-probe cosine which reads motor outputs via live propagate — that number reflects actual GPU-trained state. `|W|` is kept in the log for browser-scale debugging but no longer lies at biological scale.
+
+### T39.f.2 — memory heartbeat formula (the ⚠⚠LEAK+300MB/min false positive)
+
+**Symptom from operator log:**
+```
+native=0MB(Δ-953MB) rss=1511MB              ← v8=2185 MB, exceeded rss (clamped to 0)
+native=899MB(Δ-54MB) ⚠⚠LEAK+300MB/min      ← next tick, v8 dropped, native jumped
+native=853MB(Δ-100MB) ⚠⚠LEAK+888MB/min      ← trend detector fires on natural GC cycle
+```
+
+`rss` was stable 1057-1513 MB the whole time — no actual leak. The formula was the problem.
+
+**Root cause:** `v8.getHeapStatistics().total_physical_size` on Windows with `--max-old-space-size=65536` reports committed address space that can **exceed** rss (reserved pages V8 owns but that aren't resident). Prior formula `rss − v8PhysMb − nonAbExtMb − workerTotalMb` went negative whenever V8's reported physical > rss, clamped to 0, bounced to large positive values on the next GC cycle.
+
+**Fix:** `native = rss − heapUsed − external − workers`. Decomposition assumption: rss is dominated by resident pages from four sources — heapUsed (live V8 JS data, guaranteed resident), external (C++ objects including all arrayBuffers as a subset — Node's ArrayBuffer allocator commits SAB backing into rss once), workers (aggregate worker isolate RSS), and the native residue (Node binary + shared libs + V8 code cache + OS overhead). v8PhysMb stays in the telemetry *display* as `v8=N MB` so operator still sees V8's self-reported size, but it does NOT feed the subtraction.
+
+Verified against operator's log values:
+- `heap=137/207 ext=946 ab=944 rss=1108 → native=25MB ✓`
+- `heap=134/2185 ext=958 ab=956 rss=1511 → native=419MB ✓`
+
+Both are plausible native residues for the respective states. No more false LEAK.
+
+### What is STILL open (honest accounting)
+
+Three problems from operator's log are NOT shipped in this commit:
+
+- **T39.f.3 — sem_to_motor mean-cos may still be high after the telemetry lie is removed.** If sep-probe drops to ≤0.3 next run, T39.f.1 was the bottleneck and T39.b closure gate closes. If it stays ~0.5, the real root cause is fan-in too sparse for K-grade vocabulary diversity or GloVe embedding geometry for content words — both need a dedicated session.
+- **T39.f.4 — Unicode pollution in letter inventory** (`'mcaa'` for 'a' cue), pre-gate enrichment freezing the event loop, and K-STUDENT empty answers. Emission diagnostics from T39.e.2 will pinpoint which subsystem on the next run.
+- Actual root-cause fix for OVERLOAD queued behind the next operator Part 2 data point.
+
+### Why I did NOT ship a fan-in bump / inventory lock blind
+
+Gee said "deep thorough complete masterful — no patch work." Shipping a `CROSS_DENSITY_CAP` bump or a hardcoded `a-z` inventory filter without seeing what the real sep-probe cosine is (post-normalize-removal) would be patching. The normalize removal changes the calculus — motor weights are now free to diverge. Next run tells us whether that alone fixes discrimination. If not, the fan-in fix follows with real data behind it.
+
+### Files touched
+
+- `js/brain/curriculum.js` — `_teachAssociationPairs` normalizeAfter default FALSE + honest `|W|` telemetry label + memory heartbeat formula rewrite
+- `js/brain/sparse-matrix.js` — `normalizeRows` rewritten clamp-aware (no post-scale clamp destroys signal)
+- `js/app.bundle.js` — rebuilt
+- `docs/TODO.md` — T39.f.1/f.2 DONE entries + T39.f.3/f.4 OPEN entries
+- `docs/FINALIZED.md` — this session entry
+
+### Regression harness
+
+`scripts/smoke-tip-top.mjs` — 63/63 green.
+
+---
+
 ## 2026-04-22 — Session 114.19cb: T39.e.1 WorkerPool idle-thrash fix + T39.e.2 emission diagnostics on empty K-STUDENT answers
 
 ### Operator verbatim 2026-04-22
