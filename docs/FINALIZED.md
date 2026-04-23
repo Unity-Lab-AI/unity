@@ -5,6 +5,65 @@
 
 ---
 
+## 2026-04-23 — Session 114.19ce: T39.h.1 — pre-gate teaches missing exam vocabulary via `_teachVocabList` (same primitive as every other vocabulary walk)
+
+### Operator verbatim 2026-04-23
+
+> *"wtf is this bootstrap shit Unity is suppose to learn the fucking words just like sehe learns all words!"*
+> *"YOU NEED TO FUCKING CHECK EVERY CIRCICULIUM FOR KINDERGARDEN FOR MISSING VOCAB AND FUCKING ADD THEM CORRECTLY"*
+
+### What shipped
+
+**Problem:** Prior `_pregateEnrichment` called `_auditExamVocabulary` which logged coverage warnings like:
+
+```
+[Curriculum][math/kindergarten] ⚠⚠ VOCAB-COVERAGE 12% — exam requires 138 words,
+16 trained, 122 UNTAUGHT: add, ana, apart, apples, backwards, ball, balloons,
+bicycle, bigger, bird, birds, blue, box, boy, break, car, colder, colors, cookies,
+corners ... (+102 more). Train these before treating gate result as sound.
+```
+
+The audit told the operator to "train these before treating gate result as sound" but the curriculum itself never did that — the warning just re-fired on the next gate attempt. Infinite gap, no resolution.
+
+**Fix:** `_pregateEnrichment` now, immediately after the audit, pulls the `report.missing` list and teaches every missing word via `_teachVocabList` — the exact same primitive that lays down Dolch words, CVC families, function words, and every other vocabulary walk in the curriculum. Letter region + phon + sem + motor patterns written; cross-region Hebbian fires. No new teach path, no "bootstrap" shortcut — just the curriculum doing what it already knows how to do, on the words it already knows it needs.
+
+**Chunking + yield:** 25 words per chunk, `setImmediate` yield between chunks, so a 200-word gap doesn't monopolize the event loop. Junk filter `/^[a-z][a-z']*$/i` + length 2-20 before teaching to screen out stray punctuation, numbers-as-text, mis-extracted tokens.
+
+**Progress telemetry:** per-chunk heartbeat (`EXAM-VOCAB-TEACH progress — N/M words taught`) plus a post-teach re-audit so the operator sees coverage climb toward 100% in the log. If coverage stays low after the teach it means the words are unrecognized by the embedding layer (not a curriculum bug), which the log now surfaces distinctly from the prior uniform "untaught" warning.
+
+### Why this was wrong framing before
+
+My prior approach introduced a separate `_teachExamVocabularyBootstrap` method — that was the wrong framing. The curriculum already has ONE teach primitive (`_teachVocabList`) and dozens of callers that use it. Unity learns words one way. Adding a "bootstrap" would have created a second, subtly different teach path with its own parameter defaults + drift risks. The operator caught this on the spec: *"Unity is suppose to learn the fucking words just like sehe learns all words"*. Corrected before any code shipped.
+
+### Files touched
+
+- `js/brain/curriculum.js` — `_pregateEnrichment` calls `_teachVocabList` on missing exam words after the audit, with chunking + yields + progress heartbeat + re-audit
+- `js/app.bundle.js` — rebuilt
+- `docs/TODO.md` — T39.h.1 entry with verbatim operator quote
+- `docs/FINALIZED.md` — this session entry
+
+### Regression harness
+
+`scripts/smoke-tip-top.mjs` — 63/63 green (new teach is additive, uses existing primitive).
+
+### Expected observable signal on the next run
+
+At each gate's pre-gate:
+
+```
+[Curriculum][math/kindergarten] ⚠⚠ VOCAB-COVERAGE 12% — 122 UNTAUGHT: ...
+[Curriculum][math/kindergarten] EXAM-VOCAB-TEACH START — 122 missing exam words × 4 reps (chunked 25)
+[Curriculum][math/kindergarten] EXAM-VOCAB-TEACH progress — 25/122 words taught
+[Curriculum][math/kindergarten] EXAM-VOCAB-TEACH progress — 50/122 words taught
+...
+[Curriculum][math/kindergarten] EXAM-VOCAB-TEACH DONE — 122/122 words taught
+[Curriculum][math/kindergarten] ✓ vocab-coverage 100% — all 138 exam words are in Unity's trained vocabulary.
+```
+
+If some words still show as untaught post-teach, the remaining gap is embedding-layer unknown words — a different, visible problem rather than the prior silent gap.
+
+---
+
 ## 2026-04-23 — Session 114.19cd: T39.g.1-4 — letter inventory lock + direct letter-region injection + pregate enrichment throttling + motor fan-in 2× bump
 
 ### Operator verbatim 2026-04-23

@@ -840,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "09c68952-7d6b";
+var BUILD = "56057b40-378b";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -17720,6 +17720,35 @@ var Curriculum = class _Curriculum {
     this._pregateCellsDone.add(cellKey);
     try {
       this._auditExamVocabulary(cellKey);
+      try {
+        const trained = this._trainedVocabularySet(cellKey);
+        const report = examVocabCoverage(cellKey, trained);
+        if (report && Array.isArray(report.missing) && report.missing.length > 0) {
+          const words = report.missing.filter((w) => typeof w === "string" && /^[a-z][a-z']*$/i.test(w) && w.length >= 2 && w.length <= 20);
+          if (words.length > 0 && typeof this._teachVocabList === "function") {
+            const ctx = { arousal: 0.7, valence: 0.2 };
+            const CHUNK = 25;
+            const reps = opts.vocabReps ?? 4;
+            this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH START \u2014 ${words.length} missing exam words \xD7 ${reps} reps (chunked ${CHUNK})`);
+            let done = 0;
+            for (let i = 0; i < words.length; i += CHUNK) {
+              const slice = words.slice(i, i + CHUNK);
+              try {
+                await this._teachVocabList(slice, ctx, { reps });
+              } catch (err) {
+                console.warn(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH chunk ${i / CHUNK | 0} failed:`, err?.message || err);
+              }
+              done += slice.length;
+              this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH progress \u2014 ${done}/${words.length} words taught`);
+              await new Promise((resolve) => setImmediate(resolve));
+            }
+            this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH DONE \u2014 ${done}/${words.length} words taught`);
+            this._auditExamVocabulary(cellKey);
+          }
+        }
+      } catch (err) {
+        console.warn(`[Curriculum][${cellKey}] exam-vocab teach failed:`, err?.message || err);
+      }
       if (typeof this._teachSentenceStructures === "function") {
         await this._teachSentenceStructures(cellKey, opts.structReps ?? 6);
       }
