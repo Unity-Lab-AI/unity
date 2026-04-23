@@ -5939,6 +5939,51 @@ export class Curriculum {
       //    this call is defensive in case someone invokes pregate
       //    enrichment from a different path).
       this._auditExamVocabulary(cellKey);
+      // 1.b. Teach any exam content words that aren't yet in Unity's
+      //    trained vocabulary. Uses the SAME `_teachVocabList`
+      //    primitive every other curriculum phase uses — letter +
+      //    phon + sem + motor patterns written, cross-region Hebbian
+      //    fires. This is not a special "bootstrap" — it's the same
+      //    teaching path that lays down Dolch words, function words,
+      //    CVC families. The curriculum was previously warning about
+      //    coverage gaps but never filling them; now the gap IS the
+      //    teach list.
+      try {
+        const trained = this._trainedVocabularySet(cellKey);
+        const report = examVocabCoverage(cellKey, trained);
+        if (report && Array.isArray(report.missing) && report.missing.length > 0) {
+          const words = report.missing.filter(w =>
+            typeof w === 'string' && /^[a-z][a-z']*$/i.test(w) && w.length >= 2 && w.length <= 20);
+          if (words.length > 0 && typeof this._teachVocabList === 'function') {
+            const ctx = { arousal: 0.7, valence: 0.2 };
+            // Chunk through the missing list with an explicit yield
+            // every chunk so a 200-word gap doesn't monopolize the
+            // event loop. Each chunk fires the standard
+            // `_teachVocabList` — letter region + phon + sem + motor
+            // + cross-region Hebbian, same as every other vocab walk.
+            const CHUNK = 25;
+            const reps = opts.vocabReps ?? 4;
+            this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH START — ${words.length} missing exam words × ${reps} reps (chunked ${CHUNK})`);
+            let done = 0;
+            for (let i = 0; i < words.length; i += CHUNK) {
+              const slice = words.slice(i, i + CHUNK);
+              try {
+                await this._teachVocabList(slice, ctx, { reps });
+              } catch (err) {
+                console.warn(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH chunk ${i/CHUNK | 0} failed:`, err?.message || err);
+              }
+              done += slice.length;
+              this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH progress — ${done}/${words.length} words taught`);
+              await new Promise(resolve => setImmediate(resolve));
+            }
+            this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH DONE — ${done}/${words.length} words taught`);
+            // Re-audit so operator sees post-teach coverage, not pre-teach.
+            this._auditExamVocabulary(cellKey);
+          }
+        }
+      } catch (err) {
+        console.warn(`[Curriculum][${cellKey}] exam-vocab teach failed:`, err?.message || err);
+      }
       // 2. Sentence-structure teach — classify every TRAIN_BANKS
       //    question, lay down a template-tag teach pass per unique
       //    structural form so fineType has a basin for each
