@@ -1498,8 +1498,6 @@ const toTrainShape = (bank) => bank.map(e => ({
 
 const ELA_KINDERGARTEN_TRAIN = [
   // K.RF.1d alphabet sequence — different letters than exam
-  { q: 'what letter comes after c?', a: 'd', variants: ['d'], standard: 'K.RF.1d' },
-  { q: 'what letter comes after d?', a: 'e', variants: ['e'], standard: 'K.RF.1d' },
   { q: 'what letter comes after e?', a: 'f', variants: ['f'], standard: 'K.RF.1d' },
   { q: 'what letter comes after f?', a: 'g', variants: ['g'], standard: 'K.RF.1d' },
   { q: 'what letter comes after g?', a: 'h', variants: ['h'], standard: 'K.RF.1d' },
@@ -1518,15 +1516,12 @@ const ELA_KINDERGARTEN_TRAIN = [
   { q: 'what letter comes after v?', a: 'w', variants: ['w'], standard: 'K.RF.1d' },
   { q: 'what letter comes after w?', a: 'x', variants: ['x'], standard: 'K.RF.1d' },
   // K.RF.2a rhyme — different word pairs than exam
-  { q: 'what word rhymes with dog?', a: 'log', variants: ['log', 'fog', 'hog'], standard: 'K.RF.2a' },
-  { q: 'what word rhymes with bed?', a: 'red', variants: ['red', 'head', 'fed'], standard: 'K.RF.2a' },
   { q: 'what word rhymes with cake?', a: 'lake', variants: ['lake', 'make', 'bake'], standard: 'K.RF.2a' },
   { q: 'what word rhymes with ring?', a: 'sing', variants: ['sing', 'king', 'wing'], standard: 'K.RF.2a' },
   { q: 'what word rhymes with pot?', a: 'hot', variants: ['hot', 'dot', 'got'], standard: 'K.RF.2a' },
   { q: 'what word rhymes with bug?', a: 'hug', variants: ['hug', 'rug', 'mug'], standard: 'K.RF.2a' },
   { q: 'what word rhymes with tail?', a: 'mail', variants: ['mail', 'sail', 'pail'], standard: 'K.RF.2a' },
   // K.RF.2d phoneme isolation — different words
-  { q: 'what is the first sound in fish?', a: 'f', variants: ['f', 'fff'], standard: 'K.RF.2d' },
   { q: 'what is the first sound in mouse?', a: 'm', variants: ['m', 'muh'], standard: 'K.RF.2d' },
   { q: 'what is the first sound in bug?', a: 'b', variants: ['b', 'buh'], standard: 'K.RF.2d' },
   { q: 'what is the first sound in leaf?', a: 'l', variants: ['l', 'luh'], standard: 'K.RF.2d' },
@@ -1541,9 +1536,6 @@ const ELA_KINDERGARTEN_TRAIN = [
   { q: 'blend these sounds: h-e-n', a: 'hen', variants: ['hen'], standard: 'K.RF.2e' },
   { q: 'blend these sounds: l-i-p', a: 'lip', variants: ['lip'], standard: 'K.RF.2e' },
   // K.RF.3a letter sound — different letter
-  { q: 'what sound does the letter p make?', a: 'p', variants: ['p', 'puh'], standard: 'K.RF.3a' },
-  { q: 'what sound does the letter h make?', a: 'h', variants: ['h', 'huh'], standard: 'K.RF.3a' },
-  { q: 'what sound does the letter t make?', a: 't', variants: ['t', 'tuh'], standard: 'K.RF.3a' },
   // K.RF.3d CVC reading — different words
   { q: 'read this cvc word: ten', a: 'ten', variants: ['ten'], standard: 'K.RF.3d' },
   { q: 'read this cvc word: bag', a: 'bag', variants: ['bag'], standard: 'K.RF.3d' },
@@ -1566,7 +1558,6 @@ const ELA_KINDERGARTEN_TRAIN = [
 const MATH_KINDERGARTEN_TRAIN = [
   // K.CC.2 count-forward — different start numbers than exam
   { q: 'what comes after six?', a: 'seven', variants: ['seven', '7'], standard: 'K.CC.2' },
-  { q: 'what comes after nine?', a: 'ten', variants: ['ten', '10'], standard: 'K.CC.2' },
   { q: 'what comes after eleven?', a: 'twelve', variants: ['twelve', '12'], standard: 'K.CC.2' },
   { q: 'what comes after fifteen?', a: 'sixteen', variants: ['sixteen', '16'], standard: 'K.CC.2' },
   { q: 'what comes after seventeen?', a: 'eighteen', variants: ['eighteen', '18'], standard: 'K.CC.2' },
@@ -1576,16 +1567,13 @@ const MATH_KINDERGARTEN_TRAIN = [
   { q: 'which is less, six or one?', a: 'one', variants: ['one', '1'], standard: 'K.CC.6' },
   { q: 'which is less, four or eight?', a: 'four', variants: ['four', '4'], standard: 'K.CC.6' },
   // K.OA.1 addition/subtraction — different pairs
-  { q: 'one plus three is?', a: 'four', variants: ['four', '4'], standard: 'K.OA.1' },
   { q: 'two plus four is?', a: 'six', variants: ['six', '6'], standard: 'K.OA.1' },
   { q: 'four plus three is?', a: 'seven', variants: ['seven', '7'], standard: 'K.OA.1' },
   { q: 'five plus two is?', a: 'seven', variants: ['seven', '7'], standard: 'K.OA.1' },
   { q: 'three plus four is?', a: 'seven', variants: ['seven', '7'], standard: 'K.OA.1' },
   { q: 'six plus one is?', a: 'seven', variants: ['seven', '7'], standard: 'K.OA.1' },
-  { q: 'three minus two is?', a: 'one', variants: ['one', '1'], standard: 'K.OA.1' },
   { q: 'seven minus three is?', a: 'four', variants: ['four', '4'], standard: 'K.OA.1' },
   { q: 'eight minus one is?', a: 'seven', variants: ['seven', '7'], standard: 'K.OA.1' },
-  { q: 'five minus two is?', a: 'three', variants: ['three', '3'], standard: 'K.OA.1' },
   // K.G.1 shapes — different properties asked
   { q: 'what shape has no sides?', a: 'circle', variants: ['circle'], standard: 'K.G.1' },
   { q: 'what shape has eight sides?', a: 'octagon', variants: ['octagon'], standard: 'K.G.1' },
