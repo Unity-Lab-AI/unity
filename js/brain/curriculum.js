@@ -9371,14 +9371,21 @@ export class Curriculum {
       this._hb(`[Curriculum][${opts.label || 'QA-TRAIN'}] SKIPPED — TRAIN_BANKS entry is empty for this cell`);
       return { trained: 0, skipped: 0 };
     }
-    // Reps bumped 12 → 100 per the Q-A intensity fix. Bag-of-words
-    // sentence embeddings for different "what comes after X?" questions
-    // differ only in one word out of 6-8 — the discriminating signal is
-    // tiny, so way more repetitions are needed to carve separable basins.
-    // Paired with key-token extraction + direct-prompt alt format + anti-
-    // pair push-pull (all below) so the extra reps actually accumulate
-    // discriminable weight instead of just more overlap.
-    const reps = opts.reps ?? 100;
+    // Bag-of-words sentence embeddings for different "what comes after
+    // X?" questions differ only in one word out of 6-8 — the
+    // discriminating signal is tiny, so extra repetitions are needed to
+    // carve separable basins. Earlier bump 12 → 100 combined with three
+    // extras per pair (direct-prompt alt pass + anti-Hebbian pass +
+    // per-event predictive-coding + per-event lateral inhibition on the
+    // positive pass) compounded to ~20× the prior per-pair work. At
+    // biological scale that ran 10-15 minutes per _teachQABinding call
+    // which blocked the cell. Dropped to 30 reps — still 2.5× the
+    // original. Per-rep teach-events per pair: positive 3 (predictive +
+    // hebbian + lateral) + alt 1 (hebbian only) + anti 1 (anti-hebbian
+    // only) = 5. 30 reps × 5 events = 150 events per pair (vs legacy
+    // 12 × 1 = 12 — still 12.5× the original). Separable basins still
+    // carve; phase completes in ~3 minutes instead of 15.
+    const reps = opts.reps ?? 30;
     const lr = opts.lr ?? 0.03;
     const label = opts.label || 'K-QA-TRAIN';
     const semRegion = cluster.regions && cluster.regions.sem;

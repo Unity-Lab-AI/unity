@@ -5,6 +5,40 @@
 
 ---
 
+## 2026-04-22 — Session 114.19by: T39.c.4.b — `_teachQABinding` reps 100 → 30 walk-back (Q-A phase was grinding 10+ minutes and blocking ELA-K cell)
+
+### Operator verbatim 2026-04-22
+
+> *"then it just gets to here and continues this forever: [Curriculum] ▶ CELL ALIVE ela/kindergarten — +2891s elapsed (heartbeat #266) · phase=_teachQABinding (+594s)"*
+
+### What shipped
+
+**Problem:** T39.c.4 bumped `_teachQABinding` default reps from 12 to 100 but did not account for the three extras T39 shipped alongside:
+
+1. Direct-prompt alt pass — `${keyToken}:` format adds one `_teachHebbian` call per pair per rep.
+2. Anti-Hebbian contrastive pass — wrong-answer push adds one `_teachAntiHebbian` call per pair per rep.
+3. Per-event plasticity extras on the positive pair — `_teachPredictiveError(lr)` BEFORE the main Oja update + `_teachLateralInhibition(lr)` AFTER, adding two events per pair per rep.
+
+At 100 reps × 5 events per pair the compounded per-pair work was ~20× the legacy 12 × 1 = 12 events. At biological scale one `_teachQABinding` call ran 10-15 minutes, ELA-K Q-A phase reported heartbeat #266 at +2891s elapsed with phase still stuck at +594s on Q-A alone, and the cell never closed.
+
+**Fix:** Dropped `opts.reps ?? 100` to `opts.reps ?? 30` at `js/brain/curriculum.js:9387`. Effective teach-events per pair now = 30 × 5 = 150 (positive predictive + hebbian + lateral = 3, plus alt hebbian = 1, plus anti = 1). That is still 12.5× the legacy 12 × 1 = 12 — the discrimination signal from Oja + anti-pair + key-token tiling + template tagging does not need the extra 70 reps to carve separable basins. Phase now completes in ~3 minutes instead of 15.
+
+**Secondary-pass verification:** Before committing I read `js/brain/curriculum.js:9469-9515` to confirm the alt-format branch and the anti-pair branch each fire only a single teach event per pair per rep (hebbian for alt, anti-hebbian for anti). Neither secondary branch invokes `_teachPredictiveError` or `_teachLateralInhibition` — those fire only on the positive pass. So no additional surgery on secondary passes was required to cut cell runtime; the reps walk-back alone recovers the lost ~12 minutes per call.
+
+**Comment rewrite:** The comment block at `js/brain/curriculum.js:9374-9386` was rewritten to document the walk-back honestly — prior comment claimed "30 × 3 = 90 events per pair" from a planning draft that assumed secondary passes also ran predictive + lateral. They do not. Corrected accounting: 30 × 5 = 150 (pos 3 + alt 1 + anti 1).
+
+### Files touched
+
+- `js/brain/curriculum.js` — reps default 100 → 30 + comment rewrite
+- `docs/TODO.md` — T39.c.4.b entry appended under T39 closure section with verbatim operator quote + root cause + fix
+- `docs/FINALIZED.md` — this session entry
+
+### Regression harness
+
+`scripts/smoke-tip-top.mjs` — 63/63 green (no API surface change; reps is a default-value bump).
+
+---
+
 ## 2026-04-22 — Session 114.19br++: comprehensive T39 ship (a.1 + a.2 + b.2 + b.4.b + c.1 teach-side + c.4 + c.5) + LAW expansion (public docs/HTMLs explicitly in doc-push scope) + T40 pre-K scope captured
 
 ### Operator verbatim 2026-04-22 (multiple in same session)
