@@ -2973,8 +2973,27 @@ export class Curriculum {
     // net-trend was flat. Fix: track UNACCOUNTED delta (which is much
     // more stable — excludes V8 heap fluctuation) and use a rolling
     // window to show trend over ~1 minute instead of single-interval.
-    const _unaccRolling = []; // last 6 heartbeats of unaccounted values
-    const UNACC_WINDOW = 6;
+    // Rolling window for sustained-growth detection. Tracks "native"
+    // (the residual after V8 heap + V8 physical internals + external
+    // + workers are subtracted from rss). Native ≈ Node binary +
+    // loaded shared libs + SQLite native + WebSocket buffers + OS
+    // overhead — a flat baseline in a healthy process. Growth here is
+    // the leak signal.
+    const _nativeRolling = [];
+    const NATIVE_WINDOW = 6;
+    // Native baseline captured on the first heartbeat after warmup.
+    // Displayed as the reference point; each heartbeat shows delta
+    // from that baseline instead of the raw residual so operator can
+    // tell "this is the Node runtime at 250 MB" from "something is
+    // growing".
+    let _nativeBaselineMb = null;
+    // v8.getHeapStatistics() gives `total_physical_size` (heap + code
+    // + compiled-stub + bytecode) and `malloced_memory` (native C++
+    // allocations V8 tracks). Those together plus `external_memory`
+    // account for every byte V8 manages. Anything in rss beyond that
+    // is purely OS + other native modules.
+    let _v8stats = null;
+    try { _v8stats = require('node:v8'); } catch { _v8stats = null; }
     // Worker-heap aggregate, refreshed every 3rd heartbeat (~30s) to
     // avoid spamming the worker pool with mem-snapshot messages every
     // 10 seconds. Heartbeats between refreshes reuse the cached value.
@@ -3006,41 +3025,68 @@ export class Curriculum {
           const heapTotalMb = Number(mb(mu.heapTotal));
           const extMb = Number(mb(mu.external));
           const abMb = Number(mb(mu.arrayBuffers || 0));
-          // Worker heap accounting — subtract from "unaccounted" so the
-          // operator sees the real leak-candidate residue, not the pool
-          // baseline. When snapshot unavailable, fall back to the boot-
-          // banner estimate of 30 MB × worker count.
+          // v8.total_physical_size captures V8's TOTAL committed memory
+          // — heap + compiled-code stubs + bytecode + isolate overhead.
+          // Using this instead of just heapUsed pulls the V8-internal
+          // chunks (50-100 MB of code/stubs) out of "native" and into
+          // the correctly-attributed V8 bucket.
+          let v8PhysMb = heapTotalMb; // fallback if v8 module missing
+          let v8MallocMb = 0;
+          if (_v8stats && typeof _v8stats.getHeapStatistics === 'function') {
+            try {
+              const s = _v8stats.getHeapStatistics();
+              v8PhysMb = Number(mb(s.total_physical_size || 0));
+              v8MallocMb = Number(mb(s.malloced_memory || 0));
+            } catch { /* fall through to fallback */ }
+          }
+          // Worker heap accounting.
           const workerHeapMb = _cachedWorkerMem ? (_cachedWorkerMem.totalHeapUsedMb | 0) : 0;
           const workerExtMb = _cachedWorkerMem ? (_cachedWorkerMem.totalExternalMb | 0) : 0;
           const workerTotalMb = workerHeapMb + workerExtMb;
-          const unaccountedMb = Math.max(0, rssMb - heapMb - extMb - workerTotalMb);
-          _priorRssMb = rssMb; // kept for back-compat, unused in trend calc now
-          // Track unaccounted in rolling window to detect SUSTAINED
-          // growth (real leak) vs instantaneous oscillation (GC churn).
-          _unaccRolling.push(unaccountedMb);
-          if (_unaccRolling.length > UNACC_WINDOW) _unaccRolling.shift();
-          let unaccTrend = '';
-          if (_unaccRolling.length >= UNACC_WINDOW) {
-            // Average of first half vs second half of window.
-            const half = Math.floor(UNACC_WINDOW / 2);
+          // Native = rss − (V8 physical + external + workers). This
+          // is the Node executable + loaded shared libraries
+          // (better-sqlite3 native, ws native, ICU data) + OS process
+          // overhead (stack, TLS, mapped pages). Healthy value is a
+          // FLAT baseline; growth here is the real leak signal.
+          const nativeMb = Math.max(0, rssMb - v8PhysMb - extMb - workerTotalMb);
+          _priorRssMb = rssMb; // kept for back-compat
+          // Baseline the native residual on the first heartbeat so the
+          // operator sees "native=250MB Δ+5MB" instead of the raw
+          // residual that fluctuates with V8's physical_size delta.
+          if (_nativeBaselineMb === null) _nativeBaselineMb = nativeMb;
+          const nativeDeltaMb = nativeMb - _nativeBaselineMb;
+          // Rolling window for sustained-growth detection.
+          _nativeRolling.push(nativeMb);
+          if (_nativeRolling.length > NATIVE_WINDOW) _nativeRolling.shift();
+          let nativeTrend = '';
+          if (_nativeRolling.length >= NATIVE_WINDOW) {
+            const half = Math.floor(NATIVE_WINDOW / 2);
             let sumFirst = 0, sumSecond = 0;
-            for (let i = 0; i < half; i++) sumFirst += _unaccRolling[i];
-            for (let i = half; i < UNACC_WINDOW; i++) sumSecond += _unaccRolling[i];
+            for (let i = 0; i < half; i++) sumFirst += _nativeRolling[i];
+            for (let i = half; i < NATIVE_WINDOW; i++) sumSecond += _nativeRolling[i];
             const avgFirst = sumFirst / half;
-            const avgSecond = sumSecond / (UNACC_WINDOW - half);
+            const avgSecond = sumSecond / (NATIVE_WINDOW - half);
             const trendMb = Math.round(avgSecond - avgFirst);
-            // Only flag LEAK if unaccounted grew > 200 MB across window
-            // AND is growing consistently. Otherwise it's GC churn.
+            // Only flag LEAK if native grew > 200 MB sustained.
             if (trendMb > 200) {
-              unaccTrend = ` ⚠⚠LEAK+${trendMb}MB/min`;
+              nativeTrend = ` ⚠⚠LEAK+${trendMb}MB/min`;
             } else if (trendMb > 100) {
-              unaccTrend = ` ⚠climbing+${trendMb}MB/min`;
+              nativeTrend = ` ⚠climbing+${trendMb}MB/min`;
             }
           }
+          const deltaStr = nativeDeltaMb === 0 ? 'Δ±0' : (nativeDeltaMb > 0 ? `Δ+${nativeDeltaMb}` : `Δ${nativeDeltaMb}`);
           const workerTag = _cachedWorkerMem
             ? ` workers=${workerHeapMb}MB${_cachedWorkerMem.estimated ? '~' : ''}(${_cachedWorkerMem.workerCount})`
             : ' workers=?MB';
-          memLabel = ` · heap=${heapMb}/${heapTotalMb}MB ext=${extMb}MB ab=${abMb}MB rss=${rssMb}MB${workerTag} (unaccounted=${unaccountedMb}MB${unaccTrend})`;
+          // New format — every byte attributed:
+          //   heap = V8 JS heap used
+          //   v8    = V8 physical (heap + code + stubs + bytecode)
+          //   ext   = ArrayBuffer / Buffer / native TypedArray pool
+          //   workers = per-worker V8 heaps aggregated
+          //   native = rss residual (Node exe + shared libs + OS),
+          //            baselined at first heartbeat, delta shown
+          //   rss   = total process memory
+          memLabel = ` · heap=${heapMb}/${heapTotalMb}MB v8=${v8PhysMb}MB ext=${extMb}MB ab=${abMb}MB${workerTag} native=${nativeMb}MB(${deltaStr}MB) rss=${rssMb}MB${nativeTrend}`;
         }
       } catch { /* memoryUsage unavailable */ }
       let phaseLabel = '';
