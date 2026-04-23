@@ -161,6 +161,56 @@ One cortex. One set of weights. One set of spikes. One tick loop. The plasticity
 - `docs/FINALIZED.md` — this entry
 - `js/app.bundle.js` — rebuilt
 
+### Sixth follow-up same session — T38.a topographic sparse intra-synapses + T23.e.3 `/exam-answer` endpoint verified live
+
+Gee verbatim: *"keep working the todo list and doc work is all last"*
+
+Pure code work this cycle per operator directive — doc audits deferred.
+
+**T38.a topographic sparse intra-synapses** — replaces O(size²) random global connectivity with O(size × fanout) 1D ring topology for biological-scale clusters:
+
+- `SparseMatrix.initTopographic(fanout, excitatoryRatio, strength)` implements wrap-around ring topology where each neuron i connects to its `fanout` immediate neighbors (half below, half above with +1 extra on square matrices so skipping the self-connection still fills the full fanout count). Per-row insertion sort preserves the CSR contract that colIdx is ascending. Nnz = rows × fanout — linear scaling instead of density × rows².
+- `NeuronCluster` constructor reads `opts.topographic === true` OR `DREAM_TOPOGRAPHIC=1` env flag, defaults `topographicFanout = 30`. For clusters ≥ 10K neurons it dispatches `initTopographic` instead of `initRandom`.
+- Opt-in so small-scale browser deployments keep rich recurrent global connectivity (essential for 2K-neuron clusters where 30-neighbor topology would be too sparse); biological-scale operator flips the flag to push past the 28M random-global VRAM ceiling toward the 25% (100M+) target.
+- Smoke-tested at 20 × 20 with fanout 6: 120-entry nnz, each row shows correct adjacent-neighbor window + wrap-around at boundaries.
+
+**T23.e.3 `/exam-answer` HTTP endpoint** — verified live at `server/brain-server.js` line ~5162. POST with `{question: string}` returns `{answer: string, ms: number}`. Routes through `brain.processAndRespond(question, 'ablation-harness', { suppressEpisode: true })` so the ablation harness doesn't pollute real user conversation histories. Ready for `scripts/transformer-ablation.mjs` to call head-to-head against a transformer arm once T23.e.2 wires one in.
+
+### Files modified (sixth follow-up)
+
+- `js/brain/sparse-matrix.js` — `initTopographic(fanout, excitatoryRatio, strength)` method
+- `js/brain/cluster.js` — constructor reads `topographic` opt-in + `DREAM_TOPOGRAPHIC` env flag; dispatches topographic init for clusters ≥ 10K when opt-in active
+- `docs/TODO.md` — T38.a, T23.e.3 flipped to DONE
+- `docs/FINALIZED.md` — this entry
+- `js/app.bundle.js` — rebuilt
+
+### Remaining open (unchanged scope — operator-blocked, architectural-decision, or external-infra work)
+
+Code work exhausted for items I can close without operator input or major external infrastructure. Remaining code items:
+
+- **T38.b Streaming cross-projections from CPU** — alternative cortex option; Gee picks A/B/C/hybrid in T38.d
+- **T38.c Hierarchical decomposition (V1→V2→V4→IT)** — alternative cortex option
+- **T38.d Decision gate** — operator picks the option
+- **T23.c.1-4 curriculum.js split** — 23K-line refactor needs dedicated session with test coverage pass
+- **T23.d.2 CLAUDE.md → CONSTRAINTS.md + WORKFLOW.md split** — risks LAW load order; operator review
+- **T23.e.2 Wire transformer backend** — external infra (llama.cpp / transformers.js / Python bridge)
+- **T23.e.4 Transformer-vs-Unity decision gate** — operator decision
+
+Doc work (per operator directive, LAST):
+
+- **T19.a.1 / a.3 / a.4 / a.5 / a.6 / a.10** — canonical code extracts for 6 source files
+- **T19.b.1** — ARCHITECTURE.md deep pass
+- **T19.b.5** — operator-banned this session (skip comp-todo + syllabus-todo)
+- **T19.d.3 / d.5** — index.html + compute.html deep audits
+
+Operator-blocked:
+
+- **T39.b.6** — Part 2 localhost run
+- **T25.e** — transformer-ablation methodology extension (blocks on T23.e.2)
+- **T16.2.a / T16.2.d / T16.3.c / LAW 6 Part 2 / T18.5.b / T18.5.c** — signoff gates
+
+---
+
 ### Fifth follow-up same session — T25.d methodology expansion + T23.a.9 exam-bank citation audit + T19 doc-audit batch close
 
 Gee verbatim: *"you should know what to do by reading the todo"*
