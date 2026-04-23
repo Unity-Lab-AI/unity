@@ -1811,6 +1811,22 @@ export class NeuronCluster {
     let letterBuffer = '';
     let lastMotorLetter = null;
     let stableTicks = 0;
+    // Emission diagnostics — populated every tick, exposed as
+    // `this._lastEmissionDiag` after the loop. Lets K-STUDENT probes
+    // and live-chat handlers log WHY an empty answer happened:
+    //   maxMotorBucket  = highest bucket count observed across any
+    //     tick. 0 means motor was silent the whole run (sem→motor
+    //     weights not firing, or cortex propagation dead).
+    //   argmaxFlickers  = number of ticks where activeLetter
+    //     disagreed with the prior tick. High value + low committed
+    //     count = basin unstable, multiple letters competing.
+    //   committedLetters = how many letters passed the
+    //     STABLE_TICK_THRESHOLD gate and landed in letterBuffer.
+    //   ticksRun        = how many loop iterations actually ran.
+    let maxMotorBucket = 0;
+    let argmaxFlickers = 0;
+    let committedLetters = 0;
+    let ticksRun = 0;
 
     // T17.7 Phase D — when the motor cross-projections are bound to
     // main-cortex slices (Phase C's rebind), read the motor argmax
@@ -1841,6 +1857,7 @@ export class NeuronCluster {
     );
 
     for (let tick = 0; tick < maxTicks; tick++) {
+      ticksRun = tick + 1;
       // The ONLY delta vs generateSentence — full-await cascade per tick.
       await this.stepAwait(0.001);
 
@@ -1863,6 +1880,7 @@ export class NeuronCluster {
             for (let b = 1; b < invSize; b++) {
               if (counts[b] > bestCount) { bestCount = counts[b]; bestIdx = b; }
             }
+            if (bestCount > maxMotorBucket) maxMotorBucket = bestCount;
             if (bestCount > 0) {
               const inv = inventorySnapshot();
               if (bestIdx >= 0 && bestIdx < inv.length) activeLetter = inv[bestIdx];
@@ -1878,6 +1896,7 @@ export class NeuronCluster {
       if (activeLetter === lastMotorLetter && activeLetter !== null) {
         stableTicks++;
       } else {
+        if (lastMotorLetter !== null || activeLetter !== null) argmaxFlickers++;
         stableTicks = 0;
         lastMotorLetter = activeLetter;
       }
@@ -1886,6 +1905,7 @@ export class NeuronCluster {
       if (stableTicks >= this.STABLE_TICK_THRESHOLD && activeLetter !== null) {
         committedLetter = activeLetter;
         letterBuffer += activeLetter;
+        committedLetters++;
         stableTicks = 0;
 
         if (this.regions.motor) {
@@ -1927,6 +1947,19 @@ export class NeuronCluster {
     }
 
     if (suppressNoise) this.noiseAmplitude = _savedNoise;
+    // Snapshot diagnostics so callers can log WHY an empty answer
+    // happened. `_motorEmissionTicks` is the legacy field existing
+    // callers already read; the richer `_lastEmissionDiag` object
+    // carries the new signals (maxMotorBucket, argmaxFlickers,
+    // committedLetters, ticksRun).
+    this._motorEmissionTicks = ticksRun;
+    this._lastEmissionDiag = {
+      ticksRun,
+      maxMotorBucket,
+      argmaxFlickers,
+      committedLetters,
+      gpuReadPath: canGpuMotorRead,
+    };
     return output.join(' ');
   }
 

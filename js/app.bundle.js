@@ -834,7 +834,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "7e87ca2b-17c6";
+var BUILD = "d0aa6be3-b419";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2676,10 +2676,15 @@ var NeuronCluster = class {
     let letterBuffer = "";
     let lastMotorLetter = null;
     let stableTicks = 0;
+    let maxMotorBucket = 0;
+    let argmaxFlickers = 0;
+    let committedLetters = 0;
+    let ticksRun = 0;
     const motorRegionStand = this.regions.motor;
     const motorSubSliceLen = motorRegionStand ? motorRegionStand.end - motorRegionStand.start : 0;
     const canGpuMotorRead = !!(this._gpuProxy && typeof this._gpuProxy.readbackLetterBuckets === "function" && this.crossProjections && this.crossProjections.sem_to_motor && this.crossProjections.sem_to_motor._gpuBound && motorSubSliceLen > 0);
     for (let tick = 0; tick < maxTicks; tick++) {
+      ticksRun = tick + 1;
       await this.stepAwait(1e-3);
       const invSize = inventorySize();
       if (invSize === 0) break;
@@ -2698,6 +2703,7 @@ var NeuronCluster = class {
                 bestIdx = b;
               }
             }
+            if (bestCount > maxMotorBucket) maxMotorBucket = bestCount;
             if (bestCount > 0) {
               const inv = inventorySnapshot();
               if (bestIdx >= 0 && bestIdx < inv.length) activeLetter = inv[bestIdx];
@@ -2713,6 +2719,7 @@ var NeuronCluster = class {
       if (activeLetter === lastMotorLetter && activeLetter !== null) {
         stableTicks++;
       } else {
+        if (lastMotorLetter !== null || activeLetter !== null) argmaxFlickers++;
         stableTicks = 0;
         lastMotorLetter = activeLetter;
       }
@@ -2720,6 +2727,7 @@ var NeuronCluster = class {
       if (stableTicks >= this.STABLE_TICK_THRESHOLD && activeLetter !== null) {
         committedLetter = activeLetter;
         letterBuffer += activeLetter;
+        committedLetters++;
         stableTicks = 0;
         if (this.regions.motor) {
           const { start, end } = this.regions.motor;
@@ -2754,6 +2762,14 @@ var NeuronCluster = class {
       output.push(letterBuffer);
     }
     if (suppressNoise) this.noiseAmplitude = _savedNoise;
+    this._motorEmissionTicks = ticksRun;
+    this._lastEmissionDiag = {
+      ticksRun,
+      maxMotorBucket,
+      argmaxFlickers,
+      committedLetters,
+      gpuReadPath: canGpuMotorRead
+    };
     return output.join(" ");
   }
   /**
@@ -12167,7 +12183,13 @@ var Curriculum = class _Curriculum {
         const isFail = r.score < 0.5;
         const shouldLog = isFail || results.length <= 3 || results.length % 20 === 0;
         if (shouldLog) {
-          this._hb(`[Curriculum][${label}] Q${results.length}/${questions.length} [${r.standard}]: "${q.question.slice(0, 60)}" \u2192 "${(r.answer || "").slice(0, 30)}" \xB7 score=${r.score.toFixed(2)} match=${r.match.overall}`);
+          let diagTail = "";
+          if ((!r.answer || r.answer.length === 0) && r.emissionDiag) {
+            const d = r.emissionDiag;
+            const why = d.maxMotorBucket === 0 ? "motor-silent" : d.committedLetters === 0 ? `argmax-flicker(max=${d.maxMotorBucket}, flickers=${d.argmaxFlickers})` : `budget-exhausted(committed=${d.committedLetters})`;
+            diagTail = ` \xB7 \u2691emission: ${why} ticks=${d.ticksRun}${d.gpuReadPath ? "" : " cpu-readout"}`;
+          }
+          this._hb(`[Curriculum][${label}] Q${results.length}/${questions.length} [${r.standard}]: "${q.question.slice(0, 60)}" \u2192 "${(r.answer || "").slice(0, 30)}" \xB7 score=${r.score.toFixed(2)} match=${r.match.overall}${diagTail}`);
         }
       } catch (err) {
         const bucket = byStandard.get(q.standard || "unspecified") || { pass: 0, total: 0 };
@@ -12383,6 +12405,7 @@ var Curriculum = class _Curriculum {
     const answer = generated.toLowerCase().trim();
     out.answer = generated;
     out.ticks = cluster._motorEmissionTicks != null ? cluster._motorEmissionTicks : 0;
+    out.emissionDiag = cluster._lastEmissionDiag ? { ...cluster._lastEmissionDiag } : null;
     out.methodology = out.ticks >= 3 && answer.length > 0;
     out.logic = answer.length > 0 && /[a-z]/.test(answer);
     let anyMatch = false;

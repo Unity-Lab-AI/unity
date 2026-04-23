@@ -5,6 +5,74 @@
 
 ---
 
+## 2026-04-22 — Session 114.19cb: T39.e.1 WorkerPool idle-thrash fix + T39.e.2 emission diagnostics on empty K-STUDENT answers
+
+### Operator verbatim 2026-04-22
+
+> *"its all broken she isnt answering quaetions correctly: ... [WorkerPool] idle 3146s — terminating 8 workers to release heap ... [Curriculum][ELA-KINDERGARTEN-STUDENT] Q12/181 [K.RF.2d]: \"what is the first sound in cat?\" → \"\" · score=0.00 match=false ..."*
+
+### T39.e.1 — WorkerPool `_lastJobAt` not reset on re-init
+
+**Symptom:** operator log spammed with:
+
+```
+[WorkerPool] idle 3146s — terminating 8 workers ...
+[WorkerPool] Started 8 sparse-matmul workers ...
+[WorkerPool] idle 3177s — terminating 8 workers ...
+[WorkerPool] Started 8 sparse-matmul workers ...
+```
+
+Idle counter incrementing by ~30 s per cycle even though the pool got re-inited each time.
+
+**Root cause:** `server/worker-pool.js:_init()` never updated `this._lastJobAt`. When the idle watchdog terminated the pool and the next `get ready()` call lazily re-spawned workers (line 399), the fresh pool inherited the stale `_lastJobAt` from BEFORE the shutdown. Watchdog's next 30 s tick saw "idle for 52 minutes" and immediately terminated again. Thrash every 30 s.
+
+**Fix:** `_init()` now sets `this._lastJobAt = Date.now()` right after flipping `this._ready = true` and before starting the watchdog. Fresh pool gets a fresh idle clock; next termination can't fire for a full 5 minutes. Log noise stops.
+
+### T39.e.2 — emission diagnostics on empty K-STUDENT answers
+
+**Symptom:** 47 consecutive exam questions across K.RF.2d (phoneme isolation — "what is the first sound in cat?") + K.RF.2e (phoneme blending — "blend these sounds: c-a-t") + K.RF.3a (letter-sound correspondence — "what sound does the letter a make?") returning empty strings. Readiness gate let the battery through (recognizedLetters ≥ 3/5 on simple a/b/c/d/e cues) but every full question came back silent.
+
+**Can't diagnose blind.** Four candidate root causes:
+
+1. **Motor region silent** — sem→motor weights aren't firing. Probe injects question via sem + template tag + key-token, but if those weights didn't converge during training, motor stays dead. maxMotorBucket = 0 across all ticks.
+2. **Argmax flickering without stable winner** — basin unstable, multiple letters competing. maxMotorBucket > 0 but committedLetters = 0 because no letter held the argmax for STABLE_TICK_THRESHOLD (3) consecutive ticks.
+3. **Tick budget exhausted** — ticksRun hit maxTicks (60 default) without a word forming. Letters committed but word-boundary never triggered.
+4. **GPU-readback vs CPU-readout divergence** — at biological scale the CPU `cortexCluster.lastSpikes` shadow stays zero because GPU owns state. If `canGpuMotorRead` is false the probe reads zeros and motor looks silent from the probe's viewpoint even when GPU is firing.
+
+**Ship:** diagnostic instrumentation so the NEXT operator run surfaces the dominant failure mode.
+
+- `cluster.generateSentenceAwait` now tracks four per-tick counters during the emission loop: `maxMotorBucket`, `argmaxFlickers`, `committedLetters`, `ticksRun`. Snapshot after the loop as `cluster._lastEmissionDiag` + `cluster._motorEmissionTicks` (existing legacy field).
+- `_studentTestProbe` copies the diag snapshot into its `out.emissionDiag` result.
+- `_runStudentBattery` per-question log now appends a `⚑emission: <why> ticks=N` tail to every empty-answer line. Classifier: `motor-silent` if maxMotorBucket = 0; `argmax-flicker(max=X, flickers=Y)` if motor fired but never stabilised; `budget-exhausted(committed=N)` if letters committed but no word emerged; `cpu-readout` suffix when GPU read path was unavailable.
+
+Next-run operator log will look like:
+
+```
+Q12/181 [K.RF.2d]: "what is the first sound in cat?" → "" · score=0.00 match=false · ⚑emission: motor-silent ticks=60
+```
+
+which immediately narrows the fix target from "something is broken in emission" to a specific subsystem.
+
+### Actual root-cause fix
+
+Not shipped in this commit. Deliberate — shipping a fix blind based on my guess would risk regressing a different subsystem, and would burn one of the operator's LAW-6 Part 2 test runs on a bad guess. Diagnostic first, fix second.
+
+### Files touched
+
+- `server/worker-pool.js:_init()` — reset `_lastJobAt` on re-spawn (2 lines + comment)
+- `js/brain/cluster.js:generateSentenceAwait` — four diagnostic counters + `_lastEmissionDiag` snapshot at loop exit
+- `js/brain/curriculum.js:_studentTestProbe` — copy diag into probe `out`
+- `js/brain/curriculum.js:_runStudentBattery` — append emission-diagnostic tail to every empty-answer log line
+- `js/app.bundle.js` — rebuilt
+- `docs/TODO.md` — T39.e.1 + T39.e.2 entries with verbatim operator quote
+- `docs/FINALIZED.md` — this session entry
+
+### Regression harness
+
+`scripts/smoke-tip-top.mjs` — 63/63 green (new diag fields are additive; no contract broken).
+
+---
+
 ## 2026-04-22 — Session 114.19ca: T39.d.1 — 3D brain page (index.html neurons tab) showed 0 firing across every cluster while dashboard read it fine — ratio-vs-count units mismatch in app.js renderer
 
 ### Operator verbatim 2026-04-22
