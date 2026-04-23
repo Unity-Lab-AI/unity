@@ -6301,6 +6301,15 @@ export class Curriculum {
       ? null : cluster.crossProjections?.['letter_to_motor']; // might be named either way
     // Try both naming conventions
     const semToMotor = cluster.crossProjections?.['sem_to_motor'];
+    // Function-scope `allProjs` so downstream DYN-PROD and probe code
+    // (lines ~6668+) can reach the cross-projection map without
+    // re-declaring. Operator hit `ela/kindergarten threw: allProjs is
+    // not defined` on every ELA-K gate retry because an inner block
+    // declared `allProjs` inside the letter-loop body while the
+    // DYN-PROD path-setup referenced it outside that block. Hoisting
+    // to function scope fixes the ReferenceError without changing
+    // semantics (both paths read the same map).
+    const allProjs = cluster.crossProjections || {};
 
     function cosine(a, b) {
       let dot = 0, na = 0, nb = 0;
@@ -6389,7 +6398,7 @@ export class Curriculum {
       // Use the motor cross-projection to see if the letter pattern produces
       // the correct motor output. Try letter→motor first, fall back to
       // checking if ANY projection path reaches motor with the right argmax.
-      const allProjs = cluster.crossProjections || {};
+      // `allProjs` is hoisted to function scope above so DYN-PROD can reach it.
       let motorOutput = null;
       // Find any projection that feeds INTO motor
       for (const [pname, proj] of Object.entries(allProjs)) {
