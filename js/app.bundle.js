@@ -840,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "56057b40-378b";
+var BUILD = "f2e0e889-ca00";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -18019,7 +18019,12 @@ var Curriculum = class _Curriculum {
       const _gateLetterStart = Date.now();
       let _gateLetterIdx = 0;
       this._hb(`[Curriculum][K-DIAG] gate probe starting letter loop (${ALPHABET.length} letters \xD7 READ+TALK)...`);
+      let _letterLoopYield = Date.now();
       for (const letter of ALPHABET) {
+        if (Date.now() - _letterLoopYield > 200) {
+          await new Promise((resolve) => setImmediate(resolve));
+          _letterLoopYield = Date.now();
+        }
         _gateLetterIdx++;
         const _letterStart = Date.now();
         const letterOneHot = encodeLetter(letter);
@@ -18966,7 +18971,12 @@ var Curriculum = class _Curriculum {
     }
     let readPass = 0;
     let talkPass = 0;
+    let _readTalkYield = Date.now();
     for (let i = 0; i < DIGITS.length; i++) {
+      if (Date.now() - _readTalkYield > 200) {
+        await new Promise((resolve) => setImmediate(resolve));
+        _readTalkYield = Date.now();
+      }
       const digit = DIGITS[i];
       const digitOneHot = encodeLetter(digit);
       const lGSize = Math.max(1, Math.floor(letterSize / digitOneHot.length));
@@ -19037,7 +19047,12 @@ var Curriculum = class _Curriculum {
     const thinkPass = DIGITS.length;
     let seqPass = 0;
     const seqFails = [];
+    let _seqYield = Date.now();
     for (let i = 0; i < DIGITS.length - 1; i++) {
+      if (Date.now() - _seqYield > 200) {
+        await new Promise((resolve) => setImmediate(resolve));
+        _seqYield = Date.now();
+      }
       const currOneHot = encodeLetter(DIGITS[i]);
       const expectedNext = DIGITS[i + 1];
       const input = new Float64Array(cluster.size);
@@ -19109,7 +19124,12 @@ var Curriculum = class _Curriculum {
         }
         return letterToFree.propagate(pat);
       };
+      let _orderYield = Date.now();
       for (let i = 1; i < DIGITS.length - 1; i++) {
+        if (Date.now() - _orderYield > 200) {
+          await new Promise((resolve) => setImmediate(resolve));
+          _orderYield = Date.now();
+        }
         const readI = readFree(DIGITS[i]);
         const readPrev = readFree(DIGITS[i - 1]);
         const readDistant = readFree(DIGITS[0]);
@@ -19136,7 +19156,7 @@ var Curriculum = class _Curriculum {
     const fineTypeSizeG = fineTypeRegionG ? fineTypeRegionG.end - fineTypeRegionG.start : 0;
     const fineThirdG = Math.floor(fineTypeSizeG / 3);
     const fineHalfG = Math.floor(fineTypeSizeG / 2);
-    const succResult = this._probeCombinationCosine(
+    const succResult = await this._probeCombinationCosine(
       [3, 7, 13, 17, 23, 27, 43, 67, 83, 97].map((n) => ({
         inputs: [{ region: freeRegion, feat: _magnitudeFeatureForNumber(n) }],
         expected: { region: semRegion, feat: _magnitudeFeatureForNumber(n + 1) }
@@ -19147,13 +19167,13 @@ var Curriculum = class _Curriculum {
       inputs: [{ region: phonRegionG, feat: _magnitudeFeatureForNumber(n) }],
       expected: { region: semRegion, feat: _magnitudeFeatureForNumber(n + 10) }
     });
-    const skipResult = this._probeCombinationCosine(skipSamples);
+    const skipResult = await this._probeCombinationCosine(skipSamples);
     const makeTenSamples = [];
     for (let n = 0; n <= 10; n++) makeTenSamples.push({
       inputs: [{ region: freeLeftRegionG, feat: _magnitudeFeatureForDigit(String(n)) }],
       expected: { region: semRegion, feat: _magnitudeFeatureForDigit(String(10 - n)) }
     });
-    const makeTenResult = this._probeCombinationCosine(makeTenSamples);
+    const makeTenResult = await this._probeCombinationCosine(makeTenSamples);
     const teenSamples = [];
     for (let n = 1; n <= 9; n++) teenSamples.push({
       inputs: [
@@ -19162,13 +19182,13 @@ var Curriculum = class _Curriculum {
       ],
       expected: { region: semRegion, feat: _magnitudeFeatureForNumber(10 + n) }
     });
-    const teenResult = this._probeCombinationCosine(teenSamples);
+    const teenResult = await this._probeCombinationCosine(teenSamples);
     const attrBuckets = [
       { name: "greater", start: 0, end: fineThirdG },
       { name: "less", start: fineThirdG, end: 2 * fineThirdG },
       { name: "equal", start: 2 * fineThirdG, end: fineTypeSizeG }
     ];
-    const attrResult = this._probeCombinationArgmaxTag(
+    const attrResult = await this._probeCombinationArgmaxTag(
       [[8, 2], [8, 2], [8, 2], [8, 2], [9, 0], [8, 2], [8, 2], [9, 2]].map(([hi, lo]) => ({
         inputs: [
           { region: freeLeftRegionG, feat: _magnitudeFeatureForDigit(String(hi)) },
@@ -19199,7 +19219,7 @@ var Curriculum = class _Curriculum {
         expected: { region: semRegion, feat: _magnitudeFeatureForDigit(String(Math.min(9, count))) }
       });
     }
-    const classifyResult = this._probeCombinationCosine(classifySamples);
+    const classifyResult = await this._probeCombinationCosine(classifySamples);
     const shapeSidesSamples = [];
     for (const [shapeName, sides] of [
       ["circle", 0],
@@ -19219,7 +19239,7 @@ var Curriculum = class _Curriculum {
         expected: { region: freeRegion, feat: _magnitudeFeatureForDigit(String(sides)) }
       });
     }
-    const shapeSidesResult = this._probeCombinationCosine(shapeSidesSamples);
+    const shapeSidesResult = await this._probeCombinationCosine(shapeSidesSamples);
     const dimBuckets = [
       { name: "2D", start: 0, end: fineHalfG },
       { name: "3D", start: fineHalfG, end: fineTypeSizeG }
@@ -19245,7 +19265,7 @@ var Curriculum = class _Curriculum {
         expectedTag: dim
       });
     }
-    const shapeDimResult = this._probeCombinationArgmaxTag(shapeDimSamples);
+    const shapeDimResult = await this._probeCombinationArgmaxTag(shapeDimSamples);
     const shapeComposeSamples = [];
     for (const [aName, bName, cName] of [
       ["triangle", "triangle", "rectangle"],
@@ -19266,7 +19286,7 @@ var Curriculum = class _Curriculum {
         expected: { region: freeRegion, feat: cEmb }
       });
     }
-    const shapeComposeResult = this._probeCombinationCosine(shapeComposeSamples);
+    const shapeComposeResult = await this._probeCombinationCosine(shapeComposeSamples);
     const mathKProductionSamples = [
       // K.CC successor (TODO: "What number comes after 7?" → 8)
       { question: "what number comes after seven", expected: ["8", "eight"] },
@@ -21656,12 +21676,13 @@ var Curriculum = class _Curriculum {
    * @param {Array<{inputs: Array<{region, feat, binarize?}>, expected: {region, feat}}>} samples
    * @param {object} [opts] { cosMin = 0.15 }
    */
-  _probeCombinationCosine(samples, opts = {}) {
+  async _probeCombinationCosine(samples, opts = {}) {
     const cluster = this.cluster;
     if (!cluster || !cluster.synapses) return { pass: 0, total: 0 };
     if (!Array.isArray(samples) || samples.length === 0) return { pass: 0, total: 0 };
     const cosMin = opts.cosMin ?? 0.15;
     let pass = 0;
+    let _lastYield = Date.now();
     for (const sample of samples) {
       if (!sample || !Array.isArray(sample.inputs) || !sample.expected) continue;
       const input = new Float64Array(cluster.size);
@@ -21672,6 +21693,10 @@ var Curriculum = class _Curriculum {
       const output = cluster.synapses.propagate(input);
       const readout = this._tileReadVec(output, sample.expected.region, sample.expected.feat.length);
       if (this._cosine(readout, sample.expected.feat) > cosMin) pass++;
+      if (Date.now() - _lastYield > 200) {
+        await new Promise((resolve) => setImmediate(resolve));
+        _lastYield = Date.now();
+      }
     }
     return { pass, total: samples.length };
   }
@@ -21683,11 +21708,12 @@ var Curriculum = class _Curriculum {
    *
    * @param {Array<{inputs: Array<{region, feat, binarize?}>, tagRegion, buckets: Array<{name, start, end}>, expectedTag}>} samples
    */
-  _probeCombinationArgmaxTag(samples) {
+  async _probeCombinationArgmaxTag(samples) {
     const cluster = this.cluster;
     if (!cluster || !cluster.synapses) return { pass: 0, total: 0 };
     if (!Array.isArray(samples) || samples.length === 0) return { pass: 0, total: 0 };
     let pass = 0;
+    let _lastYield = Date.now();
     for (const sample of samples) {
       if (!sample || !Array.isArray(sample.inputs) || !sample.tagRegion || !Array.isArray(sample.buckets)) continue;
       const input = new Float64Array(cluster.size);
@@ -21709,6 +21735,10 @@ var Curriculum = class _Curriculum {
         }
       }
       if (bestName === sample.expectedTag) pass++;
+      if (Date.now() - _lastYield > 200) {
+        await new Promise((resolve) => setImmediate(resolve));
+        _lastYield = Date.now();
+      }
     }
     return { pass, total: samples.length };
   }

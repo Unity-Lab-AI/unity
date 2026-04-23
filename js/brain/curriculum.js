@@ -6318,7 +6318,18 @@ export class Curriculum {
     const _gateLetterStart = Date.now();
     let _gateLetterIdx = 0;
     this._hb(`[Curriculum][K-DIAG] gate probe starting letter loop (${ALPHABET.length} letters × READ+TALK)...`);
+    // Letter loop yield discipline — each letter fires 2+ bio-scale
+    // cross-projection propagates (READ via letter_to_phon + TALK via
+    // letter_to_motor). 26 letters × ~2 seconds each at biological
+    // scale = ~52 s of synchronous matmul that used to starve the
+    // dashboard heartbeat + WebSocket broadcasts. Yield every 200ms
+    // so interleaved I/O gets air time.
+    let _letterLoopYield = Date.now();
     for (const letter of ALPHABET) {
+      if (Date.now() - _letterLoopYield > 200) {
+        await new Promise(resolve => setImmediate(resolve));
+        _letterLoopYield = Date.now();
+      }
       _gateLetterIdx++;
       const _letterStart = Date.now();
       // Build letter activation pattern (same as teach)
@@ -7584,7 +7595,18 @@ export class Curriculum {
     let readPass = 0;
     let talkPass = 0;
 
+    // READ/TALK loop — each digit iteration fires 2 synchronous
+    // cross-projection propagate() calls (letterToPhon + sem_to_motor).
+    // At biological scale that's seconds of CPU-blocking matmul per
+    // digit; 10 digits × 2 propagates = 20 propagates without yield
+    // used to lock the event loop for ~30-60s mid-gate. Yield every
+    // 200ms so heartbeats + dashboard + WS broadcasts get air time.
+    let _readTalkYield = Date.now();
     for (let i = 0; i < DIGITS.length; i++) {
+      if (Date.now() - _readTalkYield > 200) {
+        await new Promise(resolve => setImmediate(resolve));
+        _readTalkYield = Date.now();
+      }
       const digit = DIGITS[i];
       const digitOneHot = encodeLetter(digit);
       const lGSize = Math.max(1, Math.floor(letterSize / digitOneHot.length));
@@ -7664,10 +7686,18 @@ export class Curriculum {
 
     const thinkPass = DIGITS.length; // always 100%
 
-    // SEQ: direct matrix probe through cluster.synapses
+    // SEQ: direct matrix probe through cluster.synapses.
+    // Each iteration fires one full-cluster propagate (6.6M+ neurons
+    // at bio scale) — same yield discipline as READ/TALK above so the
+    // 9 iterations can't starve heartbeat + dashboard.
     let seqPass = 0;
     const seqFails = [];
+    let _seqYield = Date.now();
     for (let i = 0; i < DIGITS.length - 1; i++) {
+      if (Date.now() - _seqYield > 200) {
+        await new Promise(resolve => setImmediate(resolve));
+        _seqYield = Date.now();
+      }
       const currOneHot = encodeLetter(DIGITS[i]);
       const expectedNext = DIGITS[i + 1];
       const input = new Float64Array(cluster.size);
@@ -7748,7 +7778,16 @@ export class Curriculum {
         }
         return letterToFree.propagate(pat);
       };
+      // ORDER loop — each iteration fires THREE readFree calls, each
+      // one a full letter_to_free cross-projection propagate. 9 iters
+      // × 3 propagates = 27 bio-scale matmuls. Same yield discipline
+      // as READ/TALK + SEQ above.
+      let _orderYield = Date.now();
       for (let i = 1; i < DIGITS.length - 1; i++) {
+        if (Date.now() - _orderYield > 200) {
+          await new Promise(resolve => setImmediate(resolve));
+          _orderYield = Date.now();
+        }
         const readI = readFree(DIGITS[i]);
         const readPrev = readFree(DIGITS[i - 1]);
         const readDistant = readFree(DIGITS[0]);
@@ -7789,7 +7828,7 @@ export class Curriculum {
 
     // ─── 1. SUCCESSOR (K.CC count-to-100) ───────────────────────────
     // Non-multiples of 10 to avoid collision with skip-count.
-    const succResult = this._probeCombinationCosine(
+    const succResult = await this._probeCombinationCosine(
       [3, 7, 13, 17, 23, 27, 43, 67, 83, 97].map(n => ({
         inputs: [{ region: freeRegion, feat: _magnitudeFeatureForNumber(n) }],
         expected: { region: semRegion, feat: _magnitudeFeatureForNumber(n + 1) },
@@ -7802,7 +7841,7 @@ export class Curriculum {
       inputs: [{ region: phonRegionG, feat: _magnitudeFeatureForNumber(n) }],
       expected: { region: semRegion, feat: _magnitudeFeatureForNumber(n + 10) },
     });
-    const skipResult = this._probeCombinationCosine(skipSamples);
+    const skipResult = await this._probeCombinationCosine(skipSamples);
 
     // ─── 3. MAKE-TEN (K.OA complement-to-10) ────────────────────────
     const makeTenSamples = [];
@@ -7810,7 +7849,7 @@ export class Curriculum {
       inputs: [{ region: freeLeftRegionG, feat: _magnitudeFeatureForDigit(String(n)) }],
       expected: { region: semRegion, feat: _magnitudeFeatureForDigit(String(10 - n)) },
     });
-    const makeTenResult = this._probeCombinationCosine(makeTenSamples);
+    const makeTenResult = await this._probeCombinationCosine(makeTenSamples);
 
     // ─── 4. TEEN DECOMPOSITION (K.NBT 10+n) ─────────────────────────
     const teenSamples = [];
@@ -7821,7 +7860,7 @@ export class Curriculum {
       ],
       expected: { region: semRegion, feat: _magnitudeFeatureForNumber(10 + n) },
     });
-    const teenResult = this._probeCombinationCosine(teenSamples);
+    const teenResult = await this._probeCombinationCosine(teenSamples);
 
     // ─── 5. ATTRIBUTE COMPARE (K.MD — argmax tag) ───────────────────
     const attrBuckets = [
@@ -7829,7 +7868,7 @@ export class Curriculum {
       { name: 'less',    start: fineThirdG,      end: 2 * fineThirdG },
       { name: 'equal',   start: 2 * fineThirdG,  end: fineTypeSizeG },
     ];
-    const attrResult = this._probeCombinationArgmaxTag(
+    const attrResult = await this._probeCombinationArgmaxTag(
       [[8, 2], [8, 2], [8, 2], [8, 2], [9, 0], [8, 2], [8, 2], [9, 2]].map(([hi, lo]) => ({
         inputs: [
           { region: freeLeftRegionG,  feat: _magnitudeFeatureForDigit(String(hi)) },
@@ -7855,7 +7894,7 @@ export class Curriculum {
         expected: { region: semRegion, feat: _magnitudeFeatureForDigit(String(Math.min(9, count))) },
       });
     }
-    const classifyResult = this._probeCombinationCosine(classifySamples);
+    const classifyResult = await this._probeCombinationCosine(classifySamples);
 
     // ─── 7. SHAPE SIDES (K.G) ───────────────────────────────────────
     const shapeSidesSamples = [];
@@ -7870,7 +7909,7 @@ export class Curriculum {
         expected: { region: freeRegion, feat: _magnitudeFeatureForDigit(String(sides)) },
       });
     }
-    const shapeSidesResult = this._probeCombinationCosine(shapeSidesSamples);
+    const shapeSidesResult = await this._probeCombinationCosine(shapeSidesSamples);
 
     // ─── 8. SHAPE DIMENSION (K.G — argmax tag) ──────────────────────
     const dimBuckets = [
@@ -7891,7 +7930,7 @@ export class Curriculum {
         expectedTag: dim,
       });
     }
-    const shapeDimResult = this._probeCombinationArgmaxTag(shapeDimSamples);
+    const shapeDimResult = await this._probeCombinationArgmaxTag(shapeDimSamples);
 
     // ─── 9. SHAPE COMPOSE (K.G) ──────────────────────────────────
     // Closes the last Math-K TODO-full-syllabus gap. Input: sem split
@@ -7918,7 +7957,7 @@ export class Curriculum {
         expected: { region: freeRegion, feat: cEmb },
       });
     }
-    const shapeComposeResult = this._probeCombinationCosine(shapeComposeSamples);
+    const shapeComposeResult = await this._probeCombinationCosine(shapeComposeSamples);
 
     // ═════════════════════════════════════════════════════════════════
     // MATH-K PRODUCTION PROBES (LAW 7)
@@ -10384,12 +10423,27 @@ export class Curriculum {
    * @param {Array<{inputs: Array<{region, feat, binarize?}>, expected: {region, feat}}>} samples
    * @param {object} [opts] { cosMin = 0.15 }
    */
-  _probeCombinationCosine(samples, opts = {}) {
+  async _probeCombinationCosine(samples, opts = {}) {
     const cluster = this.cluster;
     if (!cluster || !cluster.synapses) return { pass: 0, total: 0 };
     if (!Array.isArray(samples) || samples.length === 0) return { pass: 0, total: 0 };
     const cosMin = opts.cosMin ?? 0.15;
     let pass = 0;
+    // Every sample fires cluster.synapses.propagate() which at
+    // biological scale (6.6M+ neurons) is 100ms-5s of synchronous
+    // CPU matmul. Previous version ran 10-15 samples back-to-back
+    // with no await → 1-75 seconds of blocked event loop per probe
+    // call. Since math-K gate chains 9 probe calls that meant up
+    // to ~10 minutes of dead dashboard + heartbeat + WebSocket
+    // drainage while Unity computed. Operator saw this as the
+    // "Math freeze" right after STRUCTURE-TEACH DONE.
+    //
+    // Yield to the event loop between every sample. setImmediate
+    // runs after I/O callbacks — heartbeat timers + WS broadcasts
+    // + dashboard updates all get a chance to land between
+    // propagate calls instead of piling up behind a multi-minute
+    // synchronous burst.
+    let _lastYield = Date.now();
     for (const sample of samples) {
       if (!sample || !Array.isArray(sample.inputs) || !sample.expected) continue;
       const input = new Float64Array(cluster.size);
@@ -10400,6 +10454,10 @@ export class Curriculum {
       const output = cluster.synapses.propagate(input);
       const readout = this._tileReadVec(output, sample.expected.region, sample.expected.feat.length);
       if (this._cosine(readout, sample.expected.feat) > cosMin) pass++;
+      if (Date.now() - _lastYield > 200) {
+        await new Promise(resolve => setImmediate(resolve));
+        _lastYield = Date.now();
+      }
     }
     return { pass, total: samples.length };
   }
@@ -10412,11 +10470,17 @@ export class Curriculum {
    *
    * @param {Array<{inputs: Array<{region, feat, binarize?}>, tagRegion, buckets: Array<{name, start, end}>, expectedTag}>} samples
    */
-  _probeCombinationArgmaxTag(samples) {
+  async _probeCombinationArgmaxTag(samples) {
     const cluster = this.cluster;
     if (!cluster || !cluster.synapses) return { pass: 0, total: 0 };
     if (!Array.isArray(samples) || samples.length === 0) return { pass: 0, total: 0 };
     let pass = 0;
+    // Same biological-scale propagate yield pattern as
+    // _probeCombinationCosine above — each sample fires a full
+    // cluster.synapses.propagate() so the event loop needs a
+    // breather between samples at 6.6M-neuron scale or dashboard
+    // + heartbeat + WS broadcasts starve.
+    let _lastYield = Date.now();
     for (const sample of samples) {
       if (!sample || !Array.isArray(sample.inputs) || !sample.tagRegion || !Array.isArray(sample.buckets)) continue;
       const input = new Float64Array(cluster.size);
@@ -10435,6 +10499,10 @@ export class Curriculum {
         if (sum > bestSum) { bestSum = sum; bestName = bucket.name; }
       }
       if (bestName === sample.expectedTag) pass++;
+      if (Date.now() - _lastYield > 200) {
+        await new Promise(resolve => setImmediate(resolve));
+        _lastYield = Date.now();
+      }
     }
     return { pass, total: samples.length };
   }
