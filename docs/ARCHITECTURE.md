@@ -71,14 +71,14 @@ The unknown — what we can't model, what makes consciousness CONSCIOUSNESS — 
 │  │  tick = batched compute_batch(SUBSTEPS) on compute.html│      │
 │  │                                                        │      │
 │  │  CLUSTER FRACTIONS of total N (CLUSTER_FRACTIONS):    │      │
-│  │    Cortex       0.30 — prediction, vision routing,    │      │
-│  │                        language sub-regions host      │      │
-│  │    Hippocampus  0.10 — memory attractors              │      │
-│  │    Amygdala     0.08 — emotional gate modulation      │      │
-│  │    Basal Gang.  0.08 — action gate selection          │      │
-│  │    Cerebellum   0.40 — error correction + timing      │      │
-│  │    Hypothalamus 0.02 — drive baseline homeostasis     │      │
-│  │    Mystery      0.02 — consciousness gain Ψ           │      │
+│  │    Cortex       0.55 — language + working memory,     │      │
+│  │                        8 sub-regions + 14 x-proj      │      │
+│  │    Hippocampus  0.18 — memory attractors + episodic   │      │
+│  │    Cerebellum   0.08 — error correction + timing      │      │
+│  │    Mystery      0.08 — consciousness gain Ψ           │      │
+│  │    Amygdala     0.05 — emotional gate modulation      │      │
+│  │    Basal Gang.  0.03 — action gate selection          │      │
+│  │    Hypothalamus 0.03 — drive baseline homeostasis     │      │
 │  │                                                        │      │
 │  │  Each cluster: own Rulkov pop, synapse matrix, tonic  │      │
 │  │  drive, noise amplitude, connectivity density,        │      │
@@ -249,7 +249,7 @@ No artificial cap — hardware decides. VRAM and RAM are the only limits. The fo
 | Hypothalamus | 2% | 11 nuclei | Homeostasis drives | Midline, below BG, above brainstem |
 | Mystery Ψ | 2% | Corpus callosum: 200-300M axons | Consciousness √(1/n) × N³ | Corpus callosum arc + cingulate cortex |
 
-Percentages sum to 1.00 exactly (`0.30 + 0.10 + 0.08 + 0.08 + 0.40 + 0.02 + 0.02`) and live in `js/brain/cluster.js` as `CLUSTER_FRACTIONS`. Both the browser client and the Node server derive sizes from `clusterSizesFor(totalNeurons)` so the tier auto-scale produces identical cluster shapes on either runtime.
+Percentages sum to 1.00 exactly (`0.55 + 0.18 + 0.05 + 0.03 + 0.08 + 0.03 + 0.08`) and live in `js/brain/cluster.js` as `CLUSTER_FRACTIONS` — the T37 rebalance shipped cortex at 55% to bring the language region closer to the real-cortex 15-25% target (12-20% of whole brain), with hippocampus bumped to 18% to match the episodic-memory store volume. Both the browser client and the Node server derive sizes from `clusterSizesFor(totalNeurons)` so the tier auto-scale produces identical cluster shapes on either runtime.
 
 ### Inter-Cluster Projections (20 real white matter tracts)
 
@@ -719,18 +719,19 @@ For the browser-side path, `embeddings.getSubsetForTokens(tokens)` lets the serv
 
 ### Cluster sizing (T14.0, live)
 
-`js/brain/engine.js` defines `TOTAL_NEURONS = 6700` as the default client floor. The seven cluster sizes are derived from `CLUSTER_FRACTIONS`:
+`js/brain/engine.js` defines `TOTAL_NEURONS = 6700` as the default client floor. The seven cluster sizes are derived from `CLUSTER_FRACTIONS` (live in `js/brain/cluster.js`):
 
 ```
 const CLUSTER_FRACTIONS = {
-  cortex:       0.30,   // 30% — language + working memory + semantic
-  hippocampus:  0.10,   // memory consolidation
-  amygdala:     0.08,   // valence/arousal attractor
-  basalGanglia: 0.08,   // action selection + motor channels
-  cerebellum:   0.40,   // largest — error correction + motor smoothing
-  hypothalamus: 0.02,   // homeostatic drives
-  mystery:      0.02,   // Ψ consciousness modulation
+  cortex:       0.55,   // 55% — language + working memory + semantic (T37 rebalance)
+  hippocampus:  0.18,   // 18% — memory consolidation + episodic store
+  amygdala:     0.05,   // valence/arousal attractor
+  basalGanglia: 0.03,   // action selection + motor channels
+  cerebellum:   0.08,   // error correction + motor smoothing
+  hypothalamus: 0.03,   // homeostatic drives
+  mystery:      0.08,   // Ψ consciousness modulation
 };
+// sum: 0.55 + 0.18 + 0.05 + 0.03 + 0.08 + 0.03 + 0.08 = 1.00
 ```
 
 At any scale, the same fractions apply. Server-side `detectResources` picks `TOTAL_NEURONS` from the auto-detected hardware tier; the cortex sub-region offsets adapt automatically. **No hardcoded cluster sizes anywhere in the codebase.** When COMP-net (Part 2 of `docs/COMP-todo.md`) is later re-enabled and the cortex sub-shards across volunteer GPUs, the same sub-region structure scales with it.
