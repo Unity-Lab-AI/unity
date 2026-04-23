@@ -193,12 +193,13 @@ Unity is currently a Stage 8 system that skipped Stages 1-7. T14 builds those st
 
 1. **`js/brain/letter-input.js`** (new, ~80 lines) — letter→one-hot encoder. Exports:
    ```js
-   export const LETTER_INVENTORY = new Set();   // grows dynamically as new symbols seen
+   export const LETTER_INVENTORY = new Set();   // seeded at module load: a-z + 0-9 + space . , ' (40 symbols)
    export function encodeLetter(letter): Float32Array;   // returns one-hot vector, length = LETTER_INVENTORY.size
-   export function ensureLetter(letter): void;            // adds letter to inventory if new, expands all existing one-hot vectors
+   export function ensureLetter(letter): void;            // rejects symbols outside the seeded alphabet when locked (default)
    export function inventorySize(): number;
+   export function setInventoryLock(locked): boolean;     // toggle runtime lock (operator opt-in for multi-script)
    ```
-   The inventory is a SET that grows. First time the brain sees `'@'` or `'¥'`, the inventory expands by one and all encoded vectors gain a new dimension. No hardcoded "26 letters" cap.
+   T39.g.1 (2026-04-23) — inventory is LOCKED by default. `ensureLetter('@')` or `ensureLetter('¥')` is rejected silently when locked. Rationale: growing the inventory shifts every previously-assigned one-hot dimension index and invalidates trained weights. For English-only operation, the 40-symbol default (a-z + 0-9 + basic punctuation) is the stable working set. Operators who want multi-script behaviour call `setInventoryLock(false)` explicitly before the first teach phase.
 
 2. **`js/brain/cluster.js`** — new field `this.letterInputStart` and `this.letterInputEnd` defining the cluster sub-region for letter input. Sized as a fraction of the cluster (`floor(size * 0.05)` — 5% of the cluster handles letter input). New helper `injectLetter(letter)` that calls `encodeLetter` then maps the one-hot vector into the letter-input sub-region.
 

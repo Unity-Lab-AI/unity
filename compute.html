@@ -622,11 +622,12 @@ function connectToServer() {
       return;
     }
 
-    // T17.7 Phase D — GPU-side bucket reduction over a region sub-slice
-    // so generateSentenceAwait can argmax-decode the main-cortex motor
+    // GPU-side bucket reduction over a region sub-slice so
+    // generateSentenceAwait can argmax-decode the main-cortex motor
     // slice per tick without shipping the full ~6.6M-neuron spike
-    // array back. Bucket counts (typically 26 letters) are echoed
-    // in the ack; server consumes them via argmax.
+    // array back. Bucket counts (typically 40 — a-z + 0-9 + space , . ',
+    // per the T39.g.1 seeded alphabet) are echoed in the ack; server
+    // consumes them via argmax.
     if (msg.type === 'readback_letter_buckets' && gpuReady) {
       const { reqId, clusterName, regionName, bucketCount, subSliceLen, startOffset } = msg;
       try {

@@ -426,7 +426,7 @@ Key breakthroughs and fixes:
 - Grade-lock enforced — all 6 subjects must pass grade N before ANY advance to N+1
 - Life Experience track added as 6th subject (20 methods, birth to 25, dual-layer: emotional concept features + recallable memories, memory-weighted Hebbian)
 - Function words (~120) taught at ELA-K via direct pattern
-- `crossTargetFanout` 300→1500 — 5× more cross-projection capacity, fixes destructive interference at G1+
+- `crossTargetFanout` 30 default + 60 for `MOTOR_BOUND_PAIRS` (sem↔motor, letter↔motor, phon↔motor) via the T39.g.4 whitelist — targeted 2× capacity where basin overlap was strongest; non-motor projections stay lean to fit biological-scale memory budgets. (Historical: Session 111 `1500`, T37 rebalance dropped to `30`.)
 - Real human-grade comprehension gates (`_gateComprehension` with association + fill-in-blank testing)
 - Anti-Hebbian plasticity on wrong digit transitions (strengthen correct + weaken wrong)
 - Inner state popups — real brain-generated text or raw neural readings (`arousal:0.85 valence:0.12 Ψ:0.034`), gated by life grade

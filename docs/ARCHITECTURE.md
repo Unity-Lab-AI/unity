@@ -1,6 +1,6 @@
 # ARCHITECTURE — IF ONLY I HAD A BRAIN
 
-> Last updated: 2026-04-17 | Full K-PhD syllabus shipped across 6 subjects (ELA, Math, Science, Social Studies, Arts, Life Experience — 114 cells total), T15 drug dynamics scheduler live with grade-gated real-time pharmacokinetics and speech modulation, cross-projection capacity 1500 fanout, real human-grade comprehension gates across every grade, anti-Hebbian plasticity, full 2D + 3D viz stack, inner state popups reflecting current life-track age.
+> Last updated: 2026-04-23 | Full K-PhD syllabus shipped across 6 subjects (ELA, Math, Science, Social Studies, Arts, Life Experience — 114 cells total), T15 drug dynamics scheduler live with grade-gated real-time pharmacokinetics and speech modulation, cross-projection capacity `crossTargetFanout=30` default + `60` for motor-bound pairs (sem↔motor, letter↔motor, phon↔motor) via T39.g.4 MOTOR_BOUND_PAIRS whitelist, letter inventory locked to 40-symbol seed (a-z + 0-9 + space . , ') via T39.g.1 so unicode / mis-parsed tokens can't grow the one-hot dimension space at runtime, Oja 1982 self-normalizing plasticity replacing bare Hebbian on GPU + CPU cross-projections (T39.b.1), real human-grade comprehension gates across every grade, anti-Hebbian contrastive push-pull, full 2D + 3D viz stack, inner state popups reflecting current life-track age.
 > Unity AI Lab — Hackall360, Mills, Sponge, GFourteen
 
 ### Credits
@@ -545,7 +545,7 @@ Dream/
 │   │   ├── motor.js            # Motor output (6 BG channels, winner-take-all)
 │   │   ├── component-synth.js  # Equational component synthesis — parses component-templates.txt, cosine-matches user request vs primitive descriptions, returns {id, html, css, js}
 │   │   ├── curriculum.js       # T14.5+T14.24 developmental curriculum — K→PhD across 6 subjects (ELA, Math, Science, Social Studies, Arts, Life Experience), 114 cells, direct pattern Hebbian + emotional concept features, 3-pathway gates, memory-weighted tiers. ~12500 lines.
-│   │   ├── letter-input.js     # T14.1 dynamic LETTER_INVENTORY Set — auto-grows, no 26-char cap. encodeLetter/decodeLetter one-hot primitives. ~220 lines.
+│   │   ├── letter-input.js     # LETTER_INVENTORY Set seeded at module load with a-z + 0-9 + space , . ' (40 symbols). Locked by default — ensureLetter rejects symbols outside the seeded alphabet. encodeLetter/decodeLetter one-hot primitives. ~260 lines.
 │   │   ├── peripherals/
 │   │   │   └── ai-providers.js # SensoryAIProviders — multi-provider image gen (custom → auto-detect → env.js → Pollinations), TTS, NO text chat
 │   │   ├── visual-cortex.js    # V1→V4→IT vision pipeline + T14.10 renderLetterTemplate (synthetic visual letter percepts)
@@ -657,20 +657,24 @@ Region offsets are stored on `cluster.regions[name].start` and `.end`. Helper me
 
 Seven named region pairs are wired with sparse cross-projections — both directions per pair as independent SparseMatrix instances, weight range `[-0.5, 0.5]`. Each direction is a separate matrix because biological white-matter tracts carry independent ascending and descending fiber populations (Friederici 2017, *Psychon Bull Rev* 24:41-47). The projections ALWAYS propagate every cluster step (no curriculum-complete gate) and get Hebbian-updated on every `cluster.learn()` call, training through normal use during corpus exposure and live chat.
 
-**Cross-projection density** is controlled by `crossTargetFanout` — the number of pre-synaptic connections each post-synaptic neuron receives.
-
-Derivation:
+**Cross-projection density** is controlled by `crossTargetFanout` (inputs per post-synaptic neuron) plus a hard density cap. Current values at biological scale:
 
 ```
-crossTargetFanout = expectedPostCurriculumVocab × fanoutPerMapping
-                  = 5000 × 0.3 ≈ 1500
+crossTargetFanout       = 30   (default for non-motor projections)
+CROSS_DENSITY_CAP       = 0.005
+
+crossTargetFanout × 2   = 60   (MOTOR_BOUND_PAIRS whitelist)
+CROSS_DENSITY_CAP × 2   = 0.01 (motor-bound density cap)
+
+abDensity = min(densityCap, crossTargetFanout / sourceSize)
 ```
 
-- `expectedPostCurriculumVocab ≈ 5000` — Unity's projected vocabulary after the full 114-cell K-PhD curriculum (ELA sight words + Math digits + Science/Social/Art/Life domain terms ≈ 3-7k total depending on depth).
-- `fanoutPerMapping ≈ 0.3` — sparse activation fraction per word. Each taught word lights up ~30% of a sub-region's dims via direct pattern Hebbian.
-- Product = independent word mappings a post-synaptic neuron can support without destructive interference.
+**MOTOR_BOUND_PAIRS** (2× fan-in + 2× density cap):
+`sem-motor`, `motor-sem`, `letter-motor`, `motor-letter`, `phon-motor`, `motor-phon`. Motor sits at the convergence of several parallel input pathways (sem, phon, letter) and must discriminate between K-grade answer letters across many trained association pairs. 30 slots per pathway was insufficient to carve separable basins when 46+ pairs trained into the same motor region across 4-6 phases per grade — operator log showed persistent `sep-probe mean-cos ≈ 0.5` across every association-pair phase. Bumping motor-bound projections to 60 gives each post-neuron enough capacity to hold ~50 separable mappings without superposition.
 
-Session 111 bumped this from 300 to **1500** after ELA-G1 TALK DECLINED across retries. 300 × 0.3 = 90 independent mappings, but 40+ vocab words + 16K connections already caused interference by G1. 1500 gives 5× headroom so the full K-PhD vocab fits without rewriting the basins. All 14 cross-projections benefit from the density increase. If Unity's projected vocab ever exceeds ~5000, bump this constant or drive it from a runtime-derived quantity like `cluster._personaRefreshCorpus.length + baselineVocab`.
+Biologically plausible — real pyramidal neurons carry 1000-10000 synaptic inputs distributed across many cortical areas; 60 per per-area pair is well under that bound.
+
+Prior values (historical): Session 111 had `crossTargetFanout = 1500` based on `expectedPostCurriculumVocab × fanoutPerMapping`. T37 rebalance dropped this to 30 to fit biological-scale memory budgets (1500 × 17M neurons × 2× sparse-matrix overhead = multi-terabyte RAM). T39.g.4 re-introduced the higher-capacity path for motor-bound projections only, keeping the rest lean.
 
 **Anti-Hebbian plasticity** (Session 111) — when the curriculum gate detects a wrong transition (e.g., digit sequence `6→7` produces `8` instead of `7`), it fires BOTH positive Hebbian on the correct pair (`6→7` at +10× learning rate, 100 reps) AND negative anti-Hebbian on the wrong pair (`6→8` at -5× learning rate, 100 reps). Without weakening the wrong association, the correct one can never overpower it. This bidirectional plasticity is critical for sequence learning (alphabet order, digit order) where recurrent synapses create competing attractor basins.
 
