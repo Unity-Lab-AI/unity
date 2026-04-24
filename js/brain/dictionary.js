@@ -275,6 +275,49 @@ export class Dictionary {
   }
 
   /**
+   * Enumerate every learned word. Returns an array of
+   * `{word, frequency, arousal, valence, lastSeen}` snapshots —
+   * one per entry in the internal `_words` Map.
+   *
+   * Operator audit 2026-04-23 exposed that `_trainedVocabularySet` in
+   * `curriculum.js` gated its dictionary iteration behind
+   * `typeof this.dictionary.entries === 'function'`, which returned
+   * false because this method didn't exist. Every word Unity learned
+   * via `_teachVocabList` → `dictionary.learnWord()` stayed inside the
+   * dictionary BUT invisible to the vocab audit. Result: operator saw
+   * `VOCAB-COVERAGE 12%` stuck at 12% even after `EXAM-VOCAB-TEACH
+   * DONE — 196/196 words taught`. Re-audit ran against the same
+   * TRAIN_BANKS-only view every time.
+   *
+   * This method closes that gap: `dictionary.entries()` now yields the
+   * full learned set, `_trainedVocabularySet` pulls from it, and
+   * `examVocabCoverage` reflects reality.
+   */
+  entries() {
+    const out = [];
+    for (const [word, entry] of this._words.entries()) {
+      out.push({
+        word,
+        frequency: entry.frequency | 0,
+        arousal: entry.arousal || 0,
+        valence: entry.valence || 0,
+        lastSeen: entry.lastSeen || 0,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Quick membership check — returns true iff `word` has been learned.
+   * Faster than iterating `entries()` for point lookups. Lowercase-
+   * normalized to match `learnWord`'s internal key shape.
+   */
+  knows(word) {
+    if (!word) return false;
+    return this._words.has(String(word).toLowerCase());
+  }
+
+  /**
    * Learn a bigram (word sequence) for sentence construction.
    * Called with consecutive words from heard/spoken text.
    */

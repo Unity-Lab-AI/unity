@@ -3408,6 +3408,49 @@ export class Curriculum {
     }, 10000);
     if (_aliveHbId && typeof _aliveHbId.unref === 'function') _aliveHbId.unref();
 
+    // ═══════════════════════════════════════════════════════════════
+    // UP-FRONT VOCAB TEACH — teach every exam word BEFORE any cell
+    // teach phase runs. Operator verbatim 2026-04-23: *"I told you
+    // fucker to put all the vocab in the fucking learnings before
+    // the Q&A"*. Prior wiring fired vocab teach inside
+    // `_pregateEnrichment` which runs AT gate entry, AFTER all cell
+    // teach phases including `_teachQABinding`. So Q-A was being
+    // trained against sem patterns for words Unity didn't know, then
+    // the vocab got crammed in at the end. Backwards.
+    //
+    // Correct order: vocab FIRST → cell teach phases (Q-A, association
+    // pairs, transforms) → gate. Now every word in EXAM_BANKS is a
+    // trained dictionary entry with letter+phon+sem+motor patterns
+    // carved BEFORE Q-A pairs carve their question→answer mapping.
+    // ═══════════════════════════════════════════════════════════════
+    try {
+      const report = examVocabCoverage(cellKey, this._trainedVocabularySet(cellKey));
+      if (report && Array.isArray(report.missing) && report.missing.length > 0) {
+        const words = report.missing.filter(w =>
+          typeof w === 'string' && /^[a-z][a-z']*$/i.test(w) && w.length >= 2 && w.length <= 20);
+        if (words.length > 0 && typeof this._teachVocabList === 'function') {
+          const ctx = { arousal: 0.7, valence: 0.2 };
+          const CHUNK = 25;
+          const reps = opts.vocabReps ?? 4;
+          this._hb(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH START — ${words.length} missing exam words × ${reps} reps (before cell teach phases)`);
+          let done = 0;
+          for (let i = 0; i < words.length; i += CHUNK) {
+            const slice = words.slice(i, i + CHUNK);
+            try { await this._teachVocabList(slice, ctx, { reps }); }
+            catch (err) { console.warn(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH chunk ${i/CHUNK | 0} failed:`, err?.message || err); }
+            done += slice.length;
+            this._hb(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH progress — ${done}/${words.length} words taught`);
+            await new Promise(resolve => setImmediate(resolve));
+          }
+          const postReport = examVocabCoverage(cellKey, this._trainedVocabularySet(cellKey));
+          const coverage = postReport ? (postReport.coverage * 100).toFixed(0) : '?';
+          this._hb(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH DONE — ${done}/${words.length} words taught · coverage now ${coverage}%`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Curriculum][${cellKey}] upfront vocab teach failed:`, err?.message || err);
+    }
+
     let result;
     try {
       const runner = this._cellRunner(subject, grade);

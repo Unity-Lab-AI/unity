@@ -840,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "415365f1-cffa";
+var BUILD = "7bdb2294-bba7";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -6162,6 +6162,47 @@ var Dictionary = class {
   snapshotFor(word) {
     const entry = this._words.get((word || "").toLowerCase());
     return entry?.cortexSnapshot || null;
+  }
+  /**
+   * Enumerate every learned word. Returns an array of
+   * `{word, frequency, arousal, valence, lastSeen}` snapshots —
+   * one per entry in the internal `_words` Map.
+   *
+   * Operator audit 2026-04-23 exposed that `_trainedVocabularySet` in
+   * `curriculum.js` gated its dictionary iteration behind
+   * `typeof this.dictionary.entries === 'function'`, which returned
+   * false because this method didn't exist. Every word Unity learned
+   * via `_teachVocabList` → `dictionary.learnWord()` stayed inside the
+   * dictionary BUT invisible to the vocab audit. Result: operator saw
+   * `VOCAB-COVERAGE 12%` stuck at 12% even after `EXAM-VOCAB-TEACH
+   * DONE — 196/196 words taught`. Re-audit ran against the same
+   * TRAIN_BANKS-only view every time.
+   *
+   * This method closes that gap: `dictionary.entries()` now yields the
+   * full learned set, `_trainedVocabularySet` pulls from it, and
+   * `examVocabCoverage` reflects reality.
+   */
+  entries() {
+    const out = [];
+    for (const [word, entry] of this._words.entries()) {
+      out.push({
+        word,
+        frequency: entry.frequency | 0,
+        arousal: entry.arousal || 0,
+        valence: entry.valence || 0,
+        lastSeen: entry.lastSeen || 0
+      });
+    }
+    return out;
+  }
+  /**
+   * Quick membership check — returns true iff `word` has been learned.
+   * Faster than iterating `entries()` for point lookups. Lowercase-
+   * normalized to match `learnWord`'s internal key shape.
+   */
+  knows(word) {
+    if (!word) return false;
+    return this._words.has(String(word).toLowerCase());
   }
   /**
    * Learn a bigram (word sequence) for sentence construction.
@@ -14584,6 +14625,35 @@ var Curriculum = class _Curriculum {
       this._hb(`[Curriculum] \u25B6 CELL ALIVE ${subject}/${grade} \u2014 +${elapsedS}s elapsed (heartbeat #${_aliveTick})${phaseLabel}${memLabel}`);
     }, 1e4);
     if (_aliveHbId && typeof _aliveHbId.unref === "function") _aliveHbId.unref();
+    try {
+      const report = examVocabCoverage(cellKey, this._trainedVocabularySet(cellKey));
+      if (report && Array.isArray(report.missing) && report.missing.length > 0) {
+        const words = report.missing.filter((w) => typeof w === "string" && /^[a-z][a-z']*$/i.test(w) && w.length >= 2 && w.length <= 20);
+        if (words.length > 0 && typeof this._teachVocabList === "function") {
+          const ctx2 = { arousal: 0.7, valence: 0.2 };
+          const CHUNK = 25;
+          const reps = opts.vocabReps ?? 4;
+          this._hb(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH START \u2014 ${words.length} missing exam words \xD7 ${reps} reps (before cell teach phases)`);
+          let done = 0;
+          for (let i = 0; i < words.length; i += CHUNK) {
+            const slice = words.slice(i, i + CHUNK);
+            try {
+              await this._teachVocabList(slice, ctx2, { reps });
+            } catch (err) {
+              console.warn(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH chunk ${i / CHUNK | 0} failed:`, err?.message || err);
+            }
+            done += slice.length;
+            this._hb(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH progress \u2014 ${done}/${words.length} words taught`);
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+          const postReport = examVocabCoverage(cellKey, this._trainedVocabularySet(cellKey));
+          const coverage = postReport ? (postReport.coverage * 100).toFixed(0) : "?";
+          this._hb(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH DONE \u2014 ${done}/${words.length} words taught \xB7 coverage now ${coverage}%`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Curriculum][${cellKey}] upfront vocab teach failed:`, err?.message || err);
+    }
     let result;
     try {
       const runner = this._cellRunner(subject, grade);
