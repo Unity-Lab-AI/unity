@@ -840,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "d4208fee-3fc8";
+var BUILD = "415365f1-cffa";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -12394,6 +12394,162 @@ var Curriculum = class _Curriculum {
     const results = [];
     let pass = 0;
     const _batteryStart = Date.now();
+    const cellKey = this.cluster?._currentCellKey || null;
+    let trainedVocab = null;
+    if (cellKey && typeof this._trainedVocabularySet === "function") {
+      try {
+        trainedVocab = this._trainedVocabularySet(cellKey);
+      } catch {
+        trainedVocab = null;
+      }
+    }
+    const STOPWORDS = /* @__PURE__ */ new Set([
+      "a",
+      "an",
+      "the",
+      "is",
+      "are",
+      "was",
+      "were",
+      "be",
+      "been",
+      "being",
+      "am",
+      "of",
+      "in",
+      "on",
+      "at",
+      "to",
+      "for",
+      "with",
+      "from",
+      "by",
+      "as",
+      "or",
+      "and",
+      "but",
+      "so",
+      "if",
+      "then",
+      "else",
+      "not",
+      "no",
+      "yes",
+      "do",
+      "does",
+      "did",
+      "can",
+      "could",
+      "would",
+      "should",
+      "will",
+      "may",
+      "might",
+      "this",
+      "that",
+      "these",
+      "those",
+      "it",
+      "its",
+      "i",
+      "you",
+      "he",
+      "she",
+      "we",
+      "they",
+      "my",
+      "your",
+      "his",
+      "her",
+      "our",
+      "their",
+      "has",
+      "have",
+      "had",
+      "what",
+      "which",
+      "who",
+      "when",
+      "where",
+      "why",
+      "how",
+      "whose",
+      "there",
+      "here"
+    ]);
+    const tokenize = (text) => {
+      const words = String(text || "").toLowerCase().replace(/[^a-z0-9'\s]/g, " ").split(/\s+/).filter((w) => w.length >= 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+      return words;
+    };
+    const filteredForVocab = [];
+    const vocabGaps = /* @__PURE__ */ new Map();
+    if (trainedVocab && trainedVocab.size > 0) {
+      for (const q of questions) {
+        const words = tokenize(q.question);
+        const untaught = words.filter((w) => !trainedVocab.has(w));
+        if (untaught.length === 0) {
+          filteredForVocab.push(q);
+        } else {
+          for (const w of untaught) vocabGaps.set(w, (vocabGaps.get(w) | 0) + 1);
+        }
+      }
+    } else {
+      filteredForVocab.push(...questions);
+    }
+    const vocabFiltered = questions.length - filteredForVocab.length;
+    if (vocabFiltered > 0) {
+      const topGaps = [...vocabGaps.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15);
+      const gapStr = topGaps.map(([w, n]) => `${w}\xD7${n}`).join(", ");
+      this._hb(`[Curriculum][${label}] VOCAB-FILTER \u2014 ${vocabFiltered}/${questions.length} questions skipped (untaught words). Top gaps: ${gapStr}${topGaps.length < vocabGaps.size ? ` (+${vocabGaps.size - topGaps.length} more)` : ""}`);
+    }
+    const byTemplate = /* @__PURE__ */ new Map();
+    const canClassify = typeof this._classifyQuestionTemplate === "function";
+    for (const q of filteredForVocab) {
+      const tid = canClassify ? this._classifyQuestionTemplate(q.question) : -1;
+      const key = tid >= 0 ? tid : "generic";
+      if (!byTemplate.has(key)) byTemplate.set(key, []);
+      byTemplate.get(key).push(q);
+    }
+    const filteredForComprehension = [];
+    const templateSkips = [];
+    let compSamplesFired = 0;
+    for (const [tid, group] of byTemplate.entries()) {
+      if (group.length === 0) continue;
+      if (group.length <= 2) {
+        filteredForComprehension.push(...group);
+        continue;
+      }
+      const sample = group[0];
+      compSamplesFired += 1;
+      let sampleScore = 0;
+      try {
+        const r = await this._studentTestProbe({
+          question: sample.question,
+          expectedAnswer: sample.expectedAnswer,
+          expectedVariants: sample.expectedVariants || [sample.expectedAnswer],
+          maxTicks: sample.maxTicks || 60,
+          methodology: sample.methodology || null
+        });
+        sampleScore = r?.score || 0;
+        r.standard = sample.standard || "unspecified";
+        r.difficulty = sample.difficulty || 1;
+        r.source = sample.source || "authored";
+        r.comprehensionSample = true;
+      } catch {
+        sampleScore = 0;
+      }
+      if (sampleScore >= 0.5) {
+        filteredForComprehension.push(...group.slice(1));
+      } else {
+        templateSkips.push({ templateId: tid, count: group.length, sampleScore, sampleQ: sample.question });
+      }
+    }
+    const comprehensionFiltered = filteredForVocab.length - filteredForComprehension.length - compSamplesFired;
+    if (templateSkips.length > 0) {
+      const skipSummary = templateSkips.map((s) => `T${s.templateId}\xD7${s.count} (sample "${s.sampleQ.slice(0, 40)}" \u2192 ${s.sampleScore.toFixed(2)})`).join(" \xB7 ");
+      this._hb(`[Curriculum][${label}] COMPREHENSION-GATE \u2014 ${comprehensionFiltered} questions skipped across ${templateSkips.length} templates: ${skipSummary}`);
+    }
+    questions = filteredForComprehension;
     try {
       process.stdout.write(`[Curriculum][${label}] BATTERY START \u2014 ${questions.length} questions (maxTicks per Q default 60) \xB7 progress logs every 20th Q + failures
 `);

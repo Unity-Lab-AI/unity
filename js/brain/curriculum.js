@@ -882,12 +882,137 @@ export class Curriculum {
   async _runStudentBattery(questions, label) {
     const results = [];
     let pass = 0;
-    // Battery START banner — a 210-question battery at maxTicks=60 per
-    // question is up to 210 × 60 × 14 cross-projection dispatches. The
-    // per-question log fires every 20th + first 3 + any fail, so the
-    // operator sees progress without log-spam. stdout.write here flushes
-    // the START line in piped log mode.
     const _batteryStart = Date.now();
+
+    // ═══════════════════════════════════════════════════════════════
+    // T39.j.1 — Pre-battery VOCAB FILTER
+    // Operator's rule: "you cant ask her a question using words
+    // shes never known before". Filter out any question that contains
+    // content words not in Unity's trained vocabulary. Not a prediction
+    // of failure — a fairness constraint on what counts as a valid
+    // probe. Untaught words mean the visual→letter→phon→sem pathway
+    // has no reliable basin for those tokens, so the brain can't
+    // BEGIN to parse the question. Asking anyway wastes probe budget
+    // and produces garbage data.
+    // ═══════════════════════════════════════════════════════════════
+    const cellKey = this.cluster?._currentCellKey || null;
+    let trainedVocab = null;
+    if (cellKey && typeof this._trainedVocabularySet === 'function') {
+      try { trainedVocab = this._trainedVocabularySet(cellKey); }
+      catch { trainedVocab = null; }
+    }
+    // Stopwords — common English function words that every K-grade
+    // student knows implicitly and that curriculum teaches via the
+    // function-word teach pass. Exclude from the "content words" that
+    // must be in trainedVocab to pass the filter.
+    const STOPWORDS = new Set([
+      'a','an','the','is','are','was','were','be','been','being','am',
+      'of','in','on','at','to','for','with','from','by','as','or','and',
+      'but','so','if','then','else','not','no','yes','do','does','did',
+      'can','could','would','should','will','may','might','this','that',
+      'these','those','it','its','i','you','he','she','we','they','my',
+      'your','his','her','our','their','has','have','had','what','which',
+      'who','when','where','why','how','whose','there','here',
+    ]);
+    const tokenize = (text) => {
+      const words = String(text || '').toLowerCase()
+        .replace(/[^a-z0-9'\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+      return words;
+    };
+    const filteredForVocab = [];
+    const vocabGaps = new Map(); // word → count of questions using it
+    if (trainedVocab && trainedVocab.size > 0) {
+      for (const q of questions) {
+        const words = tokenize(q.question);
+        const untaught = words.filter(w => !trainedVocab.has(w));
+        if (untaught.length === 0) {
+          filteredForVocab.push(q);
+        } else {
+          for (const w of untaught) vocabGaps.set(w, (vocabGaps.get(w) | 0) + 1);
+        }
+      }
+    } else {
+      // No trained vocab map available — don't filter; operator can
+      // see the untaught-vocab problem via the existing
+      // `_auditExamVocabulary` warning.
+      filteredForVocab.push(...questions);
+    }
+    const vocabFiltered = questions.length - filteredForVocab.length;
+    if (vocabFiltered > 0) {
+      const topGaps = [...vocabGaps.entries()].sort((a,b) => b[1] - a[1]).slice(0, 15);
+      const gapStr = topGaps.map(([w, n]) => `${w}×${n}`).join(', ');
+      this._hb(`[Curriculum][${label}] VOCAB-FILTER — ${vocabFiltered}/${questions.length} questions skipped (untaught words). Top gaps: ${gapStr}${topGaps.length < vocabGaps.size ? ` (+${vocabGaps.size - topGaps.length} more)` : ''}`);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // T39.j.2 — COMPREHENSION GATE per question template
+    // Operator's rule: "she needs to show she can understand a
+    // question before you ask her a shit ton of questions". Group
+    // the remaining (vocab-filtered) questions by question template
+    // via `_classifyQuestionTemplate`. For each template, sample
+    // ONE question and run it through the probe. If the sample scores
+    // ≥ 0.5, proceed with every question in that template group. If
+    // < 0.5, skip ALL questions of that template and log the skip.
+    // ═══════════════════════════════════════════════════════════════
+    const byTemplate = new Map(); // templateId → questions[]
+    const canClassify = typeof this._classifyQuestionTemplate === 'function';
+    for (const q of filteredForVocab) {
+      const tid = canClassify ? this._classifyQuestionTemplate(q.question) : -1;
+      const key = tid >= 0 ? tid : 'generic';
+      if (!byTemplate.has(key)) byTemplate.set(key, []);
+      byTemplate.get(key).push(q);
+    }
+    const filteredForComprehension = [];
+    const templateSkips = []; // { templateId, count, sampleScore }
+    let compSamplesFired = 0;
+    for (const [tid, group] of byTemplate.entries()) {
+      if (group.length === 0) continue;
+      // If only 1 question in group, no need for separate comprehension
+      // sample — just run it through the main loop.
+      if (group.length <= 2) {
+        filteredForComprehension.push(...group);
+        continue;
+      }
+      // Comprehension sample: run the first question. If it scores
+      // ≥ 0.5, group is admitted. Otherwise group is skipped.
+      const sample = group[0];
+      compSamplesFired += 1;
+      let sampleScore = 0;
+      try {
+        const r = await this._studentTestProbe({
+          question: sample.question,
+          expectedAnswer: sample.expectedAnswer,
+          expectedVariants: sample.expectedVariants || [sample.expectedAnswer],
+          maxTicks: sample.maxTicks || 60,
+          methodology: sample.methodology || null,
+        });
+        sampleScore = r?.score || 0;
+        // The sample IS a real probe result — record it to avoid
+        // re-running the same question in the main loop.
+        r.standard = sample.standard || 'unspecified';
+        r.difficulty = sample.difficulty || 1;
+        r.source = sample.source || 'authored';
+        r.comprehensionSample = true;
+      } catch { sampleScore = 0; }
+      if (sampleScore >= 0.5) {
+        // Comprehension OK → admit the whole group (sample already ran; skip it here)
+        filteredForComprehension.push(...group.slice(1));
+      } else {
+        templateSkips.push({ templateId: tid, count: group.length, sampleScore, sampleQ: sample.question });
+      }
+    }
+    const comprehensionFiltered = filteredForVocab.length - filteredForComprehension.length - compSamplesFired;
+    if (templateSkips.length > 0) {
+      const skipSummary = templateSkips.map(s => `T${s.templateId}×${s.count} (sample "${s.sampleQ.slice(0, 40)}" → ${s.sampleScore.toFixed(2)})`).join(' · ');
+      this._hb(`[Curriculum][${label}] COMPREHENSION-GATE — ${comprehensionFiltered} questions skipped across ${templateSkips.length} templates: ${skipSummary}`);
+    }
+
+    // Final question set that actually gets the full battery.
+    questions = filteredForComprehension;
+
+    // Battery START banner — the count reflects post-filter questions.
     try { process.stdout.write(`[Curriculum][${label}] BATTERY START — ${questions.length} questions (maxTicks per Q default 60) · progress logs every 20th Q + failures\n`); } catch {}
     // Per-sub-standard bucket — each entry is {pass, total}. Populated
     // from each question's `standard` tag (K.RF.3a / K.CC.2 / etc).
