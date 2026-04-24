@@ -840,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "8fb04dd9-acab";
+var BUILD = "d4208fee-3fc8";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -12113,6 +12113,59 @@ var Curriculum = class _Curriculum {
     }
   }
   /**
+   * Deterministic phase marker — appends `${cellKey}:${methodName}` to
+   * `cluster.passedPhases` + increments `_perSubjectStats[subject].
+   * phasesCompleted`. Parallel to the constructor auto-wrap's append
+   * path BUT independent — for reasons still under investigation the
+   * auto-wrap's `isOutermost` check doesn't fire reliably for non-ELA
+   * K cell runners (ELA-K works because its hand-wrapped `_phaseTick`
+   * / `_phaseDone` also appends, masking the auto-wrap bug).
+   *
+   * Operator log showed `math 1 phase 6.1k events` — teaches ran
+   * (6.1k events is cumulative teach-call count) but only the fallback
+   * `cell-teach-block` entry landed in passedPhases. With this helper
+   * + its use inside each K cell runner, granular per-phase markers
+   * appear deterministically.
+   *
+   * Usage pattern matches ELA-K's _phaseTick/_phaseDone but lifted to
+   * a reusable method so every K runner can adopt it with a one-liner:
+   *
+   *   await this._phasedTeach('_teachAdditionTransformations',
+   *       () => this._teachAdditionTransformations(ctx));
+   *
+   * If the same methodName was already marked for this cell, the call
+   * is SKIPPED (Savestart resume safe — matches auto-wrap early-return
+   * semantics). Returns the fn's result on fresh runs, undefined on
+   * skip.
+   */
+  async _phasedTeach(methodName, fn) {
+    const cluster = this.cluster;
+    const cellKey = cluster?._currentCellKey;
+    const phaseKey = cellKey ? `${cellKey}:${methodName}` : null;
+    if (phaseKey && Array.isArray(cluster.passedPhases) && cluster.passedPhases.includes(phaseKey)) {
+      this._hb(`[Curriculum] \u2933 PHASE SKIPPED \u2014 ${phaseKey} (already passed)`);
+      return void 0;
+    }
+    const result = await fn();
+    if (phaseKey && cluster) {
+      if (!Array.isArray(cluster.passedPhases)) cluster.passedPhases = [];
+      if (!cluster.passedPhases.includes(phaseKey)) cluster.passedPhases.push(phaseKey);
+      if (typeof this._saveCheckpoint === "function") {
+        try {
+          this._saveCheckpoint(phaseKey);
+        } catch {
+        }
+      }
+      if (this._currentSubject && this._perSubjectStats?.[this._currentSubject]) {
+        const s = this._perSubjectStats[this._currentSubject];
+        s.phasesCompleted = (s.phasesCompleted | 0) + 1;
+        s.lastCellAt = Date.now();
+      }
+      this._currentCellPhasesCompleted = (this._currentCellPhasesCompleted | 0) + 1;
+    }
+    return result;
+  }
+  /**
    * Snapshot of the current curriculum training status for the
    * dashboard "Current Training" card. One atomic read containing:
    *   - currentSubject / currentGrade / currentLabel / gradeLabel
@@ -19019,20 +19072,20 @@ var Curriculum = class _Curriculum {
       "hundred"
     ];
     if (!this._mathKTransformsDone) {
-      await this._teachAdditionTransformations(ctx);
-      await this._teachSubtractionTransformations(ctx);
-      await this._teachComparisonTransformations(ctx);
-      await this._teachDecomposition(ctx);
-      await this._teachMakeTen(ctx);
-      await this._teachTeenDecomposition(ctx);
-      await this._teachCountToHundred(ctx);
-      await this._teachSkipCountByTens(ctx);
-      await this._teachAttributeCompare(ctx);
-      await this._teachClassifyCount(ctx);
-      await this._teachShapeFeatures(ctx);
-      await this._teachShapeCompose(ctx);
-      await this._teachMagnitudeToMotor(ctx);
-      await this._teachAssociationPairs([
+      await this._phasedTeach("_teachAdditionTransformations", () => this._teachAdditionTransformations(ctx));
+      await this._phasedTeach("_teachSubtractionTransformations", () => this._teachSubtractionTransformations(ctx));
+      await this._phasedTeach("_teachComparisonTransformations", () => this._teachComparisonTransformations(ctx));
+      await this._phasedTeach("_teachDecomposition", () => this._teachDecomposition(ctx));
+      await this._phasedTeach("_teachMakeTen", () => this._teachMakeTen(ctx));
+      await this._phasedTeach("_teachTeenDecomposition", () => this._teachTeenDecomposition(ctx));
+      await this._phasedTeach("_teachCountToHundred", () => this._teachCountToHundred(ctx));
+      await this._phasedTeach("_teachSkipCountByTens", () => this._teachSkipCountByTens(ctx));
+      await this._phasedTeach("_teachAttributeCompare", () => this._teachAttributeCompare(ctx));
+      await this._phasedTeach("_teachClassifyCount", () => this._teachClassifyCount(ctx));
+      await this._phasedTeach("_teachShapeFeatures", () => this._teachShapeFeatures(ctx));
+      await this._phasedTeach("_teachShapeCompose", () => this._teachShapeCompose(ctx));
+      await this._phasedTeach("_teachMagnitudeToMotor", () => this._teachMagnitudeToMotor(ctx));
+      await this._phasedTeach("MATH-K-NUMBER-SEQ", () => this._teachAssociationPairs([
         ["one", "two"],
         ["two", "three"],
         ["three", "four"],
@@ -19055,8 +19108,8 @@ var Curriculum = class _Curriculum {
         ["twenty", "thirty"],
         ["thirty", "forty"],
         ["forty", "fifty"]
-      ], { reps: 10, label: "MATH-K-NUMBER-SEQ", relationTagId: 5 });
-      await this._teachAssociationPairs([
+      ], { reps: 10, label: "MATH-K-NUMBER-SEQ", relationTagId: 5 }));
+      await this._phasedTeach("MATH-K-SHAPE-ATTR", () => this._teachAssociationPairs([
         ["triangle", "three"],
         ["square", "four"],
         ["rectangle", "four"],
@@ -19067,8 +19120,8 @@ var Curriculum = class _Curriculum {
         ["sphere", "ball"],
         ["cube", "box"],
         ["cylinder", "can"]
-      ], { reps: 10, label: "MATH-K-SHAPE-ATTR", relationTagId: 1 });
-      await this._teachAssociationPairs([
+      ], { reps: 10, label: "MATH-K-SHAPE-ATTR", relationTagId: 1 }));
+      await this._phasedTeach("MATH-K-COMPARE", () => this._teachAssociationPairs([
         ["more", "greater"],
         ["less", "smaller"],
         ["bigger", "more"],
@@ -19077,8 +19130,8 @@ var Curriculum = class _Curriculum {
         ["three", "less-than-five"],
         ["ten", "more-than-five"],
         ["two", "less-than-eight"]
-      ], { reps: 8, label: "MATH-K-COMPARE", relationTagId: 0 });
-      await this._teachAssociationPairs([
+      ], { reps: 8, label: "MATH-K-COMPARE", relationTagId: 0 }));
+      await this._phasedTeach("MATH-K-ARITH-WORDS", () => this._teachAssociationPairs([
         ["plus", "add"],
         ["minus", "subtract"],
         ["one-plus-one", "two"],
@@ -19092,10 +19145,10 @@ var Curriculum = class _Curriculum {
         ["ten-minus-one", "nine"],
         ["ten-minus-five", "five"],
         ["five-minus-one", "four"]
-      ], { reps: 8, label: "MATH-K-ARITH-WORDS", relationTagId: 4 });
+      ], { reps: 8, label: "MATH-K-ARITH-WORDS", relationTagId: 4 }));
       const mathQA = TRAIN_BANKS["math/kindergarten"] || [];
       if (mathQA.length > 0) {
-        await this._teachQABinding(mathQA, { label: "MATH-K-QA-TRAIN" });
+        await this._phasedTeach("MATH-K-QA-TRAIN", () => this._teachQABinding(mathQA, { label: "MATH-K-QA-TRAIN" }));
       }
       this._mathKTransformsDone = true;
     }

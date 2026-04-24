@@ -572,6 +572,57 @@ export class Curriculum {
   }
 
   /**
+   * Deterministic phase marker — appends `${cellKey}:${methodName}` to
+   * `cluster.passedPhases` + increments `_perSubjectStats[subject].
+   * phasesCompleted`. Parallel to the constructor auto-wrap's append
+   * path BUT independent — for reasons still under investigation the
+   * auto-wrap's `isOutermost` check doesn't fire reliably for non-ELA
+   * K cell runners (ELA-K works because its hand-wrapped `_phaseTick`
+   * / `_phaseDone` also appends, masking the auto-wrap bug).
+   *
+   * Operator log showed `math 1 phase 6.1k events` — teaches ran
+   * (6.1k events is cumulative teach-call count) but only the fallback
+   * `cell-teach-block` entry landed in passedPhases. With this helper
+   * + its use inside each K cell runner, granular per-phase markers
+   * appear deterministically.
+   *
+   * Usage pattern matches ELA-K's _phaseTick/_phaseDone but lifted to
+   * a reusable method so every K runner can adopt it with a one-liner:
+   *
+   *   await this._phasedTeach('_teachAdditionTransformations',
+   *       () => this._teachAdditionTransformations(ctx));
+   *
+   * If the same methodName was already marked for this cell, the call
+   * is SKIPPED (Savestart resume safe — matches auto-wrap early-return
+   * semantics). Returns the fn's result on fresh runs, undefined on
+   * skip.
+   */
+  async _phasedTeach(methodName, fn) {
+    const cluster = this.cluster;
+    const cellKey = cluster?._currentCellKey;
+    const phaseKey = cellKey ? `${cellKey}:${methodName}` : null;
+    if (phaseKey && Array.isArray(cluster.passedPhases) && cluster.passedPhases.includes(phaseKey)) {
+      this._hb(`[Curriculum] ⤳ PHASE SKIPPED — ${phaseKey} (already passed)`);
+      return undefined;
+    }
+    const result = await fn();
+    if (phaseKey && cluster) {
+      if (!Array.isArray(cluster.passedPhases)) cluster.passedPhases = [];
+      if (!cluster.passedPhases.includes(phaseKey)) cluster.passedPhases.push(phaseKey);
+      if (typeof this._saveCheckpoint === 'function') {
+        try { this._saveCheckpoint(phaseKey); } catch { /* non-fatal */ }
+      }
+      if (this._currentSubject && this._perSubjectStats?.[this._currentSubject]) {
+        const s = this._perSubjectStats[this._currentSubject];
+        s.phasesCompleted = (s.phasesCompleted | 0) + 1;
+        s.lastCellAt = Date.now();
+      }
+      this._currentCellPhasesCompleted = (this._currentCellPhasesCompleted | 0) + 1;
+    }
+    return result;
+  }
+
+  /**
    * Snapshot of the current curriculum training status for the
    * dashboard "Current Training" card. One atomic read containing:
    *   - currentSubject / currentGrade / currentLabel / gradeLabel
@@ -7573,25 +7624,29 @@ export class Curriculum {
     // For subtraction: magnitude(a) in free[0..half], magnitude(b) as
     // NEGATIVE (inverted) in free[half..end], magnitude(a-b) in sem.
     // ═════════════════════════════════════════════════════════════════
-    // Only run transforms ONCE — re-running on retry causes destructive interference
+    // Only run transforms ONCE — re-running on retry causes destructive interference.
+    // Each teach wrapped in `_phasedTeach` so `passedPhases` gets a
+    // granular per-method marker (dashboard phases column reflects
+    // actual work). Skip-on-resume semantics mirror ELA-K's
+    // hand-wrapped `_phaseTick`/`_phaseDone` pattern.
     if (!this._mathKTransformsDone) {
-      await this._teachAdditionTransformations(ctx);
-      await this._teachSubtractionTransformations(ctx);
-      await this._teachComparisonTransformations(ctx);
+      await this._phasedTeach('_teachAdditionTransformations',    () => this._teachAdditionTransformations(ctx));
+      await this._phasedTeach('_teachSubtractionTransformations', () => this._teachSubtractionTransformations(ctx));
+      await this._phasedTeach('_teachComparisonTransformations',  () => this._teachComparisonTransformations(ctx));
       // Math-K Part 1 expansion (K.CC/K.OA/K.NBT/K.MD/K.G)
-      await this._teachDecomposition(ctx);
-      await this._teachMakeTen(ctx);
-      await this._teachTeenDecomposition(ctx);
-      await this._teachCountToHundred(ctx);
-      await this._teachSkipCountByTens(ctx);
-      await this._teachAttributeCompare(ctx);
-      await this._teachClassifyCount(ctx);
-      await this._teachShapeFeatures(ctx);
-      await this._teachShapeCompose(ctx);
+      await this._phasedTeach('_teachDecomposition',              () => this._teachDecomposition(ctx));
+      await this._phasedTeach('_teachMakeTen',                    () => this._teachMakeTen(ctx));
+      await this._phasedTeach('_teachTeenDecomposition',          () => this._teachTeenDecomposition(ctx));
+      await this._phasedTeach('_teachCountToHundred',             () => this._teachCountToHundred(ctx));
+      await this._phasedTeach('_teachSkipCountByTens',            () => this._teachSkipCountByTens(ctx));
+      await this._phasedTeach('_teachAttributeCompare',           () => this._teachAttributeCompare(ctx));
+      await this._phasedTeach('_teachClassifyCount',              () => this._teachClassifyCount(ctx));
+      await this._phasedTeach('_teachShapeFeatures',              () => this._teachShapeFeatures(ctx));
+      await this._phasedTeach('_teachShapeCompose',               () => this._teachShapeCompose(ctx));
       // Bridge so mag(n) in free routes to digit char
       // in motor emission. Required for production probes that test
       // numeric answers through sem→motor tick-driven emission.
-      await this._teachMagnitudeToMotor(ctx);
+      await this._phasedTeach('_teachMagnitudeToMotor',           () => this._teachMagnitudeToMotor(ctx));
 
       // Equational association-pair teach — number-name sequence
       // (for K.CC.2 count-forward tested as word answers), shape-
@@ -7603,41 +7658,41 @@ export class Curriculum {
       // answer path that the exam uses.
 
       // K.CC.2 number-name sequence: "one" → "two" etc. (relationTagId=5)
-      await this._teachAssociationPairs([
+      await this._phasedTeach('MATH-K-NUMBER-SEQ', () => this._teachAssociationPairs([
         ['one','two'], ['two','three'], ['three','four'], ['four','five'],
         ['five','six'], ['six','seven'], ['seven','eight'], ['eight','nine'],
         ['nine','ten'], ['ten','eleven'], ['eleven','twelve'], ['twelve','thirteen'],
         ['thirteen','fourteen'], ['fourteen','fifteen'], ['fifteen','sixteen'],
         ['sixteen','seventeen'], ['seventeen','eighteen'], ['eighteen','nineteen'],
         ['nineteen','twenty'], ['twenty','thirty'], ['thirty','forty'], ['forty','fifty'],
-      ], { reps: 10, label: 'MATH-K-NUMBER-SEQ', relationTagId: 5 });
+      ], { reps: 10, label: 'MATH-K-NUMBER-SEQ', relationTagId: 5 }));
 
       // K.G.1 + K.G.2 shape name ↔ attribute (relationTagId=1)
-      await this._teachAssociationPairs([
+      await this._phasedTeach('MATH-K-SHAPE-ATTR', () => this._teachAssociationPairs([
         ['triangle','three'], ['square','four'], ['rectangle','four'],
         ['pentagon','five'], ['hexagon','six'], ['octagon','eight'],
         ['circle','round'], ['sphere','ball'], ['cube','box'], ['cylinder','can'],
-      ], { reps: 10, label: 'MATH-K-SHAPE-ATTR', relationTagId: 1 });
+      ], { reps: 10, label: 'MATH-K-SHAPE-ATTR', relationTagId: 1 }));
 
       // K.CC.6 word-form comparisons (relationTagId=0 — opposite-esque)
-      await this._teachAssociationPairs([
+      await this._phasedTeach('MATH-K-COMPARE', () => this._teachAssociationPairs([
         ['more','greater'], ['less','smaller'],
         ['bigger','more'], ['smaller','less'],
         ['five','more-than-three'], ['three','less-than-five'],
         ['ten','more-than-five'], ['two','less-than-eight'],
-      ], { reps: 8, label: 'MATH-K-COMPARE', relationTagId: 0 });
+      ], { reps: 8, label: 'MATH-K-COMPARE', relationTagId: 0 }));
 
       // K.OA.1 + K.OA.5 word-form arithmetic answers — carve
       // sem(operation-word-sum) → motor(number-word answer).
       // Magnitude-feature transforms already carve the digit path;
       // this carries the spelled-out path.
-      await this._teachAssociationPairs([
+      await this._phasedTeach('MATH-K-ARITH-WORDS', () => this._teachAssociationPairs([
         ['plus','add'], ['minus','subtract'],
         ['one-plus-one','two'], ['two-plus-two','four'], ['three-plus-three','six'],
         ['four-plus-four','eight'], ['five-plus-five','ten'],
         ['one-plus-two','three'], ['two-plus-three','five'], ['three-plus-four','seven'],
         ['ten-minus-one','nine'], ['ten-minus-five','five'], ['five-minus-one','four'],
-      ], { reps: 8, label: 'MATH-K-ARITH-WORDS', relationTagId: 4 });
+      ], { reps: 8, label: 'MATH-K-ARITH-WORDS', relationTagId: 4 }));
 
       // T37.f — Math-K question-answer training. Same teacher-modeling
       // approach as ELA-K. TRAIN_BANKS['math/kindergarten'] has Q→A
@@ -7645,7 +7700,7 @@ export class Curriculum {
       // — held-out-distinct from MATH_KINDERGARTEN_EXAM.
       const mathQA = TRAIN_BANKS['math/kindergarten'] || [];
       if (mathQA.length > 0) {
-        await this._teachQABinding(mathQA, { label: 'MATH-K-QA-TRAIN' });
+        await this._phasedTeach('MATH-K-QA-TRAIN', () => this._teachQABinding(mathQA, { label: 'MATH-K-QA-TRAIN' }));
       }
 
       this._mathKTransformsDone = true;
