@@ -12918,6 +12918,16 @@ export class Curriculum {
         ['harder','faster'], ['heavier','slower'],
       ], { reps: 8, label: 'SCI-K-CONCEPTS', relationTagId: 1 });
 
+      // T39.j.3 — Q-A binding on TRAIN_BANKS['science/kindergarten']
+      // so sem→motor weights carve the question→answer form the
+      // exam tests. Held-out-distinct from EXAM questions per the
+      // T23.b.2 invariant. Adds ~36 Q-A training pairs covering
+      // every K-NGSS standard the exam tests.
+      const sciQA = TRAIN_BANKS['science/kindergarten'] || [];
+      if (sciQA.length > 0) {
+        await this._phasedTeach('SCI-K-QA-TRAIN', () => this._teachQABinding(sciQA, { label: 'SCI-K-QA-TRAIN' }));
+      }
+
       this._sciKRemakeDone = true;
     }
 
@@ -13198,6 +13208,16 @@ export class Curriculum {
         ['teeth','dentist'], ['mail','carrier'], ['food','farmer'],
       ], { reps: 8, label: 'SOC-K-CONCEPTS', relationTagId: 1 });
 
+      // T39.j.4 — Q-A binding on TRAIN_BANKS['social/kindergarten']
+      // so sem→motor weights see question→answer form for every
+      // K-Social standard the exam covers (community helpers,
+      // safety, family, manners, empathy, symbols, time, geography,
+      // citizenship). Held-out-distinct from EXAM questions.
+      const socQA = TRAIN_BANKS['social/kindergarten'] || [];
+      if (socQA.length > 0) {
+        await this._phasedTeach('SOC-K-QA-TRAIN', () => this._teachQABinding(socQA, { label: 'SOC-K-QA-TRAIN' }));
+      }
+
       this._socKRemakeDone = true;
     }
 
@@ -13461,6 +13481,15 @@ export class Curriculum {
         ['violin','string'], ['flute','wind'], ['piano','keys'],
         ['song','melody'], ['rhythm','beat'],
       ], { reps: 8, label: 'ART-K-CONCEPTS', relationTagId: 1 });
+
+      // T39.j.5 — Q-A binding on TRAIN_BANKS['art/kindergarten']
+      // so sem→motor weights see question→answer form for color
+      // naming, primary/mixing, warm-cool, shapes, patterns, tools,
+      // and music. Held-out-distinct from EXAM questions.
+      const artQA = TRAIN_BANKS['art/kindergarten'] || [];
+      if (artQA.length > 0) {
+        await this._phasedTeach('ART-K-QA-TRAIN', () => this._teachQABinding(artQA, { label: 'ART-K-QA-TRAIN' }));
+      }
 
       this._artKRemakeDone = true;
     }

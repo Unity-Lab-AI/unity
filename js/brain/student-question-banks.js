@@ -1580,6 +1580,147 @@ const MATH_KINDERGARTEN_TRAIN = [
   { q: 'what shape has two long sides and two short sides?', a: 'rectangle', variants: ['rectangle'], standard: 'K.G.1' },
 ];
 
+// Science-K train bank — Q→A pairs held-out-distinct from
+// SCIENCE_KINDERGARTEN_EXAM. Covers K-PS1 states-of-matter, K-PS2
+// forces/motion, K-PS3 energy/sun, K-LS1 plants/animals, K-ESS2
+// weather, K-ESS3 habitat + resources.
+const SCIENCE_KINDERGARTEN_TRAIN = [
+  // K-PS2 forces / motion
+  { q: 'what happens when you throw a ball up?', a: 'falls', variants: ['falls', 'f', 'comes down', 'down'], standard: 'K-PS2-1' },
+  { q: 'does a strong push go farther than a weak push?', a: 'yes', variants: ['yes', 'y'], standard: 'K-PS2-1' },
+  { q: 'what does a magnet do?', a: 'pull', variants: ['pull', 'p', 'attract'], standard: 'K-PS2-1' },
+  { q: 'what slows a ball rolling?', a: 'friction', variants: ['friction', 'f'], standard: 'K-PS2-1' },
+  // K-PS3 sun / energy
+  { q: 'what warms the earth?', a: 'sun', variants: ['sun', 's'], standard: 'K-PS3-1' },
+  { q: 'is it warmer in sun or shade?', a: 'sun', variants: ['sun', 's'], standard: 'K-PS3-1' },
+  { q: 'what do you wear in bright sun?', a: 'hat', variants: ['hat', 'h', 'sunglasses'], standard: 'K-PS3-2' },
+  // K-PS1 states of matter
+  { q: 'what happens when ice gets warm?', a: 'melts', variants: ['melts', 'melt', 'm', 'liquid'], standard: 'K-PS1' },
+  { q: 'what is frozen water called?', a: 'ice', variants: ['ice', 'i'], standard: 'K-PS1' },
+  { q: 'what do you call hot water vapor?', a: 'steam', variants: ['steam', 's'], standard: 'K-PS1' },
+  { q: 'what state is water in a cup?', a: 'liquid', variants: ['liquid', 'l'], standard: 'K-PS1' },
+  // K-LS1 plants / animals
+  { q: 'what do plants drink?', a: 'water', variants: ['water', 'w'], standard: 'K-LS1-1' },
+  { q: 'what gives plants food?', a: 'sun', variants: ['sun', 's', 'sunlight', 'light'], standard: 'K-LS1-1' },
+  { q: 'what do fish breathe?', a: 'water', variants: ['water', 'w'], standard: 'K-LS1-1' },
+  { q: 'what do animals drink?', a: 'water', variants: ['water', 'w'], standard: 'K-LS1-1' },
+  { q: 'what do bees make?', a: 'honey', variants: ['honey', 'h'], standard: 'K-LS1-1' },
+  { q: 'what do cows give?', a: 'milk', variants: ['milk', 'm'], standard: 'K-LS1-1' },
+  { q: 'what is a baby cat called?', a: 'kitten', variants: ['kitten', 'k'], standard: 'K-LS1-1' },
+  { q: 'what is a baby bird called?', a: 'chick', variants: ['chick', 'c'], standard: 'K-LS1-1' },
+  { q: 'where do fish live?', a: 'water', variants: ['water', 'w'], standard: 'K-LS1-1' },
+  { q: 'where do bees live?', a: 'hive', variants: ['hive', 'h'], standard: 'K-LS1-1' },
+  { q: 'what part of a plant makes food?', a: 'leaf', variants: ['leaf', 'l', 'leaves'], standard: 'K-LS1-1' },
+  { q: 'what do you use to see?', a: 'eyes', variants: ['eyes', 'e'], standard: 'K-LS1-1' },
+  { q: 'what do you use to smell?', a: 'nose', variants: ['nose', 'n'], standard: 'K-LS1-1' },
+  { q: 'what pumps blood?', a: 'heart', variants: ['heart', 'h'], standard: 'K-LS1-1' },
+  // K-ESS2 weather / seasons
+  { q: 'what falls as drops?', a: 'rain', variants: ['rain', 'r'], standard: 'K-ESS2-1' },
+  { q: 'what falls as white flakes?', a: 'snow', variants: ['snow', 's'], standard: 'K-ESS2-1' },
+  { q: 'when is it cold outside?', a: 'winter', variants: ['winter', 'w'], standard: 'K-ESS2-1' },
+  { q: 'when is it hot outside?', a: 'summer', variants: ['summer', 's'], standard: 'K-ESS2-1' },
+  { q: 'what lights the night sky?', a: 'moon', variants: ['moon', 'm'], standard: 'K-ESS2-1' },
+  { q: 'when do we see stars?', a: 'night', variants: ['night', 'n'], standard: 'K-ESS2-1' },
+  // K-ESS3 habitat / resources
+  { q: 'where do polar bears live?', a: 'arctic', variants: ['arctic', 'a', 'cold'], standard: 'K-ESS3-1' },
+  { q: 'where do camels live?', a: 'desert', variants: ['desert', 'd'], standard: 'K-ESS3-1' },
+  { q: 'should we save water?', a: 'yes', variants: ['yes', 'y'], standard: 'K-ESS3-3' },
+  { q: 'should we throw trash in nature?', a: 'no', variants: ['no', 'n'], standard: 'K-ESS3-3' },
+];
+
+// Social-K train bank — Q→A pairs held-out-distinct from
+// SOCIAL_KINDERGARTEN_EXAM. Covers K-Social-family, manners, empathy,
+// community, safety, symbols, time, geography, citizenship.
+const SOCIAL_KINDERGARTEN_TRAIN = [
+  // Family
+  { q: 'who is your mom called?', a: 'mother', variants: ['mother', 'mom', 'm'], standard: 'K-Social-family' },
+  { q: 'who is your dad called?', a: 'father', variants: ['father', 'dad', 'f'], standard: 'K-Social-family' },
+  { q: 'what is a boy child of your parents called?', a: 'brother', variants: ['brother', 'b'], standard: 'K-Social-family' },
+  { q: 'what is a girl child of your parents called?', a: 'sister', variants: ['sister', 's'], standard: 'K-Social-family' },
+  // Manners
+  { q: 'what do you say when you ask?', a: 'please', variants: ['please', 'p'], standard: 'K-Social-manners' },
+  { q: 'what do you say when you cough?', a: 'excuse', variants: ['excuse', 'e', 'sorry'], standard: 'K-Social-manners' },
+  { q: 'what do you say when you are given a gift?', a: 'thanks', variants: ['thanks', 't', 'thank'], standard: 'K-Social-manners' },
+  { q: 'should you raise your hand in class?', a: 'yes', variants: ['yes', 'y'], standard: 'K-Social-manners' },
+  // Empathy
+  { q: 'what can you give a sad friend?', a: 'hug', variants: ['hug', 'h'], standard: 'K-Social-empathy' },
+  { q: 'what word means to care how someone feels?', a: 'empathy', variants: ['empathy', 'e', 'kindness'], standard: 'K-Social-empathy' },
+  { q: 'is it nice to share toys?', a: 'yes', variants: ['yes', 'y'], standard: 'K-Social-empathy' },
+  // Community helpers
+  { q: 'who puts out fires?', a: 'firefighter', variants: ['firefighter', 'f'], standard: 'K-Social-community' },
+  { q: 'who fixes your teeth?', a: 'dentist', variants: ['dentist', 'd'], standard: 'K-Social-community' },
+  { q: 'who delivers mail?', a: 'mailman', variants: ['mailman', 'm', 'carrier'], standard: 'K-Social-community' },
+  { q: 'who teaches you?', a: 'teacher', variants: ['teacher', 't'], standard: 'K-Social-community' },
+  { q: 'who grows food?', a: 'farmer', variants: ['farmer', 'f'], standard: 'K-Social-community' },
+  // Safety
+  { q: 'what color stops cars?', a: 'red', variants: ['red', 'r'], standard: 'K-Social-safety' },
+  { q: 'what color tells you to go?', a: 'green', variants: ['green', 'g'], standard: 'K-Social-safety' },
+  { q: 'what number do you call for help?', a: '911', variants: ['911', 'nine'], standard: 'K-Social-safety' },
+  { q: 'should you look before crossing?', a: 'yes', variants: ['yes', 'y'], standard: 'K-Social-safety' },
+  // Symbols
+  { q: 'what bird is our national symbol?', a: 'eagle', variants: ['eagle', 'e'], standard: 'K-Social-symbols' },
+  { q: 'what is red white and blue?', a: 'flag', variants: ['flag', 'f'], standard: 'K-Social-symbols' },
+  // Time
+  { q: 'what comes after monday?', a: 'tuesday', variants: ['tuesday', 't'], standard: 'K-Social-time' },
+  { q: 'what comes after friday?', a: 'saturday', variants: ['saturday', 's'], standard: 'K-Social-time' },
+  { q: 'how many seasons are there?', a: 'four', variants: ['four', '4', 'f'], standard: 'K-Social-time' },
+  // Geography
+  { q: 'what is lots of salt water called?', a: 'ocean', variants: ['ocean', 'o', 'sea'], standard: 'K-Social-geography' },
+  { q: 'what flows through the land?', a: 'river', variants: ['river', 'r'], standard: 'K-Social-geography' },
+  { q: 'where does the sun come up?', a: 'east', variants: ['east', 'e'], standard: 'K-Social-geography' },
+  // Citizenship
+  { q: 'should you tell the truth?', a: 'yes', variants: ['yes', 'y'], standard: 'K-Social-citizenship' },
+  { q: 'should you take things that are not yours?', a: 'no', variants: ['no', 'n'], standard: 'K-Social-citizenship' },
+  { q: 'should you help clean up?', a: 'yes', variants: ['yes', 'y'], standard: 'K-Social-citizenship' },
+];
+
+// Art-K train bank — Q→A pairs held-out-distinct from
+// ART_KINDERGARTEN_EXAM. Covers color-naming, primary, color-mixing,
+// warm-cool, shapes, patterns, tools, music.
+const ART_KINDERGARTEN_TRAIN = [
+  // Color naming
+  { q: 'what color are tomatoes?', a: 'red', variants: ['red', 'r'], standard: 'K-Art-color-naming' },
+  { q: 'what color is a banana?', a: 'yellow', variants: ['yellow', 'y'], standard: 'K-Art-color-naming' },
+  { q: 'what color is a blueberry?', a: 'blue', variants: ['blue', 'b'], standard: 'K-Art-color-naming' },
+  { q: 'what color is milk?', a: 'white', variants: ['white', 'w'], standard: 'K-Art-color-naming' },
+  { q: 'what color is coal?', a: 'black', variants: ['black', 'b'], standard: 'K-Art-color-naming' },
+  { q: 'what color is an orange?', a: 'orange', variants: ['orange', 'o'], standard: 'K-Art-color-naming' },
+  // Primary colors
+  { q: 'is red a primary color?', a: 'yes', variants: ['yes', 'y'], standard: 'K-Art-primary' },
+  { q: 'is yellow a primary color?', a: 'yes', variants: ['yes', 'y'], standard: 'K-Art-primary' },
+  { q: 'is blue a primary color?', a: 'yes', variants: ['yes', 'y'], standard: 'K-Art-primary' },
+  { q: 'is purple a primary color?', a: 'no', variants: ['no', 'n'], standard: 'K-Art-primary' },
+  // Color mixing
+  { q: 'what do red and blue make?', a: 'purple', variants: ['purple', 'p'], standard: 'K-Art-color-mixing' },
+  { q: 'what do red and yellow make?', a: 'orange', variants: ['orange', 'o'], standard: 'K-Art-color-mixing' },
+  { q: 'what do blue and yellow make?', a: 'green', variants: ['green', 'g'], standard: 'K-Art-color-mixing' },
+  { q: 'what do black and white make?', a: 'gray', variants: ['gray', 'g'], standard: 'K-Art-color-mixing' },
+  // Warm / cool
+  { q: 'is orange a warm color?', a: 'yes', variants: ['yes', 'y', 'warm', 'w'], standard: 'K-Art-warm-cool' },
+  { q: 'is yellow warm or cool?', a: 'warm', variants: ['warm', 'w'], standard: 'K-Art-warm-cool' },
+  { q: 'is green warm or cool?', a: 'cool', variants: ['cool', 'c'], standard: 'K-Art-warm-cool' },
+  { q: 'is purple warm or cool?', a: 'cool', variants: ['cool', 'c'], standard: 'K-Art-warm-cool' },
+  // Shapes
+  { q: 'what shape has three sides?', a: 'triangle', variants: ['triangle', 't'], standard: 'K-Art-shapes' },
+  { q: 'what shape is round?', a: 'circle', variants: ['circle', 'c'], standard: 'K-Art-shapes' },
+  { q: 'what shape has four equal sides?', a: 'square', variants: ['square', 's'], standard: 'K-Art-shapes' },
+  { q: 'what shape is like an egg?', a: 'oval', variants: ['oval', 'o'], standard: 'K-Art-shapes' },
+  // Patterns
+  { q: 'what comes next: red blue red?', a: 'blue', variants: ['blue', 'b'], standard: 'K-Art-patterns' },
+  { q: 'what comes next: square circle square?', a: 'circle', variants: ['circle', 'c'], standard: 'K-Art-patterns' },
+  // Tools
+  { q: 'what do you paint with?', a: 'brush', variants: ['brush', 'b'], standard: 'K-Art-tools' },
+  { q: 'what do you cut with?', a: 'scissors', variants: ['scissors', 's'], standard: 'K-Art-tools' },
+  { q: 'what do you write with?', a: 'pencil', variants: ['pencil', 'p'], standard: 'K-Art-tools' },
+  { q: 'what holds paper together?', a: 'glue', variants: ['glue', 'g'], standard: 'K-Art-tools' },
+  // Music
+  { q: 'what instrument has keys?', a: 'piano', variants: ['piano', 'p'], standard: 'K-Art-music' },
+  { q: 'what instrument has strings?', a: 'guitar', variants: ['guitar', 'g', 'violin'], standard: 'K-Art-music' },
+  { q: 'what instrument do you hit?', a: 'drum', variants: ['drum', 'd'], standard: 'K-Art-music' },
+  { q: 'is a fast song slow?', a: 'no', variants: ['no', 'n'], standard: 'K-Art-music' },
+  { q: 'is a whisper loud?', a: 'no', variants: ['no', 'n'], standard: 'K-Art-music' },
+];
+
 // Other cells start empty — `_teachQABinding` will skip them with a
 // log line. Expansion pattern: write ~20-60 Q→A training pairs per
 // cell covering that cell's most-tested sub-standards with content
@@ -1591,11 +1732,11 @@ export const TRAIN_BANKS = {
   'math/pre-K': [],
   'math/kindergarten': toTrainShape(MATH_KINDERGARTEN_TRAIN),
   'science/pre-K': [],
-  'science/kindergarten': [],
+  'science/kindergarten': toTrainShape(SCIENCE_KINDERGARTEN_TRAIN),
   'social/pre-K': [],
-  'social/kindergarten': [],
+  'social/kindergarten': toTrainShape(SOCIAL_KINDERGARTEN_TRAIN),
   'art/pre-K': [],
-  'art/kindergarten': [],
+  'art/kindergarten': toTrainShape(ART_KINDERGARTEN_TRAIN),
   'life/pre-K': [],
   'life/kindergarten': [],
 };
