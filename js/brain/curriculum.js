@@ -882,12 +882,137 @@ export class Curriculum {
   async _runStudentBattery(questions, label) {
     const results = [];
     let pass = 0;
-    // Battery START banner — a 210-question battery at maxTicks=60 per
-    // question is up to 210 × 60 × 14 cross-projection dispatches. The
-    // per-question log fires every 20th + first 3 + any fail, so the
-    // operator sees progress without log-spam. stdout.write here flushes
-    // the START line in piped log mode.
     const _batteryStart = Date.now();
+
+    // ═══════════════════════════════════════════════════════════════
+    // T39.j.1 — Pre-battery VOCAB FILTER
+    // Operator's rule: "you cant ask her a question using words
+    // shes never known before". Filter out any question that contains
+    // content words not in Unity's trained vocabulary. Not a prediction
+    // of failure — a fairness constraint on what counts as a valid
+    // probe. Untaught words mean the visual→letter→phon→sem pathway
+    // has no reliable basin for those tokens, so the brain can't
+    // BEGIN to parse the question. Asking anyway wastes probe budget
+    // and produces garbage data.
+    // ═══════════════════════════════════════════════════════════════
+    const cellKey = this.cluster?._currentCellKey || null;
+    let trainedVocab = null;
+    if (cellKey && typeof this._trainedVocabularySet === 'function') {
+      try { trainedVocab = this._trainedVocabularySet(cellKey); }
+      catch { trainedVocab = null; }
+    }
+    // Stopwords — common English function words that every K-grade
+    // student knows implicitly and that curriculum teaches via the
+    // function-word teach pass. Exclude from the "content words" that
+    // must be in trainedVocab to pass the filter.
+    const STOPWORDS = new Set([
+      'a','an','the','is','are','was','were','be','been','being','am',
+      'of','in','on','at','to','for','with','from','by','as','or','and',
+      'but','so','if','then','else','not','no','yes','do','does','did',
+      'can','could','would','should','will','may','might','this','that',
+      'these','those','it','its','i','you','he','she','we','they','my',
+      'your','his','her','our','their','has','have','had','what','which',
+      'who','when','where','why','how','whose','there','here',
+    ]);
+    const tokenize = (text) => {
+      const words = String(text || '').toLowerCase()
+        .replace(/[^a-z0-9'\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+      return words;
+    };
+    const filteredForVocab = [];
+    const vocabGaps = new Map(); // word → count of questions using it
+    if (trainedVocab && trainedVocab.size > 0) {
+      for (const q of questions) {
+        const words = tokenize(q.question);
+        const untaught = words.filter(w => !trainedVocab.has(w));
+        if (untaught.length === 0) {
+          filteredForVocab.push(q);
+        } else {
+          for (const w of untaught) vocabGaps.set(w, (vocabGaps.get(w) | 0) + 1);
+        }
+      }
+    } else {
+      // No trained vocab map available — don't filter; operator can
+      // see the untaught-vocab problem via the existing
+      // `_auditExamVocabulary` warning.
+      filteredForVocab.push(...questions);
+    }
+    const vocabFiltered = questions.length - filteredForVocab.length;
+    if (vocabFiltered > 0) {
+      const topGaps = [...vocabGaps.entries()].sort((a,b) => b[1] - a[1]).slice(0, 15);
+      const gapStr = topGaps.map(([w, n]) => `${w}×${n}`).join(', ');
+      this._hb(`[Curriculum][${label}] VOCAB-FILTER — ${vocabFiltered}/${questions.length} questions skipped (untaught words). Top gaps: ${gapStr}${topGaps.length < vocabGaps.size ? ` (+${vocabGaps.size - topGaps.length} more)` : ''}`);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // T39.j.2 — COMPREHENSION GATE per question template
+    // Operator's rule: "she needs to show she can understand a
+    // question before you ask her a shit ton of questions". Group
+    // the remaining (vocab-filtered) questions by question template
+    // via `_classifyQuestionTemplate`. For each template, sample
+    // ONE question and run it through the probe. If the sample scores
+    // ≥ 0.5, proceed with every question in that template group. If
+    // < 0.5, skip ALL questions of that template and log the skip.
+    // ═══════════════════════════════════════════════════════════════
+    const byTemplate = new Map(); // templateId → questions[]
+    const canClassify = typeof this._classifyQuestionTemplate === 'function';
+    for (const q of filteredForVocab) {
+      const tid = canClassify ? this._classifyQuestionTemplate(q.question) : -1;
+      const key = tid >= 0 ? tid : 'generic';
+      if (!byTemplate.has(key)) byTemplate.set(key, []);
+      byTemplate.get(key).push(q);
+    }
+    const filteredForComprehension = [];
+    const templateSkips = []; // { templateId, count, sampleScore }
+    let compSamplesFired = 0;
+    for (const [tid, group] of byTemplate.entries()) {
+      if (group.length === 0) continue;
+      // If only 1 question in group, no need for separate comprehension
+      // sample — just run it through the main loop.
+      if (group.length <= 2) {
+        filteredForComprehension.push(...group);
+        continue;
+      }
+      // Comprehension sample: run the first question. If it scores
+      // ≥ 0.5, group is admitted. Otherwise group is skipped.
+      const sample = group[0];
+      compSamplesFired += 1;
+      let sampleScore = 0;
+      try {
+        const r = await this._studentTestProbe({
+          question: sample.question,
+          expectedAnswer: sample.expectedAnswer,
+          expectedVariants: sample.expectedVariants || [sample.expectedAnswer],
+          maxTicks: sample.maxTicks || 60,
+          methodology: sample.methodology || null,
+        });
+        sampleScore = r?.score || 0;
+        // The sample IS a real probe result — record it to avoid
+        // re-running the same question in the main loop.
+        r.standard = sample.standard || 'unspecified';
+        r.difficulty = sample.difficulty || 1;
+        r.source = sample.source || 'authored';
+        r.comprehensionSample = true;
+      } catch { sampleScore = 0; }
+      if (sampleScore >= 0.5) {
+        // Comprehension OK → admit the whole group (sample already ran; skip it here)
+        filteredForComprehension.push(...group.slice(1));
+      } else {
+        templateSkips.push({ templateId: tid, count: group.length, sampleScore, sampleQ: sample.question });
+      }
+    }
+    const comprehensionFiltered = filteredForVocab.length - filteredForComprehension.length - compSamplesFired;
+    if (templateSkips.length > 0) {
+      const skipSummary = templateSkips.map(s => `T${s.templateId}×${s.count} (sample "${s.sampleQ.slice(0, 40)}" → ${s.sampleScore.toFixed(2)})`).join(' · ');
+      this._hb(`[Curriculum][${label}] COMPREHENSION-GATE — ${comprehensionFiltered} questions skipped across ${templateSkips.length} templates: ${skipSummary}`);
+    }
+
+    // Final question set that actually gets the full battery.
+    questions = filteredForComprehension;
+
+    // Battery START banner — the count reflects post-filter questions.
     try { process.stdout.write(`[Curriculum][${label}] BATTERY START — ${questions.length} questions (maxTicks per Q default 60) · progress logs every 20th Q + failures\n`); } catch {}
     // Per-sub-standard bucket — each entry is {pass, total}. Populated
     // from each question's `standard` tag (K.RF.3a / K.CC.2 / etc).
@@ -12731,17 +12856,17 @@ export class Curriculum {
     // _teachVocabList + _teachSentenceList data-array pattern.
     if (!this._sciKRemakeDone) {
       // K-PS2 Forces and Interactions
-      await this._teachForceMotionK(ctx);
-      await this._teachForceStrengthEffect(ctx);
+      await this._phasedTeach('_teachForceMotionK',         () => this._teachForceMotionK(ctx));
+      await this._phasedTeach('_teachForceStrengthEffect',  () => this._teachForceStrengthEffect(ctx));
       // K-ESS2 Weather and Climate
-      await this._teachWeatherCategories(ctx);
-      await this._teachSeasonTemperature(ctx);
+      await this._phasedTeach('_teachWeatherCategories',    () => this._teachWeatherCategories(ctx));
+      await this._phasedTeach('_teachSeasonTemperature',    () => this._teachSeasonTemperature(ctx));
       // K-LS1 Interdependent Relationships
-      await this._teachLivingThingNeeds(ctx);
-      await this._teachDietClassification(ctx);
-      await this._teachBodyPartFunction(ctx);
+      await this._phasedTeach('_teachLivingThingNeeds',     () => this._teachLivingThingNeeds(ctx));
+      await this._phasedTeach('_teachDietClassification',   () => this._teachDietClassification(ctx));
+      await this._phasedTeach('_teachBodyPartFunction',     () => this._teachBodyPartFunction(ctx));
       // K-ESS3 Earth and Human Activity
-      await this._teachNaturalVsHumanMade(ctx);
+      await this._phasedTeach('_teachNaturalVsHumanMade',   () => this._teachNaturalVsHumanMade(ctx));
 
       // Existing causal chains retained — already equational per Law 3
       await this._teachCausalChains([
@@ -12772,7 +12897,7 @@ export class Curriculum {
       // tests: phase transitions (K-PS1), sunlight effects (K-PS3),
       // animal products (K-LS1), natural-vs-human-made (K-ESS3),
       // push/pull motion (K-PS2). Distinct from EXAM_BANKS Q→A content.
-      await this._teachAssociationPairs([
+      await this._phasedTeach('SCI-K-CONCEPTS', () => this._teachAssociationPairs([
         // Phase transitions
         ['ice','solid'], ['steam','gas'], ['water','liquid'],
         ['melt','liquid'], ['freeze','solid'], ['boil','gas'],
@@ -12791,7 +12916,17 @@ export class Curriculum {
         // Push/pull
         ['push','away'], ['pull','toward'],
         ['harder','faster'], ['heavier','slower'],
-      ], { reps: 8, label: 'SCI-K-CONCEPTS', relationTagId: 1 });
+      ], { reps: 8, label: 'SCI-K-CONCEPTS', relationTagId: 1 }));
+
+      // T39.j.3 — Q-A binding on TRAIN_BANKS['science/kindergarten']
+      // so sem→motor weights carve the question→answer form the
+      // exam tests. Held-out-distinct from EXAM questions per the
+      // T23.b.2 invariant. Adds ~36 Q-A training pairs covering
+      // every K-NGSS standard the exam tests.
+      const sciQA = TRAIN_BANKS['science/kindergarten'] || [];
+      if (sciQA.length > 0) {
+        await this._phasedTeach('SCI-K-QA-TRAIN', () => this._teachQABinding(sciQA, { label: 'SCI-K-QA-TRAIN' }));
+      }
 
       this._sciKRemakeDone = true;
     }
@@ -13031,10 +13166,10 @@ export class Curriculum {
 
     // Equational Core Knowledge K teaching.
     if (!this._socKRemakeDone) {
-      await this._teachCommunityHelpers(ctx);
-      await this._teachNeedsVsWants(ctx);
-      await this._teachAmericanSymbols(ctx);
-      await this._teachGeographyBasics(ctx);
+      await this._phasedTeach('_teachCommunityHelpers', () => this._teachCommunityHelpers(ctx));
+      await this._phasedTeach('_teachNeedsVsWants',     () => this._teachNeedsVsWants(ctx));
+      await this._phasedTeach('_teachAmericanSymbols',  () => this._teachAmericanSymbols(ctx));
+      await this._phasedTeach('_teachGeographyBasics',  () => this._teachGeographyBasics(ctx));
 
       // Existing causal chains retained — equational per Law 3
       await this._teachCausalChains([
@@ -13048,7 +13183,7 @@ export class Curriculum {
       // classes: needs/wants, community helper → role, manners, safety
       // signals, direction words, kinship. Pure feature-vector writes +
       // cross-projection Hebbian, distinct from exam Q→A content.
-      await this._teachAssociationPairs([
+      await this._phasedTeach('SOC-K-CONCEPTS', () => this._teachAssociationPairs([
         // Needs vs wants
         ['food','need'], ['water','need'], ['shelter','need'],
         ['clothing','need'], ['air','need'], ['sleep','need'],
@@ -13071,7 +13206,17 @@ export class Curriculum {
         // Community roles
         ['fire','firefighter'], ['crime','police'], ['sick','doctor'],
         ['teeth','dentist'], ['mail','carrier'], ['food','farmer'],
-      ], { reps: 8, label: 'SOC-K-CONCEPTS', relationTagId: 1 });
+      ], { reps: 8, label: 'SOC-K-CONCEPTS', relationTagId: 1 }));
+
+      // T39.j.4 — Q-A binding on TRAIN_BANKS['social/kindergarten']
+      // so sem→motor weights see question→answer form for every
+      // K-Social standard the exam covers (community helpers,
+      // safety, family, manners, empathy, symbols, time, geography,
+      // citizenship). Held-out-distinct from EXAM questions.
+      const socQA = TRAIN_BANKS['social/kindergarten'] || [];
+      if (socQA.length > 0) {
+        await this._phasedTeach('SOC-K-QA-TRAIN', () => this._teachQABinding(socQA, { label: 'SOC-K-QA-TRAIN' }));
+      }
 
       this._socKRemakeDone = true;
     }
@@ -13306,16 +13451,16 @@ export class Curriculum {
 
     // Equational Arts-K teaching.
     if (!this._artKRemakeDone) {
-      await this._teachColorMixingK(ctx);
-      await this._teachWarmCoolColors(ctx);
-      await this._teachPatternCompletion(ctx);
-      await this._teachMusicBasics(ctx);
+      await this._phasedTeach('_teachColorMixingK',     () => this._teachColorMixingK(ctx));
+      await this._phasedTeach('_teachWarmCoolColors',   () => this._teachWarmCoolColors(ctx));
+      await this._phasedTeach('_teachPatternCompletion', () => this._teachPatternCompletion(ctx));
+      await this._phasedTeach('_teachMusicBasics',      () => this._teachMusicBasics(ctx));
 
       // Equational association-pair teach — Arts-K concept mappings:
       // color mixing, warm/cool classification, shape attributes, art
       // tools, music element names. Pure feature-vector writes +
       // cross-projection Hebbian.
-      await this._teachAssociationPairs([
+      await this._phasedTeach('ART-K-CONCEPTS', () => this._teachAssociationPairs([
         // Primary color mixing
         ['red-yellow','orange'], ['blue-yellow','green'],
         ['red-blue','purple'], ['white-black','gray'],
@@ -13335,7 +13480,16 @@ export class Curriculum {
         ['high','soprano'], ['low','bass'],
         ['violin','string'], ['flute','wind'], ['piano','keys'],
         ['song','melody'], ['rhythm','beat'],
-      ], { reps: 8, label: 'ART-K-CONCEPTS', relationTagId: 1 });
+      ], { reps: 8, label: 'ART-K-CONCEPTS', relationTagId: 1 }));
+
+      // T39.j.5 — Q-A binding on TRAIN_BANKS['art/kindergarten']
+      // so sem→motor weights see question→answer form for color
+      // naming, primary/mixing, warm-cool, shapes, patterns, tools,
+      // and music. Held-out-distinct from EXAM questions.
+      const artQA = TRAIN_BANKS['art/kindergarten'] || [];
+      if (artQA.length > 0) {
+        await this._phasedTeach('ART-K-QA-TRAIN', () => this._teachQABinding(artQA, { label: 'ART-K-QA-TRAIN' }));
+      }
 
       this._artKRemakeDone = true;
     }
