@@ -12856,17 +12856,17 @@ export class Curriculum {
     // _teachVocabList + _teachSentenceList data-array pattern.
     if (!this._sciKRemakeDone) {
       // K-PS2 Forces and Interactions
-      await this._teachForceMotionK(ctx);
-      await this._teachForceStrengthEffect(ctx);
+      await this._phasedTeach('_teachForceMotionK',         () => this._teachForceMotionK(ctx));
+      await this._phasedTeach('_teachForceStrengthEffect',  () => this._teachForceStrengthEffect(ctx));
       // K-ESS2 Weather and Climate
-      await this._teachWeatherCategories(ctx);
-      await this._teachSeasonTemperature(ctx);
+      await this._phasedTeach('_teachWeatherCategories',    () => this._teachWeatherCategories(ctx));
+      await this._phasedTeach('_teachSeasonTemperature',    () => this._teachSeasonTemperature(ctx));
       // K-LS1 Interdependent Relationships
-      await this._teachLivingThingNeeds(ctx);
-      await this._teachDietClassification(ctx);
-      await this._teachBodyPartFunction(ctx);
+      await this._phasedTeach('_teachLivingThingNeeds',     () => this._teachLivingThingNeeds(ctx));
+      await this._phasedTeach('_teachDietClassification',   () => this._teachDietClassification(ctx));
+      await this._phasedTeach('_teachBodyPartFunction',     () => this._teachBodyPartFunction(ctx));
       // K-ESS3 Earth and Human Activity
-      await this._teachNaturalVsHumanMade(ctx);
+      await this._phasedTeach('_teachNaturalVsHumanMade',   () => this._teachNaturalVsHumanMade(ctx));
 
       // Existing causal chains retained — already equational per Law 3
       await this._teachCausalChains([
@@ -12897,7 +12897,7 @@ export class Curriculum {
       // tests: phase transitions (K-PS1), sunlight effects (K-PS3),
       // animal products (K-LS1), natural-vs-human-made (K-ESS3),
       // push/pull motion (K-PS2). Distinct from EXAM_BANKS Q→A content.
-      await this._teachAssociationPairs([
+      await this._phasedTeach('SCI-K-CONCEPTS', () => this._teachAssociationPairs([
         // Phase transitions
         ['ice','solid'], ['steam','gas'], ['water','liquid'],
         ['melt','liquid'], ['freeze','solid'], ['boil','gas'],
@@ -12916,7 +12916,7 @@ export class Curriculum {
         // Push/pull
         ['push','away'], ['pull','toward'],
         ['harder','faster'], ['heavier','slower'],
-      ], { reps: 8, label: 'SCI-K-CONCEPTS', relationTagId: 1 });
+      ], { reps: 8, label: 'SCI-K-CONCEPTS', relationTagId: 1 }));
 
       // T39.j.3 — Q-A binding on TRAIN_BANKS['science/kindergarten']
       // so sem→motor weights carve the question→answer form the
@@ -13166,10 +13166,10 @@ export class Curriculum {
 
     // Equational Core Knowledge K teaching.
     if (!this._socKRemakeDone) {
-      await this._teachCommunityHelpers(ctx);
-      await this._teachNeedsVsWants(ctx);
-      await this._teachAmericanSymbols(ctx);
-      await this._teachGeographyBasics(ctx);
+      await this._phasedTeach('_teachCommunityHelpers', () => this._teachCommunityHelpers(ctx));
+      await this._phasedTeach('_teachNeedsVsWants',     () => this._teachNeedsVsWants(ctx));
+      await this._phasedTeach('_teachAmericanSymbols',  () => this._teachAmericanSymbols(ctx));
+      await this._phasedTeach('_teachGeographyBasics',  () => this._teachGeographyBasics(ctx));
 
       // Existing causal chains retained — equational per Law 3
       await this._teachCausalChains([
@@ -13183,7 +13183,7 @@ export class Curriculum {
       // classes: needs/wants, community helper → role, manners, safety
       // signals, direction words, kinship. Pure feature-vector writes +
       // cross-projection Hebbian, distinct from exam Q→A content.
-      await this._teachAssociationPairs([
+      await this._phasedTeach('SOC-K-CONCEPTS', () => this._teachAssociationPairs([
         // Needs vs wants
         ['food','need'], ['water','need'], ['shelter','need'],
         ['clothing','need'], ['air','need'], ['sleep','need'],
@@ -13206,7 +13206,7 @@ export class Curriculum {
         // Community roles
         ['fire','firefighter'], ['crime','police'], ['sick','doctor'],
         ['teeth','dentist'], ['mail','carrier'], ['food','farmer'],
-      ], { reps: 8, label: 'SOC-K-CONCEPTS', relationTagId: 1 });
+      ], { reps: 8, label: 'SOC-K-CONCEPTS', relationTagId: 1 }));
 
       // T39.j.4 — Q-A binding on TRAIN_BANKS['social/kindergarten']
       // so sem→motor weights see question→answer form for every
@@ -13451,16 +13451,16 @@ export class Curriculum {
 
     // Equational Arts-K teaching.
     if (!this._artKRemakeDone) {
-      await this._teachColorMixingK(ctx);
-      await this._teachWarmCoolColors(ctx);
-      await this._teachPatternCompletion(ctx);
-      await this._teachMusicBasics(ctx);
+      await this._phasedTeach('_teachColorMixingK',     () => this._teachColorMixingK(ctx));
+      await this._phasedTeach('_teachWarmCoolColors',   () => this._teachWarmCoolColors(ctx));
+      await this._phasedTeach('_teachPatternCompletion', () => this._teachPatternCompletion(ctx));
+      await this._phasedTeach('_teachMusicBasics',      () => this._teachMusicBasics(ctx));
 
       // Equational association-pair teach — Arts-K concept mappings:
       // color mixing, warm/cool classification, shape attributes, art
       // tools, music element names. Pure feature-vector writes +
       // cross-projection Hebbian.
-      await this._teachAssociationPairs([
+      await this._phasedTeach('ART-K-CONCEPTS', () => this._teachAssociationPairs([
         // Primary color mixing
         ['red-yellow','orange'], ['blue-yellow','green'],
         ['red-blue','purple'], ['white-black','gray'],
@@ -13480,7 +13480,7 @@ export class Curriculum {
         ['high','soprano'], ['low','bass'],
         ['violin','string'], ['flute','wind'], ['piano','keys'],
         ['song','melody'], ['rhythm','beat'],
-      ], { reps: 8, label: 'ART-K-CONCEPTS', relationTagId: 1 });
+      ], { reps: 8, label: 'ART-K-CONCEPTS', relationTagId: 1 }));
 
       // T39.j.5 — Q-A binding on TRAIN_BANKS['art/kindergarten']
       // so sem→motor weights see question→answer form for color

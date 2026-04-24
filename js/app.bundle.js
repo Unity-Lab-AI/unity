@@ -24111,14 +24111,14 @@ var Curriculum = class _Curriculum {
     await this._teachClassification();
     await this._teachStatesOfMatter();
     if (!this._sciKRemakeDone) {
-      await this._teachForceMotionK(ctx);
-      await this._teachForceStrengthEffect(ctx);
-      await this._teachWeatherCategories(ctx);
-      await this._teachSeasonTemperature(ctx);
-      await this._teachLivingThingNeeds(ctx);
-      await this._teachDietClassification(ctx);
-      await this._teachBodyPartFunction(ctx);
-      await this._teachNaturalVsHumanMade(ctx);
+      await this._phasedTeach("_teachForceMotionK", () => this._teachForceMotionK(ctx));
+      await this._phasedTeach("_teachForceStrengthEffect", () => this._teachForceStrengthEffect(ctx));
+      await this._phasedTeach("_teachWeatherCategories", () => this._teachWeatherCategories(ctx));
+      await this._phasedTeach("_teachSeasonTemperature", () => this._teachSeasonTemperature(ctx));
+      await this._phasedTeach("_teachLivingThingNeeds", () => this._teachLivingThingNeeds(ctx));
+      await this._phasedTeach("_teachDietClassification", () => this._teachDietClassification(ctx));
+      await this._phasedTeach("_teachBodyPartFunction", () => this._teachBodyPartFunction(ctx));
+      await this._phasedTeach("_teachNaturalVsHumanMade", () => this._teachNaturalVsHumanMade(ctx));
       await this._teachCausalChains([
         ["push", "move"],
         ["pull", "move"],
@@ -24149,7 +24149,7 @@ var Curriculum = class _Curriculum {
         { item: "water", features: new Float64Array([0, 0, 0, 0, 0, 0, 0, 0]), category: "mineral" },
         { item: "sand", features: new Float64Array([0, 0, 0, 0, 0, 0, 0, 1]), category: "mineral" }
       ]);
-      await this._teachAssociationPairs([
+      await this._phasedTeach("SCI-K-CONCEPTS", () => this._teachAssociationPairs([
         // Phase transitions
         ["ice", "solid"],
         ["steam", "gas"],
@@ -24190,7 +24190,7 @@ var Curriculum = class _Curriculum {
         ["pull", "toward"],
         ["harder", "faster"],
         ["heavier", "slower"]
-      ], { reps: 8, label: "SCI-K-CONCEPTS", relationTagId: 1 });
+      ], { reps: 8, label: "SCI-K-CONCEPTS", relationTagId: 1 }));
       const sciQA = TRAIN_BANKS["science/kindergarten"] || [];
       if (sciQA.length > 0) {
         await this._phasedTeach("SCI-K-QA-TRAIN", () => this._teachQABinding(sciQA, { label: "SCI-K-QA-TRAIN" }));
@@ -24409,10 +24409,10 @@ var Curriculum = class _Curriculum {
   async runSocKReal(ctx) {
     await this._teachFamilyRoles();
     if (!this._socKRemakeDone) {
-      await this._teachCommunityHelpers(ctx);
-      await this._teachNeedsVsWants(ctx);
-      await this._teachAmericanSymbols(ctx);
-      await this._teachGeographyBasics(ctx);
+      await this._phasedTeach("_teachCommunityHelpers", () => this._teachCommunityHelpers(ctx));
+      await this._phasedTeach("_teachNeedsVsWants", () => this._teachNeedsVsWants(ctx));
+      await this._phasedTeach("_teachAmericanSymbols", () => this._teachAmericanSymbols(ctx));
+      await this._phasedTeach("_teachGeographyBasics", () => this._teachGeographyBasics(ctx));
       await this._teachCausalChains([
         ["fire", "firefighter"],
         ["sick", "doctor"],
@@ -24427,7 +24427,7 @@ var Curriculum = class _Curriculum {
         ["work", "money"],
         ["money", "food"]
       ]);
-      await this._teachAssociationPairs([
+      await this._phasedTeach("SOC-K-CONCEPTS", () => this._teachAssociationPairs([
         // Needs vs wants
         ["food", "need"],
         ["water", "need"],
@@ -24476,7 +24476,7 @@ var Curriculum = class _Curriculum {
         ["teeth", "dentist"],
         ["mail", "carrier"],
         ["food", "farmer"]
-      ], { reps: 8, label: "SOC-K-CONCEPTS", relationTagId: 1 });
+      ], { reps: 8, label: "SOC-K-CONCEPTS", relationTagId: 1 }));
       const socQA = TRAIN_BANKS["social/kindergarten"] || [];
       if (socQA.length > 0) {
         await this._phasedTeach("SOC-K-QA-TRAIN", () => this._teachQABinding(socQA, { label: "SOC-K-QA-TRAIN" }));
@@ -24691,11 +24691,11 @@ var Curriculum = class _Curriculum {
     await this._teachBasicShapes();
     await this._teachSimpleSongs();
     if (!this._artKRemakeDone) {
-      await this._teachColorMixingK(ctx);
-      await this._teachWarmCoolColors(ctx);
-      await this._teachPatternCompletion(ctx);
-      await this._teachMusicBasics(ctx);
-      await this._teachAssociationPairs([
+      await this._phasedTeach("_teachColorMixingK", () => this._teachColorMixingK(ctx));
+      await this._phasedTeach("_teachWarmCoolColors", () => this._teachWarmCoolColors(ctx));
+      await this._phasedTeach("_teachPatternCompletion", () => this._teachPatternCompletion(ctx));
+      await this._phasedTeach("_teachMusicBasics", () => this._teachMusicBasics(ctx));
+      await this._phasedTeach("ART-K-CONCEPTS", () => this._teachAssociationPairs([
         // Primary color mixing
         ["red-yellow", "orange"],
         ["blue-yellow", "green"],
@@ -24739,7 +24739,7 @@ var Curriculum = class _Curriculum {
         ["piano", "keys"],
         ["song", "melody"],
         ["rhythm", "beat"]
-      ], { reps: 8, label: "ART-K-CONCEPTS", relationTagId: 1 });
+      ], { reps: 8, label: "ART-K-CONCEPTS", relationTagId: 1 }));
       const artQA = TRAIN_BANKS["art/kindergarten"] || [];
       if (artQA.length > 0) {
         await this._phasedTeach("ART-K-QA-TRAIN", () => this._teachQABinding(artQA, { label: "ART-K-QA-TRAIN" }));
