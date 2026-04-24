@@ -1805,6 +1805,31 @@ export class NeuronCluster {
     if (!this.regions || !this.regions.motor || !this.regions.letter) return '';
     if (inventorySize() === 0) return '';
 
+    // Direct-propagate emission path — same mechanism LLMs use for
+    // next-token generation but expressed in Unity's cross-projection
+    // substrate. Operator verbatim 2026-04-23: *"wtf does it not have
+    // a similar way of thinking to form words like a llm or gpt but
+    // for our Unity Brains equational matirxi brain setup"*.
+    //
+    // The gate TALK probe already demonstrates direct propagate
+    // works for letter decode (26/26). This path runs the same math
+    // but iteratively for multi-letter emission:
+    //   1. Inject intent seed into sem (if provided)
+    //   2. Propagate sem → motor via `sem_to_motor.propagate()`
+    //   3. Argmax over bucket-reduced motor output → first letter
+    //   4. Inject that letter into letter region
+    //   5. Propagate letter → motor via `letter_to_motor.propagate()`
+    //   6. Argmax → next letter
+    //   7. Continue until terminator or budget
+    //
+    // No LIF ticks, no tonic drive, no Rulkov noise — pure learned
+    // weight output, the honest reading of what training encoded.
+    // Opt in via `opts.directPropagate === true`. Falls through to
+    // the existing LIF-driven emission path when not set.
+    if (opts.directPropagate === true) {
+      return await this._emitDirectPropagate(intentSeed, opts);
+    }
+
     const injectStrength = opts.injectStrength ?? 0.6;
     // Accept both `maxTicks` and `maxEmissionTicks` — earlier call sites
     // used `maxEmissionTicks` which silently fell through to the 2000
@@ -2010,6 +2035,141 @@ export class NeuronCluster {
       gpuReadPath: canGpuMotorRead,
     };
     return output.join(' ');
+  }
+
+  /**
+   * Direct-propagate emission — LLM-style generation using the learned
+   * cross-projection weights without LIF ticks. Each step is a matrix
+   * multiply + argmax (same as an LLM's `logits = W·h` → `argmax`).
+   *
+   * Sequence:
+   *   1. If `intentSeed` provided → build a sem-local input by tiling
+   *      the embedding across the sem region. Propagate through
+   *      `sem_to_motor.propagate()` and argmax over the letter-inventory
+   *      bucketization of the motor region → first letter.
+   *   2. Otherwise read current letter-region state and start from there.
+   *   3. For each subsequent letter (up to `maxTicks`): inject the
+   *      previous letter's one-hot into a letter-scoped input vector,
+   *      propagate through `letter_to_motor.propagate()`, argmax → next
+   *      letter. Stop at word-terminator (space, `.`, `,`, `'`) OR when
+   *      the argmax repeats the previous letter (attractor) OR when
+   *      the max activation is below `minActivation` (nothing left to
+   *      emit).
+   *
+   * Returns the emitted string (letters with no space separators — the
+   * caller can split on word-terminators if needed).
+   *
+   * @param {Float32Array|Float64Array|null} intentSeed
+   * @param {object} opts — `maxTicks`, `maxLetters`, `minActivation`
+   * @returns {Promise<string>}
+   */
+  async _emitDirectPropagate(intentSeed, opts = {}) {
+    const motorRegion = this.regions?.motor;
+    const letterRegion = this.regions?.letter;
+    const semRegion = this.regions?.sem;
+    if (!motorRegion || !letterRegion) return '';
+    const invSize = inventorySize();
+    if (invSize === 0) return '';
+    const maxLetters = opts.maxLetters ?? opts.maxTicks ?? 16;
+    const minActivation = opts.minActivation ?? 0.0;
+    const inv = inventorySnapshot();
+    const TERMINATORS = new Set([' ', '.', ',', "'"]);
+
+    const semToMotor = this.crossProjections?.sem_to_motor;
+    const letterToMotor = this.crossProjections?.letter_to_motor;
+
+    // Helper: bucket-reduce a motor-sized output into invSize buckets
+    // then argmax. Matches the convention `encodeLetter` + the gate
+    // TALK probe use.
+    const motorSize = motorRegion.end - motorRegion.start;
+    const bucketSize = Math.max(1, Math.floor(motorSize / invSize));
+    const bucketArgmax = (motorOutput) => {
+      let bestIdx = -1, bestSum = -Infinity;
+      for (let b = 0; b < invSize; b++) {
+        let sum = 0;
+        for (let n = 0; n < bucketSize; n++) {
+          const idx = b * bucketSize + n;
+          if (idx < motorOutput.length) sum += motorOutput[idx];
+        }
+        if (sum > bestSum) { bestSum = sum; bestIdx = b; }
+      }
+      return { idx: bestIdx, score: bestSum };
+    };
+
+    // Helper: tile an embedding into a region-sized Float64Array (as
+    // input to a cross-projection's CPU CSR `propagate()`). The
+    // projection is indexed against region-local coordinates where
+    // row 0 = region.start, so the input vector is region-sized.
+    const tileIntoRegion = (region, feat) => {
+      const regionSize = region.end - region.start;
+      const inputVec = new Float64Array(regionSize);
+      if (!feat || feat.length === 0) return inputVec;
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) inputVec[idx] = 1;
+        }
+      }
+      return inputVec;
+    };
+
+    let letters = '';
+    let prevLetter = null;
+    let maxMotorBucket = 0;
+    let committedLetters = 0;
+
+    // Step 1 — seed from intent via sem_to_motor when available.
+    if (intentSeed && intentSeed.length > 0 && semToMotor && typeof semToMotor.propagate === 'function' && semToMotor.values && semToMotor.values.length > 0 && semRegion) {
+      const semInput = tileIntoRegion(semRegion, intentSeed);
+      const motorOutput = semToMotor.propagate(semInput);
+      if (motorOutput && motorOutput.length > 0) {
+        const best = bucketArgmax(motorOutput);
+        if (best.score > maxMotorBucket) maxMotorBucket = best.score;
+        if (best.idx >= 0 && best.score > minActivation) {
+          const letter = inv[best.idx];
+          letters += letter;
+          prevLetter = letter;
+          committedLetters++;
+        }
+      }
+    }
+
+    // Step 2+ — iterate through letter_to_motor for sequence.
+    if (letterToMotor && typeof letterToMotor.propagate === 'function' && letterToMotor.values && letterToMotor.values.length > 0) {
+      for (let step = 1; step < maxLetters && prevLetter !== null; step++) {
+        if (TERMINATORS.has(prevLetter)) break;
+        const prevOneHot = encodeLetter(prevLetter);
+        const letterInput = tileIntoRegion(letterRegion, prevOneHot);
+        const motorOutput = letterToMotor.propagate(letterInput);
+        if (!motorOutput || motorOutput.length === 0) break;
+        const best = bucketArgmax(motorOutput);
+        if (best.score > maxMotorBucket) maxMotorBucket = best.score;
+        if (best.idx < 0 || best.score <= minActivation) break;
+        const nextLetter = inv[best.idx];
+        // Attractor-stop: if argmax loops back to the previous letter,
+        // the sequence has nothing more to say — break out.
+        if (nextLetter === prevLetter) break;
+        letters += nextLetter;
+        prevLetter = nextLetter;
+        committedLetters++;
+        if (TERMINATORS.has(nextLetter)) break;
+      }
+    }
+
+    // Write diagnostic fields so callers (`_studentTestProbe`) can log
+    // WHY an empty emission happened.
+    this._motorEmissionTicks = committedLetters;
+    this._lastEmissionDiag = {
+      ticksRun: committedLetters,
+      maxMotorBucket,
+      argmaxFlickers: 0,
+      committedLetters,
+      gpuReadPath: false,
+      mode: 'direct-propagate',
+    };
+    return letters;
   }
 
   /**

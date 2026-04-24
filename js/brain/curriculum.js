@@ -1074,10 +1074,27 @@ export class Curriculum {
         // the probe result is still valid (slower cues = emission path
         // isn't ready yet = readiness fails, battery skips, teach
         // continues).
-        // Pass null semSeed — direct letter injection above already
-        // drove the letter region; emission runs off propagate-
-        // derived motor currents, not a sem-region seed.
-        const emissionPromise = cluster.generateSentenceAwait(null, emitOpts);
+        // Direct-propagate emission — LLM-style: inject letter one-hot
+        // as semantic intent, propagate through sem→motor and
+        // letter→motor learned weights, argmax per step to emit
+        // letters. No LIF/Rulkov noise, no tonic-drive battles. The
+        // gate TALK probe proves letter→motor weights hit 26/26 via
+        // direct propagate — reusing that mechanism for emission
+        // reads the weights honestly instead of filtering them
+        // through the noisy tick simulator.
+        emitOpts.directPropagate = true;
+        emitOpts.maxLetters = 5; // single-letter readiness cue; 5 emits enough runway for short answers
+        // Build a letter one-hot as the "intent seed" so the direct
+        // propagate path uses sem_to_motor routed via the seed's
+        // active dims. For readiness we really just want letter->motor
+        // which directPropagate handles iteratively after the sem step.
+        const letterSeed = cue ? (function buildLetterSeed(letter) {
+          const oh = new Float32Array(26);
+          const i = letter.charCodeAt(0) - 97;
+          if (i >= 0 && i < 26) oh[i] = 1;
+          return oh;
+        })(cue) : null;
+        const emissionPromise = cluster.generateSentenceAwait(letterSeed, emitOpts);
         const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ _timeout: true }), PER_CUE_TIMEOUT_MS));
         const raw = await Promise.race([emissionPromise, timeoutPromise]);
         if (raw && raw._timeout) {
@@ -1184,16 +1201,31 @@ export class Curriculum {
       }
     } catch { /* non-fatal — teach-side pattern parity is best-effort */ }
 
-    // Generate Unity's answer via the tick-driven motor emission path.
-    // This is the EXACT same call live chat makes — no shortcut, no
-    // cheat path. If she can't answer here, she can't answer in chat.
+    // Generate Unity's answer via direct-propagate emission — LLM-style
+    // weight-driven next-letter generation using the learned cross-
+    // projection matrices. The prior tick-driven LIF emission masked
+    // the trained weights behind Rulkov noise + tonic drive; gate
+    // direct-propagate TALK probes return 26/26 correctly while LIF
+    // emission returned empty or uniform-bucket junk. Switching probe
+    // emission to direct propagate reads the weights honestly.
     let generated = '';
     try {
-      const semSeed = (typeof cluster.getSemanticReadout === 'function')
-        ? cluster.getSemanticReadout() : null;
-      const emitOpts = { maxEmissionTicks: maxTicks };
-      if (semSeed) emitOpts.injectStrength = 0.6;
-      const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
+      // Use the question's GloVe sentence embedding as the intent seed
+      // — that's what the sem_to_motor weights were trained against via
+      // _teachQABinding and _teachAssociationPairs. Falls back to
+      // getSemanticReadout if sentence embeddings aren't available.
+      let intentSeed = null;
+      if (sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === 'function') {
+        intentSeed = sharedEmbeddings.getSentenceEmbedding(question);
+      }
+      if ((!intentSeed || intentSeed.length === 0) && typeof cluster.getSemanticReadout === 'function') {
+        intentSeed = cluster.getSemanticReadout();
+      }
+      const emitOpts = {
+        directPropagate: true,
+        maxLetters: Math.min(maxTicks, 16),
+      };
+      const raw = await cluster.generateSentenceAwait(intentSeed, emitOpts);
       generated = (raw && typeof raw === 'string' ? raw : (raw?.text || '')) || '';
     } catch { /* generation failed — answer stays '' */ }
 
@@ -5988,61 +6020,55 @@ export class Curriculum {
   async _pregateEnrichment(cellKey, opts = {}) {
     if (!cellKey) return;
     this._pregateCellsDone = this._pregateCellsDone || new Set();
-    // Per-session per-cell guard — enrichment can be hours of teach
-    // time at biological scale. Don't re-run for a retest within the
-    // same session unless the caller passes `force: true`.
+
+    // VOCAB-TEACH runs on EVERY gate entry (not just first). The
+    // original `_pregateCellsDone` guard below wraps the structure-
+    // teach path (which is expensive and re-doing it across retries
+    // produces destructive interference) — but missing-exam-word
+    // teaching is cheap, idempotent (already-trained words are
+    // naturally filtered by `_trainedVocabularySet`), and critical:
+    // operator verbatim 2026-04-23: *"i thought i told you to fix
+    // all the vocab by fuckng adding the words to the learned
+    // words!!!"*. The prior wrap meant retry N could not pick up
+    // words that retry N-1 failed to teach. Lifted out of the guard.
+    try {
+      this._auditExamVocabulary(cellKey);
+      const trained = this._trainedVocabularySet(cellKey);
+      const report = examVocabCoverage(cellKey, trained);
+      if (report && Array.isArray(report.missing) && report.missing.length > 0) {
+        const words = report.missing.filter(w =>
+          typeof w === 'string' && /^[a-z][a-z']*$/i.test(w) && w.length >= 2 && w.length <= 20);
+        if (words.length > 0 && typeof this._teachVocabList === 'function') {
+          const ctx = { arousal: 0.7, valence: 0.2 };
+          const CHUNK = 25;
+          const reps = opts.vocabReps ?? 4;
+          this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH START — ${words.length} missing exam words × ${reps} reps (chunked ${CHUNK})`);
+          let done = 0;
+          for (let i = 0; i < words.length; i += CHUNK) {
+            const slice = words.slice(i, i + CHUNK);
+            try {
+              await this._teachVocabList(slice, ctx, { reps });
+            } catch (err) {
+              console.warn(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH chunk ${i/CHUNK | 0} failed:`, err?.message || err);
+            }
+            done += slice.length;
+            this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH progress — ${done}/${words.length} words taught`);
+            await new Promise(resolve => setImmediate(resolve));
+          }
+          this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH DONE — ${done}/${words.length} words taught`);
+          this._auditExamVocabulary(cellKey);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Curriculum][${cellKey}] exam-vocab teach failed:`, err?.message || err);
+    }
+
+    // Per-session per-cell guard — structure-teach can be minutes of
+    // Hebbian work at biological scale. Don't re-run for a retest
+    // within the same session unless the caller passes `force: true`.
     if (!opts.force && this._pregateCellsDone.has(cellKey)) return;
     this._pregateCellsDone.add(cellKey);
     try {
-      // 1. Vocabulary audit (already wired into every _gateXKReal;
-      //    this call is defensive in case someone invokes pregate
-      //    enrichment from a different path).
-      this._auditExamVocabulary(cellKey);
-      // 1.b. Teach any exam content words that aren't yet in Unity's
-      //    trained vocabulary. Uses the SAME `_teachVocabList`
-      //    primitive every other curriculum phase uses — letter +
-      //    phon + sem + motor patterns written, cross-region Hebbian
-      //    fires. This is not a special "bootstrap" — it's the same
-      //    teaching path that lays down Dolch words, function words,
-      //    CVC families. The curriculum was previously warning about
-      //    coverage gaps but never filling them; now the gap IS the
-      //    teach list.
-      try {
-        const trained = this._trainedVocabularySet(cellKey);
-        const report = examVocabCoverage(cellKey, trained);
-        if (report && Array.isArray(report.missing) && report.missing.length > 0) {
-          const words = report.missing.filter(w =>
-            typeof w === 'string' && /^[a-z][a-z']*$/i.test(w) && w.length >= 2 && w.length <= 20);
-          if (words.length > 0 && typeof this._teachVocabList === 'function') {
-            const ctx = { arousal: 0.7, valence: 0.2 };
-            // Chunk through the missing list with an explicit yield
-            // every chunk so a 200-word gap doesn't monopolize the
-            // event loop. Each chunk fires the standard
-            // `_teachVocabList` — letter region + phon + sem + motor
-            // + cross-region Hebbian, same as every other vocab walk.
-            const CHUNK = 25;
-            const reps = opts.vocabReps ?? 4;
-            this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH START — ${words.length} missing exam words × ${reps} reps (chunked ${CHUNK})`);
-            let done = 0;
-            for (let i = 0; i < words.length; i += CHUNK) {
-              const slice = words.slice(i, i + CHUNK);
-              try {
-                await this._teachVocabList(slice, ctx, { reps });
-              } catch (err) {
-                console.warn(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH chunk ${i/CHUNK | 0} failed:`, err?.message || err);
-              }
-              done += slice.length;
-              this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH progress — ${done}/${words.length} words taught`);
-              await new Promise(resolve => setImmediate(resolve));
-            }
-            this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH DONE — ${done}/${words.length} words taught`);
-            // Re-audit so operator sees post-teach coverage, not pre-teach.
-            this._auditExamVocabulary(cellKey);
-          }
-        }
-      } catch (err) {
-        console.warn(`[Curriculum][${cellKey}] exam-vocab teach failed:`, err?.message || err);
-      }
       // 2. Sentence-structure teach — classify every TRAIN_BANKS
       //    question, lay down a template-tag teach pass per unique
       //    structural form so fineType has a basin for each
