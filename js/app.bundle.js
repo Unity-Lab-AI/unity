@@ -840,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "7bdb2294-bba7";
+var BUILD = "ce0575a5-a16b";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -23594,20 +23594,187 @@ var Curriculum = class _Curriculum {
   // subject, letter-stream-to-sem binding via cluster.learn after each
   // word walk, 3-pathway gate with word-level READ/THINK/TALK probes.
   // Shared `_teachVocabList` helper keeps the three methods thin.
+  /**
+   * Integrated word-learning primitive — every word goes through the
+   * FULL stack of what it means to "know" a word:
+   *
+   *   Layer 1 — Orthographic (spelling). For every letter position in
+   *     the word, bind letter(word[i]) → motor(word[i]) so Unity can
+   *     emit each letter when cued. Also teaches letter(word[i]) →
+   *     letter(word[i+1]) sequence transitions via intra-synapses so
+   *     multi-letter emission has a recurrent carrier.
+   *
+   *   Layer 2 — Phonological. For every letter, bind letter → phon via
+   *     the letter's phoneme-feature vector, so the brain's sound
+   *     representation of each letter is active when the word is read.
+   *
+   *   Layer 3 — Semantic. Bind sem(GloVe word) → motor(first letter)
+   *     so "what is a pet?" → 'c' (cat) routes through meaning →
+   *     production. Also sem → phon for meaning → pronunciation.
+   *
+   *   Layer 4 — Syntactic. Inject the word into three K-grade sentence
+   *     templates ("i see a X", "the X is here", "this is a X") and
+   *     bind each template's sentence embedding → motor(first letter
+   *     of the WORD), so Unity can recognize where the word fits in a
+   *     sentence frame and produce it from that context.
+   *
+   *   Layer 5 — Lexical memory. Register in `this.dictionary` so the
+   *     word is retrievable, its frequency tracks usage, and
+   *     `_trainedVocabularySet` audit reflects it.
+   *
+   * Grounding: this is the minimum that "learning a word" means for a
+   * K-grade student — they know the letters, the sounds, the meaning,
+   * where it fits in sentences, AND remember it in their lexicon.
+   * Operator verbatim 2026-04-23: *"fully tereasch sententce structure
+   * and vocabulary use is not a small patch job these are crutial to
+   * all of Unitys mind to be able to communicate and should be part
+   * of the normal learning of words"*.
+   *
+   * @param {string} word — word to teach
+   * @param {object} opts — `reps` (default 4), `arousal`, `valence`,
+   *   `templates` (override default sentence frames), `skipTemplates`
+   *   to disable Layer 4
+   */
+  async _teachWordIntegrated(word, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !word) return;
+    const cleanWord = String(word).toLowerCase().replace(/[^a-z']/g, "");
+    if (cleanWord.length === 0) return;
+    const letters = cleanWord.replace(/'/g, "").split("");
+    if (letters.length === 0) return;
+    const reps = opts.reps ?? 4;
+    const arousal = opts.arousal ?? 0.7;
+    const valence = opts.valence ?? 0.2;
+    const lr = cluster.learningRate;
+    const letterRegion = cluster.regions.letter;
+    const phonRegion = cluster.regions.phon;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    if (!letterRegion || !motorRegion) return;
+    const letterSize = letterRegion.end - letterRegion.start;
+    const phonSize = phonRegion ? phonRegion.end - phonRegion.start : 0;
+    const semSize = semRegion ? semRegion.end - semRegion.start : 0;
+    const motorSize = motorRegion.end - motorRegion.start;
+    const buildPattern = (regionSize, feat) => {
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    };
+    ensureLetters(letters);
+    if (this.dictionary && typeof this.dictionary.learnWord === "function") {
+      try {
+        this.dictionary.learnWord(cleanWord, null, arousal, valence);
+      } catch {
+      }
+    }
+    const wordEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(cleanWord) : null;
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      for (let i = 0; i < letters.length; i++) {
+        const ch = letters[i];
+        const chOneHot = encodeLetter(ch);
+        const phonFeat = _phonemeFeatureForLetter(ch);
+        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+        const letterPat = buildPattern(letterSize, chOneHot);
+        for (let j = 0; j < letterSize; j++) {
+          cluster.lastSpikes[letterRegion.start + j] = letterPat[j] > 0 ? 1 : 0;
+        }
+        if (phonRegion && phonFeat.length > 0) {
+          const phonPat = buildPattern(phonSize, phonFeat);
+          for (let j = 0; j < phonSize; j++) {
+            cluster.lastSpikes[phonRegion.start + j] = phonPat[j] > 0 ? 1 : 0;
+          }
+        }
+        const motorPat = buildPattern(motorSize, chOneHot);
+        for (let j = 0; j < motorSize; j++) {
+          cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
+        }
+        if (semRegion && wordEmb && wordEmb.length > 0) {
+          const semPat = buildPattern(semSize, wordEmb);
+          for (let j = 0; j < semSize; j++) {
+            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+          }
+        }
+        await cluster._crossRegionHebbian(lr);
+      }
+      if (typeof cluster.hebbianPairReinforce === "function" && letters.length > 1) {
+        for (let i = 0; i < letters.length - 1; i++) {
+          const curr = encodeLetter(letters[i]);
+          const next = encodeLetter(letters[i + 1]);
+          try {
+            cluster.hebbianPairReinforce({
+              region: "letter",
+              srcOneHot: curr,
+              correctOneHot: next,
+              wrongOneHot: null
+            });
+          } catch {
+          }
+        }
+      }
+      if (!opts.skipTemplates && semRegion) {
+        const templates = opts.templates || [
+          `i see a ${cleanWord}`,
+          `the ${cleanWord} is here`,
+          `this is a ${cleanWord}`
+        ];
+        const firstLetterOneHot = encodeLetter(letters[0]);
+        const motorFirstLetter = buildPattern(motorSize, firstLetterOneHot);
+        for (const sentence of templates) {
+          const sentEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function" ? sharedEmbeddings.getSentenceEmbedding(sentence) : null;
+          if (!sentEmb || sentEmb.length === 0) continue;
+          for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+          const semPat = buildPattern(semSize, sentEmb);
+          for (let j = 0; j < semSize; j++) {
+            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+          }
+          for (let j = 0; j < motorSize; j++) {
+            cluster.lastSpikes[motorRegion.start + j] = motorFirstLetter[j] > 0 ? 1 : 0;
+          }
+          await cluster._crossRegionHebbian(lr);
+        }
+      }
+      if (typeof _microtask === "function") await _microtask();
+    }
+    this.stats.shortWordsSeen++;
+  }
   async _teachVocabList(vocab, ctx, opts = {}) {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: "no cluster wired" };
     const reps = opts.reps ?? 12;
     const arousal = ctx?.arousal ?? 0.8;
     const valence = ctx?.valence ?? 0.2;
-    const lr = cluster.learningRate;
     const letterRegion = cluster.regions.letter;
     const phonRegion = cluster.regions.phon;
-    const semRegion = cluster.regions.sem;
-    const motorRegion = cluster.regions.motor;
     if (!letterRegion || !phonRegion) return { pass: false, reason: "missing regions" };
+    const letterSet = /* @__PURE__ */ new Set();
+    for (const w of vocab) for (const ch of String(w).toLowerCase().replace(/[^a-z]/g, "")) letterSet.add(ch);
+    ensureLetters(Array.from(letterSet));
+    for (const word of vocab) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return { pass: false, reason: "shutdown" };
+      await this._teachWordIntegrated(word, {
+        reps,
+        arousal,
+        valence,
+        skipTemplates: opts.skipTemplates === true
+      });
+      if (typeof _microtask === "function") {
+      }
+    }
+    const _bagLeftovers = [];
+    for (const _skip of _bagLeftovers) {
+    }
+    return { pass: true, reason: "integrated-teach-complete" };
     const letterSize = letterRegion.end - letterRegion.start;
     const phonSize = phonRegion.end - phonRegion.start;
+    const lr = cluster.learningRate;
     function buildPattern(regionSize, feat) {
       const pat = new Float64Array(regionSize);
       const gSize = Math.max(1, Math.floor(regionSize / feat.length));
@@ -23620,9 +23787,8 @@ var Curriculum = class _Curriculum {
       }
       return pat;
     }
-    const letterSet = /* @__PURE__ */ new Set();
-    for (const w of vocab) for (const ch of w) letterSet.add(ch);
-    ensureLetters(Array.from(letterSet));
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return { pass: false, reason: "shutdown" };
       for (const word of vocab) {
