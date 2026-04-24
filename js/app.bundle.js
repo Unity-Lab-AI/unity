@@ -840,7 +840,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "bd66453d-d79f";
+var BUILD = "8fb04dd9-acab";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -2721,6 +2721,9 @@ var NeuronCluster = class {
   async generateSentenceAwait(intentSeed = null, opts = {}) {
     if (!this.regions || !this.regions.motor || !this.regions.letter) return "";
     if (inventorySize() === 0) return "";
+    if (opts.directPropagate === true) {
+      return await this._emitDirectPropagate(intentSeed, opts);
+    }
     const injectStrength = opts.injectStrength ?? 0.6;
     const maxTicks = opts.maxTicks ?? opts.maxEmissionTicks ?? this.MAX_EMISSION_TICKS;
     const suppressNoise = opts.suppressNoise === true;
@@ -2842,6 +2845,123 @@ var NeuronCluster = class {
       gpuReadPath: canGpuMotorRead
     };
     return output.join(" ");
+  }
+  /**
+   * Direct-propagate emission — LLM-style generation using the learned
+   * cross-projection weights without LIF ticks. Each step is a matrix
+   * multiply + argmax (same as an LLM's `logits = W·h` → `argmax`).
+   *
+   * Sequence:
+   *   1. If `intentSeed` provided → build a sem-local input by tiling
+   *      the embedding across the sem region. Propagate through
+   *      `sem_to_motor.propagate()` and argmax over the letter-inventory
+   *      bucketization of the motor region → first letter.
+   *   2. Otherwise read current letter-region state and start from there.
+   *   3. For each subsequent letter (up to `maxTicks`): inject the
+   *      previous letter's one-hot into a letter-scoped input vector,
+   *      propagate through `letter_to_motor.propagate()`, argmax → next
+   *      letter. Stop at word-terminator (space, `.`, `,`, `'`) OR when
+   *      the argmax repeats the previous letter (attractor) OR when
+   *      the max activation is below `minActivation` (nothing left to
+   *      emit).
+   *
+   * Returns the emitted string (letters with no space separators — the
+   * caller can split on word-terminators if needed).
+   *
+   * @param {Float32Array|Float64Array|null} intentSeed
+   * @param {object} opts — `maxTicks`, `maxLetters`, `minActivation`
+   * @returns {Promise<string>}
+   */
+  async _emitDirectPropagate(intentSeed, opts = {}) {
+    const motorRegion = this.regions?.motor;
+    const letterRegion = this.regions?.letter;
+    const semRegion = this.regions?.sem;
+    if (!motorRegion || !letterRegion) return "";
+    const invSize = inventorySize();
+    if (invSize === 0) return "";
+    const maxLetters = opts.maxLetters ?? opts.maxTicks ?? 16;
+    const minActivation = opts.minActivation ?? 0;
+    const inv = inventorySnapshot();
+    const TERMINATORS = /* @__PURE__ */ new Set([" ", ".", ",", "'"]);
+    const semToMotor = this.crossProjections?.sem_to_motor;
+    const letterToMotor = this.crossProjections?.letter_to_motor;
+    const motorSize = motorRegion.end - motorRegion.start;
+    const bucketSize = Math.max(1, Math.floor(motorSize / invSize));
+    const bucketArgmax = (motorOutput) => {
+      let bestIdx = -1, bestSum = -Infinity;
+      for (let b = 0; b < invSize; b++) {
+        let sum = 0;
+        for (let n = 0; n < bucketSize; n++) {
+          const idx = b * bucketSize + n;
+          if (idx < motorOutput.length) sum += motorOutput[idx];
+        }
+        if (sum > bestSum) {
+          bestSum = sum;
+          bestIdx = b;
+        }
+      }
+      return { idx: bestIdx, score: bestSum };
+    };
+    const tileIntoRegion = (region, feat) => {
+      const regionSize = region.end - region.start;
+      const inputVec = new Float64Array(regionSize);
+      if (!feat || feat.length === 0) return inputVec;
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) inputVec[idx] = 1;
+        }
+      }
+      return inputVec;
+    };
+    let letters = "";
+    let prevLetter = null;
+    let maxMotorBucket = 0;
+    let committedLetters = 0;
+    if (intentSeed && intentSeed.length > 0 && semToMotor && typeof semToMotor.propagate === "function" && semToMotor.values && semToMotor.values.length > 0 && semRegion) {
+      const semInput = tileIntoRegion(semRegion, intentSeed);
+      const motorOutput = semToMotor.propagate(semInput);
+      if (motorOutput && motorOutput.length > 0) {
+        const best = bucketArgmax(motorOutput);
+        if (best.score > maxMotorBucket) maxMotorBucket = best.score;
+        if (best.idx >= 0 && best.score > minActivation) {
+          const letter = inv[best.idx];
+          letters += letter;
+          prevLetter = letter;
+          committedLetters++;
+        }
+      }
+    }
+    if (letterToMotor && typeof letterToMotor.propagate === "function" && letterToMotor.values && letterToMotor.values.length > 0) {
+      for (let step = 1; step < maxLetters && prevLetter !== null; step++) {
+        if (TERMINATORS.has(prevLetter)) break;
+        const prevOneHot = encodeLetter(prevLetter);
+        const letterInput = tileIntoRegion(letterRegion, prevOneHot);
+        const motorOutput = letterToMotor.propagate(letterInput);
+        if (!motorOutput || motorOutput.length === 0) break;
+        const best = bucketArgmax(motorOutput);
+        if (best.score > maxMotorBucket) maxMotorBucket = best.score;
+        if (best.idx < 0 || best.score <= minActivation) break;
+        const nextLetter = inv[best.idx];
+        if (nextLetter === prevLetter) break;
+        letters += nextLetter;
+        prevLetter = nextLetter;
+        committedLetters++;
+        if (TERMINATORS.has(nextLetter)) break;
+      }
+    }
+    this._motorEmissionTicks = committedLetters;
+    this._lastEmissionDiag = {
+      ticksRun: committedLetters,
+      maxMotorBucket,
+      argmaxFlickers: 0,
+      committedLetters,
+      gpuReadPath: false,
+      mode: "direct-propagate"
+    };
+    return letters;
   }
   /**
    * T14.4 — Propagate every cross-region projection. Runs on every
@@ -12392,7 +12512,15 @@ var Curriculum = class _Curriculum {
           await cluster.readInput(cue, { ticks: 6 });
         }
         const emitOpts = { maxTicks: 20 };
-        const emissionPromise = cluster.generateSentenceAwait(null, emitOpts);
+        emitOpts.directPropagate = true;
+        emitOpts.maxLetters = 5;
+        const letterSeed = cue ? function buildLetterSeed(letter) {
+          const oh = new Float32Array(26);
+          const i = letter.charCodeAt(0) - 97;
+          if (i >= 0 && i < 26) oh[i] = 1;
+          return oh;
+        }(cue) : null;
+        const emissionPromise = cluster.generateSentenceAwait(letterSeed, emitOpts);
         const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ _timeout: true }), PER_CUE_TIMEOUT_MS));
         const raw = await Promise.race([emissionPromise, timeoutPromise]);
         if (raw && raw._timeout) {
@@ -12475,10 +12603,18 @@ var Curriculum = class _Curriculum {
     }
     let generated = "";
     try {
-      const semSeed = typeof cluster.getSemanticReadout === "function" ? cluster.getSemanticReadout() : null;
-      const emitOpts = { maxEmissionTicks: maxTicks };
-      if (semSeed) emitOpts.injectStrength = 0.6;
-      const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
+      let intentSeed = null;
+      if (sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function") {
+        intentSeed = sharedEmbeddings.getSentenceEmbedding(question);
+      }
+      if ((!intentSeed || intentSeed.length === 0) && typeof cluster.getSemanticReadout === "function") {
+        intentSeed = cluster.getSemanticReadout();
+      }
+      const emitOpts = {
+        directPropagate: true,
+        maxLetters: Math.min(maxTicks, 16)
+      };
+      const raw = await cluster.generateSentenceAwait(intentSeed, emitOpts);
       generated = (raw && typeof raw === "string" ? raw : raw?.text || "") || "";
     } catch {
     }
@@ -17740,39 +17876,39 @@ var Curriculum = class _Curriculum {
   async _pregateEnrichment(cellKey, opts = {}) {
     if (!cellKey) return;
     this._pregateCellsDone = this._pregateCellsDone || /* @__PURE__ */ new Set();
+    try {
+      this._auditExamVocabulary(cellKey);
+      const trained = this._trainedVocabularySet(cellKey);
+      const report = examVocabCoverage(cellKey, trained);
+      if (report && Array.isArray(report.missing) && report.missing.length > 0) {
+        const words = report.missing.filter((w) => typeof w === "string" && /^[a-z][a-z']*$/i.test(w) && w.length >= 2 && w.length <= 20);
+        if (words.length > 0 && typeof this._teachVocabList === "function") {
+          const ctx = { arousal: 0.7, valence: 0.2 };
+          const CHUNK = 25;
+          const reps = opts.vocabReps ?? 4;
+          this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH START \u2014 ${words.length} missing exam words \xD7 ${reps} reps (chunked ${CHUNK})`);
+          let done = 0;
+          for (let i = 0; i < words.length; i += CHUNK) {
+            const slice = words.slice(i, i + CHUNK);
+            try {
+              await this._teachVocabList(slice, ctx, { reps });
+            } catch (err) {
+              console.warn(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH chunk ${i / CHUNK | 0} failed:`, err?.message || err);
+            }
+            done += slice.length;
+            this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH progress \u2014 ${done}/${words.length} words taught`);
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+          this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH DONE \u2014 ${done}/${words.length} words taught`);
+          this._auditExamVocabulary(cellKey);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Curriculum][${cellKey}] exam-vocab teach failed:`, err?.message || err);
+    }
     if (!opts.force && this._pregateCellsDone.has(cellKey)) return;
     this._pregateCellsDone.add(cellKey);
     try {
-      this._auditExamVocabulary(cellKey);
-      try {
-        const trained = this._trainedVocabularySet(cellKey);
-        const report = examVocabCoverage(cellKey, trained);
-        if (report && Array.isArray(report.missing) && report.missing.length > 0) {
-          const words = report.missing.filter((w) => typeof w === "string" && /^[a-z][a-z']*$/i.test(w) && w.length >= 2 && w.length <= 20);
-          if (words.length > 0 && typeof this._teachVocabList === "function") {
-            const ctx = { arousal: 0.7, valence: 0.2 };
-            const CHUNK = 25;
-            const reps = opts.vocabReps ?? 4;
-            this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH START \u2014 ${words.length} missing exam words \xD7 ${reps} reps (chunked ${CHUNK})`);
-            let done = 0;
-            for (let i = 0; i < words.length; i += CHUNK) {
-              const slice = words.slice(i, i + CHUNK);
-              try {
-                await this._teachVocabList(slice, ctx, { reps });
-              } catch (err) {
-                console.warn(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH chunk ${i / CHUNK | 0} failed:`, err?.message || err);
-              }
-              done += slice.length;
-              this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH progress \u2014 ${done}/${words.length} words taught`);
-              await new Promise((resolve) => setImmediate(resolve));
-            }
-            this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH DONE \u2014 ${done}/${words.length} words taught`);
-            this._auditExamVocabulary(cellKey);
-          }
-        }
-      } catch (err) {
-        console.warn(`[Curriculum][${cellKey}] exam-vocab teach failed:`, err?.message || err);
-      }
       if (typeof this._teachSentenceStructures === "function") {
         await this._teachSentenceStructures(cellKey, opts.structReps ?? 6);
       }
