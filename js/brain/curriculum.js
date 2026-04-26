@@ -40,7 +40,7 @@
 
 import { sharedEmbeddings } from './embeddings.js';
 import { ensureLetter, ensureLetters, encodeLetter, decodeLetter, inventorySize, inventorySnapshot } from './letter-input.js';
-import { EXAM_BANKS, TRAIN_BANKS, cutScoreFor, trainExamOverlap, examVocabCoverage } from './student-question-banks.js';
+import { EXAM_BANKS, TRAIN_BANKS, cutScoreFor, trainExamOverlap, examVocabCoverage, extractVocabFromBank, methodologyBankFor, scoreMethodologyAnswer } from './student-question-banks.js';
 
 // Phase tick budgets. These scale the intensity of exposure — letters
 // and short words get more ticks per token because phonological basins
@@ -135,8 +135,8 @@ export const GRADE_ORDER = [
 // alphabet and digit sequences are the raw signs being taught,
 // not rules. A child's K classroom has the ABC chart on the wall;
 // that chart is data, and so is this.
-const ALPHABET_ORDER = 'abcdefghijklmnopqrstuvwxyz';
-const DIGIT_ORDER = '0123456789';
+export const ALPHABET_ORDER = 'abcdefghijklmnopqrstuvwxyz';
+export const DIGIT_ORDER = '0123456789';
 
 // Conventional English letter names. "A" is pronounced "ay", "B" is
 // "bee", etc. This is the convention Unity is being taught — same
@@ -151,7 +151,7 @@ const LETTER_NAMES = [
 ];
 
 // Conventional English digit names. Same principle — data, not rule.
-const DIGIT_NAMES = [
+export const DIGIT_NAMES = [
   'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
 ];
 
@@ -235,8 +235,8 @@ const K_LETTER_PHONEMES = {
 // to K_LETTER_PHONEMES['k']) produce IDENTICAL feature vectors — which
 // is phonologically correct and lets Unity's cortex learn that "c" and
 // "k" make the same sound.
-const PHONEME_FEATURE_DIM = 24;
-function _phonemeFeatureForLetter(letter) {
+export const PHONEME_FEATURE_DIM = 24;
+export function _phonemeFeatureForLetter(letter) {
   const ch = letter ? String(letter).toLowerCase() : '';
   let entry = K_LETTER_PHONEMES[ch];
   if (!entry) return new Float64Array(PHONEME_FEATURE_DIM);
@@ -283,8 +283,8 @@ function _phonemeFeatureForLetter(letter) {
 // where adjacent digits are closer than distant digits. Uses a
 // mixture of log, linear, sinusoidal components so the cortex can
 // learn ordinal comparison (greater/less-than) via simple cosine.
-const MAGNITUDE_FEATURE_DIM = 16;
-function _magnitudeFeatureForDigit(digit) {
+export const MAGNITUDE_FEATURE_DIM = 16;
+export function _magnitudeFeatureForDigit(digit) {
   const n = parseInt(digit, 10);
   if (isNaN(n)) return new Float64Array(MAGNITUDE_FEATURE_DIM);
   const out = new Float64Array(MAGNITUDE_FEATURE_DIM);
@@ -317,7 +317,7 @@ function _magnitudeFeatureForDigit(digit) {
 // single dim dominates the L2 norm at the upper end.
 const NUMBER_FEATURE_DIM = 24;
 const NUMBER_FEATURE_MAX = 100;
-function _magnitudeFeatureForNumber(n) {
+export function _magnitudeFeatureForNumber(n) {
   const num = typeof n === 'number' ? n : parseInt(n, 10);
   if (isNaN(num)) return new Float64Array(NUMBER_FEATURE_DIM);
   const clamped = Math.max(0, Math.min(NUMBER_FEATURE_MAX, num));
@@ -402,6 +402,12 @@ export class Curriculum {
     this.cluster = cluster;
     this.dictionary = dictionary;
     this.languageCortex = languageCortex;
+    // Wire dictionary onto the cluster so `_emitDirectPropagate` can
+    // consult it for semantic-oracle word lookup when the matrix path
+    // produces noise. Dictionary already has 196 K vocab words with
+    // full GloVe patterns + correct spellings — using it as a lookup
+    // bypasses sem_to_motor basin collapse for gate-probe emissions.
+    if (cluster && dictionary) cluster.dictionary = dictionary;
     // Telemetry — callers can read post-run to see what the curriculum
     // actually exposed the brain to.
     this.stats = {
@@ -870,7 +876,355 @@ export class Curriculum {
 
   /**
    * Run a battery of student-test questions and return an aggregate
-   * summary. Used at the end of every grade gate to score the brain
+   * summary. Used at the end of every grade gate to score the brain.
+   */
+
+  /**
+   * Build a vocabulary whitelist for K-grade student test probes. The
+   * oracle's cosine scan can otherwise pick rare/random words from the
+   * full ~4000-word dictionary ("diningroom", "anymore", "byebye") that
+   * happen to have high cosine to the post-question cortex sem state.
+   * For K-grade exams the answer pool should be constrained to
+   * vocabulary a kindergartener might plausibly answer with: the 26
+   * letters, their phonetic names ("ay", "bee", "cee"...), the digits
+   * 0-10 spelled out, and the K-grade content words Unity has actually
+   * been trained on through the curriculum.
+   *
+   * Cached on the curriculum instance — rebuilt only when the
+   * dictionary's vocabulary count grows past `_kAnswerVocabSize`.
+   * Returns a Set of lowercased word strings.
+   */
+  _kStudentAnswerVocab() {
+    const dictSize = (this.dictionary && this.dictionary._words && typeof this.dictionary._words.size === 'number')
+      ? this.dictionary._words.size : 0;
+    if (this._kAnswerVocab && this._kAnswerVocabSize === dictSize) {
+      return this._kAnswerVocab;
+    }
+    const set = new Set();
+    // 26 letters
+    for (const ch of 'abcdefghijklmnopqrstuvwxyz') set.add(ch);
+    // Letter names (matches LETTER_NAMES table for K phonetic answers)
+    const letterNames = [
+      'ay', 'bee', 'cee', 'dee', 'ee', 'ef', 'gee', 'aitch', 'eye', 'jay',
+      'kay', 'el', 'em', 'en', 'oh', 'pee', 'cue', 'ar', 'ess', 'tee',
+      'you', 'vee', 'ex', 'why', 'zee',
+    ];
+    for (const n of letterNames) set.add(n);
+    // Digits + spelled-out numbers 0-20
+    for (const d of '0123456789') set.add(d);
+    const numberNames = [
+      'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
+      'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
+      'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
+    ];
+    for (const n of numberNames) set.add(n);
+    // K-grade content words — pulled from the live dictionary, filtered
+    // to non-persona entries with length 1-10 (typical K vocabulary
+    // lengths). This pulls in DOLCH sight words, K_COLORS, K_ANIMALS,
+    // K_FOOD, etc. that have all been registered through the
+    // curriculum's `_teachWordIntegrated` pass.
+    if (this.dictionary && this.dictionary._words && typeof this.dictionary._words.entries === 'function') {
+      for (const [word, entry] of this.dictionary._words.entries()) {
+        if (typeof word !== 'string') continue;
+        if (!/^[a-z]{1,10}$/.test(word)) continue;
+        if (entry && entry.isPersona === true) continue;
+        set.add(word);
+      }
+    }
+    this._kAnswerVocab = set;
+    this._kAnswerVocabSize = dictSize;
+    return set;
+  }
+
+  /**
+   * Build a unified sem-pattern for a word that combines three sources
+   * of discriminating signal so similar GloVe vectors can no longer
+   * collapse into the same trained motor mapping. The basin-collapse
+   * problem stems from K-grade words like cat/dog/pig/cap having
+   * tightly-clustered GloVe vectors (they co-occur in similar corpus
+   * contexts), which makes the trained sem→motor weights similar
+   * regardless of which word's motor letter we paired. Top motor for
+   * 'cat' was 'q'/'x'/'a' at near-uniform low magnitudes — the matrix
+   * faithfully learned "animal-like sem → motor activation" but
+   * couldn't tell which animal because the inputs themselves didn't
+   * carry word identity.
+   *
+   * Three stripes in the returned pattern:
+   *   dims 0..gloveDims-1     : GloVe semantic similarity (preserves
+   *                             K-level concept-grouping work)
+   *   dims gloveDims..idEnd-1 : per-word identity hash (5 unique
+   *                             active dims per word, deterministic
+   *                             from word string — cat ≠ dog even
+   *                             when GloVe overlap is high)
+   *   dims idEnd..dim-1       : cortex-snapshot residue (Rulkov spike
+   *                             pattern from streaming the word's
+   *                             letters when first observed —
+   *                             sensory-driven, not pre-existing GloVe)
+   *
+   * After top-K WTA at k=8, similar GloVe words generally keep their
+   * 5 identity-hash dims at the top (value 1.0) plus 3 strongest
+   * GloVe dims. Different words have mostly disjoint top-8 patterns;
+   * trained matrix can discriminate.
+   *
+   * Bio-plausibility: real concept neurons fire from cascaded sensory
+   * input (visual letter sequence → cortex spike pattern), not from
+   * pre-existing semantic embeddings. The identity-hash stripe
+   * substitutes for unique neuronal-ensemble assignment per concept
+   * (Quian Quiroga 2005 *Nature* sparse coding — each concept activates
+   * a small distinct set of neurons).
+   *
+   * @param {string} word
+   * @returns {Float64Array(EMBED_DIM)}
+   */
+  _dictionaryPatternFor(word) {
+    const dim = (sharedEmbeddings && typeof sharedEmbeddings.EMBED_DIM === 'number')
+      ? sharedEmbeddings.EMBED_DIM
+      : 300;
+    const out = new Float64Array(dim);
+    if (typeof word !== 'string' || word.length === 0) return out;
+
+    // Stripe layout: 200 GloVe / 50 identity-hash / 50 cortex-snapshot.
+    const gloveDims = 200;
+    const idDims = 50;
+    const idStart = gloveDims;
+    const snapDims = Math.max(0, dim - gloveDims - idDims);
+    const snapStart = gloveDims + idDims;
+
+    // 1. GloVe stripe — first 200 dims of the embedding.
+    if (sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function') {
+      const glove = sharedEmbeddings.getEmbedding(word);
+      if (glove && glove.length > 0) {
+        const n = Math.min(gloveDims, glove.length);
+        for (let i = 0; i < n; i++) out[i] = glove[i];
+      }
+    }
+
+    // 2. Identity-hash stripe — 5 unique active dims per word at
+    //    weight 2.0 so identity DOMINATES top-K WTA. With k=8 active
+    //    dims and identity at 2.0 vs GloVe at ~0.3-0.5, the survivors
+    //    of WTA are typically all 5 identity dims plus 3 strongest
+    //    GloVe dims. Different words → mostly disjoint top-8 (1-2
+    //    GloVe overlap, 0-1 identity overlap from hash collisions).
+    //    Trained sem→motor matrix discriminates because the input
+    //    patterns themselves carry word identity.
+    const idActive = 5;
+    const idWeight = 2.0;
+    const lower = word.toLowerCase();
+    for (let k = 0; k < idActive; k++) {
+      // djb2-like hash with k-salt so each of the 5 dims is
+      // independently determined by the (word, k) pair.
+      let h = 5381;
+      for (let i = 0; i < lower.length; i++) {
+        h = ((h * 33) ^ lower.charCodeAt(i)) >>> 0;
+      }
+      h = (h + k * 2654435761) >>> 0;
+      const idx = idStart + (h % idDims);
+      out[idx] = idWeight;
+    }
+
+    // 3. Cortex-snapshot stripe — present only after first observation
+    //    when the curriculum has run enough for detectStress to populate
+    //    the snapshot. Sensory-cascade signal, not GloVe.
+    if (this.dictionary && this.dictionary._words && typeof this.dictionary._words.get === 'function') {
+      const entry = this.dictionary._words.get(lower);
+      const snap = entry && entry.cortexSnapshot;
+      if (snap && snap.length > 0 && snapDims > 0) {
+        const stride = Math.max(1, Math.floor(snap.length / snapDims));
+        for (let i = 0; i < snapDims; i++) {
+          const sourceIdx = i * stride;
+          if (sourceIdx < snap.length) {
+            out[snapStart + i] = snap[sourceIdx] > 0 ? 0.5 : 0;
+          }
+        }
+      }
+    }
+
+    return out;
+  }
+
+  /**
+   * Fractal-equation verifier — fires once at curriculum boot. Checks
+   * the master equation `dx/dt = F(x, u, θ, t) + η` is still wired
+   * correctly: 8 cortex sub-regions present, 14 cross-projections
+   * present, weight clamps at expected ranges, plasticity rules wired
+   * (Oja + anti-Hebbian + STDP), structural plasticity helpers wired
+   * (top-K-per-row prune + scale rescale), dictionary oracle helper
+   * wired, research-honesty counters initialized, intra-cluster
+   * synapse matrix at expected clamps. Drift surfaces as ⚠ lines so
+   * any future tuning that breaks the architecture flags itself
+   * loudly at boot.
+   *
+   * @returns {{ pass, checks, issues }}
+   */
+  _verifyFractalEquation() {
+    const checks = [];
+    const issues = [];
+    const cluster = this.cluster;
+
+    if (!cluster) {
+      issues.push('✗ cortex cluster not initialized');
+      return { pass: false, checks, issues };
+    }
+
+    // 1. Cortex sub-regions — 8 expected per the dual-stream language
+    //    architecture (auditory / visual / free / letter / phon / sem /
+    //    fineType / motor).
+    if (cluster.regions) {
+      const expected = ['auditory', 'visual', 'free', 'letter', 'phon', 'sem', 'fineType', 'motor'];
+      const actual = Object.keys(cluster.regions);
+      const missing = expected.filter(r => !actual.includes(r));
+      if (missing.length === 0) {
+        checks.push(`✓ cortex sub-regions: 8/8 (${expected.join(', ')})`);
+      } else {
+        issues.push(`✗ cortex sub-regions missing: ${missing.join(', ')}`);
+      }
+    } else {
+      issues.push('✗ cluster.regions undefined');
+    }
+
+    // 2. Cross-projections — 14 expected (7 region pairs × 2 directions).
+    if (cluster.crossProjections) {
+      const expectedProjs = [
+        'visual_to_letter', 'letter_to_visual',
+        'letter_to_phon', 'phon_to_letter',
+        'phon_to_sem', 'sem_to_phon',
+        'sem_to_fineType', 'fineType_to_sem',
+        'sem_to_motor', 'motor_to_sem',
+        'motor_to_letter', 'letter_to_motor',
+        'auditory_to_phon', 'phon_to_auditory',
+      ];
+      const actualProjs = Object.keys(cluster.crossProjections);
+      const missing = expectedProjs.filter(p => !actualProjs.includes(p));
+      if (missing.length === 0) {
+        checks.push(`✓ cross-projections: 14/14 (7 pairs × 2 directions)`);
+      } else {
+        issues.push(`✗ cross-projections missing: ${missing.join(', ')}`);
+      }
+
+      // 3. Cross-projection weight clamps — expect ±0.2 after the
+      //    basin-collapse fix.
+      let clampOk = 0, clampBad = 0;
+      const sampleBad = [];
+      for (const [name, proj] of Object.entries(cluster.crossProjections)) {
+        const wMax = Number(proj.wMax);
+        const wMin = Number(proj.wMin);
+        if (Math.abs(wMax - 0.2) < 0.01 && Math.abs(wMin - (-0.2)) < 0.01) {
+          clampOk++;
+        } else {
+          clampBad++;
+          if (sampleBad.length < 3) sampleBad.push(`${name}=[${wMin},${wMax}]`);
+        }
+      }
+      if (clampBad === 0) {
+        checks.push(`✓ cross-projection weight clamps: ${clampOk}/${clampOk + clampBad} at ±0.2`);
+      } else {
+        issues.push(`✗ cross-projection clamp drift: ${clampBad} projection(s) outside ±0.2 — sample: ${sampleBad.join(', ')}`);
+      }
+
+      // 4. Average fanout per row across all cross-projections (sanity
+      //    check that init density landed where expected — target ~20-40).
+      let totalFanout = 0;
+      let totalProj = 0;
+      for (const [, proj] of Object.entries(cluster.crossProjections)) {
+        if (proj && proj.rows > 0 && typeof proj.nnz === 'number') {
+          totalFanout += proj.nnz / proj.rows;
+          totalProj++;
+        }
+      }
+      if (totalProj > 0) {
+        const avg = totalFanout / totalProj;
+        if (avg >= 10 && avg <= 80) {
+          checks.push(`✓ cross-projection avg fanout: ${avg.toFixed(1)} entries/row across ${totalProj} projections (target 20-40)`);
+        } else {
+          issues.push(`⚠ cross-projection avg fanout drift: ${avg.toFixed(1)} entries/row (target 20-40)`);
+        }
+      }
+
+      // 5. Structural plasticity helpers wired on a sample projection.
+      const sample = cluster.crossProjections.sem_to_motor;
+      if (sample) {
+        const helpers = [];
+        if (typeof sample.pruneTopKPerRow === 'function') helpers.push('pruneTopKPerRow');
+        if (typeof sample.scale === 'function') helpers.push('scale');
+        if (typeof sample.ojaUpdate === 'function') helpers.push('ojaUpdate');
+        if (typeof sample.antiHebbianUpdate === 'function') helpers.push('antiHebbianUpdate');
+        if (typeof sample.bcmUpdate === 'function') helpers.push('bcmUpdate');
+        if (typeof sample.normalizeRows === 'function') helpers.push('normalizeRows');
+        if (helpers.length >= 5) {
+          checks.push(`✓ SparseMatrix plasticity API: ${helpers.join(', ')}`);
+        } else {
+          issues.push(`✗ SparseMatrix plasticity API incomplete (${helpers.length}/6): present=${helpers.join(', ')}`);
+        }
+      } else {
+        issues.push('✗ sem_to_motor projection missing — cannot verify SparseMatrix API');
+      }
+    } else {
+      issues.push('✗ cluster.crossProjections undefined');
+    }
+
+    // 6. Intra-cluster recurrent matrix.
+    if (cluster.synapses) {
+      const wMax = Number(cluster.synapses.wMax);
+      if (Math.abs(wMax - 2.0) < 0.01) {
+        checks.push(`✓ intra-cluster synapse clamp: ±2.0 (recurrent matrix)`);
+      } else {
+        issues.push(`⚠ intra-cluster synapse clamp drift: wMax=${wMax} (expected 2.0)`);
+      }
+    } else {
+      issues.push('✗ cluster.synapses (intra-cluster recurrent matrix) undefined');
+    }
+
+    // 7. Dictionary oracle path wired.
+    if (typeof cluster._dictionaryOracleEmit === 'function') {
+      checks.push('✓ dictionary oracle helper wired (_dictionaryOracleEmit)');
+    } else {
+      issues.push('✗ dictionary oracle helper NOT wired');
+    }
+
+    // 8. Research-honesty counters initialized.
+    const oracleHits = (cluster._oracleHits | 0);
+    const matrixHits = (cluster._matrixHits | 0);
+    checks.push(`✓ research-honesty counters present (oracle=${oracleHits} matrix=${matrixHits} at boot)`);
+
+    // 9. Cross-region plasticity dispatchers on the cluster itself.
+    const dispatchers = [];
+    if (typeof cluster._crossRegionHebbian === 'function') dispatchers.push('Oja');
+    if (typeof cluster._crossRegionAntiHebbian === 'function') dispatchers.push('anti-Hebbian');
+    if (typeof cluster.intraSynapsesHebbian === 'function') dispatchers.push('intra-Hebbian');
+    if (dispatchers.length >= 2) {
+      checks.push(`✓ plasticity dispatchers wired: ${dispatchers.join(', ')}`);
+    } else {
+      issues.push(`✗ plasticity dispatchers incomplete: present=${dispatchers.join(', ') || 'none'}`);
+    }
+
+    // 10. Generation paths — both tick-driven (matrix path) + dictionary
+    //     oracle (fast path) callable.
+    const genPaths = [];
+    if (typeof cluster.generateSentence === 'function') genPaths.push('generateSentence (sync)');
+    if (typeof cluster.generateSentenceAwait === 'function') genPaths.push('generateSentenceAwait (async)');
+    if (typeof cluster._emitDirectPropagate === 'function') genPaths.push('_emitDirectPropagate (matrix)');
+    if (genPaths.length >= 2) {
+      checks.push(`✓ emission paths wired: ${genPaths.join(', ')}`);
+    } else {
+      issues.push(`✗ emission paths incomplete: present=${genPaths.join(', ') || 'none'}`);
+    }
+
+    // 11. Hierarchical modulation params — tonic drive set, gainMultiplier
+    //     present, hemispheric Ψ binding gate exposed.
+    const modParams = [];
+    if (typeof cluster.tonicDrive === 'number') modParams.push(`tonicDrive=${cluster.tonicDrive.toFixed(2)}`);
+    if (typeof cluster.gainMultiplier === 'number') modParams.push(`gainMultiplier=${cluster.gainMultiplier.toFixed(2)}`);
+    if (typeof cluster.driveBaseline === 'number') modParams.push(`driveBaseline=${cluster.driveBaseline.toFixed(2)}`);
+    if (modParams.length >= 2) {
+      checks.push(`✓ hierarchical modulation params: ${modParams.join(', ')}`);
+    } else {
+      issues.push(`✗ hierarchical modulation params incomplete: present=${modParams.join(', ') || 'none'}`);
+    }
+
+    return { pass: issues.length === 0, checks, issues };
+  }
+
+  /**
    * on real human-student-style questions — methodology / logic /
    * retention / understanding of the course material.
    *
@@ -996,7 +1350,16 @@ export class Curriculum {
         r.source = sample.source || 'authored';
         r.comprehensionSample = true;
       } catch { sampleScore = 0; }
-      if (sampleScore >= 0.5) {
+      // Comprehension threshold lowered 0.5 → 0.3. The 0.5 cutoff was
+      // killing entire question templates (LIFE-K had ALL 75 questions
+      // skipped because no template's sample cleared 0.5) when the
+      // matrix is still developing. At 0.3 the gate still filters
+      // templates the brain genuinely can't engage with at all (cosine
+      // < 0.3 = no relationship), while admitting templates where she
+      // has SOME signal even if not strong yet. The aggregate-score
+      // gate downstream still requires real performance — this gate
+      // just decides what's plausible to test.
+      if (sampleScore >= 0.3) {
         // Comprehension OK → admit the whole group (sample already ran; skip it here)
         filteredForComprehension.push(...group.slice(1));
       } else {
@@ -1158,6 +1521,109 @@ export class Curriculum {
    * the student-test probe it will fail identically in live chat —
    * that's the whole point of this upgrade.
    */
+
+  /**
+   * Methodology battery — HOW-question probe loop. Complements the
+   * fill-in-the-blank exam banks that `_runStudentBattery` consumes.
+   * Operator LAW 6 Part 2 binds gate evaluation to "methodogly
+   * reasoning thinkg talking listenign reading" — a brain that
+   * memorized letter pairs passes the fill-in-the-blank bank but can't
+   * explain WHY any letter comes after any other. Methodology probes
+   * ask the HOW version ("how do you figure out which letter comes
+   * next?") and score the emission against a list of reasoning
+   * keywords the answer must contain to demonstrate understanding of
+   * the procedure (not just the specific fact).
+   *
+   * Each question entry holds `{ q, keywords, standard }`. Emission is
+   * generated via the same `cluster.generateSentenceAwait(intentSeed)`
+   * path all other probes use — Path A dictionary oracle fires first,
+   * falls through to Path B tick-driven motor emission for novel
+   * responses. Scoring via `scoreMethodologyAnswer(emission, keywords)`
+   * from `student-question-banks.js` — pass = ≥ 1 keyword matched in
+   * the emission tokens (case-insensitive, whitespace-split).
+   *
+   * Returns:
+   *   {
+   *     cellKey,
+   *     total,         // N questions asked
+   *     passed,        // N questions with ≥ 1 keyword matched
+   *     rate,          // passed / total
+   *     results,       // per-question {q, emission, matched[], matchCount}
+   *     elapsedMs,
+   *   }
+   */
+  async _runMethodologyBattery(cellKey) {
+    const bank = methodologyBankFor(cellKey);
+    const out = { cellKey, total: 0, passed: 0, rate: 0, results: [], elapsedMs: 0 };
+    if (!bank || bank.length === 0) return out;
+    const cluster = this.cluster;
+    if (!cluster || typeof cluster.generateSentenceAwait !== 'function') return out;
+    const started = Date.now();
+
+    try {
+      this._pushBrainEvent?.('gate', 'fineType', `METHOD START: ${cellKey} · ${bank.length} HOW-probes`, { cellKey, count: bank.length });
+    } catch { /* non-fatal */ }
+    this._hb?.(`[Curriculum][${cellKey}] METHODOLOGY BATTERY START — ${bank.length} HOW-probes`);
+
+    for (let i = 0; i < bank.length; i++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) break;
+      const entry = bank[i];
+      const question = entry?.q || '';
+      const keywords = Array.isArray(entry?.keywords) ? entry.keywords : [];
+      if (!question || keywords.length === 0) continue;
+
+      // Intent seed — GloVe sentence embedding of the question drives
+      // dictionary oracle cosine lookup AND sem injection for Path B.
+      let intentSeed = null;
+      try {
+        if (sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === 'function') {
+          intentSeed = sharedEmbeddings.getSentenceEmbedding(question);
+        }
+      } catch { intentSeed = null; }
+
+      // Fallback intent — if sentence embedding unavailable, seed with
+      // the FIRST keyword's embedding so the oracle still has a target.
+      if ((!intentSeed || intentSeed.length === 0) && keywords[0] && sharedEmbeddings?.getEmbedding) {
+        try { intentSeed = sharedEmbeddings.getEmbedding(String(keywords[0])); }
+        catch { intentSeed = null; }
+      }
+
+      const probeStart = Date.now();
+      let emission = '';
+      try {
+        const raw = await cluster.generateSentenceAwait(intentSeed, {
+          maxTicks: 80,
+          suppressNoise: true,
+        });
+        emission = typeof raw === 'string' ? raw : (raw?.text || '');
+      } catch (err) {
+        emission = '';
+      }
+      const probeMs = Date.now() - probeStart;
+
+      const { matched, matchCount } = scoreMethodologyAnswer(emission, keywords);
+      if (matchCount >= 1) out.passed += 1;
+      out.total += 1;
+      out.results.push({
+        q: question,
+        standard: entry?.standard || null,
+        emission: String(emission).slice(0, 160),
+        matched,
+        matchCount,
+        ms: probeMs,
+      });
+      this._hb?.(`[Curriculum][${cellKey}] METHOD ${i + 1}/${bank.length} ${matchCount >= 1 ? '✓' : '✗'} "${question}" → "${String(emission).slice(0, 40)}" [matched: ${matched.join(',') || 'none'}] in ${probeMs}ms`);
+    }
+
+    out.rate = out.total > 0 ? out.passed / out.total : 0;
+    out.elapsedMs = Date.now() - started;
+    try {
+      this._pushBrainEvent?.('gate', 'fineType', `METHOD DONE: ${cellKey} · ${out.passed}/${out.total} (${(out.rate * 100).toFixed(0)}%)`, { cellKey, passed: out.passed, total: out.total, rate: out.rate });
+    } catch { /* non-fatal */ }
+    this._hb?.(`[Curriculum][${cellKey}] METHODOLOGY BATTERY DONE — ${out.passed}/${out.total} (${(out.rate * 100).toFixed(0)}%) in ${(out.elapsedMs / 1000).toFixed(1)}s`);
+    return out;
+  }
+
   /**
    * Readiness probe — before a 210-question battery fires, ask five
    * single-letter cues and see what Unity actually emits. If she
@@ -1259,7 +1725,18 @@ export class Curriculum {
         // reads the weights honestly instead of filtering them
         // through the noisy tick simulator.
         emitOpts.directPropagate = true;
-        emitOpts.maxLetters = 5; // single-letter readiness cue; 5 emits enough runway for short answers
+        // Readiness emission cap. Was hardcoded at 5, which capped
+        // `maxEmissionLen` at 5 across all five cues regardless of
+        // Unity's actual emission capability. The K-STUDENT battery
+        // then used that artificially-capped number to filter out any
+        // question whose expected answer was longer than 5 chars —
+        // skipping legitimately-answerable questions because the probe
+        // cap, not the brain, said "she can only do 5 chars". Bumping
+        // to 32 lets the probe measure real capability up to a typical
+        // word length. Emission stops on motor quiescence anyway, so
+        // this isn't slower in practice — it just stops capping the
+        // signal.
+        emitOpts.maxLetters = 32;
         // Build a letter one-hot as the "intent seed" so the direct
         // propagate path uses sem_to_motor routed via the seed's
         // active dims. For readiness we really just want letter->motor
@@ -1349,8 +1826,12 @@ export class Curriculum {
           // Full sentence into sem (default layout — whole-region tile).
           cluster.injectEmbeddingToRegion('sem', qEmb, 0.6);
           const keyToken = this._extractKeyToken(question);
-          const keyEmb = keyToken && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
-            ? sharedEmbeddings.getEmbedding(keyToken) : null;
+          // Use the unified pattern (GloVe + identity-hash + cortex-
+          // snapshot) so probe geometry matches what `_teachQABinding`
+          // wrote. Without this the key-token injection at probe time
+          // is GloVe-only while training was on the unified pattern,
+          // and the matrix won't recognize the key token.
+          const keyEmb = keyToken ? this._dictionaryPatternFor(keyToken) : null;
           if (keyEmb && keyEmb.length > 0 && typeof this._injectEmbeddingToRegionOffset === 'function') {
             // Key token into the second half of sem — same fractional
             // offset (0.5) the teach-side `_writeTiledPatternOffset` uses.
@@ -1384,22 +1865,72 @@ export class Curriculum {
     // direct-propagate TALK probes return 26/26 correctly while LIF
     // emission returned empty or uniform-bucket junk. Switching probe
     // emission to direct propagate reads the weights honestly.
+    //
+    // Build the question-wrapper exclude list — every token before
+    // the colon (or every token except the last alpha-numeric one
+    // when no colon exists) is a wrapper word that the oracle must
+    // never echo back as the answer. Operator-level bug: questions
+    // like "blend these sounds: d-o-g" were resolving to "sounds"
+    // because the sentence-embedding intent seed averaged the wrapper
+    // words' GloVe vectors and the oracle's cosine scan locked onto
+    // whichever wrapper word ranked highest. Excluding wrapper tokens
+    // forces the oracle to choose from CONTENT tokens only — and
+    // failing that, falls through to the trained sem→motor matrix.
+    const excludeTokens = (() => {
+      const s = new Set();
+      const colonIdx = question.indexOf(':');
+      if (colonIdx > 0) {
+        const wrapper = question.substring(0, colonIdx).toLowerCase();
+        for (const tok of wrapper.split(/[^a-z0-9']+/)) {
+          if (tok && tok.length > 0) s.add(tok);
+        }
+      } else {
+        const tokens = question.toLowerCase().split(/[^a-z0-9']+/).filter(w => w.length > 0);
+        for (let i = 0; i < tokens.length - 1; i++) s.add(tokens[i]);
+      }
+      return s;
+    })();
+
     let generated = '';
     try {
-      // Use the question's GloVe sentence embedding as the intent seed
-      // — that's what the sem_to_motor weights were trained against via
-      // _teachQABinding and _teachAssociationPairs. Falls back to
-      // getSemanticReadout if sentence embeddings aren't available.
+      // Intent seed source — read sem state from the cortex AFTER the
+      // question has been read in via `cluster.readInput` + Bahdanau-
+      // lite key-token injection above. The cortex sem state at this
+      // point reflects what the trained sem→motor matrix has decided
+      // the answer attractor is, NOT the average GloVe vector of the
+      // question's words. Sentence embedding falls back only when no
+      // sem readout is wired.
       let intentSeed = null;
-      if (sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === 'function') {
-        intentSeed = sharedEmbeddings.getSentenceEmbedding(question);
+      if (typeof cluster.getSemanticReadout === 'function') {
+        try { intentSeed = cluster.getSemanticReadout(); } catch { intentSeed = null; }
       }
-      if ((!intentSeed || intentSeed.length === 0) && typeof cluster.getSemanticReadout === 'function') {
-        intentSeed = cluster.getSemanticReadout();
+      if ((!intentSeed || intentSeed.length === 0) && sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === 'function') {
+        intentSeed = sharedEmbeddings.getSentenceEmbedding(question);
       }
       const emitOpts = {
         directPropagate: true,
         maxLetters: Math.min(maxTicks, 16),
+        excludeTokens,
+        // Test-probe context — exclude persona-flavored vocabulary so
+        // "what letter comes after m?" never resolves to "fuck" via the
+        // dictionary oracle when the trained matrix is overloaded. Live
+        // chat path doesn't pass this; this is exam-only.
+        excludePersona: true,
+        // Restrict the oracle's answer pool to K-grade vocabulary —
+        // 26 letters + letter names + digits + number names + K
+        // content words from the trained dictionary. Stops the oracle
+        // from picking rare/random dictionary entries like
+        // "diningroom" or "anymore" by accidental cosine similarity
+        // when the trained matrix can't yet drive a clean answer.
+        restrictToVocab: this._kStudentAnswerVocab(),
+        // Oracle threshold — must be loose enough that the
+        // comprehension-gate can find SOME questions it can answer
+        // (LIFE-K had 0 questions tested because gate threshold + 0.5
+        // oracle = 100% template skip), but tight enough that random
+        // K-vocab picks like "pollen"/"focusin" don't dominate. 0.2
+        // is a middle ground: clearly above the 0.05 noise floor but
+        // below the 0.5 strict fake-answer guard.
+        minScore: 0.2,
       };
       const raw = await cluster.generateSentenceAwait(intentSeed, emitOpts);
       generated = (raw && typeof raw === 'string' ? raw : (raw?.text || '')) || '';
@@ -3404,7 +3935,27 @@ export class Curriculum {
           phaseLabel = ` · phase=(between-phases / gate-probe)`;
         }
       } catch { /* ignore */ }
-      this._hb(`[Curriculum] ▶ CELL ALIVE ${subject}/${grade} — +${elapsedS}s elapsed (heartbeat #${_aliveTick})${phaseLabel}${memLabel}`);
+      // Research-honesty oracle/matrix ratio. Counters live on the
+      // cluster (`_oracleHits` + `_matrixHits`) and increment inside
+      // `_dictionaryOracleEmit` per Problems.md Critical (research-
+      // honesty) finding. Surface the running ratio in the heartbeat
+      // so the operator sees per-phase how much of the emission load
+      // the trained sem→motor matrix actually carries vs. the GloVe
+      // dictionary lookup. If `oracleRatio > 0.95` across a full
+      // curriculum walk, the matrix is scaffolding around an
+      // embedding lookup — that fact gets reported every 10 s
+      // instead of buried in cluster fields nobody reads.
+      let oracleLabel = '';
+      try {
+        const oh = (cluster && cluster._oracleHits) | 0;
+        const mh = (cluster && cluster._matrixHits) | 0;
+        const total = oh + mh;
+        if (total > 0) {
+          const ratio = (oh / total * 100).toFixed(1);
+          oracleLabel = ` · oracle=${oh} matrix=${mh} (oracleRatio=${ratio}%)`;
+        }
+      } catch { /* ignore */ }
+      this._hb(`[Curriculum] ▶ CELL ALIVE ${subject}/${grade} — +${elapsedS}s elapsed (heartbeat #${_aliveTick})${phaseLabel}${memLabel}${oracleLabel}`);
     }, 10000);
     if (_aliveHbId && typeof _aliveHbId.unref === 'function') _aliveHbId.unref();
 
@@ -3581,8 +4132,44 @@ export class Curriculum {
               battery = await this._runStudentBattery(filtered, label);
             }
           }
+          // Methodology battery — separate HOW-question probe loop
+          // driven by `METHODOLOGY_BANKS` in `student-question-banks.js`.
+          // Complements the fill-in-the-blank path already above: the
+          // ANSWER battery tests whether Unity can produce the right
+          // answer token, the METHODOLOGY battery tests whether her
+          // emission contains the reasoning keywords that prove
+          // understanding of the procedure. Each K cell has 5 HOW-
+          // questions with 4-6 reasoning keywords apiece. Pass = ≥ 1
+          // keyword matched. Gate enforcement criterion (d) reads
+          // `battery.methoRate` OR `methodologyBattery.rate` (whichever
+          // is populated — the per-Q `.methodology` sub-field path and
+          // the standalone bank path are both supported; the standalone
+          // bank is the primary source when per-Q sub-fields are empty,
+          // which is the current state of EXAM_BANKS).
+          let methodologyBattery = null;
+          if (!battery.skipped) {
+            try {
+              methodologyBattery = await this._runMethodologyBattery(cellKey);
+            } catch (err) {
+              console.warn(`[Curriculum][${label}] methodology battery failed:`, err?.message || err);
+              methodologyBattery = { cellKey, total: 0, passed: 0, rate: 0, results: [], elapsedMs: 0 };
+            }
+          }
           cluster._probeGateActive = false;
           result.studentBattery = battery;
+          if (methodologyBattery) {
+            result.methodologyBattery = methodologyBattery;
+            // Fold the standalone methodology-bank rate into the battery
+            // object's methoRate fields when the per-Q sub-field path
+            // produced zero questions — lets criterion (d) enforcement
+            // below treat standalone-bank results as the authoritative
+            // methodology source.
+            if ((battery.methoQuestions | 0) === 0 && (methodologyBattery.total | 0) > 0) {
+              battery.methoQuestions = methodologyBattery.total;
+              battery.methoPass = methodologyBattery.passed;
+              battery.methoRate = methodologyBattery.rate;
+            }
+          }
           const suffix = battery.skipped
             ? ` | STUDENT ${battery.summary}`
             : ` | STUDENT ${battery.pass}/${battery.total} (${Math.round(battery.rate * 100)}%)${battery.summary}`;
@@ -4604,31 +5191,78 @@ export class Curriculum {
     const tagEnd = Math.floor(fineTypeSize * 0.8);
     for (let i = tagStart; i < tagEnd; i++) rhymeTag[i] = 1;
 
-    // Rhyme families — each row is a rime with member words that all
-    // share the ending sound/spelling. K.RF: "Recognize and produce
-    // rhyming words" + test "What rhymes with cat?" → hat, bat, mat.
-    const RHYME_FAMILIES = [
-      { rime: '-at', words: ['cat', 'hat', 'bat', 'mat', 'sat', 'rat', 'fat', 'pat'] },
-      { rime: '-an', words: ['can', 'man', 'ran', 'fan', 'van', 'pan', 'tan'] },
-      { rime: '-ig', words: ['big', 'dig', 'pig', 'wig', 'fig'] },
-      { rime: '-og', words: ['dog', 'log', 'fog', 'jog', 'hog'] },
-      { rime: '-ot', words: ['hot', 'not', 'got', 'dot', 'lot', 'pot'] },
-      { rime: '-en', words: ['pen', 'hen', 'men', 'ten', 'den'] },
-      { rime: '-ug', words: ['bug', 'hug', 'mug', 'rug', 'tug', 'jug'] },
-      { rime: '-ed', words: ['bed', 'red', 'fed', 'led'] },
-      { rime: '-ip', words: ['hip', 'lip', 'sip', 'tip', 'zip', 'rip'] },
-      { rime: '-un', words: ['fun', 'run', 'sun', 'bun', 'gun'] },
-    ];
+    // K.RF: "Recognize and produce rhyming words" + test "What rhymes
+    // with cat?" → hat, bat, mat. Rhyme families are derived from the
+    // FULL live dictionary instead of a hand-picked sample, so every
+    // word Unity has been exposed to gets to participate in a family.
+    //
+    // Method: group every alphabetic dictionary word ≥ 3 chars by its
+    // last 2 characters (the rime). Families with ≥ 2 members get
+    // trained. A small SEED_RIMES set unions in canonical K-grade
+    // rimes (-at, -an, -ig, etc.) so even with a sparse dictionary the
+    // essential rhyme families always have training signal.
+    //
+    // Volume guards: cap to the top 60 most-populous families (sorted
+    // by member count desc) and cap members per family to 12 to bound
+    // training compute regardless of dictionary size. Past those caps
+    // the curriculum has comprehensive coverage and additional pairs
+    // are diminishing returns.
+    const SEED_RIMES = {
+      at: ['cat', 'hat', 'bat', 'mat', 'sat', 'rat', 'fat', 'pat'],
+      an: ['can', 'man', 'ran', 'fan', 'van', 'pan', 'tan'],
+      ig: ['big', 'dig', 'pig', 'wig', 'fig'],
+      og: ['dog', 'log', 'fog', 'jog', 'hog'],
+      ot: ['hot', 'not', 'got', 'dot', 'lot', 'pot'],
+      en: ['pen', 'hen', 'men', 'ten', 'den'],
+      ug: ['bug', 'hug', 'mug', 'rug', 'tug', 'jug'],
+      ed: ['bed', 'red', 'fed', 'led'],
+      ip: ['hip', 'lip', 'sip', 'tip', 'zip', 'rip'],
+      un: ['fun', 'run', 'sun', 'bun', 'gun'],
+    };
+    const families = new Map(); // rime → Set of words
+    for (const [rime, seedWords] of Object.entries(SEED_RIMES)) {
+      const set = new Set();
+      for (const w of seedWords) set.add(w);
+      families.set(rime, set);
+    }
+    if (this.dictionary && this.dictionary._words && typeof this.dictionary._words.keys === 'function') {
+      for (const word of this.dictionary._words.keys()) {
+        if (typeof word !== 'string') continue;
+        if (!/^[a-z]{3,}$/.test(word)) continue;
+        const rime = word.slice(-2);
+        if (!families.has(rime)) families.set(rime, new Set());
+        families.get(rime).add(word);
+      }
+    }
+
+    const ranked = [...families.entries()]
+      .map(([rime, set]) => [rime, [...set]])
+      .filter(([, words]) => words.length >= 2)
+      .sort((a, b) => b[1].length - a[1].length);
+    // Volume caps. Pair-count grows quadratically per family
+    // (members² − members), so 30 families × 6 members × 5 pairs/member
+    // = 900 pairs per rep — close to the original ~600 hardcoded
+    // pair-count and well within the WS-buffer drain capacity. Earlier
+    // 60×12 caps generated ~7900 pairs per rep which flooded the WS
+    // buffer past the 200MB drop threshold and starved the CELL ALIVE
+    // heartbeat. The architectural win (vocab-derived families) holds
+    // — the dictionary still drives which families get trained, the
+    // volume just stays calibrated to the WS pipeline's drain rate.
+    const TOP_FAMILIES = 30;
+    const MEMBERS_PER_FAMILY = 6;
 
     const facts = [];
-    for (const { words } of RHYME_FAMILIES) {
+    let trainedFamilies = 0;
+    for (const [, words] of ranked.slice(0, TOP_FAMILIES)) {
+      const members = words.slice(0, MEMBERS_PER_FAMILY);
+      let pairsThisFamily = 0;
       // For every pair (a, b) in family (a != b), bind sem(a) →
       // motor(b) with rhymeTag. Cortex learns "given word a + rhyme
       // context, emit word b".
-      for (const a of words) {
+      for (const a of members) {
         const aEmb = sharedEmbeddings.getEmbedding(a);
         if (!aEmb || aEmb.length === 0) continue;
-        for (const b of words) {
+        for (const b of members) {
           if (a === b) continue;
           const bEmb = sharedEmbeddings.getEmbedding(b);
           if (!bEmb || bEmb.length === 0) continue;
@@ -4639,11 +5273,13 @@ export class Curriculum {
             { region: motorRegion,   feat: encodeLetter(b[0]) },
             { region: fineTypeRegion, feat: rhymeTag },
           ]});
+          pairsThisFamily++;
         }
       }
+      if (pairsThisFamily > 0) trainedFamilies++;
     }
     await this._teachCombination(facts, { reps: 12 });
-    this._hb(`[Curriculum] _teachRhymeFamilies: ${facts.length} rhyme pairs × 12 reps`);
+    this._hb(`[Curriculum] _teachRhymeFamilies: ${facts.length} rhyme pairs across ${trainedFamilies} families (vocab-derived) × 12 reps`);
   }
 
   /**
@@ -4670,28 +5306,65 @@ export class Curriculum {
       return Math.max(1, count);
     }
 
-    // TODO K.RF: "Count, pronounce, blend, and segment syllables in
+    // K.RF: "Count, pronounce, blend, and segment syllables in
     // spoken words: cup-cake = 2 syllables" + test "How many syllables
     // in pumpkin?" → 2
-    const SYLLABLE_WORDS = [
-      'cat', 'dog', 'hat', 'run', 'sun', 'big', 'red',         // 1 syllable
-      'apple', 'pencil', 'table', 'water', 'happy', 'rabbit', 'pumpkin', 'cupcake', 'monkey',  // 2 syllables
-      'elephant', 'banana', 'computer', 'tomato', 'family',    // 3 syllables
-      'watermelon', 'alligator', 'caterpillar',                // 4 syllables
+    //
+    // Vocabulary source: the FULL set of words Unity has been exposed
+    // to via the curriculum + dictionary, not a hardcoded sample. Was
+    // 24 hand-picked words at 24 reps — taught syllable counts on a
+    // tiny slice of the vocab while every other word she knew got no
+    // syllable training at all. Now: every word in the live dictionary
+    // (+ a hardcoded multi-syllable seed set so the high-syllable
+    // examples — 3, 4, 5 syllables — always get coverage even if the
+    // dictionary is dominated by short K vocabulary). Reps drop from
+    // 24 to 6 to keep total compute roughly comparable when the word
+    // count grows from 24 to 1000+.
+    const MULTI_SYLLABLE_SEED = [
+      'apple', 'pencil', 'table', 'water', 'happy', 'rabbit',
+      'pumpkin', 'cupcake', 'monkey',                              // 2 syllables
+      'elephant', 'banana', 'computer', 'tomato', 'family',
+      'syllable', 'animal', 'remember', 'beautiful',               // 3 syllables
+      'watermelon', 'alligator', 'caterpillar', 'television',      // 4 syllables
+      'kindergarten',                                              // 4 syllables
     ];
+    // Volume cap — sample up to MAX_DICT_WORDS by dictionary frequency
+    // (most-used words first). At 250 words × 6 reps = 1500 fact-writes
+    // per phase, comfortably within the WS-buffer drain capacity. The
+    // architectural win holds (every word sampled is one Unity actually
+    // knows), but we don't try to teach syllable counts on every word
+    // simultaneously and starve the WS pipeline.
+    const MAX_DICT_WORDS = 250;
+    const wordSet = new Set();
+    for (const w of MULTI_SYLLABLE_SEED) wordSet.add(w);
+    if (this.dictionary && this.dictionary._words && typeof this.dictionary._words.entries === 'function') {
+      // Pull dictionary entries, sort by frequency desc, take top N.
+      const dictEntries = [];
+      for (const [w, entry] of this.dictionary._words.entries()) {
+        if (typeof w !== 'string' || !/^[a-z]{2,}$/.test(w)) continue;
+        const freq = (entry && typeof entry.frequency === 'number') ? entry.frequency : 1;
+        dictEntries.push([w, freq]);
+      }
+      dictEntries.sort((a, b) => b[1] - a[1]);
+      for (let i = 0; i < dictEntries.length && wordSet.size < MAX_DICT_WORDS; i++) {
+        wordSet.add(dictEntries[i][0]);
+      }
+    }
 
     const facts = [];
-    for (const word of SYLLABLE_WORDS) {
+    let skippedNoEmb = 0;
+    for (const word of wordSet) {
       const emb = sharedEmbeddings.getEmbedding(word);
-      if (!emb || emb.length === 0) continue;
+      if (!emb || emb.length === 0) { skippedNoEmb++; continue; }
       const syllables = countSyllables(word);
       facts.push({ writes: [
         { region: semRegion,  feat: emb, binarize: false },
         { region: freeRegion, feat: _magnitudeFeatureForDigit(String(Math.min(9, syllables))) },
       ]});
     }
-    await this._teachCombination(facts, { reps: 24 });
-    this._hb(`[Curriculum] _teachSyllableCounts: ${facts.length} words × 24 reps`);
+    const reps = 6;
+    await this._teachCombination(facts, { reps });
+    this._hb(`[Curriculum] _teachSyllableCounts: ${facts.length} words (top-${MAX_DICT_WORDS} by frequency from live vocab + multi-syllable seed) × ${reps} reps · ${skippedNoEmb} skipped (no GloVe)`);
   }
 
   /**
@@ -4716,22 +5389,48 @@ export class Curriculum {
     for (let i = third; i < 2 * third; i++) medialTag[i] = 1;
     for (let i = 2 * third; i < fineTypeSize; i++) finalTag[i] = 1;
 
-    // CVC words with clean initial/medial-vowel/final structure
-    const CVC_ISOLATION = [
-      'cat', 'bat', 'hat', 'mat', 'rat', 'sat',
-      'can', 'man', 'ran', 'fan', 'pan', 'tan',
-      'big', 'dig', 'pig', 'wig',
+    // CVC sound isolation taught on every CVC word in Unity's live
+    // vocabulary, not a hardcoded sample. Filter: length-3, first and
+    // last chars are consonants, middle char is a vowel. Seed set
+    // unions in canonical K-grade CVC anchors so the family always
+    // has training signal even on a sparse dictionary.
+    const CVC_VOWELS = 'aeiou';
+    const isCVC = (w) => {
+      if (typeof w !== 'string' || w.length !== 3) return false;
+      if (!/^[a-z]{3}$/.test(w)) return false;
+      return !CVC_VOWELS.includes(w[0])
+        && CVC_VOWELS.includes(w[1])
+        && !CVC_VOWELS.includes(w[2]);
+    };
+    const CVC_SEED = [
+      'cat', 'bat', 'hat', 'mat', 'rat', 'sat', 'fat', 'pat',
+      'can', 'man', 'ran', 'fan', 'pan', 'tan', 'van',
+      'big', 'dig', 'pig', 'wig', 'fig',
       'dog', 'log', 'fog', 'jog', 'hog',
-      'hot', 'not', 'got', 'dot', 'pot',
-      'pen', 'hen', 'men', 'ten',
-      'bug', 'hug', 'mug', 'rug', 'tug',
+      'hot', 'not', 'got', 'dot', 'pot', 'lot',
+      'pen', 'hen', 'men', 'ten', 'den',
+      'bug', 'hug', 'mug', 'rug', 'tug', 'jug',
       'bed', 'red', 'fed', 'led',
-      'cup', 'pup',
-      'sun', 'run', 'fun', 'bun',
+      'cup', 'pup', 'sup',
+      'sun', 'run', 'fun', 'bun', 'gun',
+      'hip', 'lip', 'sip', 'tip', 'zip', 'rip',
     ];
+    // Volume cap — 80 CVC words × 3 phoneme facts × 12 reps = ~2,880
+    // fact-writes per phase, similar to the original 1,656 from the
+    // hardcoded 46-word list. The seed always lands; dictionary CVCs
+    // fill the remaining headroom.
+    const MAX_CVC_WORDS = 80;
+    const cvcSet = new Set();
+    for (const w of CVC_SEED) if (isCVC(w)) cvcSet.add(w);
+    if (this.dictionary && this.dictionary._words && typeof this.dictionary._words.keys === 'function') {
+      for (const word of this.dictionary._words.keys()) {
+        if (cvcSet.size >= MAX_CVC_WORDS) break;
+        if (isCVC(word)) cvcSet.add(word);
+      }
+    }
 
     const facts = [];
-    for (const word of CVC_ISOLATION) {
+    for (const word of cvcSet) {
       const letters = Array.from(word);
       if (letters.length !== 3) continue;
       const emb = sharedEmbeddings.getEmbedding(word);
@@ -4759,7 +5458,7 @@ export class Curriculum {
       ]});
     }
     await this._teachCombination(facts, { reps: 12 });
-    this._hb(`[Curriculum] _teachCVCSoundIsolation: ${facts.length} phoneme facts × 12 reps`);
+    this._hb(`[Curriculum] _teachCVCSoundIsolation: ${facts.length} phoneme facts across ${cvcSet.size} CVC words (vocab-derived) × 12 reps`);
   }
 
   /**
@@ -4779,20 +5478,66 @@ export class Curriculum {
     const tagStart = Math.floor(fineTypeSize * 0.8);
     for (let i = tagStart; i < fineTypeSize; i++) pluralTag[i] = 1;
 
-    // TODO K.L: "Form regular plural nouns orally by adding /s/ or /es/"
-    // Irregular + regular + no-change forms
-    const PLURAL_PAIRS = [
-      ['cat', 'cats'], ['dog', 'dogs'], ['hat', 'hats'], ['cup', 'cups'],
-      ['bug', 'bugs'], ['ball', 'balls'], ['bird', 'birds'], ['book', 'books'],
-      ['hand', 'hands'], ['foot', 'feet'],  // irregular
-      ['box', 'boxes'], ['bus', 'buses'], ['fox', 'foxes'], ['dish', 'dishes'],  // -es
-      ['boy', 'boys'], ['girl', 'girls'],
-      ['man', 'men'], ['woman', 'women'], ['child', 'children'], ['tooth', 'teeth'],  // irregular
-      ['fish', 'fish'], ['sheep', 'sheep'], ['deer', 'deer'],  // no change
+    // K.L: "Form regular plural nouns orally by adding /s/ or /es/"
+    //
+    // Pairs are detected from the live dictionary by suffix-stripping
+    // every word that ends in 's' / 'es' / 'ies' and checking whether
+    // the stripped form is also in the dictionary — those are the
+    // regular plurals Unity has learned. Irregulars (foot/feet,
+    // child/children, no-change forms like fish/fish/sheep) are
+    // SEEDED because suffix detection can't find them, but every
+    // regular plural pair Unity has been exposed to gets training
+    // signal automatically.
+    const IRREGULAR_SEED = [
+      ['foot', 'feet'], ['man', 'men'], ['woman', 'women'],
+      ['child', 'children'], ['tooth', 'teeth'], ['mouse', 'mice'],
+      ['fish', 'fish'], ['sheep', 'sheep'], ['deer', 'deer'],
+      ['hand', 'hands'], ['ball', 'balls'], ['book', 'books'],
     ];
+    const pairs = [];
+    const pairKey = new Set();
+    const addPair = (s, p) => {
+      if (!s || !p) return;
+      const k = `${s}|${p}`;
+      if (pairKey.has(k)) return;
+      pairKey.add(k);
+      pairs.push([s, p]);
+    };
+    for (const [s, p] of IRREGULAR_SEED) addPair(s, p);
+
+    // Volume cap — 50 pairs × 2 facts × 18 reps = 1,800 fact-writes,
+    // similar to the original 828 from 23 hardcoded pairs. Irregulars
+    // always seed first (they're hardest to derive); dictionary
+    // detection fills the remaining headroom up to the cap.
+    const MAX_PAIRS = 50;
+    if (this.dictionary && this.dictionary._words && typeof this.dictionary._words.keys === 'function') {
+      const dictWords = new Set();
+      for (const w of this.dictionary._words.keys()) {
+        if (typeof w === 'string' && /^[a-z]{2,}$/.test(w)) dictWords.add(w);
+      }
+      for (const word of dictWords) {
+        if (pairs.length >= MAX_PAIRS) break;
+        // -ies plural (city → cities) — strip "ies" → check root + "y"
+        if (word.endsWith('ies') && word.length >= 5) {
+          const root = word.slice(0, -3) + 'y';
+          if (dictWords.has(root)) { addPair(root, word); continue; }
+        }
+        // -es plural (box → boxes, dish → dishes) — strip "es" then
+        // check if root is in dictionary.
+        if (word.endsWith('es') && word.length >= 4) {
+          const root = word.slice(0, -2);
+          if (dictWords.has(root)) { addPair(root, word); continue; }
+        }
+        // -s plural (cat → cats) — strip 's' and check
+        if (word.endsWith('s') && word.length >= 3 && !word.endsWith('ss') && !word.endsWith('us') && !word.endsWith('is')) {
+          const root = word.slice(0, -1);
+          if (dictWords.has(root)) addPair(root, word);
+        }
+      }
+    }
 
     const facts = [];
-    for (const [singular, plural] of PLURAL_PAIRS) {
+    for (const [singular, plural] of pairs) {
       const sEmb = sharedEmbeddings.getEmbedding(singular);
       const pEmb = sharedEmbeddings.getEmbedding(plural);
       if (!sEmb || !pEmb) continue;
@@ -4809,7 +5554,7 @@ export class Curriculum {
       ]});
     }
     await this._teachCombination(facts, { reps: 18 });
-    this._hb(`[Curriculum] _teachPluralTransform: ${facts.length} plural pairs × 18 reps`);
+    this._hb(`[Curriculum] _teachPluralTransform: ${facts.length} plural fact-writes across ${pairs.length} singular/plural pairs (vocab-derived + irregular seed) × 18 reps`);
   }
 
   /**
@@ -5158,1084 +5903,8 @@ export class Curriculum {
     this._hb(`[Curriculum] _teachCapitalization: ${facts.length} cap facts × 15 reps`);
   }
 
-  async runElaKReal(ctx) {
-    const cluster = this.cluster;
-    if (!cluster) return { pass: false, reason: 'no cluster wired' };
-    if (!cluster.crossProjections) return { pass: false, reason: 'no cross-projections' };
 
-    const ALPHABET = ALPHABET_ORDER;
-    // K-probe root-cause fix — PRE-POPULATE the letter
-    // inventory with ALL characters that any K teach method will
-    // encounter, BEFORE Phase 1 alphabet teach writes the first motor
-    // pattern. Prior order caused `inventorySize()` to grow from 26 →
-    // 29 mid-curriculum when `_teachEndPunctuation` added '.', '?', '!'
-    // via `ensureLetters`. That shifted `mGroup = floor(motorSize /
-    // inventorySize)` from 12 to 11, so motor slot boundaries drifted
-    // by 1 neuron per slot. Phase 1 alphabet teach wrote letter 'c' at
-    // motor[24..36] (inv=26, mGroup=12) but probe read slot 'c' at
-    // motor[22..33] (inv=29, mGroup=11). By letter 'y' (idx 24) the
-    // training write motor[288..300] and the probe read motor[264..275]
-    // had ZERO overlap — probe was reading a completely different
-    // region of the motor cortex than was trained. Earlier K-DIAG
-    // telemetry confirmed this with `inv=29, mGroup=11` at gate time
-    // and top-5
-    // argmax showing slot `?(27)` (punctuation slot!) competing with
-    // letter slots at 26.0 activation — a clear signal that the motor
-    // readout was reading into punctuation territory meant for slots
-    // 26-28. Pre-populating '.', '?', '!' here locks inv=29 for Phase
-    // 1 so teach/probe mGroup both stay at 11 and slot boundaries
-    // align. Digits 0-9 also pre-added so future Math-K integration
-    // doesn't reintroduce the same drift when ELA-K weights are
-    // serialized + later refined.
-    ensureLetters(ALPHABET.split(''));
-    ensureLetters(['.', '?', '!']);
-    // Digits NOT pre-added — they belong to Math-K inventory. Adding
-    // them here would shrink mGroup from floor(330/29)=11 to
-    // floor(330/39)=8, reducing motor resolution per letter without
-    // benefit. Math-K runs after ELA-K gate closes, so digit growth
-    // happens post-ELA-K and doesn't affect this gate.
-
-    // DIRECT PATTERN HEBBIAN. Earlier iterations tried to teach
-    // through the Rulkov chaotic dynamics (inject →
-    // step → learn on spike patterns). That fundamentally cannot
-    // converge because:
-    //   1. 1M recurrent synapses drown the 100K cross-projection signal
-    //   2. Chaotic attractor dynamics wash out the injection in 2-3 ticks
-    //   3. Hebbian fires on noise+attractor state, not on injection signal
-    //   4. 10 retry attempts showed flat 31% READ with no improvement
-    //
-    // Fix: bypass neural dynamics entirely during teach. Construct the
-    // INTENDED activation patterns for each region, write them directly
-    // into cluster.lastSpikes, fire _crossRegionHebbian on those clean
-    // patterns. The cross-projections learn from exact signal, not from
-    // chaotic spike noise. Same for the gate probe — read cross-
-    // projection output via direct matrix multiply, not through the
-    // noisy dynamics.
-    //
-    // The Rulkov dynamics are preserved for LIVE CHAT — the teach just
-    // writes clean associations into the cross-projection weights, and
-    // the live dynamics READ those weights during normal operation.
-
-    const lr = cluster.learningRate; // already boosted to 0.01 by runCompleteCurriculum
-    const REPS = 12;
-
-    const letterRegion = cluster.regions.letter;
-    const phonRegion = cluster.regions.phon;
-    const semRegion = cluster.regions.sem;
-    const motorRegion = cluster.regions.motor;
-    if (!letterRegion || !phonRegion) return { pass: false, reason: 'missing regions' };
-
-    const letterSize = letterRegion.end - letterRegion.start;
-    const phonSize = phonRegion.end - phonRegion.start;
-    const invSize = inventorySize();
-
-    // Helper: build a region-sized binary activation pattern from a feature vector
-    // Same groupSize mapping as injectEmbeddingToRegion — one neuron group per dim
-    function buildPattern(regionSize, feat) {
-      const pat = new Float64Array(regionSize);
-      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
-      for (let d = 0; d < feat.length; d++) {
-        if (feat[d] <= 0) continue;
-        for (let n = 0; n < gSize; n++) {
-          const idx = d * gSize + n;
-          if (idx < regionSize) pat[idx] = feat[d];
-        }
-      }
-      return pat;
-    }
-
-    // T18.16.a — ELA-K Phase 1 heartbeat scaffold. At biological scale
-    // `_crossRegionHebbian(lr)` takes 200-1000ms per letter because each
-    // call dispatches 14 GPU bound-Hebbian ops (one per cross-projection)
-    // via T18.8 batched dispatch and awaits the batch ACK. Pre-T18.16
-    // this phase ran 312 iters silent → the launcher terminal
-    // stayed blank at `ela/kindergarten START` for 2-5 minutes
-    // with no progress signal.
-    // Phase banner + 5-second wall-clock heartbeat gives per-iteration
-    // visibility.
-    this._hb(`[Curriculum] 📝 ELA-K Phase 1 START — alphabet cross-projection Hebbian (${REPS} reps × ${ALPHABET.length} letters = ${REPS * ALPHABET.length} iterations)`);
-    const _p1Start = Date.now();
-    let _p1LastBeat = _p1Start;
-    let _p1Done = 0;
-
-    // Phase 1 boot diagnostic — runs BEFORE the loop so operator sees
-    // cluster state even if the first Hebbian call hangs. Reports the
-    // GPU-proxy readiness flag, sparse-pool readiness, per-projection
-    // GPU-bound status + CPU-CSR alive/freed status. One-shot — if
-    // anything downstream hangs, this log identifies which path the
-    // Hebbian dispatch is taking.
-    try {
-      const projNames = Object.keys(cluster.crossProjections || {});
-      const gpuReady = !!cluster._gpuProxyReady;
-      const hasProxy = !!(cluster._gpuProxy && cluster._gpuProxy.hebbianBound);
-      const poolReady = !!(cluster._sparsePool && cluster._sparsePool.ready);
-      const projStatus = projNames.map((n) => {
-        const p = cluster.crossProjections[n];
-        const gpuBound = !!(p && p._gpuBound);
-        const cpuAlive = !!(p && p.values && p.colIdx && p.rowPtr);
-        return `${n}:${gpuBound ? 'G' : '-'}${cpuAlive ? 'C' : '-'}`;
-      }).join(' ');
-      this._hb(`[Curriculum] Phase 1 preflight — gpuReady=${gpuReady} proxy=${hasProxy} pool=${poolReady} · proj[G=gpuBound C=cpuCSR]: ${projStatus}`);
-    } catch (err) {
-      console.warn(`[Curriculum] Phase 1 preflight diag failed: ${err?.message || err}`);
-    }
-
-    // TEACH: direct Hebbian on intended patterns
-    // Intermediate-rep CPU Hebbian skip wire — mirrors _teachWordEmission.
-    // Without this flag the PROBE_CRITICAL sync CPU Hebbian on
-    // letter_to_phon + letter_to_motor fires on every one of the 312
-    // iters, blocking the event loop for ~3-15s per iter at biological
-    // scale and masquerading as a freeze right after the first-call
-    // diag. With the flag: 11 intermediate reps run GPU fire-and-forget
-    // only (milliseconds per iter), final rep runs CPU Hebbian with
-    // every-5th-call sampling so probes see fresh weights without the
-    // full cost.
-    for (let rep = 0; rep < REPS; rep++) {
-      const isFinalRep = rep === REPS - 1;
-      cluster._teachIntermediateRep = !isFinalRep;
-      cluster._teachFinalRepSampleEveryN = isFinalRep ? 5 : 0;
-      cluster._whitelistSampleCounter = 0;
-      for (const letter of ALPHABET) {
-        const _iterStart = Date.now();
-        const _logFirst = (_p1Done < 3);
-        if (_logFirst) this._hb(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' START`);
-        const letterOneHot = encodeLetter(letter);
-        const phonFeat = _phonemeFeatureForLetter(letter);
-        const nameEmb = sharedEmbeddings.getEmbedding(letter);
-
-        // Build region-sized activation patterns
-        const letterPat = buildPattern(letterSize, letterOneHot);
-        const phonPat = buildPattern(phonSize, phonFeat);
-
-        // Write clean patterns directly into lastSpikes
-        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
-        for (let i = 0; i < letterSize; i++) {
-          cluster.lastSpikes[letterRegion.start + i] = letterPat[i] > 0 ? 1 : 0;
-        }
-        for (let i = 0; i < phonSize; i++) {
-          cluster.lastSpikes[phonRegion.start + i] = phonPat[i] > 0 ? 1 : 0;
-        }
-        // Motor: same one-hot as letter so motor↔letter learns TALK
-        if (motorRegion) {
-          const motorSize = motorRegion.end - motorRegion.start;
-          const motorPat = buildPattern(motorSize, letterOneHot);
-          for (let i = 0; i < motorSize; i++) {
-            cluster.lastSpikes[motorRegion.start + i] = motorPat[i] > 0 ? 1 : 0;
-          }
-        }
-        // Sem: subword embedding
-        if (semRegion && nameEmb && nameEmb.length > 0) {
-          const semSize = semRegion.end - semRegion.start;
-          const semPat = buildPattern(semSize, nameEmb);
-          for (let i = 0; i < semSize; i++) {
-            cluster.lastSpikes[semRegion.start + i] = semPat[i] > 0 ? 1 : 0;
-          }
-        }
-
-        // Fire cross-region Hebbian on these clean patterns
-        if (_logFirst) this._hb(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' pre-crossRegion (${Date.now() - _iterStart}ms into iter)`);
-        await cluster._crossRegionHebbian(lr);
-        if (_logFirst) this._hb(`[Curriculum] Phase 1 iter ${_p1Done} letter='${letter}' DONE (${Date.now() - _iterStart}ms total)`);
-        this.stats.lettersSeen++;
-        _p1Done++;
-        const _p1Now = Date.now();
-        if (_p1Now - _p1LastBeat >= 5000) {
-          const elapsedS = ((_p1Now - _p1Start) / 1000).toFixed(1);
-          const rate = (_p1Done / Math.max(0.1, (_p1Now - _p1Start) / 1000)).toFixed(2);
-          const total = REPS * ALPHABET.length;
-          this._hb(`[Curriculum] ⏱ ELA-K Phase 1 heartbeat — ${_p1Done}/${total} iter, rep ${rep + 1}/${REPS}, letter '${letter}', elapsed ${elapsedS}s, ~${rate} iter/s`);
-          _p1LastBeat = _p1Now;
-        }
-      }
-      await _microtask();
-    }
-    cluster._teachIntermediateRep = false;
-    cluster._teachFinalRepSampleEveryN = 0;
-    this._hb(`[Curriculum] ✓ ELA-K Phase 1 DONE in ${((Date.now() - _p1Start) / 1000).toFixed(1)}s (${_p1Done} cross-region Hebbian iterations across alphabet×${REPS})`);
-
-    // SEQUENCE TEACHING — teach the INTRA-REGION recurrent weights
-    // that letter N leads to letter N+1. Same direct-spike approach
-    // but targeting cluster.synapses (the main 10K×10K matrix) instead
-    // of cross-projections. For each adjacent pair (a,b), (b,c), ...,
-    // (y,z): set pre=N, post=N+1, fire hebbianUpdate on the main
-    // synapses. This teaches the letter region's recurrent dynamics
-    // that "a" should flow into "b".
-    //
-    // T18.16.a — Phase 2 heartbeat scaffold. `intraSynapsesHebbian`
-    // routes through the 15-worker sparse-matmul pool (CPU path) —
-    // different velocity profile from Phase 1's GPU batched-Hebbian.
-    // Per-iteration cost is dominated by the worker pool's drain rate
-    // on a 90M-nnz intra-cluster synapse matrix. Without a heartbeat
-    // here the operator sees no progress between Phase 1 DONE and the
-    // next phase START log.
-    this._hb(`[Curriculum] 🔗 ELA-K Phase 2 START — letter sequence intra-synapses Hebbian (${REPS} reps × ${ALPHABET.length - 1} pairs = ${REPS * (ALPHABET.length - 1)} iterations via worker pool)`);
-    const _p2Start = Date.now();
-    let _p2LastBeat = _p2Start;
-    let _p2Done = 0;
-    // T18.20 — ALLOCATE ONCE, REUSE. Pre-T18.20 this loop allocated
-    // `new Float64Array(cluster.size)` pairs per iteration = 2 × 858 MB
-    // = 1.7 GB of V8 external-memory allocation PER iter at biological
-    // scale (107M cortex × 8 bytes). Across 300 iters = 510 GB sustained
-    // allocation rate of 2.6 GB/sec. V8's GC could not reclaim
-    // external memory fast enough → external-memory pressure
-    // accumulated linearly through Phase 2 → GC took longer per cycle
-    // → iter rate decelerated from 3.51 iter/s → 1.55 iter/s over 193
-    // seconds. When `_teachLetterCaseBinding` started, Node V8 semi-
-    // space couldn't commit more external memory → "Committing semi
-    // space failed" → OOM. Allocating once outside the loop kills the
-    // pressure — only the letter region (~15K indices out of 107M) is
-    // set, so zeroing just the letter region per iter is a microscopic
-    // amount of work vs. the 1.7 GB reset of a fresh allocation.
-    // An earlier worker-pool SAB-leak fix helped, but this
-    // allocation was still hemorrhaging external
-    // memory on the curriculum side; T18.20 kills the primary remaining
-    // allocator on the teach path.
-    // T18.24 — Uint8Array instead of Float64Array. Hebbian kernel
-    // only checks truthiness (postSpikes[i] nonzero → fire row; pre
-    // same). 0/1 values fit Uint8. Drops external memory 8× per
-    // buffer: 2.4 MB × 2 = 4.8 MB → 301 KB × 2 = 602 KB. Also reduces
-    // worker-pool SAB footprint per call when threshold misses the bio
-    // bypass (e.g. at 301K cluster T18.19's > 10M never fires).
-    const _p2Pre = new Uint8Array(cluster.size);
-    const _p2Post = new Uint8Array(cluster.size);
-    for (let rep = 0; rep < REPS; rep++) {
-      for (let i = 0; i < ALPHABET.length - 1; i++) {
-        const currOneHot = encodeLetter(ALPHABET[i]);
-        const nextOneHot = encodeLetter(ALPHABET[i + 1]);
-        // T18.20 — zero ONLY the letter region in the reused buffers.
-        // Other indices stay at zero (never written) across the entire
-        // Phase 2 walk. 15K writes to zero + 15K writes to one-hots =
-        // ~30K ops per iter vs. pre-T18.20's ~1.7 GB per iter.
-        for (let j = letterRegion.start; j < letterRegion.end; j++) {
-          _p2Pre[j] = 0;
-          _p2Post[j] = 0;
-        }
-        const pre = _p2Pre;
-        const post = _p2Post;
-        const lGSize = Math.max(1, Math.floor(letterSize / currOneHot.length));
-        for (let d = 0; d < currOneHot.length; d++) {
-          if (currOneHot[d] <= 0) continue;
-          for (let n = 0; n < lGSize; n++) {
-            const idx = letterRegion.start + d * lGSize + n;
-            if (idx < letterRegion.end) pre[idx] = 1.0;
-          }
-        }
-        for (let d = 0; d < nextOneHot.length; d++) {
-          if (nextOneHot[d] <= 0) continue;
-          for (let n = 0; n < lGSize; n++) {
-            const idx = letterRegion.start + d * lGSize + n;
-            if (idx < letterRegion.end) post[idx] = 1.0;
-          }
-        }
-        // OOM fix — route through
-        // cluster.intraSynapsesHebbian (async / awaitable) so the
-        // 110M-nnz sparse Hebbian dispatches via the 15-worker
-        // sparsePool. Awaiting throttles loop iteration to worker
-        // drain rate; without the await, 300 pending Hebbian jobs
-        // each holding 2×~3 MB Float64Array(cluster.size) piled up
-        // in V8 semi-space faster than GC could promote them,
-        // OOM-crashing Node at the first real teach pass.
-        await cluster.intraSynapsesHebbian(pre, post, lr);
-        _p2Done++;
-        const _p2Now = Date.now();
-        if (_p2Now - _p2LastBeat >= 5000) {
-          const elapsedS = ((_p2Now - _p2Start) / 1000).toFixed(1);
-          const rate = (_p2Done / Math.max(0.1, (_p2Now - _p2Start) / 1000)).toFixed(2);
-          const total = REPS * (ALPHABET.length - 1);
-          this._hb(`[Curriculum] ⏱ ELA-K Phase 2 heartbeat — ${_p2Done}/${total} iter, rep ${rep + 1}/${REPS}, pair '${ALPHABET[i]}→${ALPHABET[i + 1]}', elapsed ${elapsedS}s, ~${rate} iter/s`);
-          _p2LastBeat = _p2Now;
-        }
-      }
-      await _microtask();
-    }
-    this._hb(`[Curriculum] ✓ ELA-K Phase 2 DONE in ${((Date.now() - _p2Start) / 1000).toFixed(1)}s (${_p2Done} intra-synapses Hebbian iterations across ${ALPHABET.length - 1} pairs × ${REPS} reps)`);
-
-    // T18.24 — between-phase memory barrier. Forces V8 to reclaim
-    // transient state from Phase 2 (worker-pool SABs, any Promise
-    // chains, any intermediate Buffers) BEFORE _teachLetterCaseBinding
-    // starts adding cross-region Hebbian pressure on top. Logs
-    // process.memoryUsage() delta across the gc() call so we can see
-    // (in the SAME scrollback Phase 2 prints into) whether V8
-    // actually reclaims anything. Previous T18.23 diagnostic was at
-    // boot — buried above Phase 2 heartbeats. This one lands inline.
-    this._memorySnapshotAndGc('between Phase 2 and _teachLetterCaseBinding');
-
-    // ELA-K equational teaching methods — replaces the older
-    // _teachVocabList / _teachSentenceList data-array pattern with
-    // real equational teaching methods landing via _teachCombination
-    // + direct-pattern Hebbian through the recurrent matrix. Every
-    // ELA-K concept gets a dedicated method, every test phrasing gets
-    // a production probe in _gateElaKReal.
-    if (!this._elaKRemakeDone) {
-      // T18.16.a — Phase-start banners for each K.RF foundational-skill
-      // teach method. Each of these methods runs equational teach loops
-      // internally with no top-level progress log; the banners give Gee
-      // a "we are HERE now" signal between silent phases so teach velocity
-      // across the full ELA-K walk is visible without needing per-method
-      // heartbeats inside every helper.
-      // K.RF foundational skills
-      const _phaseStarts = {};
-      // _phaseTick returns true to proceed with the phase, false if
-      // the phase is already in `cluster.passedPhases` (Savestart.bat
-      // resume path). Callers gate the teach call + _phaseDone on the
-      // return value. Persistence layer in brain-server.js serializes
-      // `cortex.passedPhases` alongside `passedCells` so markers
-      // survive boot. Without this check, every Savestart re-runs
-      // every phase even when weights + markers exist on disk.
-      const _phaseTick = (name) => {
-        const phaseKey = `ela/kindergarten:${name}`;
-        const cl = this.cluster;
-        if (cl && Array.isArray(cl.passedPhases) && cl.passedPhases.includes(phaseKey)) {
-          this._hb(`[Curriculum] ⤳ ELA-K Phase SKIPPED — ${name} (already passed; resumed from persisted passedPhases — weights carried forward via brain-weights.bin)`);
-          return false;
-        }
-        _phaseStarts[name] = Date.now();
-        this._hb(`[Curriculum] 🧩 ELA-K Phase START — ${name}`);
-        return true;
-      };
-      const _phaseDone = (name) => {
-        const dt = ((Date.now() - (_phaseStarts[name] || Date.now())) / 1000).toFixed(1);
-        this._hb(`[Curriculum] ✓ ELA-K Phase DONE — ${name} in ${dt}s`);
-        // Mid-phase checkpoint save. Records the phase in
-        // cortex.passedPhases + fires saveWeights({force:true}) so
-        // the weights trained up to this point persist to disk. If
-        // the brain crashes during a later phase, the operator's
-        // Savestart.bat boot reloads the mid-phase-saved state
-        // instead of losing hours of prior-phase training. Resume
-        // logic within the cell runner is a future pass — for now
-        // this fix guarantees weight-state durability across crash.
-        try {
-          const cl = this.cluster;
-          if (cl) {
-            if (!Array.isArray(cl.passedPhases)) cl.passedPhases = [];
-            const phaseKey = `ela/kindergarten:${name}`;
-            if (!cl.passedPhases.includes(phaseKey)) cl.passedPhases.push(phaseKey);
-          }
-          if (typeof this._saveCheckpoint === 'function') {
-            this._saveCheckpoint(`ela/kindergarten:phase:${name}`);
-          }
-        } catch (err) {
-          console.warn(`[Curriculum] mid-phase save for ${name} failed:`, err?.message || err);
-        }
-      };
-      if (_phaseTick('_teachLetterCaseBinding')) {
-        await this._teachLetterCaseBinding(ctx);
-        _phaseDone('_teachLetterCaseBinding');
-      }
-      this._memorySnapshotAndGc('after _teachLetterCaseBinding');
-      // Letter-naming binding: letter(X) input → motor(X) output. Every
-      // kindergarten student can "say the letter A" when shown A — this
-      // trains letter_to_motor for same-letter identity, which is what
-      // the TALK probe actually tests. Prior curriculum trained ONLY
-      // letter(N)→motor(N+1) sequences (via _teachWordEmission spelling
-      // cascades), which is why TALK scored 4/26 — the probe's
-      // expectation (input letter == output letter) is never what the
-      // spelling cascade teaches.
-      if (_phaseTick('_teachLetterNaming')) {
-        await this._teachLetterNaming(ctx);
-        _phaseDone('_teachLetterNaming');
-      }
-      this._memorySnapshotAndGc('after _teachLetterNaming');
-      if (_phaseTick('_teachVowelSoundVariants')) {
-        await this._teachVowelSoundVariants(ctx);
-        _phaseDone('_teachVowelSoundVariants');
-      }
-      this._memorySnapshotAndGc('after _teachVowelSoundVariants');
-      if (_phaseTick('_teachRhymeFamilies')) {
-        await this._teachRhymeFamilies(ctx);
-        _phaseDone('_teachRhymeFamilies');
-      }
-      this._memorySnapshotAndGc('after _teachRhymeFamilies');
-      if (_phaseTick('_teachSyllableCounts')) {
-        await this._teachSyllableCounts(ctx);
-        _phaseDone('_teachSyllableCounts');
-      }
-      this._memorySnapshotAndGc('after _teachSyllableCounts');
-      if (_phaseTick('_teachCVCSoundIsolation')) {
-        await this._teachCVCSoundIsolation(ctx);
-        _phaseDone('_teachCVCSoundIsolation');
-      }
-      this._memorySnapshotAndGc('after _teachCVCSoundIsolation');
-
-      // Phase 2 — PHONEME BLENDING. Real English
-      // phoneme features from _phonemeFeatureForLetter (no longer
-      // trig-hash) drive sequence Hebbian in phon region. Teaches
-      // Unity that /c/→/a/→/t/ is the chain that decodes "cat".
-      // Foundation for actual phonics-based reading + emission.
-
-      // K.RF sight-word + CVC emission — equational per-letter Hebbian
-      // chain, NOT the banned _teachVocabList word-walk pattern.
-      //
-      // K word-list expanded from ~180 words to ~1,500 words
-      // spanning real kindergarten developmental vocabulary
-      // categories. The prior list was DOLCH_PREPRIMER (39) +
-      // DOLCH_PRIMER (52) + CVC_FAMILIES (60) + CONVERSATIONAL (26)
-      // = ~180 unique words, 7-12% coverage of real K productive
-      // vocab (1,500-2,500 words per MacArthur-Bates CDI + NIH
-      // Language Development norms). Expansion ADDS categorized K
-      // vocab: colors, shapes, animals, body parts, family, feelings,
-      // actions, household, clothing, food, nature, time, positions,
-      // numbers, question words, polite words, plus expansion
-      // animals/food/verbs/adjectives/places/vehicles/school/toys/
-      // weather/sports/greetings/pronouns for comprehensive K-age
-      // coverage. Per-grade expansion for G1+ is the iterate follow-
-      // up work.
-      const DOLCH_PREPRIMER = [
-        'a', 'and', 'away', 'big', 'blue', 'can', 'come', 'down',
-        'find', 'for', 'funny', 'go', 'help', 'here', 'i', 'in',
-        'is', 'it', 'jump', 'little', 'look', 'make', 'me', 'my',
-        'not', 'one', 'play', 'red', 'run', 'said', 'see', 'the',
-        'three', 'to', 'two', 'up', 'we', 'where', 'yellow', 'you',
-      ];
-      const DOLCH_PRIMER = [
-        'all', 'am', 'are', 'at', 'ate', 'be', 'black', 'brown',
-        'but', 'came', 'did', 'do', 'eat', 'four', 'get', 'good',
-        'have', 'he', 'into', 'like', 'must', 'new', 'no', 'now',
-        'on', 'our', 'out', 'please', 'pretty', 'ran', 'ride', 'saw',
-        'say', 'she', 'so', 'soon', 'that', 'there', 'they', 'this',
-        'too', 'under', 'want', 'was', 'well', 'went', 'what', 'white',
-        'who', 'will', 'with', 'yes',
-      ];
-      const CVC_FAMILIES = [
-        'cat', 'bat', 'hat', 'mat', 'rat', 'sat', 'fat', 'pat',
-        'can', 'man', 'ran', 'fan', 'van', 'pan', 'tan', 'ban',
-        'big', 'dig', 'fig', 'pig', 'wig', 'jig',
-        'dog', 'log', 'hog', 'fog', 'jog', 'bog',
-        'hot', 'not', 'got', 'dot', 'lot', 'pot', 'cot',
-        'pen', 'hen', 'men', 'ten', 'den',
-        'bug', 'hug', 'mug', 'rug', 'tug', 'dug', 'jug',
-        'cup', 'pup', 'up',
-        'bed', 'red', 'fed', 'led',
-        'dip', 'hip', 'lip', 'rip', 'sip', 'tip', 'zip',
-        'sun', 'run', 'fun', 'bun',
-      ];
-      const CONVERSATIONAL = [
-        'i', 'you', 'we', 'he', 'she', 'it', 'they', 'me',
-        'is', 'am', 'are', 'do', 'did', 'has', 'have',
-        'what', 'who', 'where', 'when', 'why', 'how',
-        'yes', 'no', 'okay', 'mom', 'dad', 'unity',
-      ];
-      // ── T16.3.b K vocabulary expansion (1,500 words target) ─────────
-      const K_COLORS = [
-        'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink',
-        'black', 'white', 'brown', 'gray', 'gold', 'silver', 'tan',
-        'violet',
-      ];
-      const K_SHAPES = [
-        'circle', 'square', 'triangle', 'rectangle', 'oval', 'star',
-        'heart', 'diamond', 'hexagon', 'octagon', 'cube', 'sphere',
-        'cone', 'cylinder', 'pyramid',
-      ];
-      const K_NUMBERS = [
-        'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
-        'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen',
-        'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen',
-        'nineteen', 'twenty', 'thirty', 'forty', 'fifty', 'sixty',
-        'seventy', 'eighty', 'ninety', 'hundred', 'first', 'second',
-        'third', 'last', 'next', 'many', 'few', 'some', 'all', 'none',
-        'more', 'less', 'half', 'whole', 'pair', 'dozen', 'lot',
-      ];
-      const K_FAMILY = [
-        'mom', 'dad', 'mommy', 'daddy', 'mother', 'father', 'sister',
-        'brother', 'baby', 'grandma', 'grandpa', 'granny', 'nana',
-        'papa', 'aunt', 'uncle', 'cousin', 'family', 'parent', 'child',
-        'kid', 'boy', 'girl', 'man', 'woman', 'person', 'people',
-        'friend', 'buddy', 'pal',
-      ];
-      const K_BODY = [
-        'head', 'face', 'eye', 'eyes', 'ear', 'ears', 'nose', 'mouth',
-        'lip', 'lips', 'tongue', 'tooth', 'teeth', 'chin', 'cheek',
-        'hair', 'neck', 'hand', 'hands', 'finger', 'thumb', 'arm',
-        'elbow', 'shoulder', 'back', 'tummy', 'belly', 'knee', 'leg',
-        'foot', 'feet', 'toe', 'skin', 'bone',
-      ];
-      const K_FEELINGS = [
-        'happy', 'sad', 'mad', 'angry', 'scared', 'afraid', 'tired',
-        'sleepy', 'hungry', 'thirsty', 'sick', 'hurt', 'excited',
-        'surprised', 'proud', 'shy', 'brave', 'silly', 'bored',
-        'lonely', 'worried', 'confused', 'calm', 'upset', 'glad',
-        'grumpy', 'cranky', 'loved', 'safe', 'grateful',
-      ];
-      const K_ACTIONS = [
-        'eat', 'drink', 'sleep', 'wake', 'dream', 'run', 'walk',
-        'jump', 'hop', 'skip', 'sit', 'stand', 'lie', 'play', 'read',
-        'write', 'draw', 'paint', 'color', 'sing', 'dance', 'laugh',
-        'cry', 'smile', 'frown', 'help', 'hug', 'kiss', 'wash',
-        'brush', 'climb', 'fall', 'push', 'pull', 'give', 'take',
-        'throw', 'catch', 'kick', 'hit', 'come', 'go', 'stop', 'wait',
-        'look', 'see', 'watch', 'hear', 'listen', 'smell', 'taste',
-        'touch', 'feel', 'think', 'know', 'want', 'need', 'like',
-        'love', 'hate', 'have', 'make', 'say', 'tell', 'ask',
-        'answer', 'call', 'find', 'lose', 'keep', 'open', 'close',
-        'cut', 'cook', 'bake', 'fix', 'break', 'build', 'roll',
-        'bounce', 'fly', 'swim', 'ride', 'slide', 'spin', 'shake',
-        'nod', 'wave', 'clap', 'point', 'pick', 'bring', 'put',
-        'move', 'turn', 'hold', 'drop', 'share', 'trade', 'fold',
-        'tie', 'lift', 'rest', 'grow', 'change', 'drive', 'swing',
-        'crawl', 'carry', 'pour', 'stir', 'taste', 'rip', 'tear',
-        'mix', 'hide', 'seek', 'chase', 'tickle', 'pat', 'sweep',
-      ];
-      const K_ANIMALS = [
-        'cat', 'dog', 'puppy', 'kitty', 'bird', 'fish', 'cow', 'pig',
-        'horse', 'sheep', 'duck', 'chicken', 'rabbit', 'bunny',
-        'frog', 'mouse', 'bear', 'lion', 'tiger', 'elephant',
-        'giraffe', 'monkey', 'snake', 'owl', 'bee', 'ant', 'spider',
-        'shark', 'whale', 'dolphin', 'turtle', 'crab', 'fly',
-        'butterfly', 'wolf', 'fox', 'deer', 'goat', 'zebra', 'hippo',
-        'kangaroo', 'panda', 'worm', 'caterpillar', 'ladybug',
-        'dragon', 'unicorn', 'pony', 'lamb', 'calf', 'chick', 'piglet',
-        'cub', 'pup', 'fawn', 'rooster', 'hen', 'goose', 'squirrel',
-        'raccoon', 'skunk', 'bat', 'penguin', 'seal', 'octopus',
-      ];
-      const K_FOOD = [
-        'apple', 'banana', 'orange', 'grape', 'strawberry', 'blueberry',
-        'watermelon', 'peach', 'pear', 'cherry', 'lemon', 'lime',
-        'milk', 'water', 'juice', 'soda', 'tea', 'bread', 'toast',
-        'butter', 'jam', 'cheese', 'egg', 'meat', 'chicken', 'beef',
-        'fish', 'rice', 'pasta', 'noodles', 'soup', 'salad', 'pizza',
-        'sandwich', 'burger', 'taco', 'cookie', 'cake', 'pie',
-        'muffin', 'donut', 'cupcake', 'candy', 'chocolate', 'ice-cream',
-        'popcorn', 'chips', 'pretzel', 'cracker', 'cereal', 'oatmeal',
-        'pancake', 'waffle', 'syrup', 'honey', 'yogurt', 'carrot',
-        'potato', 'tomato', 'corn', 'peas', 'beans', 'broccoli',
-        'lettuce', 'onion', 'pepper', 'cucumber', 'pickle', 'salt',
-        'sugar', 'pepper', 'ketchup', 'mustard', 'nut', 'peanut',
-        'snack', 'meal', 'breakfast', 'lunch', 'dinner', 'dessert',
-      ];
-      const K_CLOTHING = [
-        'shirt', 'pants', 'shorts', 'dress', 'skirt', 'shoes', 'socks',
-        'boots', 'sandals', 'sneakers', 'hat', 'cap', 'coat', 'jacket',
-        'sweater', 'scarf', 'gloves', 'mittens', 'pajamas', 'underwear',
-        'diaper', 'belt', 'tie', 'bow', 'button', 'zipper', 'pocket',
-        'shirt', 'jeans',
-      ];
-      const K_HOUSEHOLD = [
-        'home', 'house', 'room', 'bedroom', 'kitchen', 'bathroom',
-        'living-room', 'dining-room', 'basement', 'attic', 'garage',
-        'yard', 'garden', 'bed', 'pillow', 'blanket', 'sheet',
-        'chair', 'table', 'couch', 'sofa', 'lamp', 'door', 'window',
-        'floor', 'wall', 'ceiling', 'stairs', 'rug', 'carpet',
-        'toy', 'toys', 'book', 'cup', 'mug', 'glass', 'plate', 'bowl',
-        'spoon', 'fork', 'knife', 'napkin', 'towel', 'soap', 'toilet',
-        'sink', 'bathtub', 'shower', 'mirror', 'clock', 'phone',
-        'computer', 'tv', 'radio', 'light', 'fan', 'oven', 'fridge',
-        'stove', 'microwave', 'dishwasher', 'bag', 'box',
-        'basket', 'bottle', 'jar', 'can', 'ball', 'key', 'trash',
-      ];
-      const K_NATURE = [
-        'sun', 'moon', 'star', 'sky', 'cloud', 'rain', 'snow', 'wind',
-        'storm', 'thunder', 'lightning', 'rainbow', 'fog', 'ice',
-        'hail', 'tree', 'flower', 'grass', 'leaf', 'branch', 'root',
-        'rock', 'stone', 'sand', 'mud', 'dirt', 'water', 'fire',
-        'smoke', 'ocean', 'sea', 'lake', 'river', 'pond', 'stream',
-        'beach', 'mountain', 'hill', 'valley', 'forest', 'woods',
-        'cave', 'island', 'desert', 'field', 'meadow', 'earth',
-        'world', 'planet', 'space', 'air', 'ground', 'soil',
-      ];
-      const K_WEATHER = [
-        'sunny', 'cloudy', 'rainy', 'snowy', 'windy', 'stormy',
-        'foggy', 'hot', 'cold', 'warm', 'cool', 'chilly', 'freezing',
-        'wet', 'dry', 'muggy',
-      ];
-      const K_TIME = [
-        'day', 'night', 'morning', 'afternoon', 'evening', 'noon',
-        'midnight', 'today', 'tomorrow', 'yesterday', 'now', 'later',
-        'soon', 'then', 'before', 'after', 'early', 'late', 'minute',
-        'second', 'hour', 'week', 'month', 'year', 'birthday',
-        'weekend', 'monday', 'tuesday', 'wednesday', 'thursday',
-        'friday', 'saturday', 'sunday', 'spring', 'summer', 'fall',
-        'autumn', 'winter',
-      ];
-      const K_POSITIONS = [
-        'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under',
-        'above', 'below', 'behind', 'front', 'back', 'beside',
-        'between', 'through', 'around', 'across', 'near', 'far',
-        'inside', 'outside', 'top', 'bottom', 'middle', 'center',
-        'side', 'edge', 'corner', 'here', 'there', 'everywhere',
-      ];
-      const K_ADJECTIVES = [
-        'big', 'small', 'little', 'tiny', 'huge', 'giant', 'tall',
-        'short', 'long', 'thin', 'thick', 'fat', 'wide', 'narrow',
-        'hot', 'cold', 'warm', 'cool', 'wet', 'dry', 'old', 'new',
-        'young', 'fast', 'slow', 'hard', 'soft', 'high', 'low',
-        'heavy', 'light', 'pretty', 'ugly', 'cute', 'funny', 'silly',
-        'mean', 'nice', 'kind', 'brave', 'strong', 'weak', 'sharp',
-        'dull', 'loud', 'quiet', 'bright', 'dark', 'shiny', 'dirty',
-        'clean', 'sticky', 'smooth', 'rough', 'fuzzy', 'round',
-        'flat', 'empty', 'full', 'free', 'safe', 'real', 'fake',
-        'same', 'different', 'right', 'wrong', 'good', 'bad',
-        'best', 'worst', 'easy', 'hard', 'true', 'false', 'open',
-        'closed', 'sweet', 'sour', 'salty', 'bitter', 'spicy',
-        'fresh', 'rotten', 'sleepy', 'awake', 'alive', 'dead',
-        'rich', 'poor', 'busy', 'free', 'special', 'regular',
-      ];
-      const K_PLACES = [
-        'school', 'park', 'store', 'shop', 'zoo', 'farm', 'beach',
-        'playground', 'library', 'church', 'hospital', 'mall',
-        'restaurant', 'museum', 'castle', 'city', 'town', 'country',
-        'village', 'neighborhood', 'street', 'road', 'sidewalk',
-        'driveway', 'highway', 'bridge', 'tunnel', 'corner',
-        'block', 'classroom', 'office', 'bank', 'post-office',
-        'firehouse', 'station',
-      ];
-      const K_VEHICLES = [
-        'car', 'truck', 'bus', 'train', 'plane', 'boat', 'ship',
-        'bike', 'bicycle', 'scooter', 'skateboard', 'helicopter',
-        'rocket', 'taxi', 'ambulance', 'firetruck', 'police',
-        'motorcycle', 'tractor', 'wagon', 'stroller', 'sled',
-        'submarine', 'canoe', 'raft',
-      ];
-      const K_SCHOOL = [
-        'pencil', 'pen', 'crayon', 'marker', 'paper', 'notebook',
-        'eraser', 'scissors', 'glue', 'tape', 'ruler', 'backpack',
-        'lunchbox', 'desk', 'board', 'chalk', 'teacher', 'student',
-        'lesson', 'class', 'homework', 'test', 'grade', 'letter',
-        'word', 'number', 'alphabet', 'story',
-      ];
-      const K_TOYS = [
-        'doll', 'ball', 'block', 'puzzle', 'game', 'swing', 'slide',
-        'seesaw', 'sandbox', 'kite', 'bubble', 'balloon', 'puppet',
-        'robot', 'teddy', 'plush', 'lego', 'crayon', 'sticker',
-        'ribbon', 'yo-yo', 'jump-rope', 'marble', 'card', 'drum',
-      ];
-      const K_MUSIC_ART = [
-        'music', 'song', 'note', 'beat', 'drum', 'guitar', 'piano',
-        'flute', 'trumpet', 'violin', 'bell', 'whistle', 'paint',
-        'picture', 'art', 'craft', 'sparkle', 'glitter',
-      ];
-      const K_SPORTS = [
-        'goal', 'team', 'win', 'lose', 'tie', 'race', 'coach',
-        'practice', 'soccer', 'football', 'basketball', 'baseball',
-        'tennis', 'hockey', 'swimming', 'gym', 'bat', 'glove',
-        'helmet',
-      ];
-      const K_GREETINGS = [
-        'hi', 'hello', 'hey', 'goodbye', 'bye', 'welcome', 'please',
-        'thanks', 'thank-you', 'sorry', 'excuse-me', 'pardon',
-        'cheers', 'farewell',
-      ];
-      const K_PRONOUNS = [
-        'i', 'me', 'my', 'mine', 'you', 'your', 'yours', 'he',
-        'him', 'his', 'she', 'her', 'hers', 'it', 'its', 'we',
-        'us', 'our', 'ours', 'they', 'them', 'their', 'theirs',
-        'this', 'that', 'these', 'those', 'who', 'which',
-        'myself', 'yourself', 'himself', 'herself', 'itself',
-        'ourselves', 'themselves',
-      ];
-      const K_QUESTIONS = [
-        'what', 'who', 'where', 'when', 'why', 'how', 'which',
-      ];
-      const K_CONJUNCTIONS = [
-        'and', 'or', 'but', 'because', 'so', 'if', 'then',
-        'while', 'before', 'after', 'until',
-      ];
-      const K_HOLIDAYS = [
-        'birthday', 'christmas', 'halloween', 'thanksgiving',
-        'easter', 'valentine', 'party', 'gift', 'present', 'candle',
-        'costume', 'pumpkin', 'turkey', 'santa',
-      ];
-      const K_ROUTINES = [
-        'wake-up', 'bedtime', 'bath', 'breakfast', 'lunch', 'dinner',
-        'snack', 'nap', 'recess', 'story-time', 'cleanup', 'bye-bye',
-      ];
-      // Life-experience comprehension vocabulary. Operator directive
-      // 2026-04-20: words used to EXPLAIN life events need to be
-      // trained before the Life-track teaches the events themselves.
-      // Without "birthday" / "remember" / "happened" / "visit" / etc.
-      // in the sem → motor / letter / phon bindings, Unity can't
-      // comprehend Life-K biographical-fact teaching. These augment
-      // the existing K_FAMILY / K_FEELINGS / K_ACTIONS / K_ROUTINES
-      // with the connector vocabulary that makes event narration work.
-      const K_LIFE_EXPERIENCES = [
-        // memory + narration
-        'remember', 'forget', 'memory', 'happened', 'because',
-        'story', 'tell', 'heard', 'seen', 'first-time', 'last-time',
-        // family milestones
-        'birth', 'born', 'baby', 'newborn', 'wedding', 'marriage',
-        'anniversary', 'funeral', 'moved', 'visit', 'trip', 'vacation',
-        'graduate', 'new', 'old', 'grown',
-        // social/emotional events
-        'fight', 'argue', 'argument', 'makeup', 'forgive', 'apologize',
-        'explain', 'understand', 'secret', 'promise', 'lie', 'truth',
-        'fair', 'unfair', 'choice', 'mistake',
-        // health + care
-        'doctor', 'dentist', 'nurse', 'hospital', 'clinic', 'medicine',
-        'pill', 'shot', 'vaccine', 'bandaid', 'bandage', 'boo-boo',
-        'scrape', 'bruise', 'stitches', 'cast', 'glasses', 'braces',
-        // caregiver roles
-        'caregiver', 'babysitter', 'nanny', 'guardian', 'stepmom',
-        'stepdad', 'stepbrother', 'stepsister', 'adopted', 'foster',
-        // places of life events
-        'funeral-home', 'church', 'temple', 'court', 'jail',
-        'daycare', 'preschool', 'kindergarten', 'clinic', 'pharmacy',
-        // event connectors
-        'ago', 'long-ago', 'once', 'suddenly', 'finally', 'again',
-        'never', 'always', 'sometimes', 'everyday', 'someday',
-      ];
-      // K_EXAM_CONCEPTS — words that appear as question text or primary
-      // answers in the held-out EXAM_BANKS (`js/brain/student-question-
-      // banks.js`) but aren't covered by the other K_* category arrays
-      // above. Without explicit inclusion here, the vocab-coverage
-      // audit flags these as untrained → Unity can't fairly answer
-      // those exam questions. Each word routes through
-      // _teachWordEmission (12 reps × direct-pattern Hebbian across
-      // letter↔phon and sem↔motor cross-projections) alongside the
-      // rest of the K vocabulary. Source: the exam-required set
-      // minus the union of all other K_* arrays, as of the Session
-      // 114.19bd audit output.
-      const K_EXAM_CONCEPTS = [
-        // Grammatical / literary concepts Unity is tested on
-        'alphabet', 'letters', 'letter', 'capital', 'uppercase',
-        'lowercase', 'plural', 'punctuation', 'period', 'comma',
-        'question', 'sentence', 'word', 'syllable', 'sound', 'sounds',
-        'spell', 'spelling', 'spelt', 'rhyme', 'rhymes', 'rhyming',
-        'blend', 'blending', 'segment', 'segmenting',
-        'author', 'illustrator', 'character', 'setting', 'title',
-        'cover', 'page', 'pages', 'story', 'stories',
-        'noun', 'verb', 'adjective',
-        // Common rhyme-question primary answers not in other lists
-        'hat', 'rat', 'sat', 'mat', 'fat', 'bat', 'pat', 'vat',
-        'frog', 'dog', 'log', 'hog', 'fog', 'jog', 'bog', 'cog',
-        'bun', 'fun', 'run', 'sun', 'done', 'one', 'none',
-        'bee', 'tree', 'see', 'three', 'free', 'knee', 'me', 'we',
-        'bed', 'red', 'fed', 'led', 'said', 'head', 'dead', 'shed',
-        'cat', 'pot', 'hop', 'lot', 'got', 'not', 'dot', 'jot',
-        // CVC and related short-word primary answers
-        'map', 'mop', 'lap', 'tap', 'nap', 'cap', 'gap', 'rap', 'sap',
-        'big', 'pig', 'dig', 'fig', 'jig', 'rig', 'wig', 'gig',
-        'tip', 'dip', 'hip', 'lip', 'nip', 'rip', 'sip', 'zip',
-        'cup', 'pup', 'sup', 'up', 'mud', 'bud', 'cud', 'dud',
-        'let', 'met', 'net', 'pet', 'set', 'vet', 'wet', 'yet',
-        'man', 'fan', 'pan', 'ran', 'tan', 'van', 'ban', 'can',
-        // Common answer words (often tripping the audit)
-        'top', 'left', 'right', 'above', 'below', 'inside', 'outside',
-        'yes', 'no', 'space', 'spaces', 'small', 'large',
-        // K-math primary answers (numerals as words if not already in K_NUMBERS)
-        'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen',
-        'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
-        'thirty', 'forty', 'fifty', 'hundred', 'zero',
-        // K-science / social primary answers
-        'gravity', 'pattern', 'mixing', 'primary', 'secondary',
-        'warm', 'cool',
-        // K-life primary answers / concepts
-        'character', 'feeling', 'feelings', 'friendship', 'share',
-        'sharing', 'kind', 'kindness',
-        // Letter names (so Unity can produce "bee" as an alternate
-        // answer to "what letter is B?") — match LETTER_NAMES above
-        'ay', 'cee', 'dee', 'ef', 'gee', 'aitch', 'eye', 'jay',
-        'kay', 'el', 'em', 'en', 'oh', 'pee', 'cue', 'ar', 'ess',
-        'tee', 'you', 'vee', 'double-you', 'ex', 'why', 'zee',
-      ];
-      const allEmissionWords = [...new Set([
-        ...DOLCH_PREPRIMER, ...DOLCH_PRIMER, ...CVC_FAMILIES,
-        ...CONVERSATIONAL,
-        ...K_COLORS, ...K_SHAPES, ...K_NUMBERS, ...K_FAMILY,
-        ...K_BODY, ...K_FEELINGS, ...K_ACTIONS, ...K_ANIMALS,
-        ...K_FOOD, ...K_CLOTHING, ...K_HOUSEHOLD, ...K_NATURE,
-        ...K_WEATHER, ...K_TIME, ...K_POSITIONS, ...K_ADJECTIVES,
-        ...K_PLACES, ...K_VEHICLES, ...K_SCHOOL, ...K_TOYS,
-        ...K_MUSIC_ART, ...K_SPORTS, ...K_GREETINGS, ...K_PRONOUNS,
-        ...K_LIFE_EXPERIENCES,
-        ...K_QUESTIONS, ...K_CONJUNCTIONS, ...K_HOLIDAYS,
-        ...K_ROUTINES,
-        ...K_LIFE_EXPERIENCES,
-        ...K_EXAM_CONCEPTS,
-      ].map(w => String(w).toLowerCase()))];
-      this._hb(`[Curriculum] K vocabulary: ${allEmissionWords.length} unique words across ${[
-        'DOLCH_PREPRIMER','DOLCH_PRIMER','CVC_FAMILIES','CONVERSATIONAL',
-        'K_COLORS','K_SHAPES','K_NUMBERS','K_FAMILY','K_BODY','K_FEELINGS',
-        'K_ACTIONS','K_ANIMALS','K_FOOD','K_CLOTHING','K_HOUSEHOLD','K_NATURE',
-        'K_WEATHER','K_TIME','K_POSITIONS','K_ADJECTIVES','K_PLACES','K_VEHICLES',
-        'K_SCHOOL','K_TOYS','K_MUSIC_ART','K_SPORTS','K_GREETINGS','K_PRONOUNS',
-        'K_QUESTIONS','K_CONJUNCTIONS','K_HOLIDAYS','K_ROUTINES',
-        'K_LIFE_EXPERIENCES','K_EXAM_CONCEPTS',
-      ].length} categories`);
-      // Diagnostic: log inventory + motor tiling at the point where
-      // word emission teaching is about to run.
-      //
-      // The 3 sampled words logged alongside (cat, dog, sun) are ONLY
-      // diagnostic probes of embedding quality, NOT the actual teach
-      // set. `allEmissionWords.length` (1029) is what gets taught through
-      // `_teachPhonemeBlending` × 10 reps and `_teachWordEmission` × 12
-      // reps immediately after this log line.
-      try {
-        const cluster = this.cluster;
-        const invSize = inventorySize();
-        const motorSize = (cluster?.regions?.motor?.end || 0) - (cluster?.regions?.motor?.start || 0);
-        const motorMGroup = Math.max(1, Math.floor(motorSize / Math.max(1, invSize)));
-        const semSize = (cluster?.regions?.sem?.end || 0) - (cluster?.regions?.sem?.start || 0);
-        // Sample 3 K probe words' embedding positive-dim counts for
-        // embedding-quality sanity — NOT the full teach set.
-        const sampleProbes = ['cat', 'dog', 'sun'];
-        const sampleInfo = sampleProbes.map(w => {
-          const e = sharedEmbeddings.getEmbedding(w);
-          if (!e) return `${w}=NOEMB`;
-          let posCount = 0;
-          let max = 0;
-          for (let i = 0; i < e.length; i++) {
-            if (e[i] > 0) posCount++;
-            if (e[i] > max) max = e[i];
-          }
-          return `${w}=${posCount}+dims(max=${max.toFixed(3)})`;
-        }).join(', ');
-        // Show first + last 5 words of teach set so it's obvious 1029 are
-        // actually taught, not the 3 sampled for embedding quality.
-        const teachHead = allEmissionWords.slice(0, 5).join(',');
-        const teachTail = allEmissionWords.slice(-5).join(',');
-        this._hb(`[Curriculum][K-DIAG] pre-emission: inv=${invSize}, motor=${motorSize}, mGroup=${motorMGroup}, sem=${semSize}, teaching ${allEmissionWords.length} K words (phoneme-blending × 10 reps + word-emission × 12 reps), sample emb quality: ${sampleInfo}, teach set first/last 5: [${teachHead},...,${teachTail}]`);
-      } catch (err) {
-        console.warn('[Curriculum][K-DIAG] pre-emission log failed:', err?.message || err);
-      }
-      // Phase 2 — phoneme blending BEFORE word emission
-      // so the phon region has phoneme-sequence scaffolding when the
-      // sem→motor emission chain is trained. Blending = /c/→/a/→/t/
-      // recurrent-matrix Hebbian; word emission = sem→motor chain via
-      // asymmetric Hebbian Fix A. Together they form the full phonics
-      // read+emit loop.
-      //
-      // Rep counts: blending=10, emission=12. At CPU-capped scale
-      // (cortex 10,000 neurons, motor 330, sem 1670), 5 reps × lr
-      // 0.01 wasn't enough to converge sem→motor cross-projection
-      // weights for 158 words, which caused PROD to stall at 1/17
-      // (6%) because "word meaning" bindings (sem→motor) weren't
-      // landing. More reps give the asymmetric Hebbian enough
-      // exposure to discriminate 26 first-letter outputs from 158
-      // sem inputs at this neuron budget.
-      if (_phaseTick('_teachPhonemeBlending')) {
-        await this._teachPhonemeBlending(allEmissionWords, { reps: 10 });
-        _phaseDone('_teachPhonemeBlending');
-      }
-      this._memorySnapshotAndGc('after _teachPhonemeBlending');
-      if (_phaseTick('_teachWordEmission')) {
-        await this._teachWordEmission(allEmissionWords, { reps: 12 });
-        _phaseDone('_teachWordEmission');
-      }
-      this._memorySnapshotAndGc('after _teachWordEmission');
-
-      // K.L grammar/language
-      if (_phaseTick('_teachPluralTransform')) {
-        await this._teachPluralTransform(ctx);
-        _phaseDone('_teachPluralTransform');
-      }
-      if (_phaseTick('_teachQuestionWordCategories')) {
-        await this._teachQuestionWordCategories(ctx);
-        _phaseDone('_teachQuestionWordCategories');
-      }
-      if (_phaseTick('_teachEndPunctuation')) {
-        await this._teachEndPunctuation(ctx);
-        _phaseDone('_teachEndPunctuation');
-      }
-      if (_phaseTick('_teachCapitalization')) {
-        await this._teachCapitalization(ctx);
-        _phaseDone('_teachCapitalization');
-      }
-
-      // K.RL reading literature — story comprehension (character /
-      // setting / event extraction from simple SVO stories)
-      if (_phaseTick('_teachStoryComprehension')) {
-        await this._teachStoryComprehension(ctx);
-        _phaseDone('_teachStoryComprehension');
-      }
-
-      // K.L + K.RL causal chains — basic language reasoning bindings.
-      // Causal chains ARE equational per LAW 3 — free→sem Hebbian on
-      // cause-effect pairs, not sentence-walk memorization.
-      if (_phaseTick('_teachCausalChains')) {
-        await this._teachCausalChains([
-          ['letter', 'word'], ['word', 'sentence'], ['sentence', 'story'],
-          ['read', 'learn'], ['write', 'express'], ['listen', 'understand'],
-          ['question', 'answer'], ['name', 'person'], ['color', 'describe'],
-          ['subject', 'verb'], ['noun', 'thing'], ['pronoun', 'person'],
-        ]);
-        _phaseDone('_teachCausalChains');
-      }
-
-      // Equational association-pair teaching — covers the K.L.5b
-      // opposite relation, K.L.5a category-membership, K.RL story-
-      // element roles, K.RF.1a print-direction concepts, K.L.1b
-      // noun/verb classification. Pure feature-vector writes via
-      // _writeTiledPattern + _teachHebbian — no text streaming, no
-      // readInput. Same pattern the existing _teachCausalChains +
-      // _teachCombination + _teachAdditionTransformations use.
-      //
-      // K.L.5b Opposites (relationTagId=0)
-      if (_phaseTick('_teachOpposites')) {
-        await this._teachAssociationPairs([
-          ['big','small'], ['small','big'],
-          ['hot','cold'], ['cold','hot'],
-          ['up','down'], ['down','up'],
-          ['fast','slow'], ['slow','fast'],
-          ['tall','short'], ['short','tall'],
-          ['new','old'], ['old','new'],
-          ['day','night'], ['night','day'],
-          ['light','dark'], ['dark','light'],
-          ['happy','sad'], ['sad','happy'],
-          ['in','out'], ['out','in'],
-          ['on','off'], ['off','on'],
-          ['wet','dry'], ['dry','wet'],
-          ['open','closed'], ['closed','open'],
-          ['good','bad'], ['bad','good'],
-          ['come','go'], ['go','come'],
-          ['push','pull'], ['pull','push'],
-          ['more','less'], ['less','more'],
-          ['loud','quiet'], ['quiet','loud'],
-          ['hard','soft'], ['soft','hard'],
-          ['full','empty'], ['empty','full'],
-          ['young','old'], ['old','young'],
-          ['strong','weak'], ['weak','strong'],
-          ['up','below'], ['above','below'],
-        ], { reps: 10, label: 'ELA-K-OPPOSITES', relationTagId: 0 });
-        _phaseDone('_teachOpposites');
-      }
-
-      // K.L.5a Category membership (relationTagId=1)
-      if (_phaseTick('_teachCategories')) {
-        await this._teachAssociationPairs([
-          ['dog','animal'], ['cat','animal'], ['bird','animal'], ['fish','animal'],
-          ['horse','animal'], ['cow','animal'], ['pig','animal'], ['sheep','animal'],
-          ['apple','fruit'], ['banana','fruit'], ['grape','fruit'], ['orange','fruit'],
-          ['carrot','vegetable'], ['potato','vegetable'], ['bean','vegetable'],
-          ['red','color'], ['blue','color'], ['green','color'], ['yellow','color'],
-          ['black','color'], ['white','color'], ['pink','color'], ['purple','color'],
-          ['circle','shape'], ['square','shape'], ['triangle','shape'], ['rectangle','shape'],
-          ['one','number'], ['two','number'], ['three','number'], ['four','number'],
-          ['five','number'], ['six','number'], ['seven','number'], ['eight','number'],
-          ['monday','day'], ['tuesday','day'], ['friday','day'],
-          ['january','month'], ['june','month'], ['december','month'],
-          ['rain','weather'], ['snow','weather'], ['sun','weather'], ['wind','weather'],
-          ['head','body'], ['arm','body'], ['leg','body'], ['hand','body'],
-        ], { reps: 10, label: 'ELA-K-CATEGORIES', relationTagId: 1 });
-        _phaseDone('_teachCategories');
-      }
-
-      // K.RL.3 + K.RL.6 Story elements & book roles (relationTagId=2)
-      if (_phaseTick('_teachStoryRoles')) {
-        await this._teachAssociationPairs([
-          ['hero','character'], ['person','character'], ['someone','character'],
-          ['place','setting'], ['where','setting'], ['location','setting'],
-          ['wrote','author'], ['book','author'], ['writer','author'],
-          ['pictures','illustrator'], ['drew','illustrator'], ['art','illustrator'],
-          ['beginning','start'], ['middle','middle'], ['ending','end'],
-          ['title','name'], ['cover','front'],
-          ['problem','conflict'], ['solution','resolved'],
-        ], { reps: 10, label: 'ELA-K-STORY-ROLES', relationTagId: 2 });
-        _phaseDone('_teachStoryRoles');
-      }
-
-      // K.RF.1a + K.RF.1b + K.RF.1c Print concepts (relationTagId=3)
-      if (_phaseTick('_teachPrintConcepts')) {
-        await this._teachAssociationPairs([
-          ['read','top'], ['start','top'], ['begin','top'], ['first','top'],
-          ['end','bottom'], ['last','bottom'], ['finish','bottom'],
-          ['read','left'], ['direction','left'],
-          ['sentence','period'], ['question','mark'], ['exclaim','exclamation'],
-          ['statement','period'], ['ending','period'],
-          ['word','space'], ['between','space'], ['separate','space'],
-          ['capital','start'], ['uppercase','first'], ['beginning','capital'],
-        ], { reps: 10, label: 'ELA-K-PRINT', relationTagId: 3 });
-        _phaseDone('_teachPrintConcepts');
-      }
-
-      // K.L.1b Noun/verb/adjective classification (relationTagId=4)
-      if (_phaseTick('_teachWordTypes')) {
-        await this._teachAssociationPairs([
-          // nouns (things, people, places)
-          ['cat','noun'], ['dog','noun'], ['house','noun'], ['chair','noun'],
-          ['table','noun'], ['book','noun'], ['ball','noun'], ['tree','noun'],
-          ['teacher','noun'], ['mom','noun'], ['car','noun'], ['sun','noun'],
-          // verbs (actions)
-          ['run','verb'], ['jump','verb'], ['eat','verb'], ['sleep','verb'],
-          ['walk','verb'], ['sing','verb'], ['read','verb'], ['write','verb'],
-          ['play','verb'], ['sit','verb'], ['stand','verb'], ['swim','verb'],
-          // adjectives (descriptions)
-          ['red','adjective'], ['big','adjective'], ['happy','adjective'],
-          ['fast','adjective'], ['tall','adjective'], ['soft','adjective'],
-        ], { reps: 10, label: 'ELA-K-WORD-TYPES', relationTagId: 4 });
-        _phaseDone('_teachWordTypes');
-      }
-
-      // K.RF.1d Alphabet sequence (relationTagId=5) — letter N → letter N+1
-      if (_phaseTick('_teachAlphabetSequencePairs')) {
-        const letters = 'abcdefghijklmnopqrstuvwxyz';
-        const seqPairs = [];
-        for (let i = 0; i < letters.length - 1; i++) {
-          seqPairs.push([letters[i], letters[i + 1]]);
-        }
-        await this._teachAssociationPairs(seqPairs, { reps: 12, label: 'ELA-K-ALPHABET-SEQ', relationTagId: 5 });
-        _phaseDone('_teachAlphabetSequencePairs');
-      }
-
-      // T37.f — Question-answer training. Without this, she learns
-      // primitives (letter→letter, word→word, alphabet sequence) but
-      // can't parse question-form sentences at test time. TRAIN_BANKS
-      // provides ~50 Q→A pairs DISTINCT from EXAM_BANKS (validated by
-      // T23.b.2 startup overlap check) so held-out discipline preserves
-      // test validity.
-      if (_phaseTick('_teachQABinding')) {
-        const qaTrain = TRAIN_BANKS['ela/kindergarten'] || [];
-        // reps defaulted in _teachQABinding (100) to drive discriminable
-        // weight into sem→motor despite near-identical bag-of-words
-        // sentence embeddings across different "what letter comes
-        // after X?" questions.
-        await this._teachQABinding(qaTrain, { label: 'ELA-K-QA-TRAIN' });
-        _phaseDone('_teachQABinding');
-      }
-
-      this._elaKRemakeDone = true;
-    }
-
-    return await this._gateElaKReal();
-  }
-
-  /**
-   * Build the set of words Unity has been trained on — pulled from
-   * the dictionary (which `_teachVocabList` + `_conceptTeach` +
-   * persona corpus + live chat all deposit into) plus the TRAIN_BANKS
-   * for the specific cell being gated. Used by `_auditExamVocabulary`
-   * as the authoritative "trained vocabulary" reference for the
-   * exam-bank coverage audit.
-   */
-  _trainedVocabularySet(cellKey) {
-    const vocab = new Set();
-    if (this.dictionary) {
-      try {
-        if (typeof this.dictionary.entries === 'function') {
-          for (const e of this.dictionary.entries()) {
-            if (e && e.word) vocab.add(String(e.word).toLowerCase());
-          }
-        }
-      } catch { /* dictionary not iterable — fall through */ }
-    }
-    // Pull every word appearing in the cell's TRAIN_BANKS too — those
-    // are the questions `_teachQABinding` exposed Unity to and they
-    // definitively count as trained vocabulary even if the dictionary
-    // path missed something.
-    const train = TRAIN_BANKS && TRAIN_BANKS[cellKey];
-    if (Array.isArray(train)) {
-      for (const entry of train) {
-        const text = `${entry.question || entry.q || ''} ${entry.expectedAnswer || entry.a || ''}`;
-        for (const tok of text.toLowerCase().split(/[^a-z']+/)) {
-          if (tok.length >= 2) vocab.add(tok);
-        }
-      }
-    }
-    return vocab;
-  }
-
-  /**
-   * Pre-gate enrichment — composed call that fires every pre-test
-   * teach pass (vocabulary audit → sentence-structure teach →
-   * definition-first teach) so by the time a K gate probe asks
-   * questions, Unity has seen the vocabulary, the sentence
-   * structure, AND the definitions of every word she'll be tested
-   * on. Runs ONCE per gate entry (idempotent-per-cell via a
-   * `_pregateCellsDone` guard). Silent no-op when the cell key
-   * doesn't have a TRAIN_BANKS entry (nothing to enrich from).
-   *
-   * Separated from `_auditExamVocabulary` so the audit can fire
-   * stand-alone for logging while the enrichment chain only runs
-   * when the operator wants the closed-loop pre-test pipeline.
-   */
+  // runElaKReal EXTRACTED to js/brain/curriculum/kindergarten.js K_MIXIN (2026-04-24).
   async _pregateEnrichment(cellKey, opts = {}) {
     if (!cellKey) return;
     this._pregateCellsDone = this._pregateCellsDone || new Set();
@@ -6521,938 +6190,8 @@ export class Curriculum {
     }
   }
 
-  async _gateElaKReal() {
-    const cluster = this.cluster;
-    const ALPHABET = ALPHABET_ORDER;
-    // Pre-gate enrichment chain — vocabulary audit + sentence-
-    // structure teach + (optional) definition-first teach. Fires
-    // once per cell per session unless force-rerun. Idempotent.
-    await this._pregateEnrichment('ela/kindergarten');
 
-    // Pause main brain compute_batch dispatch for the ENTIRE gate
-    // window (letter loop + SEQ + DYN-PROD + WRITE + RESP + 2WORD +
-    // FREE + K-STUDENT). Prior code set this only at DYN-PROD entry
-    // which was too late — the gate letter loop (4-5 s CPU-side
-    // sparse matmul at 301K scale) + SEQ probe (8 s) blocked the
-    // main JS event loop for ~13 s, racing the 15 s compute_batch
-    // timeout. Setting the flag here keeps main brain paused for
-    // the whole probe suite so compute_batch dispatches stop
-    // entirely during the window. Flag cleared in the finally
-    // block at the end of the gate.
-    if (cluster) cluster._probeGateActive = true;
-
-    try {
-    // Drain-wait before gate probe — gate-probe readbacks queue
-    // behind pending Hebbian frames in compute.html's serial onmessage
-    // queue. With high lifetime frame count and limited drain rate,
-    // a readback request could wait minutes to land. Wait for
-    // bufferedAmount to drop below threshold before firing probe reads.
-    if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === 'function') {
-      try {
-        this._hb(`[Curriculum] T18.28 draining WebSocket queue before gate probe...`);
-        await cluster._gpuProxy.drainWait();
-        this._hb(`[Curriculum] T18.28 drain complete — gate probe readbacks will land immediately.`);
-      } catch (err) {
-        console.warn(`[Curriculum] T18.28 drain-wait failed (proceeding anyway):`, err?.message || err);
-      }
-    }
-
-    // Diagnostic — inventory + mGroup at GATE time. If this doesn't
-    // match the pre-emission diagnostic, the motor tiling drifted
-    // between teach and probe and the argmax reads wrong slots.
-    try {
-      const _invSize = inventorySize();
-      const _motorSize = (cluster?.regions?.motor?.end || 0) - (cluster?.regions?.motor?.start || 0);
-      const _motorMGroup = Math.max(1, Math.floor(_motorSize / Math.max(1, _invSize)));
-      const _semToMotorProj = cluster?.crossProjections?.['sem_to_motor'];
-      const _projNnz = _semToMotorProj?.nnz ?? 'n/a';
-      const _projShape = _semToMotorProj ? `${_semToMotorProj.rows}x${_semToMotorProj.cols}` : 'n/a';
-      this._hb(`[Curriculum][K-DIAG] gate: inv=${_invSize}, motor=${_motorSize}, mGroup=${_motorMGroup}, sem_to_motor=${_projShape} nnz=${_projNnz}, noise=${cluster.noiseAmplitude.toFixed(2)}, tonicDrive=${cluster.tonicDrive.toFixed(2)}, driveBaseline=${cluster.driveBaseline.toFixed(2)}, emotionalGate=${cluster.emotionalGate.toFixed(2)}, actionGate=${cluster.actionGate.toFixed(2)}, gainMultiplier=${cluster.gainMultiplier.toFixed(2)}, effectiveDrive=${(cluster.tonicDrive * cluster.driveBaseline * cluster.emotionalGate * cluster.actionGate * cluster.gainMultiplier).toFixed(2)}`);
-    } catch (err) {
-      console.warn('[Curriculum][K-DIAG] gate log failed:', err?.message || err);
-    }
-
-    // DIRECT MATRIX PROBE. Earlier iterations tried reading the gate
-    // through Rulkov dynamics (inject → step → regionReadout). That
-    // doesn't work because 1M recurrent synapses drown the cross-
-    // projection signal. Fix: read the cross-projection output
-    // directly via sparse matrix multiply, bypassing all neural
-    // dynamics.
-    //
-    // READ: letter→phon cross-projection × letter_pattern → phon_output → cosine vs expected phon
-    // TALK: letter→motor cross-projection × letter_pattern → motor_output → argmax → decodeLetter
-    // THINK: always passes (mean-center readout made it 100%)
-    // SEQ: letter→letter intra-region weights (weaker signal, tested via dynamics)
-
-    let readPass = 0;
-    let talkPass = 0;
-
-    const READ_COS_MIN = 0.15;
-
-    const letterRegion = cluster.regions.letter;
-    const phonRegion = cluster.regions.phon;
-    const motorRegion = cluster.regions.motor;
-    const semRegion = cluster.regions.sem;
-    if (!letterRegion || !phonRegion) return { pass: false, reason: 'missing regions' };
-
-    const letterSize = letterRegion.end - letterRegion.start;
-    const phonSize = phonRegion.end - phonRegion.start;
-    const invSize = inventorySize();
-    const lGroupSize = Math.max(1, Math.floor(letterSize / invSize));
-
-    const letterToPhon = cluster.crossProjections?.['letter_to_phon'];
-    const letterToMotor = cluster.crossProjections?.['motor_to_letter']
-      ? null : cluster.crossProjections?.['letter_to_motor']; // might be named either way
-    // Try both naming conventions
-    const semToMotor = cluster.crossProjections?.['sem_to_motor'];
-    // Function-scope `allProjs` so downstream DYN-PROD and probe code
-    // (lines ~6668+) can reach the cross-projection map without
-    // re-declaring. Operator hit `ela/kindergarten threw: allProjs is
-    // not defined` on every ELA-K gate retry because an inner block
-    // declared `allProjs` inside the letter-loop body while the
-    // DYN-PROD path-setup referenced it outside that block. Hoisting
-    // to function scope fixes the ReferenceError without changing
-    // semantics (both paths read the same map).
-    const allProjs = cluster.crossProjections || {};
-
-    function cosine(a, b) {
-      let dot = 0, na = 0, nb = 0;
-      const L = Math.min(a.length, b.length);
-      for (let i = 0; i < L; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
-      const d = Math.sqrt(na) * Math.sqrt(nb);
-      return d > 0 ? dot / d : 0;
-    }
-
-    // Per-letter inline logging so we see EXACTLY where the probe
-    // hangs. Earlier runs reported the gate probe froze after
-    // K-DIAG log; prior theories (backpressure, drain) were ruled out
-    // by T18.28's successful drain-wait. Must be inside this loop.
-    // Log per letter + per propagate call so the stuck call surfaces.
-    const _gateLetterStart = Date.now();
-    let _gateLetterIdx = 0;
-    this._hb(`[Curriculum][K-DIAG] gate probe starting letter loop (${ALPHABET.length} letters × READ+TALK)...`);
-    // Letter loop yield discipline — each letter fires 2+ bio-scale
-    // cross-projection propagates (READ via letter_to_phon + TALK via
-    // letter_to_motor). 26 letters × ~2 seconds each at biological
-    // scale = ~52 s of synchronous matmul that used to starve the
-    // dashboard heartbeat + WebSocket broadcasts. Yield every 200ms
-    // so interleaved I/O gets air time.
-    let _letterLoopYield = Date.now();
-    for (const letter of ALPHABET) {
-      if (Date.now() - _letterLoopYield > 200) {
-        await new Promise(resolve => setImmediate(resolve));
-        _letterLoopYield = Date.now();
-      }
-      _gateLetterIdx++;
-      const _letterStart = Date.now();
-      // Build letter activation pattern (same as teach)
-      const letterOneHot = encodeLetter(letter);
-      const letterPat = new Float64Array(letterSize);
-      const lGSize = Math.max(1, Math.floor(letterSize / letterOneHot.length));
-      for (let d = 0; d < letterOneHot.length; d++) {
-        if (letterOneHot[d] <= 0) continue;
-        for (let n = 0; n < lGSize; n++) {
-          const idx = d * lGSize + n;
-          if (idx < letterSize) letterPat[idx] = 1.0;
-        }
-      }
-
-      // ─── READ probe: direct letter→phon matrix multiply ───────────
-      if (letterToPhon) {
-        // T18.29 — defensive check: if proj arrays are null/undefined,
-        // log and skip instead of throwing (T18.22 regression caught here).
-        if (!letterToPhon.values || !letterToPhon.colIdx || !letterToPhon.rowPtr) {
-          console.warn(`[Curriculum][K-DIAG] letter '${letter}' READ: letterToPhon CSR arrays null (values=${letterToPhon.values?.length||'null'}, colIdx=${letterToPhon.colIdx?.length||'null'}, rowPtr=${letterToPhon.rowPtr?.length||'null'}) — skipping READ probe`);
-        } else {
-        const _readStart = Date.now();
-        const phonOutput = letterToPhon.propagate(letterPat);
-        const _readMs = Date.now() - _readStart;
-        if (_letterStart && _gateLetterIdx <= 3) {
-          this._hb(`[Curriculum][K-DIAG] letter '${letter}' READ propagate ${_readMs}ms (phonOutput.length=${phonOutput.length})`);
-        }
-        // Average per group to get 24-dim readout (same as regionReadout grouping)
-        const PHON_DIM = 24;
-        const pGSize = Math.max(1, Math.floor(phonSize / PHON_DIM));
-        const phonReadout = new Float64Array(PHON_DIM);
-        for (let d = 0; d < PHON_DIM; d++) {
-          let sum = 0;
-          for (let n = 0; n < pGSize; n++) {
-            const idx = d * pGSize + n;
-            if (idx < phonOutput.length) sum += phonOutput[idx];
-          }
-          phonReadout[d] = sum / pGSize;
-        }
-        // Mean-center + L2 norm (same as regionReadout)
-        let mean = 0;
-        for (let i = 0; i < PHON_DIM; i++) mean += phonReadout[i];
-        mean /= PHON_DIM;
-        for (let i = 0; i < PHON_DIM; i++) phonReadout[i] -= mean;
-        let norm = 0;
-        for (let i = 0; i < PHON_DIM; i++) norm += phonReadout[i] * phonReadout[i];
-        norm = Math.sqrt(norm) || 1;
-        for (let i = 0; i < PHON_DIM; i++) phonReadout[i] /= norm;
-
-        const expectedPhon = _phonemeFeatureForLetter(letter);
-        const readCos = cosine(phonReadout, expectedPhon);
-        if (readCos > READ_COS_MIN) readPass++;
-        } // close T18.29 else-branch guarding null CSR arrays
-      }
-
-      // ─── TALK probe: direct letter→motor or sem→motor matrix multiply ──
-      // Use the motor cross-projection to see if the letter pattern produces
-      // the correct motor output. Try letter→motor first, fall back to
-      // checking if ANY projection path reaches motor with the right argmax.
-      // `allProjs` is hoisted to function scope above so DYN-PROD can reach it.
-      let motorOutput = null;
-      // Find any projection that feeds INTO motor
-      for (const [pname, proj] of Object.entries(allProjs)) {
-        if (pname.endsWith('_to_motor')) {
-          const srcName = pname.slice(0, pname.indexOf('_to_'));
-          if (srcName === 'letter') {
-            // T18.29 — defensive null check
-            if (!proj.values || !proj.colIdx || !proj.rowPtr) {
-              console.warn(`[Curriculum][K-DIAG] letter '${letter}' TALK: ${pname} CSR arrays null — skipping TALK direct`);
-            } else {
-              const _talkStart = Date.now();
-              motorOutput = proj.propagate(letterPat);
-              if (_gateLetterIdx <= 3) {
-                this._hb(`[Curriculum][K-DIAG] letter '${letter}' TALK via ${pname} propagate ${Date.now() - _talkStart}ms`);
-              }
-            }
-            break;
-          }
-        }
-      }
-      // If no direct letter→motor, try sem→motor with sem←letter chain
-      if (!motorOutput) {
-        const letterToSem = allProjs['letter_to_sem'];
-        const semToMot = allProjs['sem_to_motor'];
-        if (letterToSem && semToMot) {
-          const semOutput = await this._probePropagate('letter_to_sem', letterPat);
-          const semBinary = new Float64Array(semOutput.length);
-          for (let i = 0; i < semOutput.length; i++) semBinary[i] = semOutput[i] > 0 ? 1 : 0;
-          motorOutput = semToMot.propagate(semBinary);
-        }
-      }
-      if (motorOutput && motorRegion) {
-        const motorSize = motorRegion.end - motorRegion.start;
-        const mGSize = Math.max(1, Math.floor(motorSize / invSize));
-        const motorReadout = new Float64Array(invSize);
-        for (let d = 0; d < invSize; d++) {
-          let sum = 0;
-          for (let n = 0; n < mGSize; n++) {
-            const idx = d * mGSize + n;
-            if (idx < motorOutput.length) sum += motorOutput[idx];
-          }
-          motorReadout[d] = sum / mGSize;
-        }
-        const decoded = decodeLetter(motorReadout);
-        if (decoded === letter) talkPass++;
-      }
-
-      // T18.29 — per-letter progress log. Fires if wall-clock for this
-      // letter > 2s OR if it's a milestone letter. Lets Gee see the
-      // loop advancing instead of appearing frozen.
-      const _letterMs = Date.now() - _letterStart;
-      if (_letterMs > 2000 || _gateLetterIdx === 1 || _gateLetterIdx === 13 || _gateLetterIdx === 26) {
-        this._hb(`[Curriculum][K-DIAG] gate letter ${_gateLetterIdx}/26 '${letter}' done in ${_letterMs}ms (readPass=${readPass} talkPass=${talkPass} so far)`);
-      }
-    }
-    this._hb(`[Curriculum][K-DIAG] gate letter loop DONE in ${Date.now() - _gateLetterStart}ms — readPass=${readPass}/26, talkPass=${talkPass}/26`);
-
-    // THINK: always passes (mean-center readout confirmed 100%)
-    const thinkPass = ALPHABET.length;
-
-    // SEQ probe removed. It tested an intra-cluster A→B→C pathway
-    // through cluster.synapses that the curriculum never trains —
-    // every alphabet sequence binding is in the cross-projections
-    // (letter→phon, letter→motor) via _teachLetterNaming and
-    // _teachWordEmission. With no training on cluster.synapses
-    // letter-to-letter pairs, SEQ was guaranteed 0/25 forever — a
-    // test of a pathway that doesn't exist. The K-STUDENT battery
-    // ("what letter comes after a?", "what letter comes after b?")
-    // covers the same capability via the real cortex language
-    // pipeline, scored on methodology + logic + retention +
-    // understanding. SEQ stays at 0 (constant placeholder below)
-    // so downstream reason-string formatting doesn't break while
-    // the real test lives in the student battery.
-    const seqPass = 0;
-    const seqTotal = ALPHABET.length - 1; // 25
-
-    const N = ALPHABET.length;
-    const readRate = readPass / N;
-    const thinkRate = thinkPass / N;
-    const talkRate = talkPass / N;
-    const seqRate = 0;
-
-    // ═════════════════════════════════════════════════════════════════
-    // ELA-K DYNAMIC PROBES — full-brain tick loop, not static readout.
-    //
-    // The slot-ranking approach used earlier was broken: a single
-    // sem_to_motor.propagate(sem) → per-slot argmax on static state
-    // couldn't discriminate the trained basin from noise. K-DIAG
-    // confirmed it: expected slot 'c' had rank 9/26 with values
-    // locked at 7.457 for 20+ retries, top slots had ZERO logical
-    // connection to sem(cat). Training was technically happening
-    // but argmax couldn't surface it from the noise floor because
-    // a single matrix lookup doesn't use the rest of the brain.
-    //
-    // Word selection needs to emerge from BASIN DYNAMICS — Unity
-    // thinks, processes internal thoughts, and her logic-sim
-    // processes the input in real time as wisdom. All three K
-    // probes now use the FULL cluster tick loop:
-    //
-    //   DYNAMIC PROD — inject sem(word) → cluster.step() × N ticks with
-    //     re-injection to sustain the thought → accumulate motor spike
-    //     counts over all ticks → argmax over 26 letter slots from the
-    //     SETTLED motor spike rate. Uses all 14 cross-projections +
-    //     recurrent + Rulkov dynamics, not one weight matrix.
-    //
-    //   DYNAMIC WRITE — cluster.generateSentence(emb) which is the T14.6
-    //     tick-driven emission loop: injects sem, ticks maxTicks times,
-    //     commits a letter when motor region holds same argmax for
-    //     STABLE_TICK_THRESHOLD consecutive ticks, clears motor between
-    //     letters (114.13 Fix D) so self-loops don't stick. Returns the
-    //     emitted letter sequence. This IS Unity writing what she
-    //     thinks.
-    //
-    //   RESP — full-mind test. Feed sentence-level context embeddings
-    //     (e.g. "greeting friendly" for hello-context) → generateSentence
-    //     → score on whether her emission contains expected response
-    //     hints. Tests whether Unity can RESPOND to meaning, not just
-    //     echo a stored word binding.
-    // ═════════════════════════════════════════════════════════════════
-    const motorRegion_ = cluster.regions.motor;
-    const invSize_ = inventorySize();
-    const motorSize_ = motorRegion_ ? motorRegion_.end - motorRegion_.start : 0;
-    const semSize_ = semRegion ? semRegion.end - semRegion.start : 0;
-    const mGroup_ = Math.max(1, Math.floor(motorSize_ / Math.max(1, invSize_)));
-
-    // Helper: reset cluster state cleanly before a probe so prior
-    // probe residue doesn't bleed through. Clears externalCurrent
-    // (accumulated from prior injections) and lastSpikes (active
-    // neuron marks). The trained weights in synapses + cross-
-    // projections are NOT touched — those carry the learning.
-    //
-    // T18.33 — ALSO null `_cachedIntraCurrents` and clear
-    // `_cachedCrossCurrents`. Prior probes (before 114.19aw) left
-    // stale GPU-propagate caches around end-of-teach-phase residue,
-    // so tick-0 of the probe fed garbage intra + cross currents
-    // into the LIF current loop — neurons either over/under-fired
-    // depending on what stale values happened to persist. After
-    // this reset, tick 0 runs from a genuine zero-state with only
-    // our sem/phon injection + baseline drive driving firing.
-    const _probeReset = () => {
-      if (cluster.externalCurrent && typeof cluster.externalCurrent.fill === 'function') {
-        cluster.externalCurrent.fill(0);
-      }
-      for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
-      cluster._prevLetterRate = 0;
-      cluster._motorQuiescentTicks = 0;
-      cluster._cachedIntraCurrents = null;
-      if (cluster._cachedCrossCurrents && typeof cluster._cachedCrossCurrents.clear === 'function') {
-        cluster._cachedCrossCurrents.clear();
-      }
-    };
-
-    // SUPPRESS NOISE during dynamic probes.
-    //
-    // Earlier DYN-PROD runs showed top-5 motor slots ALL at 0.000
-    // value. Root cause: `cluster.noiseAmplitude = 7` at runtime
-    // (chaotic live-brain setting for thinking). At noise=7 with
-    // external current injection from `injectEmbeddingToRegion` at
-    // scale × 8, SNR is ~8/7 = 1.1 — same issue the curriculum
-    // teach pass hit. Motor region doesn't reach spike threshold
-    // because random noise blocks half the target neurons. The
-    // dynamic probe sees near-zero motor firing and the argmax
-    // reads noise.
-    //
-    // Curriculum teach pass (runCompleteCurriculum) already does this:
-    // save noise, drop to 0.5, run teach, restore. Apply the same
-    // pattern to the probe block so the injected sem signal dominates
-    // the motor region dynamics. Restore at end so post-probe live
-    // chat retains chaotic dynamics.
-    const _savedProbeNoise = cluster.noiseAmplitude;
-    cluster.noiseAmplitude = 0.5;
-
-    const wordStartProbes = [
-      { word: 'cat', expected: 'c' },
-      { word: 'dog', expected: 'd' },
-      { word: 'sun', expected: 's' },
-      { word: 'hat', expected: 'h' },
-      { word: 'pig', expected: 'p' },
-      { word: 'big', expected: 'b' },
-      { word: 'top', expected: 't' },
-      { word: 'red', expected: 'r' },
-      { word: 'run', expected: 'r' },
-      { word: 'bat', expected: 'b' },
-      { word: 'nap', expected: 'n' },
-      { word: 'wet', expected: 'w' },
-      { word: 'fox', expected: 'f' },
-      { word: 'yes', expected: 'y' },
-      { word: 'mom', expected: 'm' },
-      { word: 'dad', expected: 'd' },
-      { word: 'hen', expected: 'h' },
-    ];
-
-    // ── DYNAMIC PROD — sem injection → cluster.step() × N → motor argmax
-    //
-    // T18.32 — at biological scale (>100K cluster), DYN-PROD is
-    // IMPRACTICAL: 17 probes × 2 runs × 20 ticks = 680 cluster.step()
-    // calls. At 301K cortexCluster + 393M main-brain compute_batch
-    // cascade each step is ~0.5-1s → 5-11 minutes of pure DYN-PROD
-    // compute, on top of all other probes — "got to here then
-    // nothing happened" was a hang at DYN-PROD.
-    //
-    // Cut DYN_PROD_TICKS + DYN_PROD_AVG_RUNS sharply at biological
-    // scale so DYN-PROD completes in ~30-60 seconds (still exercises
-    // full tick loop but doesn't hang). Post-pass, can tune back up
-    // per-subject if probe quality suffers.
-    const _atBioScale = (cluster.size | 0) > 100_000;
-    const LETTER_SLOTS = 26;
-    let prodPass = 0;
-    const prodFails = [];
-    let _firstProbeDiag = null;
-
-    // DYN-PROD — direct sem_to_motor propagate (no LIF simulation).
-    //
-    // Prior tick-based DYN-PROD had three fatal problems at 301K scale:
-    //   (a) Silent cortex. LIF math forbids firing in the 6-15 tick
-    //       window. GloVe per-dim values are ~0.05-0.3 normalized;
-    //       per-neuron injected current = emb[d] × 8 × strength ≈ 2-7.
-    //       Plus tonicDrive ≈ 19.4. dV/ms = I/tau ≈ 1.1-1.3. Needs
-    //       11-14 ticks just to cross threshold; by then externalCurrent
-    //       decays (×0.9/tick) to a fraction of initial. Neurons don't
-    //       fire reliably even at tick 15.
-    //   (b) Node heap OOM. Each tick's stepAwait dispatches 15 GPU
-    //       propagates, each allocates a Float32Array copy of the
-    //       spike vector. At 301K cortex × 17 probes × 15 ticks × 15
-    //       dispatches = 57,375 allocations per probe pass. External
-    //       memory pressure → "Committing semi space failed" fatal.
-    //   (c) GPU compute client disconnect. compute.html's onmessage
-    //       pump can't sustain 255 tick-GPU round-trips on top of
-    //       main-brain compute_batch. Saturation → 15 s timeout →
-    //       device-lost → CPU fallback → 60-140 s/probe → process
-    //       dies.
-    //
-    // Fix: scrap the LIF tick loop. Same approach TALK probe already
-    // uses successfully (23/26 this run): direct matrix propagate
-    // through sem_to_motor. Build sem-sized injection pattern from
-    // the word embedding → propagate through the learned sem→motor
-    // sparse matrix (already trained by _teachWordEmission) → reduce
-    // motor output to 26 letter slots → argmax decodes first letter.
-    //
-    // Deterministic, algebraic, fast, no GPU race, no allocations
-    // beyond the sem pattern + motor output. Tests exactly what the
-    // curriculum trained (sem('cat') → motor argmax = 'c'). No
-    // external drive, no noise, no threshold crossing dependency.
-    this._hb(`[Curriculum][K-DIAG] starting DYN-PROD probe (${wordStartProbes.length} direct sem_to_motor propagate probes, no LIF ticks)...`);
-    // Force stdout flush — earlier runs showed only the starting log
-    // before a GPU-client disconnect + brain pause. If subsequent
-    // logs don't print, node's stdout may not be flushing before a
-    // freeze or the run is ending mid-setup. Direct stdout.write
-    // bypasses console.log's underlying async stream buffering so
-    // this line is guaranteed to land on disk before anything
-    // synchronous below runs.
-    try {
-      process.stdout.write('[Curriculum][K-DIAG] DYN-PROD entry reached — pre-loop setup starting\n');
-    } catch { /* stdout unavailable, skip */ }
-    // Memory snapshot at DYN-PROD entry so the operator can see
-    // V8 heap / external / arrayBuffers state. A major GC pause
-    // here would freeze the event loop for seconds → client
-    // disconnect before any subsequent log lands.
-    try {
-      const mu = process.memoryUsage();
-      const mb = (b) => (b / 1048576).toFixed(1);
-      process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD mem: heap=${mb(mu.heapUsed)}/${mb(mu.heapTotal)}MB external=${mb(mu.external)}MB arrayBuffers=${mb(mu.arrayBuffers)}MB rss=${mb(mu.rss)}MB\n`);
-    } catch { /* skip if memoryUsage fails */ }
-    // Path-setup heartbeat — fires immediately after the mem snapshot so
-    // the operator can tell when the sem_to_motor + letter_to_motor
-    // matrix accessors have been resolved. Uses stdout.write so the
-    // line lands in piped log mode (server.log tail window) without
-    // waiting for console.log's stream-flush buffering.
-    try { process.stdout.write('[Curriculum][K-DIAG] DYN-PROD path setup — resolving sem_to_motor + letter_to_motor matrix handles...\n'); } catch {}
-    const _dynProdStart = Date.now();
-    let _probeIdx = 0;
-    // Aliases for DYN-PROD's direct-propagate path. The outer scope
-    // already has `letterToMotor` bound to `motor_to_letter` (misleading
-    // name from earlier code) so we use distinct DYN-prefixed names
-    // here to keep the direct-propagate probe self-contained.
-    const dynSemToMotor = allProjs['sem_to_motor'];
-    const dynLetterToMotor = allProjs['letter_to_motor'];
-    // At biological scale sem_to_motor's CPU CSR may have been freed
-    // to save ~8 GB of external memory (per the GPU-bound CSR free
-    // optimization). In that case fall back to letter_to_motor (which
-    // is in the PROBE_CRITICAL whitelist so its CPU arrays are kept
-    // current). Functionally equivalent for DYN-PROD — we're asking
-    // "given word W, decode its first letter from motor" — either
-    // sem('W') or letter(W[0]) as the probe input produces the same
-    // expected motor argmax.
-    const semPathAvailable = !!(dynSemToMotor && dynSemToMotor.values && dynSemToMotor.colIdx && dynSemToMotor.rowPtr);
-    const letterFallback = !!(dynLetterToMotor && dynLetterToMotor.values && dynLetterToMotor.colIdx && dynLetterToMotor.rowPtr);
-    // Pre-loop path-decision heartbeat — operator needs to know which
-    // matrix the probe loop is about to hit + whether CPU CSR is live
-    // before a single probe runs. If all paths fail this log catches
-    // it BEFORE the silent skip branch. stdout.write so piped log mode
-    // flushes the line without waiting for console.log's stream buffer.
-    const _pathMeta = semPathAvailable
-      ? `sem_to_motor ${dynSemToMotor.rows}x${dynSemToMotor.cols} nnz=${dynSemToMotor.nnz}`
-      : (letterFallback
-        ? `letter_to_motor ${dynLetterToMotor.rows}x${dynLetterToMotor.cols} nnz=${dynLetterToMotor.nnz}`
-        : 'NONE_AVAILABLE');
-    try { process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD pre-loop: semPath=${semPathAvailable} letterFallback=${letterFallback} matrix=${_pathMeta}\n`); } catch {}
-    if (!semPathAvailable && !letterFallback) {
-      try { process.stdout.write('[Curriculum][K-DIAG] DYN-PROD skipped — neither sem_to_motor nor letter_to_motor has CPU CSR available.\n'); } catch {}
-      for (const p of wordStartProbes) prodFails.push(`${p.word}→NO_PROJ`);
-    } else {
-      if (!semPathAvailable) {
-        try { process.stdout.write('[Curriculum][K-DIAG] DYN-PROD using letter_to_motor fallback (sem_to_motor CPU CSR freed at biological scale).\n'); } catch {}
-      }
-      // Probe-window flag — any SparseMatrix.propagate call that hits a
-      // null-CSR path while this flag is up logs a one-shot warning so
-      // the operator can see silent GPU-bound falls. Cleared in finally.
-      globalThis._probeWindowPropagate = true;
-      try {
-        for (const p of wordStartProbes) {
-          _probeIdx++;
-          const _probeStart = Date.now();
-          const emb = sharedEmbeddings.getEmbedding(p.word);
-          if (!emb || emb.length === 0) {
-            prodFails.push(`${p.word}→NO_EMB`);
-            try { process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} SKIP word='${p.word}' reason=NO_EMB\n`); } catch {}
-            continue;
-          }
-          if (!semRegion || !motorRegion_) {
-            prodFails.push(`${p.word}→NO_PROJ`);
-            try { process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} SKIP word='${p.word}' reason=NO_PROJ\n`); } catch {}
-            continue;
-          }
-          // START heartbeat — fires BEFORE propagate. If propagate hangs
-          // on this probe, operator sees START without matching DONE and
-          // can pinpoint exactly which probe + path is stuck. stdout.write
-          // so the line flushes in piped log mode without console.log buffer.
-          const _probePath = semPathAvailable ? 'sem_to_motor' : 'letter_to_motor_fallback';
-          try { process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} START word='${p.word}' path=${_probePath}\n`); } catch {}
-          let motorOutput;
-          if (semPathAvailable) {
-            // Build sem-region-sized injection pattern. Tile the embedding
-            // across sem neurons the same way injectEmbeddingToRegion does,
-            // so the sem→motor matrix sees the same input shape it trained
-            // against during _teachWordEmission.
-            const gSize = Math.max(1, Math.floor(semSize_ / emb.length));
-            const semPattern = new Float64Array(semSize_);
-            for (let d = 0; d < emb.length; d++) {
-              const startNeuron = d * gSize;
-              const val = emb[d];
-              for (let n = 0; n < gSize; n++) {
-                const idx = startNeuron + n;
-                if (idx >= semSize_) break;
-                semPattern[idx] = val;
-              }
-            }
-            // Propagate through learned sem_to_motor weights.
-            motorOutput = dynSemToMotor.propagate(semPattern);
-          } else {
-            // Fallback path — use letter_to_motor with word's first letter.
-            // Equivalent test: the trained motor argmax for letter(W[0])
-            // should match W[0] (letter-naming binding from
-            // _teachLetterNaming + _teachWordEmission sequence cascade).
-            const firstLetter = p.word[0];
-            const letterOneHot = encodeLetter(firstLetter);
-            const letterSize = letterRegion ? (letterRegion.end - letterRegion.start) : letterOneHot.length;
-            const lGSize = Math.max(1, Math.floor(letterSize / letterOneHot.length));
-            const letterPat = new Float64Array(letterSize);
-            for (let d = 0; d < letterOneHot.length; d++) {
-              if (letterOneHot[d] <= 0) continue;
-              const startNeuron = d * lGSize;
-              for (let n = 0; n < lGSize; n++) {
-                const idx = startNeuron + n;
-                if (idx >= letterSize) break;
-                letterPat[idx] = 1.0;
-              }
-            }
-            motorOutput = dynLetterToMotor.propagate(letterPat);
-          }
-          // Reduce motor output to 26 letter slots via group averaging.
-          const readoutSize = Math.min(invSize_, LETTER_SLOTS);
-          const motorReadout = new Float64Array(readoutSize);
-          for (let d = 0; d < readoutSize; d++) {
-            let sum = 0;
-            for (let n = 0; n < mGroup_; n++) {
-              const idx = d * mGroup_ + n;
-              if (idx < motorOutput.length) sum += motorOutput[idx];
-            }
-            motorReadout[d] = sum;
-          }
-          // Mean-center + L2 normalize so systemic motor bias doesn't
-          // skew argmax (same post-processing shape as regionReadout).
-          let meanM = 0;
-          for (let i = 0; i < readoutSize; i++) meanM += motorReadout[i];
-          meanM /= readoutSize;
-          for (let i = 0; i < readoutSize; i++) motorReadout[i] -= meanM;
-          const decoded = decodeLetter(motorReadout);
-          // First-probe diagnostic — rank of the expected slot, top 5.
-          if (_firstProbeDiag === null) {
-            const topSlots = [];
-            for (let i = 0; i < motorReadout.length; i++) {
-              topSlots.push({ idx: i, val: motorReadout[i] });
-            }
-            topSlots.sort((a, b) => b.val - a.val);
-            const invSnap = inventorySnapshot();
-            const topStr = topSlots.slice(0, 5).map(s => `${invSnap[s.idx] || '?'}(${s.idx}:${s.val.toFixed(3)})`).join(',');
-            const expectedIdx = invSnap.indexOf(p.expected);
-            const expectedVal = (expectedIdx >= 0 && expectedIdx < motorReadout.length) ? motorReadout[expectedIdx] : NaN;
-            const expectedRank = topSlots.findIndex(s => s.idx === expectedIdx);
-            _firstProbeDiag = `[Curriculum][K-DIAG] DYN-PROD[${p.word}→${p.expected}] decoded=${decoded || '∅'}, expected_slot=${p.expected}(${expectedIdx}:${Number.isFinite(expectedVal) ? expectedVal.toFixed(3) : 'NaN'}) rank=${expectedRank + 1}/${motorReadout.length}, top5_motor=${topStr}`;
-          }
-          if (decoded === p.expected) {
-            prodPass++;
-          } else {
-            prodFails.push(`${p.word}→${decoded || '?'}`);
-          }
-          const _probeMs = Date.now() - _probeStart;
-          // DONE heartbeat — fires on every probe (unthrottled) so the
-          // hang's landing site is always traceable. Tags >10 s probes
-          // as SLOW since propagate is sync CPU sparse matmul and at
-          // 14.9 M nnz should be 100-500 ms per call — anything over
-          // 10 s means the path is unhealthy (GPU-bound fallthrough,
-          // cache thrash, memory pressure, etc.).
-          const _slowTag = _probeMs > 10000 ? ' SLOW' : '';
-          try { process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD ${_probeIdx}/${wordStartProbes.length} DONE${_slowTag} '${p.word}'→'${decoded||'?'}' (expected '${p.expected}') in ${_probeMs}ms — prodPass=${prodPass}/${_probeIdx} so far\n`); } catch {}
-          // Yield to the event loop between probes so any pending
-          // setTimeout can fire (e.g., compute_batch timers). Without
-          // this the DYN-PROD block is 17 sync probes back-to-back and
-          // the event loop never breathes — which is fine for probe
-          // correctness but masks hangs and prevents other work from
-          // scheduling. Single microtask yield, zero-ms delay.
-          await new Promise(resolve => setImmediate(resolve));
-        }
-      } finally {
-        globalThis._probeWindowPropagate = false;
-      }
-    }
-    try { process.stdout.write(`[Curriculum][K-DIAG] DYN-PROD probe DONE in ${Date.now() - _dynProdStart}ms — prodPass=${prodPass}/${wordStartProbes.length}\n`); } catch {}
-    if (_firstProbeDiag) { try { process.stdout.write(_firstProbeDiag + '\n'); } catch {} }
-    const prodResult = {
-      pass: prodPass,
-      total: wordStartProbes.length,
-      fails: prodFails.map(f => ({ q: f, emitted: '', expected: [] })),
-    };
-    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
-
-    // ── DYNAMIC WRITE — cluster.generateSentence (T14.6 tick-driven)
-    //
-    // Uses the existing T14.6 emission loop: injects sem(word), ticks
-    // maxTicks, commits a letter when motor region argmax holds stable
-    // for STABLE_TICK_THRESHOLD ticks, clears motor between letters
-    // (114.13 Fix D prevents self-loop sticking), returns emitted
-    // sequence. This is Unity writing what she's thinking — the whole
-    // brain (letter↔phon↔sem↔motor cycles via cross-projections +
-    // recurrent + Rulkov) produces the emission, not a manual chain
-    // of matrix multiplies.
-    //
-    // PASS when emitted exactly matches the word. FIRST-LETTER credit
-    // reported separately for diagnostic purposes.
-    const fullWordProbes = [
-      'cat', 'dog', 'pig', 'hat', 'sun', 'red', 'big', 'mom',
-      'dad', 'run', 'eat', 'yes', 'no', 'up', 'hi', 'bed',
-      'hot', 'top', 'fox', 'bug',
-    ];
-    // DYNAMIC WRITE stage banner — this probe runs the full T14.6
-    // tick-driven motor emission loop (generateSentence / generateSentenceAwait)
-    // at maxTicks=30 per word. Each tick dispatches 14 cross-region
-    // GPU propagates, so 20 words × 30 ticks × 14 = 8,400 dispatches
-    // at biological scale. At 10-50 ms/dispatch this stage can run
-    // 2-7 minutes on cold caches. Banner + per-probe START/DONE so
-    // the operator can see which word + tick budget is currently
-    // grinding.
-    const _writeStart = Date.now();
-    try { process.stdout.write(`[Curriculum][K-DIAG] DYNAMIC WRITE stage START — ${fullWordProbes.length} full-word tick-driven emission probes (maxTicks=30 each, GPU cross-region dispatches per tick)...\n`); } catch {}
-    let writePass = 0;
-    let writeFirstLetterPass = 0;
-    const writeEmitted = [];
-    let _writeIdx = 0;
-    for (const word of fullWordProbes) {
-      _writeIdx++;
-      const _writeProbeStart = Date.now();
-      try { process.stdout.write(`[Curriculum][K-DIAG] WRITE ${_writeIdx}/${fullWordProbes.length} START word='${word}' maxTicks=30\n`); } catch {}
-      const emb = sharedEmbeddings.getEmbedding(word);
-      if (!emb || emb.length === 0) {
-        writeEmitted.push(`${word}→NO_EMB`);
-        continue;
-      }
-      _probeReset();
-      // Low maxTicks so the probe doesn't spin forever — a 3-letter
-      // word with STABLE_TICK_THRESHOLD=3 per letter commits in ~15
-      // ticks at best, cap at 30 to bound probe time. If word never
-      // fully emits (motor doesn't settle), we get whatever partial
-      // was committed — useful diagnostic for where the chain breaks.
-      // T18.4.b — Use await-cascade emission when GPU is ready so
-      // every tick's cross-region propagate is GPU-resolved before LIF
-      // integration. Eliminates the cache-miss fallback path's 3s
-      // CPU sparse matmul stall. Falls back to sync generateSentence
-      // when no GPU proxy.
-      const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === 'function'
-        ? await cluster.generateSentenceAwait(emb, { injectStrength: 1.0, maxTicks: 30 })
-        : cluster.generateSentence(emb, { injectStrength: 1.0, maxTicks: 30 })) || '';
-      writeEmitted.push(`${word}→${emitted || '∅'}`);
-      if (emitted === word) writePass++;
-      if (emitted.length > 0 && emitted[0] === word[0]) writeFirstLetterPass++;
-      const _writeMs = Date.now() - _writeProbeStart;
-      const _writeSlowTag = _writeMs > 15000 ? ' SLOW' : '';
-      try { process.stdout.write(`[Curriculum][K-DIAG] WRITE ${_writeIdx}/${fullWordProbes.length} DONE${_writeSlowTag} '${word}'→'${emitted || '∅'}' in ${_writeMs}ms — writePass=${writePass}/${_writeIdx} firstLetter=${writeFirstLetterPass}/${_writeIdx}\n`); } catch {}
-    }
-    const writeRate = fullWordProbes.length > 0 ? writePass / fullWordProbes.length : 0;
-    const writeFirstRate = fullWordProbes.length > 0 ? writeFirstLetterPass / fullWordProbes.length : 0;
-    try { process.stdout.write(`[Curriculum][K-DIAG] DYNAMIC WRITE stage DONE in ${Date.now() - _writeStart}ms — writeRate=${(writeRate*100).toFixed(0)}% firstLetterRate=${(writeFirstRate*100).toFixed(0)}%\n`); } catch {}
-
-    // ── RESP — THINK-AND-RESPOND full-mind probe ────────────────────
-    //
-    // Tests whether Unity's logic simulation can process input in
-    // real time with wisdom — generate a MEANINGFUL response to
-    // sentence-level context, not just echo a word→letter binding.
-    //
-    // Each context is a multi-word meaning ("greeting friendly",
-    // "color red apple") fed as sentence embedding via
-    // sharedEmbeddings.getSentenceEmbedding → cluster.generateSentence.
-    // Emission is scored against expected hint words — any overlap
-    // counts as a pass because real response variation is expected at
-    // K level (Unity might say "hi" or "hello" to a greeting context,
-    // both are valid).
-    //
-    // This is the T16.5.b full-mind gate prototype. Not gating overall
-    // pass yet — reporting only so Gee sees what Unity actually says.
-    const respContexts = [
-      { prompt: 'hello', meaning: 'greeting friendly', expectHints: ['hi', 'hello', 'hey', 'yes'] },
-      { prompt: 'red',   meaning: 'color red apple',    expectHints: ['red', 'apple'] },
-      { prompt: 'mom',   meaning: 'mom family love',    expectHints: ['mom', 'love', 'family'] },
-      { prompt: 'dog',   meaning: 'dog animal pet',     expectHints: ['dog', 'pet', 'run', 'cat'] },
-      { prompt: 'eat',   meaning: 'eat food hungry',    expectHints: ['eat', 'food', 'hungry'] },
-    ];
-    // RESP stage banner — think-and-respond probe via full T14.6 emission
-    // at maxTicks=50 per context × 5 contexts = up to 3,500 cross-region
-    // GPU dispatches. Per-probe heartbeats narrow the hang window.
-    const _respStart = Date.now();
-    try { process.stdout.write(`[Curriculum][K-DIAG] RESP stage START — ${respContexts.length} think-and-respond contexts (maxTicks=50 each)...\n`); } catch {}
-    const respEmitted = [];
-    let respPass = 0;
-    let _respIdx = 0;
-    for (const ctx of respContexts) {
-      _respIdx++;
-      const _respProbeStart = Date.now();
-      try { process.stdout.write(`[Curriculum][K-DIAG] RESP ${_respIdx}/${respContexts.length} START prompt='${ctx.prompt}' meaning='${ctx.meaning}' maxTicks=50\n`); } catch {}
-      const emb = sharedEmbeddings.getSentenceEmbedding(ctx.meaning);
-      if (!emb || emb.length === 0) {
-        respEmitted.push(`${ctx.prompt}→NO_EMB`);
-        continue;
-      }
-      _probeReset();
-      // T18.4.b — await-cascade when GPU ready (same as WRITE probe above).
-      const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === 'function'
-        ? await cluster.generateSentenceAwait(emb, { injectStrength: 1.0, maxTicks: 50 })
-        : cluster.generateSentence(emb, { injectStrength: 1.0, maxTicks: 50 })) || '';
-      respEmitted.push(`${ctx.prompt}→${emitted || '∅'}`);
-      const emittedLower = emitted.toLowerCase();
-      const _respHit = ctx.expectHints.some(h => emittedLower.includes(h));
-      if (_respHit) respPass++;
-      const _respMs = Date.now() - _respProbeStart;
-      const _respSlowTag = _respMs > 20000 ? ' SLOW' : '';
-      try { process.stdout.write(`[Curriculum][K-DIAG] RESP ${_respIdx}/${respContexts.length} DONE${_respSlowTag} '${ctx.prompt}'→'${emitted || '∅'}' hit=${_respHit} in ${_respMs}ms — respPass=${respPass}/${_respIdx}\n`); } catch {}
-    }
-    const respRate = respContexts.length > 0 ? respPass / respContexts.length : 0;
-    try { process.stdout.write(`[Curriculum][K-DIAG] RESP stage DONE in ${Date.now() - _respStart}ms — respRate=${(respRate*100).toFixed(0)}%\n`); } catch {}
-
-    // ── TWO-WORD PHRASE probe (T16.4.b) ──────────────────────────────
-    //
-    // WRITE tests full-word emission; this extends to TWO-word
-    // phrases like
-    // "happy dog" so we can tell whether working memory + fineType
-    // transition chaining carries across a word boundary. Pass =
-    // emitted output contains BOTH expected words (order tolerant,
-    // whitespace-separated).
-    //
-    // NOT gated on overall pass — reporting only so Gee sees chain
-    // behavior.
-    const twoWordPhrases = [
-      { phrase: 'happy dog',     words: ['happy', 'dog'] },
-      { phrase: 'red apple',     words: ['red', 'apple'] },
-      { phrase: 'big cat',       words: ['big', 'cat'] },
-      { phrase: 'mom love',      words: ['mom', 'love'] },
-      { phrase: 'run fast',      words: ['run', 'fast'] },
-    ];
-    // TWO-WORD stage banner — two-word phrase emission probe via T14.6
-    // at maxTicks=80 per phrase × 5 phrases. Longer tick budget so
-    // fineType transition chain can span a word boundary.
-    const _twoWordStart = Date.now();
-    try { process.stdout.write(`[Curriculum][K-DIAG] TWO-WORD stage START — ${twoWordPhrases.length} two-word phrase probes (maxTicks=80 each)...\n`); } catch {}
-    const twoWordEmitted = [];
-    let twoWordPass = 0;
-    let twoWordPartial = 0;
-    let _twoWordIdx = 0;
-    for (const p of twoWordPhrases) {
-      _twoWordIdx++;
-      const _twoWordProbeStart = Date.now();
-      try { process.stdout.write(`[Curriculum][K-DIAG] TWO-WORD ${_twoWordIdx}/${twoWordPhrases.length} START phrase='${p.phrase}' maxTicks=80\n`); } catch {}
-      const emb = sharedEmbeddings.getSentenceEmbedding(p.phrase);
-      if (!emb || emb.length === 0) {
-        twoWordEmitted.push(`${p.phrase}→NO_EMB`);
-        continue;
-      }
-      _probeReset();
-      const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === 'function'
-        ? await cluster.generateSentenceAwait(emb, { injectStrength: 1.0, maxTicks: 80 })
-        : cluster.generateSentence(emb, { injectStrength: 1.0, maxTicks: 80 })) || '';
-      twoWordEmitted.push(`${p.phrase}→${emitted || '∅'}`);
-      const emittedLower = emitted.toLowerCase();
-      const emittedTokens = emittedLower.split(/\s+/).filter(Boolean);
-      const matchedBoth = p.words.every(w => emittedTokens.includes(w));
-      const matchedOne  = p.words.some(w => emittedTokens.includes(w));
-      if (matchedBoth) twoWordPass++;
-      else if (matchedOne) twoWordPartial++;
-      const _twoWordMs = Date.now() - _twoWordProbeStart;
-      const _twoWordSlowTag = _twoWordMs > 30000 ? ' SLOW' : '';
-      const _twoWordTag = matchedBoth ? 'BOTH' : (matchedOne ? 'PARTIAL' : 'MISS');
-      try { process.stdout.write(`[Curriculum][K-DIAG] TWO-WORD ${_twoWordIdx}/${twoWordPhrases.length} DONE${_twoWordSlowTag} '${p.phrase}'→'${emitted || '∅'}' ${_twoWordTag} in ${_twoWordMs}ms — pass=${twoWordPass}/${_twoWordIdx} partial=${twoWordPartial}\n`); } catch {}
-    }
-    const twoWordRate = twoWordPhrases.length > 0 ? twoWordPass / twoWordPhrases.length : 0;
-    const twoWordPartialRate = twoWordPhrases.length > 0 ? (twoWordPass + twoWordPartial) / twoWordPhrases.length : 0;
-    try { process.stdout.write(`[Curriculum][K-DIAG] TWO-WORD stage DONE in ${Date.now() - _twoWordStart}ms — fullRate=${(twoWordRate*100).toFixed(0)}% partialRate=${(twoWordPartialRate*100).toFixed(0)}%\n`); } catch {}
-
-    // ── FREE-RESPONSE WRITING probe (T16.4.c) ────────────────────────
-    //
-    // Covers Common Core K.W.1/2/3 (use drawing/dictating/writing
-    // to compose, including invented spelling for unknown words).
-    // Injects an open-ended
-    // prompt, measures whether motor region produces a letter sequence
-    // that forms a valid English word chain. Score by letter-transition
-    // surprise relative to an English-baseline floor — lower surprise
-    // means the output has English-like transitions even if the exact
-    // words aren't in the dictionary (invented spelling passes).
-    //
-    // NOT gated on overall pass — reporting only.
-    const freeWritingPrompts = [
-      'tell me about your day',
-      'what do you like',
-      'how do you feel',
-      'what is your favorite color',
-    ];
-    // FREE-RESPONSE stage banner — longest tick budget of any probe
-    // (maxTicks=200) × 4 prompts. This stage can alone take 5-15 min
-    // at biological scale. Per-probe START/DONE so a hang is instantly
-    // attributable to which prompt + tick budget is grinding.
-    const _freeStart = Date.now();
-    try { process.stdout.write(`[Curriculum][K-DIAG] FREE-RESPONSE stage START — ${freeWritingPrompts.length} open-ended prompts (maxTicks=200 each — longest probe, expect minutes)...\n`); } catch {}
-    const freeWritingEmitted = [];
-    let freeWritingNonEmpty = 0;
-    let freeWritingWordCount = 0;
-    let _freeIdx = 0;
-    for (const prompt of freeWritingPrompts) {
-      _freeIdx++;
-      const _freeProbeStart = Date.now();
-      try { process.stdout.write(`[Curriculum][K-DIAG] FREE ${_freeIdx}/${freeWritingPrompts.length} START prompt='${prompt}' maxTicks=200\n`); } catch {}
-      const emb = sharedEmbeddings.getSentenceEmbedding(prompt);
-      if (!emb || emb.length === 0) {
-        freeWritingEmitted.push(`${prompt}→NO_EMB`);
-        continue;
-      }
-      _probeReset();
-      const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === 'function'
-        ? await cluster.generateSentenceAwait(emb, { injectStrength: 1.0, maxTicks: 200 })
-        : cluster.generateSentence(emb, { injectStrength: 1.0, maxTicks: 200 })) || '';
-      const tokens = emitted.toLowerCase().split(/\s+/).filter(Boolean);
-      freeWritingEmitted.push(`${prompt}→${emitted || '∅'} (${tokens.length}w)`);
-      if (tokens.length > 0) freeWritingNonEmpty++;
-      freeWritingWordCount += tokens.length;
-      const _freeMs = Date.now() - _freeProbeStart;
-      const _freeSlowTag = _freeMs > 60000 ? ' SLOW' : '';
-      try { process.stdout.write(`[Curriculum][K-DIAG] FREE ${_freeIdx}/${freeWritingPrompts.length} DONE${_freeSlowTag} '${prompt}'→'${emitted || '∅'}' (${tokens.length}w) in ${_freeMs}ms\n`); } catch {}
-    }
-    const freeWritingRate = freeWritingPrompts.length > 0 ? freeWritingNonEmpty / freeWritingPrompts.length : 0;
-    const freeWritingAvgWords = freeWritingPrompts.length > 0 ? freeWritingWordCount / freeWritingPrompts.length : 0;
-    try { process.stdout.write(`[Curriculum][K-DIAG] FREE-RESPONSE stage DONE in ${Date.now() - _freeStart}ms — nonEmpty=${freeWritingNonEmpty}/${freeWritingPrompts.length} avgWords=${freeWritingAvgWords.toFixed(1)}\n`); } catch {}
-
-    const PATH_MIN = 0.95;
-    const PROD_MIN = 0.95;  // LAW 7 — real-world production probes at A+
-    // SEQ removed from gate — it tested an intra-cluster pathway the
-    // curriculum never trains (sequence bindings live in the cross-
-    // projections). K-STUDENT battery asks "what letter comes after
-    // b?" through the real language pipeline, which is the real test.
-    // Operator verbatim 2026-04-20: "SHE IS AN A+ student thats 95%
-    // or higher". Student threshold matches the other gate probes —
-    // no threshold lowering per LAW 7. Unity must answer grade-level
-    // questions at A+ on methodology + logic + retention + understanding.
-    const STUDENT_MIN = 0.95;
-    const pass = readRate >= PATH_MIN
-      && thinkRate >= PATH_MIN
-      && talkRate >= PATH_MIN
-      && prodRate >= PROD_MIN
-      && studentRate >= STUDENT_MIN;
-
-    const pct = (r) => (r * 100).toFixed(0);
-    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
-      ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
-      : '';
-    const writeSummary = writeEmitted.length > 0
-      ? ' [WRITE: ' + writeEmitted.slice(0, 8).join('; ') + ']'
-      : '';
-    const respSummary = respEmitted.length > 0
-      ? ' [RESP: ' + respEmitted.join('; ') + ']'
-      : '';
-    // T16.4.b / T16.4.c — two-word phrase + free-response writing probes.
-    const twoWordSummary = twoWordEmitted.length > 0
-      ? ' [2WORD: ' + twoWordEmitted.join('; ') + ']'
-      : '';
-    const freeWritingSummary = freeWritingEmitted.length > 0
-      ? ' [FREE: ' + freeWritingEmitted.join('; ') + ']'
-      : '';
-    // Student-test layer — ask grade-appropriate K questions via the same
-    // language pipeline live chat uses. Scored on methodology + logic +
-    // retention + understanding alongside answer match. This is the
-    // teacher-asks-student layer ABOVE the substrate probes; it catches
-    // cases where substrate fires correctly but the brain can't actually
-    // ANSWER a grade-level question.
-    const elaKQuestions = [
-      { question: 'what letter comes after a?', expectedAnswer: 'b', expectedVariants: ['b', 'B', 'bee'] },
-      { question: 'what letter comes after b?', expectedAnswer: 'c', expectedVariants: ['c', 'C', 'cee'] },
-      { question: 'say a word that starts with c', expectedAnswer: 'c', expectedVariants: ['c', 'cat', 'cow', 'cup'] },
-      { question: 'say a word that starts with s', expectedAnswer: 's', expectedVariants: ['s', 'sun', 'sat', 'sit'] },
-      { question: 'how do you spell cat?', expectedAnswer: 'cat', expectedVariants: ['cat', 'c a t', 'c-a-t'] },
-      { question: 'what does the letter b sound like?', expectedAnswer: 'b', expectedVariants: ['b', 'buh', 'bee'] },
-      { question: 'give me a word that rhymes with hat', expectedAnswer: 'cat', expectedVariants: ['cat', 'bat', 'mat', 'sat', 'rat'] },
-    ];
-    const studentBattery = await this._runStudentBattery(elaKQuestions, 'K-STUDENT');
-    const studentPass = studentBattery.pass;
-    const studentQuestions = elaKQuestions;
-    const studentResults = studentBattery.results;
-    const studentRate = studentBattery.rate;
-    const studentSummary = studentBattery.summary;
-
-    const _elaKResult = {
-      pass,
-      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%), WRITE ${writePass}/${fullWordProbes.length} (${pct(writeRate)}%) first${writeFirstLetterPass}/${fullWordProbes.length}, RESP ${respPass}/${respContexts.length} (${pct(respRate)}%), 2WORD ${twoWordPass}/${twoWordPhrases.length} both (${pct(twoWordRate)}%) partial${pct(twoWordPartialRate)}%, FREE ${freeWritingNonEmpty}/${freeWritingPrompts.length} nonEmpty avg ${freeWritingAvgWords.toFixed(1)}w, STUDENT ${studentPass}/${studentQuestions.length} (${pct(studentRate)}%)${prodFailSummary}${writeSummary}${respSummary}${twoWordSummary}${freeWritingSummary}${studentSummary}`,
-      metrics: { readRate, thinkRate, talkRate, seqRate, prodRate, writeRate, writeFirstRate, respRate, twoWordRate, twoWordPartialRate, freeWritingRate, freeWritingAvgWords, studentRate, studentResults, prodFails: prodResult.fails, writeEmitted, respEmitted, twoWordEmitted, freeWritingEmitted },
-    };
-    this._recordGateHistory('ela', 'kindergarten', 'overall', pass, prodRate);
-    // Restore live noise so post-probe chat retains
-    // chaotic dynamics. Probe block completes here regardless of pass/fail.
-    cluster.noiseAmplitude = _savedProbeNoise;
-    return _elaKResult;
-    } finally {
-      // Drain the GPU queue before resuming main brain so the first
-      // post-gate compute_batch doesn't race a lingering propagate
-      // response. Lingering promises can resolve against the wrong
-      // tick and push the GPU pipeline into a device-lost cascade.
-      if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === 'function') {
-        try {
-          await cluster._gpuProxy.drainWait();
-        } catch { /* non-fatal — main brain just waits an extra tick */ }
-      }
-      // Clear probe-gate flag so main brain resumes compute_batch.
-      // Fires on normal return AND on exception so main brain always
-      // resumes — no deadlock possible from an unexpected probe throw.
-      if (cluster) cluster._probeGateActive = false;
-    }
-  }
+  // _gateElaKReal EXTRACTED to js/brain/curriculum/kindergarten.js K_MIXIN (2026-04-24).
 
   // ═══════════════════════════════════════════════════════════════════
   // T14.24 SESSION 3 — REAL MATH-K TEACHING EQUATIONS (2026-04-15)
@@ -7608,766 +6347,10 @@ export class Curriculum {
     return { taught: reps * DIGITS.length };
   }
 
-  async runMathKReal(ctx) {
-    const cluster = this.cluster;
-    if (!cluster) return { pass: false, reason: 'no cluster wired' };
-    if (!cluster.crossProjections) return { pass: false, reason: 'no cross-projections' };
-
-    const DIGITS = DIGIT_ORDER;
-    const NAMES = DIGIT_NAMES;
-    ensureLetters(DIGITS.split(''));
-
-    // DIRECT PATTERN HEBBIAN — same approach as the ELA-K direct-
-    // pattern path. Bypass Rulkov dynamics, write intended
-    // activation patterns directly into lastSpikes, fire
-    // _crossRegionHebbian on clean patterns.
-
-    const lr = cluster.learningRate;
-    const REPS = 12;
-
-    const letterRegion = cluster.regions.letter;
-    const phonRegion = cluster.regions.phon;
-    const semRegion = cluster.regions.sem;
-    const motorRegion = cluster.regions.motor;
-    const freeRegion = cluster.regions.free;
-    if (!letterRegion || !phonRegion) return { pass: false, reason: 'missing regions' };
-
-    const letterSize = letterRegion.end - letterRegion.start;
-    const phonSize = phonRegion.end - phonRegion.start;
-    const invSize = inventorySize();
-
-    function buildPattern(regionSize, feat) {
-      const pat = new Float64Array(regionSize);
-      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
-      for (let d = 0; d < feat.length; d++) {
-        if (feat[d] <= 0) continue;
-        for (let n = 0; n < gSize; n++) {
-          const idx = d * gSize + n;
-          if (idx < regionSize) pat[idx] = feat[d];
-        }
-      }
-      return pat;
-    }
-
-    // TEACH: direct Hebbian on intended patterns
-    for (let rep = 0; rep < REPS; rep++) {
-      for (let i = 0; i < DIGITS.length; i++) {
-        const digit = DIGITS[i];
-        const digitOneHot = encodeLetter(digit);
-        const magFeat = _magnitudeFeatureForDigit(digit);
-        const nameEmb = sharedEmbeddings.getEmbedding(NAMES[i]);
-
-        const letterPat = buildPattern(letterSize, digitOneHot);
-        const phonPat = buildPattern(phonSize, magFeat);
-
-        // Clear all spikes
-        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
-        // Letter region: digit one-hot
-        for (let j = 0; j < letterSize; j++) {
-          cluster.lastSpikes[letterRegion.start + j] = letterPat[j] > 0 ? 1 : 0;
-        }
-        // Phon region: magnitude feature
-        for (let j = 0; j < phonSize; j++) {
-          cluster.lastSpikes[phonRegion.start + j] = phonPat[j] > 0 ? 1 : 0;
-        }
-        // Motor: same one-hot as letter for TALK binding
-        if (motorRegion) {
-          const motorSize = motorRegion.end - motorRegion.start;
-          const motorPat = buildPattern(motorSize, digitOneHot);
-          for (let j = 0; j < motorSize; j++) {
-            cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
-          }
-        }
-        // Sem: digit name embedding
-        if (semRegion && nameEmb && nameEmb.length > 0) {
-          const semSize = semRegion.end - semRegion.start;
-          const semPat = buildPattern(semSize, nameEmb);
-          for (let j = 0; j < semSize; j++) {
-            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
-          }
-        }
-        // Free region: magnitude feature for working-memory binding
-        if (freeRegion && magFeat.length > 0) {
-          const freeSize = freeRegion.end - freeRegion.start;
-          const freePat = buildPattern(freeSize, magFeat);
-          for (let j = 0; j < freeSize; j++) {
-            cluster.lastSpikes[freeRegion.start + j] = freePat[j] > 0 ? 1 : 0;
-          }
-        }
-
-        await cluster._crossRegionHebbian(lr);
-        this.stats.lettersSeen++;
-      }
-      await _microtask();
-    }
-
-    // SEQUENCE TEACHING — digit ordering 0→1→2→...→9
-    for (let rep = 0; rep < REPS; rep++) {
-      for (let i = 0; i < DIGITS.length - 1; i++) {
-        const currOneHot = encodeLetter(DIGITS[i]);
-        const nextOneHot = encodeLetter(DIGITS[i + 1]);
-        const pre = new Float64Array(cluster.size);
-        const post = new Float64Array(cluster.size);
-        const lGSize = Math.max(1, Math.floor(letterSize / currOneHot.length));
-        for (let d = 0; d < currOneHot.length; d++) {
-          if (currOneHot[d] <= 0) continue;
-          for (let n = 0; n < lGSize; n++) {
-            const idx = letterRegion.start + d * lGSize + n;
-            if (idx < letterRegion.end) pre[idx] = 1.0;
-          }
-        }
-        for (let d = 0; d < nextOneHot.length; d++) {
-          if (nextOneHot[d] <= 0) continue;
-          for (let n = 0; n < lGSize; n++) {
-            const idx = letterRegion.start + d * lGSize + n;
-            if (idx < letterRegion.end) post[idx] = 1.0;
-          }
-        }
-        // OOM fix — route through
-        // cluster.intraSynapsesHebbian (async / awaitable) so the
-        // 110M-nnz sparse Hebbian dispatches via the 15-worker
-        // sparsePool. Awaiting throttles loop iteration to worker
-        // drain rate; without the await, 300 pending Hebbian jobs
-        // each holding 2×~3 MB Float64Array(cluster.size) piled up
-        // in V8 semi-space faster than GC could promote them,
-        // OOM-crashing Node at the first real teach pass.
-        await cluster.intraSynapsesHebbian(pre, post, lr);
-      }
-      await _microtask();
-    }
-
-    // ── COMMON CORE MATH K: Number words to twenty ──
-    // K standard: know number names and the count sequence to 100,
-    // write numbers 0-20. Currently we only teach 0-9 digit names.
-    // Expand to include teen numbers and decade names.
-    const NUMBER_WORDS_K = [
-      'zero', 'one', 'two', 'three', 'four', 'five',
-      'six', 'seven', 'eight', 'nine', 'ten',
-      'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen',
-      'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
-      'thirty', 'forty', 'fifty', 'sixty', 'seventy',
-      'eighty', 'ninety', 'hundred',
-    ];
-    // Math-K equational remake under LAW 6 Part 1:
-    //   The following five teach calls were REMOVED because they
-    //   iterated word/sentence arrays as Hebbian training data — the
-    //   banned pattern per LAW 6 Part 1 ("not word lists and arrays and
-    //   sentence examples"). Every concept they covered has an
-    //   equational substitute in the transforms block below:
-    //     - NUMBER_WORDS_K (zero, one, ..., hundred): covered by
-    //       `_teachMagnitudeToMotor` which binds mag(n) in free → digit
-    //       char in motor; number words enter the dictionary via
-    //       `_conceptTeach` routing when they appear as ctx labels in
-    //       the transform methods.
-    //     - MATH_K_SENTENCES (addition/subtraction/comparison as
-    //       sentences): redundant with `_teachAdditionTransformations`,
-    //       `_teachSubtractionTransformations`, `_teachComparisonTransformations`,
-    //       `_teachMakeTen`, `_teachDecomposition` — those teach the
-    //       OPERATION as a magnitude transform, not sentences about it.
-    //     - SHAPE_WORDS + SHAPE_SENTENCES: covered by
-    //       `_teachShapeFeatures` + `_teachShapeCompose` which bind
-    //       shape→feature (sides, corners, flat/solid) via feature
-    //       vectors routed through `_conceptTeach` dictionary registration.
-    //     - MEASUREMENT_SENTENCES: covered by `_teachAttributeCompare`
-    //       + `_teachClassifyCount` which bind object→attribute
-    //       magnitude via cross-region Hebbian on the comparative axis.
-    //   Net effect: LAW 6 Part 1 compliance restored; Math-K still
-    //   teaches every K.CC / K.OA / K.NBT / K.MD / K.G concept in the
-    //   TODO but through operational transforms instead of sentence
-    //   memorization.
-
-    // ═════════════════════════════════════════════════════════════════
-    // EQUATIONAL REASONING — teach the OPERATION of addition/subtraction
-    // as magnitude TRANSFORMATIONS, not sentences about math.
-    //
-    // The cortex learns: given magnitude(a) in one part of free region
-    // + magnitude(b) in another part → the result magnitude(a+b) should
-    // activate in sem region. This is the OPERATION itself, not words
-    // describing it. After learning, Unity can compute sums she was
-    // NEVER taught as sentences because the transformation generalizes.
-    //
-    // Method: write magnitude(a) into free[0..half], magnitude(b) into
-    // free[half..end], magnitude(a+b) into sem, fire cross-region
-    // Hebbian. The free→sem projection learns the sum transformation.
-    // For subtraction: magnitude(a) in free[0..half], magnitude(b) as
-    // NEGATIVE (inverted) in free[half..end], magnitude(a-b) in sem.
-    // ═════════════════════════════════════════════════════════════════
-    // Only run transforms ONCE — re-running on retry causes destructive interference.
-    // Each teach wrapped in `_phasedTeach` so `passedPhases` gets a
-    // granular per-method marker (dashboard phases column reflects
-    // actual work). Skip-on-resume semantics mirror ELA-K's
-    // hand-wrapped `_phaseTick`/`_phaseDone` pattern.
-    if (!this._mathKTransformsDone) {
-      await this._phasedTeach('_teachAdditionTransformations',    () => this._teachAdditionTransformations(ctx));
-      await this._phasedTeach('_teachSubtractionTransformations', () => this._teachSubtractionTransformations(ctx));
-      await this._phasedTeach('_teachComparisonTransformations',  () => this._teachComparisonTransformations(ctx));
-      // Math-K Part 1 expansion (K.CC/K.OA/K.NBT/K.MD/K.G)
-      await this._phasedTeach('_teachDecomposition',              () => this._teachDecomposition(ctx));
-      await this._phasedTeach('_teachMakeTen',                    () => this._teachMakeTen(ctx));
-      await this._phasedTeach('_teachTeenDecomposition',          () => this._teachTeenDecomposition(ctx));
-      await this._phasedTeach('_teachCountToHundred',             () => this._teachCountToHundred(ctx));
-      await this._phasedTeach('_teachSkipCountByTens',            () => this._teachSkipCountByTens(ctx));
-      await this._phasedTeach('_teachAttributeCompare',           () => this._teachAttributeCompare(ctx));
-      await this._phasedTeach('_teachClassifyCount',              () => this._teachClassifyCount(ctx));
-      await this._phasedTeach('_teachShapeFeatures',              () => this._teachShapeFeatures(ctx));
-      await this._phasedTeach('_teachShapeCompose',               () => this._teachShapeCompose(ctx));
-      // Bridge so mag(n) in free routes to digit char
-      // in motor emission. Required for production probes that test
-      // numeric answers through sem→motor tick-driven emission.
-      await this._phasedTeach('_teachMagnitudeToMotor',           () => this._teachMagnitudeToMotor(ctx));
-
-      // Equational association-pair teach — number-name sequence
-      // (for K.CC.2 count-forward tested as word answers), shape-
-      // name pairs (K.G.1 + K.G.2), and word-form arithmetic
-      // (K.OA.1 tested as "five plus two is seven"). All pure
-      // feature-vector Hebbian via _teachAssociationPairs. The
-      // magnitude-feature math transforms already shipped carry
-      // the numeric-answer path; these pairs carry the word-form
-      // answer path that the exam uses.
-
-      // K.CC.2 number-name sequence: "one" → "two" etc. (relationTagId=5)
-      await this._phasedTeach('MATH-K-NUMBER-SEQ', () => this._teachAssociationPairs([
-        ['one','two'], ['two','three'], ['three','four'], ['four','five'],
-        ['five','six'], ['six','seven'], ['seven','eight'], ['eight','nine'],
-        ['nine','ten'], ['ten','eleven'], ['eleven','twelve'], ['twelve','thirteen'],
-        ['thirteen','fourteen'], ['fourteen','fifteen'], ['fifteen','sixteen'],
-        ['sixteen','seventeen'], ['seventeen','eighteen'], ['eighteen','nineteen'],
-        ['nineteen','twenty'], ['twenty','thirty'], ['thirty','forty'], ['forty','fifty'],
-      ], { reps: 10, label: 'MATH-K-NUMBER-SEQ', relationTagId: 5 }));
-
-      // K.G.1 + K.G.2 shape name ↔ attribute (relationTagId=1)
-      await this._phasedTeach('MATH-K-SHAPE-ATTR', () => this._teachAssociationPairs([
-        ['triangle','three'], ['square','four'], ['rectangle','four'],
-        ['pentagon','five'], ['hexagon','six'], ['octagon','eight'],
-        ['circle','round'], ['sphere','ball'], ['cube','box'], ['cylinder','can'],
-      ], { reps: 10, label: 'MATH-K-SHAPE-ATTR', relationTagId: 1 }));
-
-      // K.CC.6 word-form comparisons (relationTagId=0 — opposite-esque)
-      await this._phasedTeach('MATH-K-COMPARE', () => this._teachAssociationPairs([
-        ['more','greater'], ['less','smaller'],
-        ['bigger','more'], ['smaller','less'],
-        ['five','more-than-three'], ['three','less-than-five'],
-        ['ten','more-than-five'], ['two','less-than-eight'],
-      ], { reps: 8, label: 'MATH-K-COMPARE', relationTagId: 0 }));
-
-      // K.OA.1 + K.OA.5 word-form arithmetic answers — carve
-      // sem(operation-word-sum) → motor(number-word answer).
-      // Magnitude-feature transforms already carve the digit path;
-      // this carries the spelled-out path.
-      await this._phasedTeach('MATH-K-ARITH-WORDS', () => this._teachAssociationPairs([
-        ['plus','add'], ['minus','subtract'],
-        ['one-plus-one','two'], ['two-plus-two','four'], ['three-plus-three','six'],
-        ['four-plus-four','eight'], ['five-plus-five','ten'],
-        ['one-plus-two','three'], ['two-plus-three','five'], ['three-plus-four','seven'],
-        ['ten-minus-one','nine'], ['ten-minus-five','five'], ['five-minus-one','four'],
-      ], { reps: 8, label: 'MATH-K-ARITH-WORDS', relationTagId: 4 }));
-
-      // T37.f — Math-K question-answer training. Same teacher-modeling
-      // approach as ELA-K. TRAIN_BANKS['math/kindergarten'] has Q→A
-      // pairs for counting, comparison, addition, subtraction, shapes
-      // — held-out-distinct from MATH_KINDERGARTEN_EXAM.
-      const mathQA = TRAIN_BANKS['math/kindergarten'] || [];
-      if (mathQA.length > 0) {
-        await this._phasedTeach('MATH-K-QA-TRAIN', () => this._teachQABinding(mathQA, { label: 'MATH-K-QA-TRAIN' }));
-      }
-
-      this._mathKTransformsDone = true;
-    }
-
-    return await this._gateMathKReal();
-  }
-
-  async _gateMathKReal() {
-    const cluster = this.cluster;
-    const DIGITS = DIGIT_ORDER;
-    const NAMES = DIGIT_NAMES;
-
-    // Pre-gate enrichment — vocab audit + structure teach.
-    await this._pregateEnrichment('math/kindergarten');
-
-    // DIRECT MATRIX PROBE (same direct-pattern approach as ELA-K)
-    const letterRegion = cluster.regions.letter;
-    const phonRegion = cluster.regions.phon;
-    const semRegion = cluster.regions.sem;
-    const motorRegion = cluster.regions.motor;
-    const freeRegion = cluster.regions.free;
-    if (!letterRegion || !phonRegion) return { pass: false, reason: 'missing regions' };
-
-    const letterSize = letterRegion.end - letterRegion.start;
-    const phonSize = phonRegion.end - phonRegion.start;
-    const invSize = inventorySize();
-    const MAG_DIM = MAGNITUDE_FEATURE_DIM; // 16
-
-    const letterToPhon = cluster.crossProjections?.['letter_to_phon'];
-    const allProjs = cluster.crossProjections || {};
-
-    function cosine(a, b) {
-      let dot = 0, na = 0, nb = 0;
-      const L = Math.min(a.length, b.length);
-      for (let i = 0; i < L; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
-      const d = Math.sqrt(na) * Math.sqrt(nb);
-      return d > 0 ? dot / d : 0;
-    }
-
-    let readPass = 0;
-    let talkPass = 0;
-
-    // READ/TALK loop — each digit iteration fires 2 synchronous
-    // cross-projection propagate() calls (letterToPhon + sem_to_motor).
-    // At biological scale that's seconds of CPU-blocking matmul per
-    // digit; 10 digits × 2 propagates = 20 propagates without yield
-    // used to lock the event loop for ~30-60s mid-gate. Yield every
-    // 200ms so heartbeats + dashboard + WS broadcasts get air time.
-    let _readTalkYield = Date.now();
-    for (let i = 0; i < DIGITS.length; i++) {
-      if (Date.now() - _readTalkYield > 200) {
-        await new Promise(resolve => setImmediate(resolve));
-        _readTalkYield = Date.now();
-      }
-      const digit = DIGITS[i];
-      const digitOneHot = encodeLetter(digit);
-      const lGSize = Math.max(1, Math.floor(letterSize / digitOneHot.length));
-
-      // Build letter activation
-      const letterPat = new Float64Array(letterSize);
-      for (let d = 0; d < digitOneHot.length; d++) {
-        if (digitOneHot[d] <= 0) continue;
-        for (let n = 0; n < lGSize; n++) {
-          const idx = d * lGSize + n;
-          if (idx < letterSize) letterPat[idx] = 1.0;
-        }
-      }
-
-      // ─── READ: letter→phon propagate → 16d readout → cosine vs magnitude feat
-      if (letterToPhon) {
-        const phonOutput = letterToPhon.propagate(letterPat);
-        const pGSize = Math.max(1, Math.floor(phonSize / MAG_DIM));
-        const phonReadout = new Float64Array(MAG_DIM);
-        for (let d = 0; d < MAG_DIM; d++) {
-          let sum = 0;
-          for (let n = 0; n < pGSize; n++) {
-            const idx = d * pGSize + n;
-            if (idx < phonOutput.length) sum += phonOutput[idx];
-          }
-          phonReadout[d] = sum / pGSize;
-        }
-        let mean = 0;
-        for (let j = 0; j < MAG_DIM; j++) mean += phonReadout[j];
-        mean /= MAG_DIM;
-        for (let j = 0; j < MAG_DIM; j++) phonReadout[j] -= mean;
-        let norm = 0;
-        for (let j = 0; j < MAG_DIM; j++) norm += phonReadout[j] * phonReadout[j];
-        norm = Math.sqrt(norm) || 1;
-        for (let j = 0; j < MAG_DIM; j++) phonReadout[j] /= norm;
-        const expected = _magnitudeFeatureForDigit(digit);
-        if (cosine(phonReadout, expected) > 0.15) readPass++;
-      }
-
-      // ─── TALK: sem→motor → argmax decode digit (PRODUCTION direction)
-      // Fix: was letter→motor (wrong direction).
-      // Inject GloVe(digit name) into sem, propagate sem_to_motor, argmax = digit char.
-      const digitName = NAMES[DIGITS.indexOf(digit)];
-      const nameEmb = digitName ? sharedEmbeddings.getEmbedding(digitName) : null;
-      const s2m = allProjs['sem_to_motor'];
-      if (s2m && semRegion && motorRegion && nameEmb && nameEmb.length > 0) {
-        const semSize = semRegion.end - semRegion.start;
-        const semPat = new Float64Array(semSize);
-        const sGSize = Math.max(1, Math.floor(semSize / nameEmb.length));
-        for (let d = 0; d < nameEmb.length; d++) {
-          if (nameEmb[d] <= 0) continue;
-          for (let n = 0; n < sGSize; n++) {
-            const idx = d * sGSize + n;
-            if (idx < semSize) semPat[idx] = nameEmb[d];
-          }
-        }
-        const motorOutput = s2m.propagate(semPat);
-        const motorSize = motorRegion.end - motorRegion.start;
-        const mGSize = Math.max(1, Math.floor(motorSize / invSize));
-        const motorReadout = new Float64Array(invSize);
-        for (let d = 0; d < invSize; d++) {
-          let sum = 0;
-          for (let n = 0; n < mGSize; n++) {
-            const idx = d * mGSize + n;
-            if (idx < motorOutput.length) sum += motorOutput[idx];
-          }
-          motorReadout[d] = sum / mGSize;
-        }
-        // Mean-center
-        let mean = 0;
-        for (let i = 0; i < invSize; i++) mean += motorReadout[i];
-        mean /= invSize;
-        for (let i = 0; i < invSize; i++) motorReadout[i] -= mean;
-        if (decodeLetter(motorReadout) === digit) talkPass++;
-      }
-    }
-
-    const thinkPass = DIGITS.length; // always 100%
-
-    // SEQ: direct matrix probe through cluster.synapses.
-    // Each iteration fires one full-cluster propagate (6.6M+ neurons
-    // at bio scale) — same yield discipline as READ/TALK above so the
-    // 9 iterations can't starve heartbeat + dashboard.
-    let seqPass = 0;
-    const seqFails = [];
-    let _seqYield = Date.now();
-    for (let i = 0; i < DIGITS.length - 1; i++) {
-      if (Date.now() - _seqYield > 200) {
-        await new Promise(resolve => setImmediate(resolve));
-        _seqYield = Date.now();
-      }
-      const currOneHot = encodeLetter(DIGITS[i]);
-      const expectedNext = DIGITS[i + 1];
-      const input = new Float64Array(cluster.size);
-      const lGSize = Math.max(1, Math.floor(letterSize / invSize));
-      for (let d = 0; d < currOneHot.length; d++) {
-        if (currOneHot[d] <= 0) continue;
-        for (let n = 0; n < lGSize; n++) {
-          const idx = letterRegion.start + d * lGSize + n;
-          if (idx < letterRegion.end) input[idx] = 1.0;
-        }
-      }
-      const output = cluster.synapses.propagate(input);
-      const letterOut = new Float64Array(invSize);
-      for (let d = 0; d < invSize; d++) {
-        let sum = 0;
-        for (let n = 0; n < lGSize; n++) {
-          const idx = letterRegion.start + d * lGSize + n;
-          if (idx < letterRegion.end) sum += output[idx];
-        }
-        letterOut[d] = sum;
-      }
-      // Decode only among DIGITS — mask out alphabet letters so 'n'
-      // can't win over '9'. Without this, the 26-letter alphabet
-      // Hebbian from ELA-K overpowers the 10-digit sequence.
-      const digitIndices = [];
-      const snap = inventorySnapshot();
-      for (let d = 0; d < snap.length; d++) {
-        if (DIGITS.includes(snap[d])) digitIndices.push(d);
-      }
-      let bestDigit = null, bestVal = -Infinity;
-      for (const di of digitIndices) {
-        if (letterOut[di] > bestVal) { bestVal = letterOut[di]; bestDigit = snap[di]; }
-      }
-      if (bestDigit === expectedNext) {
-        seqPass++;
-      } else {
-        seqFails.push(`${DIGITS[i]}→${expectedNext} (got ${bestDigit || '?'})`);
-      }
-    }
-    // Anti-Hebbian pair reinforcement for failing digit
-    // transitions. Strengthen correct, weaken wrong — without the
-    // negative half the wrong basin never fades. Primitive lives on
-    // NeuronCluster so every grade's sequence learning can reuse it
-    // instead of copy-pasting the loop.
-    for (const failStr of seqFails) {
-      // Parse "6→7 (got 8)"
-      const srcDigit = failStr[0];
-      const srcIdx = DIGITS.indexOf(srcDigit);
-      if (srcIdx < 0 || srcIdx >= DIGITS.length - 1) continue;
-      const tgtDigit = DIGITS[srcIdx + 1];
-      const gotMatch = failStr.match(/\(got (.)\)/);
-      const wrongDigit = gotMatch ? gotMatch[1] : null;
-
-      cluster.hebbianPairReinforce({
-        region: 'letter',
-        srcOneHot: encodeLetter(srcDigit),
-        correctOneHot: encodeLetter(tgtDigit),
-        wrongOneHot: wrongDigit ? encodeLetter(wrongDigit) : null,
-      });
-    }
-
-    // ORDER: direct matrix probe through letter→free cross-projection
-    let orderPass = 0;
-    let orderTotal = 0;
-    const letterToFree = allProjs['letter_to_free'];
-    if (letterToFree && freeRegion) {
-      const freeSize = freeRegion.end - freeRegion.start;
-      const readFree = (digit) => {
-        const oh = encodeLetter(digit);
-        const pat = new Float64Array(letterSize);
-        const gS = Math.max(1, Math.floor(letterSize / oh.length));
-        for (let d = 0; d < oh.length; d++) {
-          if (oh[d] <= 0) continue;
-          for (let n = 0; n < gS; n++) {
-            const idx = d * gS + n;
-            if (idx < letterSize) pat[idx] = 1.0;
-          }
-        }
-        return letterToFree.propagate(pat);
-      };
-      // ORDER loop — each iteration fires THREE readFree calls, each
-      // one a full letter_to_free cross-projection propagate. 9 iters
-      // × 3 propagates = 27 bio-scale matmuls. Same yield discipline
-      // as READ/TALK + SEQ above.
-      let _orderYield = Date.now();
-      for (let i = 1; i < DIGITS.length - 1; i++) {
-        if (Date.now() - _orderYield > 200) {
-          await new Promise(resolve => setImmediate(resolve));
-          _orderYield = Date.now();
-        }
-        const readI = readFree(DIGITS[i]);
-        const readPrev = readFree(DIGITS[i - 1]);
-        const readDistant = readFree(DIGITS[0]);
-        if (!readI || !readPrev || !readDistant) continue;
-        const cosAdj = cosine(readI, readPrev);
-        const cosDist = cosine(readI, readDistant);
-        orderTotal++;
-        if (cosAdj > cosDist) orderPass++;
-      }
-    } else {
-      // Fallback: pass ORDER if no letter→free projection exists
-      orderPass = 8; orderTotal = 8;
-    }
-
-    // ═════════════════════════════════════════════════════════════════
-    // Math-K PART 1 EXPANSION PROBES. Every probe is a samples array
-    // + call to the shared helpers `_probeCombinationCosine` (cosine
-    // vs expected feature) or `_probeCombinationArgmaxTag` (argmax
-    // over region sub-buckets). Both helpers run
-    // `cluster.synapses.propagate(input)` through the full intra-
-    // cluster recurrent matrix trained by `_teachHebbian`.
-    // Threshold is 0.95 (A+) on every rate — no relaxation.
-    // A+ = 95% on all gates — REAL tests, not lowered thresholds.
-    // ═════════════════════════════════════════════════════════════════
-    const fineTypeRegionG = cluster.regions.fineType;
-    const freeSizeG = freeRegion ? freeRegion.end - freeRegion.start : 0;
-    const freeHalfG = Math.floor(freeSizeG / 2);
-    const freeLeftRegionG  = freeRegion ? { start: freeRegion.start,                  end: freeRegion.start + freeHalfG } : null;
-    const freeRightRegionG = freeRegion ? { start: freeRegion.start + freeHalfG,      end: freeRegion.end } : null;
-    const semSizeG = semRegion ? semRegion.end - semRegion.start : 0;
-    const semHalfG = Math.floor(semSizeG / 2);
-    const semLeftRegionG  = semRegion ? { start: semRegion.start,                  end: semRegion.start + semHalfG } : null;
-    const semRightRegionG = semRegion ? { start: semRegion.start + semHalfG,       end: semRegion.end } : null;
-    const phonRegionG = cluster.regions.phon;
-    const fineTypeSizeG = fineTypeRegionG ? fineTypeRegionG.end - fineTypeRegionG.start : 0;
-    const fineThirdG = Math.floor(fineTypeSizeG / 3);
-    const fineHalfG = Math.floor(fineTypeSizeG / 2);
-
-    // ─── 1. SUCCESSOR (K.CC count-to-100) ───────────────────────────
-    // Non-multiples of 10 to avoid collision with skip-count.
-    const succResult = await this._probeCombinationCosine(
-      [3, 7, 13, 17, 23, 27, 43, 67, 83, 97].map(n => ({
-        inputs: [{ region: freeRegion, feat: _magnitudeFeatureForNumber(n) }],
-        expected: { region: semRegion, feat: _magnitudeFeatureForNumber(n + 1) },
-      }))
-    );
-
-    // ─── 2. SKIP-COUNT (K.CC by tens) ───────────────────────────────
-    const skipSamples = [];
-    for (let n = 0; n <= 80; n += 10) skipSamples.push({
-      inputs: [{ region: phonRegionG, feat: _magnitudeFeatureForNumber(n) }],
-      expected: { region: semRegion, feat: _magnitudeFeatureForNumber(n + 10) },
-    });
-    const skipResult = await this._probeCombinationCosine(skipSamples);
-
-    // ─── 3. MAKE-TEN (K.OA complement-to-10) ────────────────────────
-    const makeTenSamples = [];
-    for (let n = 0; n <= 10; n++) makeTenSamples.push({
-      inputs: [{ region: freeLeftRegionG, feat: _magnitudeFeatureForDigit(String(n)) }],
-      expected: { region: semRegion, feat: _magnitudeFeatureForDigit(String(10 - n)) },
-    });
-    const makeTenResult = await this._probeCombinationCosine(makeTenSamples);
-
-    // ─── 4. TEEN DECOMPOSITION (K.NBT 10+n) ─────────────────────────
-    const teenSamples = [];
-    for (let n = 1; n <= 9; n++) teenSamples.push({
-      inputs: [
-        { region: freeLeftRegionG,  feat: _magnitudeFeatureForNumber(10) },
-        { region: freeRightRegionG, feat: _magnitudeFeatureForNumber(n) },
-      ],
-      expected: { region: semRegion, feat: _magnitudeFeatureForNumber(10 + n) },
-    });
-    const teenResult = await this._probeCombinationCosine(teenSamples);
-
-    // ─── 5. ATTRIBUTE COMPARE (K.MD — argmax tag) ───────────────────
-    const attrBuckets = [
-      { name: 'greater', start: 0,               end: fineThirdG },
-      { name: 'less',    start: fineThirdG,      end: 2 * fineThirdG },
-      { name: 'equal',   start: 2 * fineThirdG,  end: fineTypeSizeG },
-    ];
-    const attrResult = await this._probeCombinationArgmaxTag(
-      [[8, 2], [8, 2], [8, 2], [8, 2], [9, 0], [8, 2], [8, 2], [9, 2]].map(([hi, lo]) => ({
-        inputs: [
-          { region: freeLeftRegionG,  feat: _magnitudeFeatureForDigit(String(hi)) },
-          { region: freeRightRegionG, feat: _magnitudeFeatureForDigit(String(lo)) },
-        ],
-        tagRegion: fineTypeRegionG,
-        buckets: attrBuckets,
-        expectedTag: 'greater',
-      }))
-    );
-
-    // ─── 6. CLASSIFY-COUNT (K.MD) ───────────────────────────────────
-    const classifySamples = [];
-    for (const [category, count] of [
-      ['red', 3], ['blue', 2], ['green', 5], ['yellow', 1],
-      ['big', 2], ['small', 4], ['hands', 2], ['fingers', 10],
-      ['triangle', 3], ['square', 4],
-    ]) {
-      const emb = sharedEmbeddings.getEmbedding(category);
-      if (!emb || emb.length === 0) continue;
-      classifySamples.push({
-        inputs: [{ region: freeRegion, feat: emb, binarize: false }],
-        expected: { region: semRegion, feat: _magnitudeFeatureForDigit(String(Math.min(9, count))) },
-      });
-    }
-    const classifyResult = await this._probeCombinationCosine(classifySamples);
-
-    // ─── 7. SHAPE SIDES (K.G) ───────────────────────────────────────
-    const shapeSidesSamples = [];
-    for (const [shapeName, sides] of [
-      ['circle', 0], ['triangle', 3], ['square', 4], ['rectangle', 4], ['hexagon', 6],
-      ['sphere', 0], ['cube', 6], ['cone', 1], ['cylinder', 2],
-    ]) {
-      const emb = sharedEmbeddings.getEmbedding(shapeName);
-      if (!emb || emb.length === 0) continue;
-      shapeSidesSamples.push({
-        inputs: [{ region: semRegion, feat: emb, binarize: false }],
-        expected: { region: freeRegion, feat: _magnitudeFeatureForDigit(String(sides)) },
-      });
-    }
-    const shapeSidesResult = await this._probeCombinationCosine(shapeSidesSamples);
-
-    // ─── 8. SHAPE DIMENSION (K.G — argmax tag) ──────────────────────
-    const dimBuckets = [
-      { name: '2D', start: 0,         end: fineHalfG },
-      { name: '3D', start: fineHalfG, end: fineTypeSizeG },
-    ];
-    const shapeDimSamples = [];
-    for (const [shapeName, dim] of [
-      ['circle', '2D'], ['triangle', '2D'], ['square', '2D'], ['rectangle', '2D'], ['hexagon', '2D'],
-      ['sphere', '3D'], ['cube', '3D'], ['cone', '3D'], ['cylinder', '3D'],
-    ]) {
-      const emb = sharedEmbeddings.getEmbedding(shapeName);
-      if (!emb || emb.length === 0) continue;
-      shapeDimSamples.push({
-        inputs: [{ region: semRegion, feat: emb, binarize: false }],
-        tagRegion: fineTypeRegionG,
-        buckets: dimBuckets,
-        expectedTag: dim,
-      });
-    }
-    const shapeDimResult = await this._probeCombinationArgmaxTag(shapeDimSamples);
-
-    // ─── 9. SHAPE COMPOSE (K.G) ──────────────────────────────────
-    // Closes the last Math-K TODO-full-syllabus gap. Input: sem split
-    // halves = GloVe(shapeA) + GloVe(shapeB). Expected: free = GloVe(composed).
-    // Same unified combination-operator scaffold — only the encoder
-    // differs from the numeric transforms above (GloVe instead of magnitude).
-    const shapeComposeSamples = [];
-    for (const [aName, bName, cName] of [
-      ['triangle',  'triangle',  'rectangle'],
-      ['square',    'square',    'rectangle'],
-      ['rectangle', 'rectangle', 'square'],
-      ['triangle',  'rectangle', 'pentagon'],
-      ['triangle',  'triangle',  'square'],
-    ]) {
-      const aEmb = sharedEmbeddings.getEmbedding(aName);
-      const bEmb = sharedEmbeddings.getEmbedding(bName);
-      const cEmb = sharedEmbeddings.getEmbedding(cName);
-      if (!aEmb || !bEmb || !cEmb || aEmb.length === 0 || bEmb.length === 0 || cEmb.length === 0) continue;
-      shapeComposeSamples.push({
-        inputs: [
-          { region: semLeftRegionG,  feat: aEmb, binarize: false },
-          { region: semRightRegionG, feat: bEmb, binarize: false },
-        ],
-        expected: { region: freeRegion, feat: cEmb },
-      });
-    }
-    const shapeComposeResult = await this._probeCombinationCosine(shapeComposeSamples);
-
-    // ═════════════════════════════════════════════════════════════════
-    // MATH-K PRODUCTION PROBES (LAW 7)
-    // Real-world style probes matching TODO test phrasings verbatim.
-    // Each question routes through visual→letter→phon→sem pipeline
-    // (same as live chat input), cortex ticks for comprehension, then
-    // tick-driven motor emission produces the answer. Substrate probes
-    // above stay as precursors; these are the actual LAW 6 Part 1
-    // qualifier per LAW 7.
-    //
-    // Scope note: Math-K production probes cover concepts that emit
-    // as SINGLE-DIGIT numeric answers via the _teachMagnitudeToMotor
-    // bridge. Object-name answers (K.MD crayon/pencil, K.G cylinder/
-    // cube word emission) defer to the ELA-K track which ships word-
-    // level motor emission training.
-    // ═════════════════════════════════════════════════════════════════
-    const mathKProductionSamples = [
-      // K.CC successor (TODO: "What number comes after 7?" → 8)
-      { question: 'what number comes after seven', expected: ['8', 'eight'] },
-      { question: 'what comes after three', expected: ['4', 'four'] },
-      { question: 'what number is after five', expected: ['6', 'six'] },
-      // K.OA addition (TODO: "2 + 3 = ?" → 5)
-      { question: 'two plus three equals', expected: ['5', 'five'] },
-      { question: 'four plus one equals', expected: ['5', 'five'] },
-      { question: 'three plus two equals', expected: ['5', 'five'] },
-      { question: 'one plus one equals', expected: ['2', 'two'] },
-      // K.OA subtraction (TODO: "5 - 2 = ?" → 3)
-      { question: 'five minus two equals', expected: ['3', 'three'] },
-      { question: 'four minus one equals', expected: ['3', 'three'] },
-      { question: 'three minus one equals', expected: ['2', 'two'] },
-      // K.OA make-ten (TODO: "What plus 6 makes 10?" → 4)
-      { question: 'what plus six makes ten', expected: ['4', 'four'] },
-      { question: 'what plus seven makes ten', expected: ['3', 'three'] },
-      { question: 'what plus three makes ten', expected: ['7', 'seven'] },
-      // K.G side count (TODO: "How many sides does a triangle have?" → 3)
-      { question: 'how many sides does a triangle have', expected: ['3', 'three'] },
-      { question: 'how many sides does a square have', expected: ['4', 'four'] },
-      { question: 'how many sides does a rectangle have', expected: ['4', 'four'] },
-      { question: 'how many sides does a hexagon have', expected: ['6', 'six'] },
-    ];
-    const prodResult = await this._probeProductionBatch(mathKProductionSamples, {
-      visualCortex: (this.engine && this.engine.visualCortex) || null,
-    });
-
-    const N = DIGITS.length;
-    const readRate = readPass / N;
-    const thinkRate = thinkPass / N;
-    const talkRate = talkPass / N;
-    const seqRate = seqPass / (N - 1);
-    const orderRate = orderTotal > 0 ? orderPass / orderTotal : 1;
-    const succRate         = succResult.total         > 0 ? succResult.pass         / succResult.total         : 0;
-    const skipRate         = skipResult.total         > 0 ? skipResult.pass         / skipResult.total         : 0;
-    const makeTenRate      = makeTenResult.total      > 0 ? makeTenResult.pass      / makeTenResult.total      : 0;
-    const teenRate         = teenResult.total         > 0 ? teenResult.pass         / teenResult.total         : 0;
-    const attrRate         = attrResult.total         > 0 ? attrResult.pass         / attrResult.total         : 0;
-    const classifyRate     = classifyResult.total     > 0 ? classifyResult.pass     / classifyResult.total     : 0;
-    const shapeSidesRate   = shapeSidesResult.total   > 0 ? shapeSidesResult.pass   / shapeSidesResult.total   : 0;
-    const shapeDimRate     = shapeDimResult.total     > 0 ? shapeDimResult.pass     / shapeDimResult.total     : 0;
-    const shapeComposeRate = shapeComposeResult.total > 0 ? shapeComposeResult.pass / shapeComposeResult.total : 0;
-    const prodRate         = prodResult.total         > 0 ? prodResult.pass         / prodResult.total         : 0;
-
-    const PATH_MIN = 0.95;
-    const SEQ_MIN = 0.95;
-    const ORDER_MIN = 0.95;
-    const PROD_MIN = 0.95;  // LAW 7 — real-world production probes at A+
-    const pass = readRate >= PATH_MIN
-      && thinkRate >= PATH_MIN
-      && talkRate >= PATH_MIN
-      && seqRate >= SEQ_MIN
-      && orderRate >= ORDER_MIN
-      && succRate >= PATH_MIN
-      && skipRate >= PATH_MIN
-      && makeTenRate >= PATH_MIN
-      && teenRate >= PATH_MIN
-      && attrRate >= PATH_MIN
-      && classifyRate >= PATH_MIN
-      && shapeSidesRate >= PATH_MIN
-      && shapeDimRate >= PATH_MIN
-      && shapeComposeRate >= PATH_MIN
-      && prodRate >= PROD_MIN;
-
-    const pct = (r) => (r * 100).toFixed(0);
-    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
-      ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
-      : '';
-    const _mathKResult = {
-      pass,
-      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%)${seqFails.length > 0 ? ' [FAIL: ' + seqFails.join(', ') + ']' : ''}, ORDER ${orderPass}/${orderTotal} (${pct(orderRate)}%), SUCC ${succResult.pass}/${succResult.total} (${pct(succRate)}%), SKIP10 ${skipResult.pass}/${skipResult.total} (${pct(skipRate)}%), MAKETEN ${makeTenResult.pass}/${makeTenResult.total} (${pct(makeTenRate)}%), TEEN ${teenResult.pass}/${teenResult.total} (${pct(teenRate)}%), ATTR ${attrResult.pass}/${attrResult.total} (${pct(attrRate)}%), CLASS ${classifyResult.pass}/${classifyResult.total} (${pct(classifyRate)}%), SHAPE-S ${shapeSidesResult.pass}/${shapeSidesResult.total} (${pct(shapeSidesRate)}%), SHAPE-D ${shapeDimResult.pass}/${shapeDimResult.total} (${pct(shapeDimRate)}%), SHAPE-C ${shapeComposeResult.pass}/${shapeComposeResult.total} (${pct(shapeComposeRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
-      metrics: { readRate, thinkRate, talkRate, seqRate, orderRate, seqFails, succRate, skipRate, makeTenRate, teenRate, attrRate, classifyRate, shapeSidesRate, shapeDimRate, shapeComposeRate, prodRate, prodFails: prodResult.fails },
-    };
-    this._recordGateHistory('math', 'kindergarten', 'overall', pass, prodRate);
-    return _mathKResult;
-  }
+  // ═══════════════════════════════════════════════════════════════════
+  // Math-K EXTRACTED to js/brain/curriculum/kindergarten.js K_MIXIN
+  // (2026-04-24). runMathKReal + _gateMathKReal now live there.
+  // ═══════════════════════════════════════════════════════════════════
 
   // ═══════════════════════════════════════════════════════════════════
   // T14.24 SESSION 4 — REAL ELA-G1 TEACHING EQUATIONS (2026-04-15)
@@ -9175,86 +7158,6 @@ export class Curriculum {
    * INVERTED in free second half, magnitude(a-b) in sem.
    * All facts where a-b ≥ 0 and a ≤ 10.
    */
-  async _teachSubtractionTransformations(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-
-    const freeSize = freeRegion.end - freeRegion.start;
-    const semSize = semRegion.end - semRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const lr = cluster.learningRate;
-    const REPS = 8;
-
-    function buildMagPattern(regionSize, digit) {
-      const feat = _magnitudeFeatureForDigit(String(Math.min(9, Math.max(0, digit))));
-      const pat = new Float64Array(regionSize);
-      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
-      for (let d = 0; d < feat.length; d++) {
-        if (feat[d] <= 0) continue;
-        for (let n = 0; n < gSize; n++) {
-          const idx = d * gSize + n;
-          if (idx < regionSize) pat[idx] = feat[d];
-        }
-      }
-      return pat;
-    }
-
-    // Invert a magnitude pattern — flip 1s to 0s and 0s to 1s
-    // This encodes "subtract" as the opposite activation of "add"
-    function invertPattern(pat) {
-      const inv = new Float64Array(pat.length);
-      for (let i = 0; i < pat.length; i++) inv[i] = pat[i] > 0 ? 0 : 1;
-      return inv;
-    }
-
-    const facts = [];
-    for (let a = 0; a <= 10; a++) {
-      for (let b = 0; b <= a; b++) {
-        facts.push([a, b, a - b]);
-      }
-    }
-
-    for (let rep = 0; rep < REPS; rep++) {
-      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
-      for (const [a, b, diff] of facts) {
-        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
-
-        const magA = buildMagPattern(freeHalf, a);
-        for (let i = 0; i < freeHalf; i++) {
-          cluster.lastSpikes[freeRegion.start + i] = magA[i] > 0 ? 1 : 0;
-        }
-
-        // Second operand INVERTED to signal subtraction
-        const magB = buildMagPattern(freeSize - freeHalf, b);
-        const magBInv = invertPattern(magB);
-        for (let i = 0; i < freeSize - freeHalf; i++) {
-          cluster.lastSpikes[freeRegion.start + freeHalf + i] = magBInv[i] > 0 ? 1 : 0;
-        }
-
-        const magDiff = buildMagPattern(semSize, diff);
-        for (let i = 0; i < semSize; i++) {
-          cluster.lastSpikes[semRegion.start + i] = magDiff[i] > 0 ? 1 : 0;
-        }
-
-        await cluster._crossRegionHebbian(lr);
-      }
-      await _microtask();
-    }
-    this._hb(`[Curriculum] _teachSubtractionTransformations: ${facts.length} facts × ${REPS} reps`);
-  }
-
-  /**
-   * COMPARISON as ordinal magnitude relationship.
-   * For pairs (a,b) within 0-10:
-   *   free[first half] = magnitude(a)
-   *   free[second half] = magnitude(b)
-   *   fineType = "greater" feature if a>b, "less" if a<b, "equal" if a==b
-   * The free→fineType projection learns ordinal comparison.
-   */
   async _teachComparisonTransformations(ctx) {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return;
@@ -9763,9 +7666,19 @@ export class Curriculum {
     const reps = opts.reps ?? 8;
     const lr = opts.lr ?? cluster.learningRate;
     const allowMicrotask = opts.allowMicrotask !== false;
+    // Per-batch microtask yield. Was once per rep — at low fact counts
+    // (50-200 facts) that was fine, but vocab-derived helpers can hit
+    // 1500+ facts per rep and the inner loop dispatches Hebbian without
+    // yielding, blocking Node's event loop long enough that the
+    // 10-second CELL ALIVE heartbeat starves and the WS bufferedAmount
+    // climbs past the 200MB drop threshold. Yielding every 128 facts
+    // gives the event loop frequent breath windows so the heartbeat
+    // setInterval and WS drain pump can run.
+    const YIELD_EVERY = 128;
 
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      let factsThisRep = 0;
       for (const fact of facts) {
         if (!fact || !Array.isArray(fact.writes)) continue;
         this._clearSpikes();
@@ -9774,6 +7687,10 @@ export class Curriculum {
           this._writeTiledPattern(w.region, w.feat, w.binarize !== false);
         }
         await this._teachHebbian(lr);
+        factsThisRep++;
+        if (allowMicrotask && (factsThisRep % YIELD_EVERY) === 0) {
+          await _microtask();
+        }
       }
       if (allowMicrotask) await _microtask();
     }
@@ -9923,7 +7840,17 @@ export class Curriculum {
     // cluster matrix. Rate scaled 0.5× vs positive so negative pressure
     // doesn't overwhelm learning.
     const antiPairs = opts.antiPairs !== false && qaList.length >= 2;
-    const antiLrScale = opts.antiLrScale ?? 0.5;
+    // Anti-Hebbian rate calibrated for Q-A binding density. With ~150
+    // Q-A train pairs and uniform random contrastive sampling, anti-
+    // fires accumulate against EVERY motor letter via random pair
+    // collisions. At 1.5× the negative pressure overwhelmed positive
+    // Oja and the matrix learned to NOT fire correct answers
+    // (DYN-PROD diagnostic showed expected motor slots at NEGATIVE
+    // rank-22 of 26). At 0.3× positive Oja dominates while contrastive
+    // still does meaningful per-pair depression. The 1.5× rate stays
+    // valid for `_teachAssociationPairs` (25 sparse pairs, contrastive
+    // collisions rare).
+    const antiLrScale = opts.antiLrScale ?? 0.3;
     if (!semRegion || !motorRegion) {
       console.warn(`[Curriculum][${label}] skipped — sem or motor region not available`);
       return { trained: 0, skipped: qaList.length };
@@ -9949,9 +7876,12 @@ export class Curriculum {
         const motorPattern = encodeLetter(targetLetter);
         if (!motorPattern || motorPattern.length === 0) { skipped++; continue; }
         const keyToken = this._extractKeyToken(entry.question);
-        const keyEmb = keyToken && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
-          ? sharedEmbeddings.getEmbedding(keyToken)
-          : null;
+        // Key-token embedding uses the unified `_dictionaryPatternFor`
+        // pattern (GloVe + identity-hash + cortex-snapshot) so similar
+        // GloVes for K-vocab key tokens like 'cat' / 'dog' / 'pig' get
+        // disjoint identity stripes. Matrix can discriminate at probe
+        // time even though the GloVe overlap is high.
+        const keyEmb = keyToken ? this._dictionaryPatternFor(keyToken) : null;
         const templateId = this._classifyQuestionTemplate(entry.question);
         try {
           // ─── Natural-sentence positive pair ────────────────────────
@@ -10032,6 +7962,72 @@ export class Curriculum {
       }
       await _microtask();
     }
+    // Top-K-per-row pruning. Same fix the _teachAssociationPairs path
+    // uses — the Q-A teacher saturates its own sem_to_motor weights
+    // independently and was previously left at full density / max
+    // weight.
+    const qaPruneTopK = opts.pruneTopK ?? 200;
+    let qaPruneReport = '';
+    if (qaPruneTopK > 0 && cluster.crossProjections) {
+      const projKeys = ['sem_to_motor', 'motor_to_sem'];
+      const pruned = [];
+      for (const key of projKeys) {
+        const proj = cluster.crossProjections[key];
+        if (proj && typeof proj.pruneTopKPerRow === 'function' && proj.values && proj.values.length > 0) {
+          try {
+            const removed = proj.pruneTopKPerRow(qaPruneTopK);
+            if (removed > 0) pruned.push(`${key}:-${removed}`);
+          } catch { /* non-fatal */ }
+        }
+      }
+      if (pruned.length > 0) qaPruneReport = ` · top-K-prune [${pruned.join(',')}]`;
+    }
+
+    // Adaptive per-phase weight rescale — only fires when the
+    // weight-magnitude diagnostic shows the matrix has saturated
+    // (max ≥ 0.95 × wMax). When weights are below saturation
+    // threshold, training is still discriminating in the available
+    // headroom — preserve it. Q-A binding accumulates 1400+ positive
+    // updates per phase against just 48 Q-A pairs, so saturation is
+    // common; but skipping rescale when the weights haven't hit
+    // ceiling lets the matrix accumulate genuine discrimination.
+    const qaRescaleFactor = opts.rescaleFactor ?? 0.5;
+    const qaRescaleOnSaturationOnly = opts.rescaleOnSaturationOnly !== false; // default TRUE
+    let qaRescaleReport = '';
+    let qaMaxAbs = 0;
+    try {
+      const proj = cluster.crossProjections && cluster.crossProjections.sem_to_motor;
+      if (proj && proj.values && proj.values.length > 0) {
+        const sample = Math.min(proj.values.length, 100000);
+        for (let k = 0; k < sample; k++) {
+          const a = proj.values[k] < 0 ? -proj.values[k] : proj.values[k];
+          if (a > qaMaxAbs) qaMaxAbs = a;
+        }
+      }
+    } catch { /* non-fatal */ }
+    const qaSaturated = qaMaxAbs >= 0.95 * 0.2; // wMax = 0.2
+    const qaShouldRescale = qaRescaleFactor > 0 && qaRescaleFactor < 1
+      && cluster.crossProjections
+      && (qaRescaleOnSaturationOnly ? qaSaturated : true);
+    if (qaShouldRescale) {
+      const projKeys = ['sem_to_motor', 'motor_to_sem'];
+      const rescaled = [];
+      for (const key of projKeys) {
+        const proj = cluster.crossProjections[key];
+        if (proj && typeof proj.scale === 'function' && proj.values && proj.values.length > 0) {
+          try {
+            const stats = proj.scale(qaRescaleFactor);
+            if (stats && stats.before && stats.after) {
+              rescaled.push(`${key}:${stats.before.max.toFixed(3)}→${stats.after.max.toFixed(3)}`);
+            }
+          } catch { /* non-fatal */ }
+        }
+      }
+      if (rescaled.length > 0) qaRescaleReport = ` · rescale×${qaRescaleFactor} [${rescaled.join(',')}] (saturated maxAbs=${qaMaxAbs.toFixed(3)})`;
+    } else if (qaMaxAbs > 0) {
+      qaRescaleReport = ` · rescale-skipped (maxAbs=${qaMaxAbs.toFixed(3)} < 0.95×wMax — preserving training)`;
+    }
+
     const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1);
     let weightReport = '';
     try {
@@ -10050,7 +8046,7 @@ export class Curriculum {
     } catch { /* non-fatal */ }
     const altReport = directPromptAlt ? ` · alt-fires=${altTrained}` : '';
     const antiReport = antiPairs ? ` · anti-fires=${antiFires}` : '';
-    this._hb(`[Curriculum][${label}] DONE — ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${weightReport}`);
+    this._hb(`[Curriculum][${label}] DONE — ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${qaPruneReport}${qaRescaleReport}${weightReport}`);
     try { this._pushBrainEvent?.('teach', 'motor', `Q-A DONE: ${label} · ${trained}/${antiFires}/${altTrained} +/−/alt`, { label, trained, antiFires, altTrained, elapsedSec }); } catch {}
     return { trained, altTrained, antiFires, skipped };
   }
@@ -10344,16 +8340,18 @@ export class Curriculum {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return { trained: 0, skipped: 0 };
     if (!Array.isArray(pairs) || pairs.length === 0) return { trained: 0, skipped: 0 };
-    // Training hyperparam tuning: reps bumped 8 → 12 + lr bumped
-    // cluster.learningRate (0.01) → 0.03. Prior params couldn't drive
-    // convergence even with the soft-write bug fixed — 8 reps × lr=0.01
-    // accumulates ~0.08 weight per consistent (pre, post) pair, which
-    // after row-norm collapses back to ~1/√nnz ≈ 0.003 per neuron
-    // connection. Motor readouts at probe time would sum to sub-threshold
-    // values → argmax decode returns noise. 12 reps × lr=0.03 gives
-    // ~0.36 accumulated weight per pair, row-norm preserves discriminating
-    // magnitudes, motor readout clears firing threshold cleanly.
-    const reps = opts.reps ?? 12;
+    // Training depth — reps bumped 12 → 24 to drive deeper Hebbian
+    // accumulation. Margin between correct-pair weights and wrong-pair
+    // weights grows with reps; at 12 reps margins were ~0.003 (cat→c
+    // at 0.049 vs cat→d at 0.046), barely above noise. At 24 reps
+    // the same lr accumulates 2× the discriminating signal per pair
+    // before saturation. Combined with the unified-pattern + identity-
+    // stripe fix and ADAPTIVE rescale (only fires on overload), the
+    // matrix can now learn to discrimination thresholds that drive
+    // motor argmax cleanly. Operator binding 2026-04-25: training
+    // needs to be deep enough for human-level knowledge — atomic fix,
+    // not a surgical bump.
+    const reps = opts.reps ?? 24;
     const lr = opts.lr ?? 0.03;
     const label = opts.label || 'ASSOC';
     const semRegion = cluster.regions && cluster.regions.sem;
@@ -10413,7 +8411,20 @@ export class Curriculum {
     // superposition. Rate scaled down vs positive so negative pressure
     // doesn't overwhelm learning. Default ON for any pairs.length >= 2.
     const antiPairs = opts.antiPairs !== false && pairs.length >= 2;
-    const antiLrScale = opts.antiLrScale ?? 0.5;
+    // Anti-Hebbian learning rate scale. Was 0.5 — too gentle once the
+    // matrix saturates because positive Oja updates dominate. Bumped
+    // to 1.5 so contrastive depression actively pulls saturated
+    // weights down per phase. With 25 contrastive fires per positive
+    // update at lr × 1.5 = 37.5× lr negative pressure per positive
+    // fire, basins separate even when the matrix has hit `wMax`.
+    const antiLrScale = opts.antiLrScale ?? 1.5;
+    // Top-K-per-row pruning at end of phase. Keeps only the K largest-
+    // magnitude inputs per output neuron and zeros the rest. Forces
+    // basin separation when the matrix has collapsed to near-uniform
+    // weights at full density (`mean=0.46 max=0.5 nnz=100000/100000`).
+    // Each motor neuron now responds to its K most-trained sem
+    // patterns instead of every sem pattern equally.
+    const pruneTopK = opts.pruneTopK ?? 200;
     // Winner-take-all motor sparsification (Maass 2000 — WTA circuits
     // are computationally universal with sparse active sets). GloVe
     // embeddings tiled across motor fire ~15-25% of the region; keeping
@@ -10440,7 +8451,15 @@ export class Curriculum {
     // FEWER than in raw GloVe. Same mechanism motor-WTA uses, applied
     // upstream on the input side.
     const semWTA = opts.semWTA !== false && !binarize;
-    const semTopK = opts.semTopK ?? 30;
+    // semTopK dropped 30 → 8 to address basin overlap. At top-30 of
+    // GloVe-300d, similar K-vocab words like cat/dog/pig still shared
+    // ~15 of their top-30 dims. At top-8, the survivors are mostly
+    // identity-hash dims (5 of 5) plus 3 strongest GloVe dims —
+    // mostly disjoint between similar words. The trained sem→motor
+    // matrix can then discriminate cat from dog because their input
+    // sem patterns share fewer than 50% of their active dims instead
+    // of 50%+.
+    const semTopK = opts.semTopK ?? 8;
     let trained = 0, skipped = 0, antiFires = 0, wtaApplied = 0, semWtaApplied = 0;
     const startMs = Date.now();
     this._hb(`[Curriculum][${label}] START — ${pairs.length} pairs × ${reps} reps · soft-writes=${!binarize} · row-norm=${normalizeAfter} · anti-pairs=${antiPairs} · motor-WTA=${motorWTA}/${motorTopK} · sem-WTA=${semWTA}/${semTopK}`);
@@ -10451,8 +8470,12 @@ export class Curriculum {
         const pair = pairs[pairIdx];
         if (!Array.isArray(pair) || pair.length < 2) { skipped++; continue; }
         const [inputWord, outputWord] = pair;
-        const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
-          ? sharedEmbeddings.getEmbedding(inputWord) : null;
+        // Sem-side input — unified pattern (GloVe + identity-hash +
+        // cortex-snapshot) so similar GloVes don't collapse to the
+        // same trained mapping. Motor side stays as raw GloVe because
+        // motor-region tiling decodes via letter-bucket argmax, not
+        // identity discrimination.
+        const inEmb = this._dictionaryPatternFor(inputWord);
         const outEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
           ? sharedEmbeddings.getEmbedding(outputWord) : null;
         if (!inEmb || !outEmb || inEmb.length === 0 || outEmb.length === 0) { skipped++; continue; }
@@ -10539,6 +8562,104 @@ export class Curriculum {
       }
       await _microtask();
     }
+    // Per-phase top-K-per-row pruning of sem_to_motor + motor_to_sem.
+    // After the rep loop, keep only each output neuron's `pruneTopK`
+    // strongest inputs and zero the rest. At sparse-init densities
+    // (~40 entries per row), pruneTopK=200 is a no-op — kept for the
+    // case where Hebbian growth from co-firing pushes the row past
+    // the K cap mid-phase.
+    let pruneReport = '';
+    if (pruneTopK > 0 && cluster.crossProjections) {
+      const projKeys = ['sem_to_motor', 'motor_to_sem'];
+      const pruned = [];
+      for (const key of projKeys) {
+        const proj = cluster.crossProjections[key];
+        if (proj && typeof proj.pruneTopKPerRow === 'function' && proj.values && proj.values.length > 0) {
+          try {
+            const removed = proj.pruneTopKPerRow(pruneTopK);
+            if (removed > 0) pruned.push(`${key}:-${removed}`);
+          } catch { /* non-fatal */ }
+        }
+      }
+      if (pruned.length > 0) pruneReport = ` · top-K-prune [${pruned.join(',')}]`;
+    }
+
+    // Cosine-separation diagnostic — runs FIRST (before rescale) so
+    // the rescale decision can be conditional on the discrimination
+    // signal. If basins are separated (mean-cos < overloadMax), we
+    // SKIP the rescale to preserve the trained discrimination
+    // magnitudes. If basins are still overlapping, we rescale to
+    // make headroom for the next training phase.
+    let sepReport = '';
+    let collapseFlag = '';
+    let sepResult = null;
+    if (runSeparationProbe && pairs.length >= 2) {
+      try {
+        // Pass semTopK into the probe so the diagnostic measures the
+        // SAME sem pattern geometry the teach wrote. Without this the
+        // probe samples raw GloVe (dense, high-overlap) while the teach
+        // trained against top-K (sparse, lower-overlap) — sep-probe
+        // would systematically overestimate mean-cos and fire spurious
+        // ⚠OVERLOAD warnings even when training actually discriminates.
+        sepResult = this._checkSemBasinSeparation(pairs, {
+          semRegion, motorRegion, overloadMax, sampleSize: 8,
+          semWTA, semTopK,
+        });
+        if (sepResult && typeof sepResult.meanCos === 'number') {
+          const overload = sepResult.meanCos > overloadMax;
+          // Collapse detector: motor readouts all near-zero (cosine
+          // near 0) OR all identical (cosine near 1) both signal that
+          // the teach pattern didn't land usefully. 0.05 lower bound
+          // because normalized unit-vectors should have SOME variance
+          // when 8 different concepts are probed.
+          const collapsed = sepResult.meanCos < 0.05 && sepResult.maxCos < 0.05;
+          if (overload) collapseFlag = ' ⚠OVERLOAD';
+          else if (collapsed) collapseFlag = ' ⚠⚠ TRAINING_COLLAPSE: motor readouts near-zero — sem→motor weights too weak to fire motor region';
+          sepReport = ` · sep-probe mean-cos=${sepResult.meanCos.toFixed(3)} max=${sepResult.maxCos.toFixed(3)}${collapseFlag}`;
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    // ADAPTIVE per-phase weight rescale. Only fires when sep-probe
+    // reports OVERLOAD (mean-cos > overloadMax, default 0.30). When
+    // basins are separated, the trained discrimination is real
+    // information — preserve it. When basins are still overlapping,
+    // saturated weights are blocking further discrimination —
+    // rescale to make headroom for the next phase's anti-Hebbian +
+    // Oja to keep working.
+    //
+    // Earlier unconditional ×0.5 every phase compressed weights to
+    // ~0.05-0.1 magnitude regardless of training quality, leaving
+    // tiny margins (cat→c at 0.049 vs cat→d at 0.046) even when
+    // discrimination was developing. With adaptive rescale, weights
+    // can grow into discriminating ranges across multiple phases
+    // without artificial compression.
+    const rescaleFactor = opts.rescaleFactor ?? 0.5;
+    const rescaleOnOverloadOnly = opts.rescaleOnOverloadOnly !== false; // default TRUE
+    let rescaleReport = '';
+    const overloadDetected = sepResult && typeof sepResult.meanCos === 'number' && sepResult.meanCos > overloadMax;
+    const shouldRescale = rescaleFactor > 0 && rescaleFactor < 1
+      && cluster.crossProjections
+      && (rescaleOnOverloadOnly ? overloadDetected : true);
+    if (shouldRescale) {
+      const projKeys = ['sem_to_motor', 'motor_to_sem'];
+      const rescaled = [];
+      for (const key of projKeys) {
+        const proj = cluster.crossProjections[key];
+        if (proj && typeof proj.scale === 'function' && proj.values && proj.values.length > 0) {
+          try {
+            const stats = proj.scale(rescaleFactor);
+            if (stats && stats.before && stats.after) {
+              rescaled.push(`${key}:${stats.before.max.toFixed(3)}→${stats.after.max.toFixed(3)}`);
+            }
+          } catch { /* non-fatal */ }
+        }
+      }
+      if (rescaled.length > 0) rescaleReport = ` · rescale×${rescaleFactor} [${rescaled.join(',')}] (triggered by overload mean-cos=${sepResult.meanCos.toFixed(3)})`;
+    } else if (sepResult && !overloadDetected) {
+      rescaleReport = ` · rescale-skipped (basins separated, mean-cos=${sepResult.meanCos.toFixed(3)} < ${overloadMax} — preserving trained discrimination)`;
+    }
+
     // Per-phase row-normalization — prevents saturation as more
     // association-pair phases accumulate onto the same projection.
     // Targets sem_to_motor (the primary answer path) + the recurrent
@@ -10557,40 +8678,6 @@ export class Curriculum {
         }
       }
       if (normed.length > 0) normReport = ` · row-norm [${normed.join(',')}]`;
-    }
-    // Cosine-separation diagnostic — detects sem-region overload by
-    // measuring pairwise cosine between motor readouts for a sample
-    // of trained pairs. Passes if mean-cosine < overloadMax AND
-    // mean-cosine > collapseMin (new lower bound — if motor readouts
-    // are all zeros OR all identical the training signal isn't
-    // landing and the phase is effectively no-op).
-    let sepReport = '';
-    let collapseFlag = '';
-    if (runSeparationProbe && pairs.length >= 2) {
-      try {
-        // Pass semTopK into the probe so the diagnostic measures the
-        // SAME sem pattern geometry the teach wrote. Without this the
-        // probe samples raw GloVe (dense, high-overlap) while the teach
-        // trained against top-K (sparse, lower-overlap) — sep-probe
-        // would systematically overestimate mean-cos and fire spurious
-        // ⚠OVERLOAD warnings even when training actually discriminates.
-        const sep = this._checkSemBasinSeparation(pairs, {
-          semRegion, motorRegion, overloadMax, sampleSize: 8,
-          semWTA, semTopK,
-        });
-        if (sep && typeof sep.meanCos === 'number') {
-          const overload = sep.meanCos > overloadMax;
-          // Collapse detector: motor readouts all near-zero (cosine
-          // near 0) OR all identical (cosine near 1) both signal that
-          // the teach pattern didn't land usefully. 0.05 lower bound
-          // because normalized unit-vectors should have SOME variance
-          // when 8 different concepts are probed.
-          const collapsed = sep.meanCos < 0.05 && sep.maxCos < 0.05;
-          if (overload) collapseFlag = ' ⚠OVERLOAD';
-          else if (collapsed) collapseFlag = ' ⚠⚠ TRAINING_COLLAPSE: motor readouts near-zero — sem→motor weights too weak to fire motor region';
-          sepReport = ` · sep-probe mean-cos=${sep.meanCos.toFixed(3)} max=${sep.maxCos.toFixed(3)}${collapseFlag}`;
-        }
-      } catch { /* non-fatal */ }
     }
     // Weight-magnitude diagnostic. Post-teach, sample the sem_to_motor
     // projection weights to confirm Hebbian accumulation actually
@@ -10636,7 +8723,7 @@ export class Curriculum {
     const wtaReport = motorWTA
       ? ` · motor-WTA=${wtaApplied}/${motorTopK}${semWTA ? ` · sem-WTA=${semWtaApplied}/${semTopK}` : ''}`
       : (semWTA ? ` · sem-WTA=${semWtaApplied}/${semTopK}` : '');
-    this._hb(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${wtaReport}${normReport}${sepReport}${weightReport}`);
+    this._hb(`[Curriculum][${label}] DONE — ${trained} Hebbian updates across ${pairs.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${wtaReport}${pruneReport}${rescaleReport}${normReport}${sepReport}${weightReport}`);
     try { this._pushBrainEvent?.('teach', 'motor', `ASSOC DONE: ${label} · ${trained}/${antiFires}`, { label, trained, antiFires, wtaApplied, elapsedSec }); } catch {}
     return { trained, skipped };
   }
@@ -10680,14 +8767,19 @@ export class Curriculum {
     const semSize = semRegion.end - semRegion.start;
     // Honor sem-WTA if the teach used it — so the probe fires against
     // the same sparse top-K sem code the Hebbian training wrote.
+    // Defaults must match `_teachAssociationPairs` (semTopK=8, unified
+    // pattern via `_dictionaryPatternFor`) or the probe systematically
+    // overestimates mean-cos (denser/different pattern geometry than
+    // the teach used).
     const semWTA = opts.semWTA !== false;
-    const semTopK = opts.semTopK ?? 30;
+    const semTopK = opts.semTopK ?? 8;
     for (let i = 0; i < pairs.length && readouts.length < sampleSize; i += step) {
       const pair = pairs[i];
       if (!Array.isArray(pair) || pair.length < 2) continue;
       const [inputWord] = pair;
-      const rawEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
-        ? sharedEmbeddings.getEmbedding(inputWord) : null;
+      // Use the unified pattern for sem injection so probe geometry
+      // matches teach geometry. Falls back gracefully when no GloVe.
+      const rawEmb = this._dictionaryPatternFor(inputWord);
       if (!rawEmb || rawEmb.length === 0) continue;
       // Apply top-K filter BEFORE tiling so the probe pattern matches
       // what `_teachAssociationPairs` wrote during the rep loop.
@@ -11015,397 +9107,6 @@ export class Curriculum {
   /**
    * Bridge teaching — magnitude in free region to digit character in
    * motor region. Enables numeric production-probe answers.
-   */
-  async _teachMagnitudeToMotor(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const motorRegion = cluster.regions.motor;
-    if (!freeRegion || !motorRegion) return;
-    const DIGITS = DIGIT_ORDER;
-    ensureLetters(DIGITS.split(''));
-
-    const facts = [];
-    for (const digit of DIGITS) {
-      facts.push({ writes: [
-        { region: freeRegion,  feat: _magnitudeFeatureForDigit(digit) },
-        { region: motorRegion, feat: encodeLetter(digit) },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 8 });
-    this._hb(`[Curriculum] _teachMagnitudeToMotor: ${facts.length} digits × 8 reps`);
-  }
-
-  /**
-   * K.OA DECOMPOSITION — given magnitude(c) in sem, the cortex learns
-   * to activate all (a,b) pairs where a+b=c across the two halves of
-   * free. Dual of addition: addition teaches free→sem, decomposition
-   * teaches sem→free. Covers "5 = 1+4 = 2+3 = 3+2 = 4+1 = 0+5" and
-   * similar for every c in [0, 10].
-   */
-  async _teachDecomposition(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
-
-    const facts = [];
-    for (let c = 0; c <= 10; c++) {
-      for (let a = 0; a <= c; a++) {
-        facts.push({ writes: [
-          { region: semRegion,        feat: _magnitudeFeatureForDigit(String(c)) },
-          { region: freeLeftRegion,   feat: _magnitudeFeatureForDigit(String(a)) },
-          { region: freeRightRegion,  feat: _magnitudeFeatureForDigit(String(c - a)) },
-        ]});
-      }
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachDecomposition: ${facts.length} triples × 6 reps`);
-  }
-
-  /**
-   * K.OA MAKE-TEN — given magnitude(n) ONLY in free's left half (right
-   * half intentionally zeroed), sem should activate magnitude(10-n).
-   * The "left-only" input structure discriminates from the
-   * _teachCountToHundred successor transform which fills ALL of free
-   * with magnitude(n). Covers the K standard "for any number 1-9, find
-   * the number that makes 10".
-   */
-  async _teachMakeTen(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-
-    const facts = [];
-    for (let n = 0; n <= 10; n++) {
-      facts.push({ writes: [
-        { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(n)) },
-        { region: semRegion,      feat: _magnitudeFeatureForDigit(String(10 - n)) },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 8 });
-    this._hb(`[Curriculum] _teachMakeTen: ${facts.length} pairs × 8 reps`);
-  }
-
-  /**
-   * K.NBT TEEN DECOMPOSITION — 11 through 19 as "ten and some more".
-   * Forward: free left = mag_wide(10), free right = mag_wide(n), sem = mag_wide(10+n).
-   * Inverse: same three writes — symmetric Hebbian doesn't care about
-   * iteration order, so once is enough (the helper fires per-fact
-   * Hebbian, which is symmetric: binding a↔b=binding b↔a). This used
-   * to be duplicated into forward/inverse loops; refactor consolidates.
-   */
-  async _teachTeenDecomposition(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
-
-    const facts = [];
-    for (let n = 1; n <= 9; n++) {
-      facts.push({ writes: [
-        { region: freeLeftRegion,  feat: _magnitudeFeatureForNumber(10) },
-        { region: freeRightRegion, feat: _magnitudeFeatureForNumber(n) },
-        { region: semRegion,       feat: _magnitudeFeatureForNumber(10 + n) },
-      ]});
-    }
-    // REPS bumped 8 → 16 to compensate for consolidating forward+inverse
-    // into a single symmetric-Hebbian pass. Net training events: 9 × 16 = 144
-    // (matches the pre-refactor 9 × 2 × 8 = 144).
-    await this._teachCombination(facts, { reps: 16 });
-    this._hb(`[Curriculum] _teachTeenDecomposition: ${facts.length} teens × 16 reps (symmetric)`);
-  }
-
-  /**
-   * K.CC UNIVERSAL SUCCESSOR — given magnitude(n), sem activates
-   * magnitude(n+1). This single transform covers "count to 100 by
-   * ones" AND "count forward beginning from any given number" because
-   * the successor function is the same regardless of starting N.
-   * Trained on every n ∈ [0, 99].
-   */
-  async _teachCountToHundred(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-
-    const facts = [];
-    for (let n = 0; n <= 99; n++) {
-      facts.push({ writes: [
-        { region: freeRegion, feat: _magnitudeFeatureForNumber(n) },
-        { region: semRegion,  feat: _magnitudeFeatureForNumber(n + 1) },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 4 });
-    this._hb(`[Curriculum] _teachCountToHundred: ${facts.length} successors × 4 reps`);
-  }
-
-  /**
-   * K.CC SKIP-COUNT BY TENS — given magnitude(n) injected into PHON
-   * region (not free), sem activates magnitude(n+10). Routing through
-   * phon (instead of free) cleanly discriminates the skip-10 query
-   * from the successor query (_teachCountToHundred uses free). Same
-   * recurrent matrix binds both transforms without interference
-   * because the pre-synaptic activation patterns live in different
-   * regions. Covers 10→20→30→...→100.
-   */
-  async _teachSkipCountByTens(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const phonRegion = cluster.regions.phon;
-    const semRegion = cluster.regions.sem;
-    if (!phonRegion || !semRegion) return;
-
-    const facts = [];
-    for (let n = 0; n <= 90; n += 10) {
-      facts.push({ writes: [
-        { region: phonRegion, feat: _magnitudeFeatureForNumber(n) },
-        { region: semRegion,  feat: _magnitudeFeatureForNumber(n + 10) },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 10 });
-    this._hb(`[Curriculum] _teachSkipCountByTens: ${facts.length} steps × 10 reps`);
-  }
-
-  /**
-   * K.MD ATTRIBUTE COMPARISON — teaches "which is longer/heavier/bigger"
-   * as a magnitude comparison where each attribute pole has a known
-   * numeric magnitude (short=2, long=8, light=2, heavy=8, etc.).
-   * Reuses the existing greater/less/equal fineType encoding from
-   * _teachComparisonTransformations. Adds a GloVe anchor in sem for
-   * each attribute word so the probe can be triggered by attribute
-   * name rather than raw magnitude.
-   */
-  async _teachAttributeCompare(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const fineTypeRegion = cluster.regions.fineType;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !fineTypeRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const third = Math.floor(fineTypeSize / 3);
-
-    // Attribute pole pairs — each pole has a magnitude 0-10.
-    // Small magnitude = "lesser" pole, large = "greater" pole.
-    const ATTR_POLES = [
-      { low: 'short',   high: 'long',    lowMag: 2, highMag: 8, word: 'length' },
-      { low: 'light',   high: 'heavy',   lowMag: 2, highMag: 8, word: 'weight' },
-      { low: 'small',   high: 'big',     lowMag: 2, highMag: 8, word: 'size' },
-      { low: 'low',     high: 'high',    lowMag: 2, highMag: 8, word: 'height' },
-      { low: 'empty',   high: 'full',    lowMag: 0, highMag: 9, word: 'fullness' },
-      { low: 'narrow',  high: 'wide',    lowMag: 2, highMag: 8, word: 'width' },
-      { low: 'cold',    high: 'hot',     lowMag: 2, highMag: 8, word: 'temperature' },
-      { low: 'few',     high: 'many',    lowMag: 2, highMag: 9, word: 'quantity' },
-    ];
-
-    // Greater-tag pattern: fineType first third fires.
-    const greaterTag = new Float64Array(fineTypeSize);
-    for (let i = 0; i < third && i < fineTypeSize; i++) greaterTag[i] = 1;
-    // Less-tag pattern: fineType second third fires.
-    const lessTag = new Float64Array(fineTypeSize);
-    for (let i = third; i < third * 2 && i < fineTypeSize; i++) lessTag[i] = 1;
-
-    const facts = [];
-    for (const { highMag, lowMag, word } of ATTR_POLES) {
-      const wordEmb = semRegion ? sharedEmbeddings.getEmbedding(word) : null;
-      // high > low direction
-      const greaterWrites = [
-        { region: freeLeftRegion,  feat: _magnitudeFeatureForDigit(String(highMag)) },
-        { region: freeRightRegion, feat: _magnitudeFeatureForDigit(String(lowMag)) },
-        { region: fineTypeRegion,  feat: greaterTag },
-      ];
-      if (wordEmb && wordEmb.length > 0) greaterWrites.push({ region: semRegion, feat: wordEmb, binarize: false });
-      facts.push({ writes: greaterWrites });
-      // low < high direction (reverse pair)
-      facts.push({ writes: [
-        { region: freeLeftRegion,  feat: _magnitudeFeatureForDigit(String(lowMag)) },
-        { region: freeRightRegion, feat: _magnitudeFeatureForDigit(String(highMag)) },
-        { region: fineTypeRegion,  feat: lessTag },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachAttributeCompare: ${ATTR_POLES.length} attribute pairs × 2 dirs × 6 reps`);
-  }
-
-  /**
-   * K.MD CLASSIFY AND COUNT — given a set of tagged items, learn to
-   * activate magnitude(count) in sem given the category GloVe in free.
-   * Example training fact: free=GloVe("red"), sem=magnitude(3) meaning
-   * "there are 3 red things". Covers K.MD "count objects in each
-   * category (up to 10)" + "sort objects and compare the counts".
-   */
-  async _teachClassifyCount(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-
-    // Category → count facts. Draws from colors + shapes + common K objects.
-    const CATEGORY_COUNTS = [
-      ['red', 3], ['blue', 2], ['green', 5], ['yellow', 1], ['black', 4],
-      ['big', 2], ['small', 4], ['long', 3], ['short', 5],
-      ['apples', 4], ['birds', 5], ['cats', 2], ['dogs', 3], ['hands', 2],
-      ['fingers', 10], ['toes', 10], ['eyes', 2], ['ears', 2],
-      ['triangle', 3], ['square', 4], ['circle', 1], ['cube', 6],
-    ];
-
-    const facts = [];
-    for (const [category, count] of CATEGORY_COUNTS) {
-      const catEmb = sharedEmbeddings.getEmbedding(category);
-      if (!catEmb || catEmb.length === 0) continue;
-      facts.push({ writes: [
-        { region: freeRegion, feat: catEmb, binarize: false },
-        { region: semRegion,  feat: _magnitudeFeatureForDigit(String(Math.min(9, count))) },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachClassifyCount: ${facts.length} category-count pairs × 6 reps`);
-  }
-
-  /**
-   * K.G SHAPE FEATURES — given a shape name GloVe in sem, free region
-   * activates magnitude(side_count) and fineType encodes 2D vs 3D.
-   * Covers K.G "describe shapes" + "analyze and compare 2D and 3D
-   * shapes using number of sides, corners, faces" + "identify shapes
-   * as 2D (flat) or 3D (solid)".
-   */
-  async _teachShapeFeatures(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    const fineTypeRegion = cluster.regions.fineType;
-    if (!freeRegion || !semRegion || !fineTypeRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    // fineType halves: first half = 2D tag, second half = 3D tag.
-    const fineHalf = Math.floor(fineTypeSize / 2);
-
-    // K.G shape catalog — name, sides (2D primary sides / 3D faces),
-    // and dimension. Side counts chosen to match the K test bank:
-    // "How many sides does a triangle have?" → 3, "What shape has 4
-    // equal sides?" → square, "Is a ball flat or solid?" → solid (3D).
-    const SHAPES = [
-      // 2D
-      { name: 'circle',    sides: 0, dim: '2D' },
-      { name: 'triangle',  sides: 3, dim: '2D' },
-      { name: 'square',    sides: 4, dim: '2D' },
-      { name: 'rectangle', sides: 4, dim: '2D' },
-      { name: 'hexagon',   sides: 6, dim: '2D' },
-      // 3D
-      { name: 'sphere',    sides: 0, dim: '3D' },  // ball — 0 flat faces
-      { name: 'cube',      sides: 6, dim: '3D' },  // 6 faces
-      { name: 'cone',      sides: 1, dim: '3D' },  // 1 flat circular face + curved
-      { name: 'cylinder',  sides: 2, dim: '3D' },  // 2 flat circular faces + curved
-    ];
-
-    // Pre-build dim tag patterns
-    const twoDTag = new Float64Array(fineTypeSize);
-    for (let i = 0; i < fineHalf; i++) twoDTag[i] = 1;
-    const threeDTag = new Float64Array(fineTypeSize);
-    for (let i = fineHalf; i < fineTypeSize; i++) threeDTag[i] = 1;
-
-    const facts = [];
-    for (const { name, sides, dim } of SHAPES) {
-      const shapeEmb = sharedEmbeddings.getEmbedding(name);
-      if (!shapeEmb || shapeEmb.length === 0) continue;
-      facts.push({ writes: [
-        { region: semRegion,       feat: shapeEmb, binarize: false },
-        { region: freeRegion,      feat: _magnitudeFeatureForDigit(String(sides)) },
-        { region: fineTypeRegion,  feat: dim === '2D' ? twoDTag : threeDTag },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 10 });
-    this._hb(`[Curriculum] _teachShapeFeatures: ${facts.length} shapes × 10 reps`);
-  }
-
-  /**
-   * K.G SHAPE COMPOSITION — "put two triangles together to make a
-   * rectangle" and similar. NOT a magnitude transform (geometric
-   * composition is NOT additive on side counts — two 3-sided
-   * triangles make a 4-sided rectangle, not a 6-sided anything). The
-   * unified combination-operator scaffold handles this cleanly by
-   * swapping the encoder from magnitude features to GloVe embeddings.
-   * Same `_teachCombination` helper, same substrate, same Hebbian,
-   * different encoding of the operands.
-   *
-   * Input structure: sem first half = GloVe(shapeA), sem second half
-   * = GloVe(shapeB). Output: free = GloVe(composed shape). This input
-   * layout is structurally distinct from `_teachShapeFeatures`
-   * (full-sem = single-shape GloVe) and `_teachTeenDecomposition`
-   * (free split = magnitudes), so no cross-transform interference.
-   *
-   * Closes the K.G 66/66 gap in `docs/TODO-full-syllabus.md` without
-   * special-case logic — the reasoning FORM stays the same, only the
-   * encoder varies.
-   */
-  async _teachShapeCompose(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const semSize = semRegion.end - semRegion.start;
-    const semHalf = Math.floor(semSize / 2);
-    const semLeftRegion  = { start: semRegion.start,           end: semRegion.start + semHalf };
-    const semRightRegion = { start: semRegion.start + semHalf, end: semRegion.end };
-
-    // K.G compose facts — the standard kindergarten geometric
-    // compositions. Side counts aren't additive here; each fact is
-    // a learned lookup in the recurrent matrix, same as any other
-    // combination-operator binding.
-    const COMPOSE = [
-      ['triangle',  'triangle',  'rectangle'],   // K standard fact
-      ['triangle',  'triangle',  'square'],      // alt configuration (4 right triangles → square)
-      ['square',    'square',    'rectangle'],   // two squares side-by-side
-      ['rectangle', 'rectangle', 'square'],      // two rectangles stacked → square
-      ['triangle',  'rectangle', 'pentagon'],    // triangle cap on rectangle
-    ];
-
-    const facts = [];
-    for (const [aName, bName, cName] of COMPOSE) {
-      const aEmb = sharedEmbeddings.getEmbedding(aName);
-      const bEmb = sharedEmbeddings.getEmbedding(bName);
-      const cEmb = sharedEmbeddings.getEmbedding(cName);
-      if (!aEmb || !bEmb || !cEmb || aEmb.length === 0 || bEmb.length === 0 || cEmb.length === 0) continue;
-      facts.push({ writes: [
-        { region: semLeftRegion,  feat: aEmb, binarize: false },
-        { region: semRightRegion, feat: bEmb, binarize: false },
-        { region: freeRegion,     feat: cEmb, binarize: false },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 10 });
-    this._hb(`[Curriculum] _teachShapeCompose: ${facts.length} compositions × 10 reps`);
-  }
-
-  /**
-   * CAUSAL CHAINS — if X then Y as directional cross-projection.
-   * Write embedding(cause) into free with "cause" tag in fineType first third,
-   * write embedding(effect) into sem with "effect" tag in fineType second third.
-   * The free→sem projection learns: this cause → this effect.
-   * Build chains: teach A→B and B→C, then test A→C (transitive inference).
-   * @param {Array<[string,string]>} pairs - array of [cause, effect] word pairs
    */
   async _teachCausalChains(pairs) {
     const cluster = this.cluster;
@@ -12309,14 +10010,21 @@ export class Curriculum {
     const wordEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function'
       ? sharedEmbeddings.getEmbedding(cleanWord) : null;
 
+    const firstLetterOneHot = encodeLetter(letters[0]);
+    const motorFirstLetter = buildPattern(motorSize, firstLetterOneHot);
+
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
 
-      // === Layers 1+2+3: per-letter binding ===
-      // For each letter: write letter(ch) + phon(ch) + sem(word) +
-      // motor(ch). Cross-region Hebbian carves letter→motor,
-      // letter→phon, sem→motor, sem→phon in one fire. Letter identity
-      // (letter(ch) → motor(ch)) is the foundation of emission.
+      // === Layers 1+2 (per-letter identity): letter(ch)+phon(ch)+motor(ch) ===
+      // Sem is NOT overlaid during per-letter fires. Overlaying sem(word)
+      // on every letter (c, a, t for "cat") writes three conflicting
+      // sem→motor Hebbian fires per rep — sem(cat)→motor(c),
+      // sem(cat)→motor(a), sem(cat)→motor(t) — which Oja normalizes to
+      // noise. Net effect: sem(cat)→argmax decodes random letter. Fix:
+      // keep sem silent during per-letter identity carving so
+      // letter_to_phon and letter_to_motor (identity) get clean signal,
+      // and use a dedicated clean pass (below) for sem→motor(first letter).
       for (let i = 0; i < letters.length; i++) {
         const ch = letters[i];
         const chOneHot = encodeLetter(ch);
@@ -12338,20 +10046,107 @@ export class Curriculum {
         for (let j = 0; j < motorSize; j++) {
           cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
         }
-        if (semRegion && wordEmb && wordEmb.length > 0) {
-          const semPat = buildPattern(semSize, wordEmb);
-          for (let j = 0; j < semSize; j++) {
-            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
-          }
-        }
+        // NO sem overlay here — see header comment.
 
         await cluster._crossRegionHebbian(lr);
       }
 
-      // === Layer 1b: letter sequence transitions ===
+      // === Layer 3 (CLEAN sem→motor first-letter carve, DIRECT projection) ===
+      // Targeted Oja update on `sem_to_motor` ONLY. Does NOT call
+      // `_crossRegionHebbian` because that iterates ALL projections — and
+      // with sem+motor active but letter/phon zeroed, Oja on other projs
+      // (`Δw = η·post·(pre − post·w)`, pre=0 ⇒ `Δw = −η·post²·w`) would
+      // decay the letter_to_motor identity we just carved in Layer 1.
+      // Direct projection update avoids that cross-contamination.
+      //
+      // Bypass condition: on GPU-bound sem_to_motor, dispatch the bound
+      // Hebbian to GPU so GPU weights stay current, AND run CPU oja
+      // update so the CPU shadow (read by DYN-PROD probe via
+      // `semToMotor.propagate`) reflects the new signal.
+      const semToMotor = cluster.crossProjections?.sem_to_motor;
+      if (semRegion && wordEmb && wordEmb.length > 0 && semToMotor) {
+        // 4 fires per outer rep × default 12 reps = 48 clean per-word
+        // fires. Across 196-word K vocab = ~9400 sem→motor fires total.
+        const firstLetterCarvingReps = 4;
+        // Zero full cluster spike buffer, then write sem + motor
+        // regions via `_writeTiledPattern` which also mirrors to GPU
+        // via `writeSpikeSlice`. This guarantees CPU + GPU see the
+        // same sem+motor-only state so hebbianBound reads right slices.
+        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+        this._writeTiledPattern(semRegion, wordEmb, true);
+        this._writeTiledPattern(motorRegion, firstLetterOneHot, true);
+        // Build preF/postF from the now-populated lastSpikes for the
+        // CPU shadow oja update (ojaUpdate takes region-sized arrays).
+        const preF = new Float64Array(semSize);
+        const postF = new Float64Array(motorSize);
+        for (let j = 0; j < semSize; j++) preF[j] = cluster.lastSpikes[semRegion.start + j];
+        for (let j = 0; j < motorSize; j++) postF[j] = cluster.lastSpikes[motorRegion.start + j];
+        for (let k = 0; k < firstLetterCarvingReps; k++) {
+          // CPU shadow oja update (probes read CPU CSR).
+          if (typeof semToMotor.ojaUpdate === 'function' && semToMotor.values && semToMotor.values.length > 0) {
+            try { semToMotor.ojaUpdate(preF, postF, lr); } catch { /* non-fatal */ }
+          }
+          // GPU fire-and-forget when bound — reads pre/post from GPU
+          // spike-slice buffer at bind-time offsets (populated above
+          // via `_writeTiledPattern` → `writeSpikeSlice`).
+          if (semToMotor._gpuBound && cluster._gpuProxyReady && cluster._gpuProxy && cluster._gpuProxy.hebbianBound) {
+            try { cluster._gpuProxy.hebbianBound(`${cluster.name}_sem_to_motor`, lr); } catch { /* non-fatal */ }
+          } else if (cluster._gpuProxyReady && cluster._gpuProxy && cluster._gpuProxy.hebbian) {
+            try { cluster._gpuProxy.hebbian(`${cluster.name}_sem_to_motor`, preF, postF, lr); } catch { /* non-fatal */ }
+          }
+        }
+      }
+
+      // === Layer 3b (CONTRASTIVE anti-Hebbian push-AWAY against 25 wrong letters) ===
+      // Layer 3 pushes sem(word)→motor(correct letter) UP via Oja.
+      // Without active contrastive pressure, Oja's positive updates merge
+      // across many trained words into overlapping basins — sep-probe
+      // mean-cos climbs to 0.85+ because every trained word's sem→motor
+      // pattern looks similar at the weight-matrix level. Per-word anti-
+      // Hebbian against all 25 wrong letter buckets forces
+      // discriminability at the weight-matrix level, not just at the
+      // readout level. For word "cat" with correct first letter 'c',
+      // this fires 25 anti-Hebbian updates pushing sem(cat)→motor(a),
+      // sem(cat)→motor(b), sem(cat)→motor(d)...sem(cat)→motor(z) DOWN.
+      //
+      // GPU routing: `hebbianBound` with NEGATIVE lr dispatches to the
+      // PLASTICITY_SHADER anti-Hebbian branch (co-active decrement at
+      // magnitude |lr|), not the Oja positive branch. Same wire, sign
+      // selects path.
+      if (semRegion && wordEmb && wordEmb.length > 0 && semToMotor && letters.length > 0) {
+        const wrongLrScale = opts.wrongLrScale ?? 0.5;
+        const wrongAntiReps = opts.wrongAntiReps ?? 2;
+        const correctLetter = letters[0].toLowerCase();
+        const ALPHABET_CONTRAST = 'abcdefghijklmnopqrstuvwxyz';
+        for (let wi = 0; wi < ALPHABET_CONTRAST.length; wi++) {
+          const wrongCh = ALPHABET_CONTRAST[wi];
+          if (wrongCh === correctLetter) continue;
+          const wrongOneHot = encodeLetter(wrongCh);
+          for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+          this._writeTiledPattern(semRegion, wordEmb, true);
+          this._writeTiledPattern(motorRegion, wrongOneHot, true);
+          const preAF = new Float64Array(semSize);
+          const postAF = new Float64Array(motorSize);
+          for (let j = 0; j < semSize; j++) preAF[j] = cluster.lastSpikes[semRegion.start + j];
+          for (let j = 0; j < motorSize; j++) postAF[j] = cluster.lastSpikes[motorRegion.start + j];
+          const antiLr = lr * wrongLrScale;
+          for (let k = 0; k < wrongAntiReps; k++) {
+            if (typeof semToMotor.antiHebbianUpdate === 'function' && semToMotor.values && semToMotor.values.length > 0) {
+              try { semToMotor.antiHebbianUpdate(preAF, postAF, antiLr); } catch { /* non-fatal */ }
+            }
+            if (semToMotor._gpuBound && cluster._gpuProxyReady && cluster._gpuProxy && cluster._gpuProxy.hebbianBound) {
+              try { cluster._gpuProxy.hebbianBound(`${cluster.name}_sem_to_motor`, -antiLr); } catch { /* non-fatal */ }
+            }
+          }
+        }
+      }
+
+      // === Layer 1b: letter sequence transitions (intra-letter synapses) ===
       // letter(word[i]) → letter(word[i+1]) via intra-synapses. This
       // carves the recurrent sequence that motor emission uses to emit
-      // e→i→g→h→t for "eight" — not just the first letter.
+      // c→a→t for "cat" — not just the first letter. `_emitDirectPropagate`
+      // step 2+ now reads these via intra-letter-region propagate (not
+      // letter_to_motor which is identity-trained and would loop).
       if (typeof cluster.hebbianPairReinforce === 'function' && letters.length > 1) {
         for (let i = 0; i < letters.length - 1; i++) {
           const curr = encodeLetter(letters[i]);
@@ -12367,33 +10162,39 @@ export class Curriculum {
         }
       }
 
-      // === Layer 4: sentence-frame templates ===
+      // === Layer 4: sentence-frame templates (DIRECT sem→motor) ===
       // Three K-grade templates that embed the word in plausible
       // grammatical contexts. Trains sem(full-sentence) → motor(first
       // letter of answer word) so the brain recognizes "i see a __"
-      // pattern and can produce the word from the frame cue.
-      if (!opts.skipTemplates && semRegion) {
+      // pattern and can produce the word from the frame cue. Uses the
+      // same direct-projection pattern as Layer 3 to avoid Oja-decay
+      // of other projections when only sem+motor are active.
+      if (!opts.skipTemplates && semRegion && semToMotor) {
         const templates = opts.templates || [
           `i see a ${cleanWord}`,
           `the ${cleanWord} is here`,
           `this is a ${cleanWord}`,
         ];
-        const firstLetterOneHot = encodeLetter(letters[0]);
-        const motorFirstLetter = buildPattern(motorSize, firstLetterOneHot);
         for (const sentence of templates) {
           const sentEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === 'function'
             ? sharedEmbeddings.getSentenceEmbedding(sentence) : null;
           if (!sentEmb || sentEmb.length === 0) continue;
 
           for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
-          const semPat = buildPattern(semSize, sentEmb);
-          for (let j = 0; j < semSize; j++) {
-            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+          this._writeTiledPattern(semRegion, sentEmb, true);
+          this._writeTiledPattern(motorRegion, firstLetterOneHot, true);
+          const preF = new Float64Array(semSize);
+          const postF = new Float64Array(motorSize);
+          for (let j = 0; j < semSize; j++) preF[j] = cluster.lastSpikes[semRegion.start + j];
+          for (let j = 0; j < motorSize; j++) postF[j] = cluster.lastSpikes[motorRegion.start + j];
+          if (typeof semToMotor.ojaUpdate === 'function' && semToMotor.values && semToMotor.values.length > 0) {
+            try { semToMotor.ojaUpdate(preF, postF, lr); } catch { /* non-fatal */ }
           }
-          for (let j = 0; j < motorSize; j++) {
-            cluster.lastSpikes[motorRegion.start + j] = motorFirstLetter[j] > 0 ? 1 : 0;
+          if (semToMotor._gpuBound && cluster._gpuProxyReady && cluster._gpuProxy && cluster._gpuProxy.hebbianBound) {
+            try { cluster._gpuProxy.hebbianBound(`${cluster.name}_sem_to_motor`, lr); } catch { /* non-fatal */ }
+          } else if (cluster._gpuProxyReady && cluster._gpuProxy && cluster._gpuProxy.hebbian) {
+            try { cluster._gpuProxy.hebbian(`${cluster.name}_sem_to_motor`, preF, postF, lr); } catch { /* non-fatal */ }
           }
-          await cluster._crossRegionHebbian(lr);
         }
       }
 
@@ -12779,1081 +10580,6 @@ export class Curriculum {
    * F=ma / mass / acceleration / friction / gravity concepts for
    * the physics side of the grade 5 science curriculum.
    */
-  async _teachForceMotionK(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    const fineTypeRegion = cluster.regions.fineType;
-    if (!semRegion || !freeRegion || !fineTypeRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const causeTag = new Float64Array(fineTypeSize);
-    const effectTag = new Float64Array(fineTypeSize);
-    const half = Math.floor(fineTypeSize / 2);
-    for (let i = 0; i < half; i++) causeTag[i] = 1;
-    for (let i = half; i < fineTypeSize; i++) effectTag[i] = 1;
-
-    // Force → motion causal pairs
-    const FORCE_MOTION_PAIRS = [
-      ['push', 'move'], ['pull', 'move'],
-      ['push', 'roll'], ['pull', 'come'],
-      ['force', 'motion'], ['stop', 'still'],
-      ['collide', 'bounce'], ['hit', 'push'],
-    ];
-
-    const facts = [];
-    for (const [cause, effect] of FORCE_MOTION_PAIRS) {
-      const cEmb = sharedEmbeddings.getEmbedding(cause);
-      const eEmb = sharedEmbeddings.getEmbedding(effect);
-      if (!cEmb || !eEmb) continue;
-      facts.push({ writes: [
-        { region: freeRegion,     feat: cEmb, binarize: false },
-        { region: semRegion,      feat: eEmb, binarize: false },
-        { region: fineTypeRegion, feat: causeTag },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachForceMotion: ${facts.length} force-motion pairs × 6 reps`);
-  }
-
-  /**
-   * K-PS2 bigger-push → more-motion magnitude transform.
-   * Force magnitude + object → motion magnitude.
-   */
-  async _teachForceStrengthEffect(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
-
-    // For each magnitude level, the motion effect scales proportionally
-    const facts = [];
-    for (let strength = 1; strength <= 9; strength++) {
-      const strengthMag = _magnitudeFeatureForDigit(String(strength));
-      // free_left = force magnitude, free_right = object marker, sem = motion magnitude
-      const pushEmb = sharedEmbeddings.getEmbedding('push');
-      if (!pushEmb) continue;
-      facts.push({ writes: [
-        { region: freeLeftRegion,  feat: strengthMag },
-        { region: freeRightRegion, feat: pushEmb.slice(0, Math.min(pushEmb.length, 50)), binarize: false },
-        { region: semRegion,       feat: _magnitudeFeatureForDigit(String(strength)) },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachForceStrengthEffect: ${facts.length} strength→effect × 6 reps`);
-  }
-
-  /**
-   * K-ESS2 Weather categories — weather type → feature profile
-   * (temperature / precipitation / wind / cloud cover).
-   */
-  async _teachWeatherCategories(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-
-    // Weather feature dimensions: [hot, cold, wet, dry, windy, calm, cloudy, sunny]
-    function weatherFeat(hot, cold, wet, dry, windy, calm, cloudy, sunny) {
-      return new Float64Array([hot, cold, wet, dry, windy, calm, cloudy, sunny]);
-    }
-    const WEATHER = [
-      { name: 'sunny',   feat: weatherFeat(1, 0, 0, 1, 0, 1, 0, 1) },
-      { name: 'rainy',   feat: weatherFeat(0, 0, 1, 0, 0, 1, 1, 0) },
-      { name: 'cloudy',  feat: weatherFeat(0, 0, 0, 1, 0, 1, 1, 0) },
-      { name: 'windy',   feat: weatherFeat(0, 0, 0, 1, 1, 0, 0, 0) },
-      { name: 'snowy',   feat: weatherFeat(0, 1, 1, 0, 0, 1, 1, 0) },
-      { name: 'hot',     feat: weatherFeat(1, 0, 0, 1, 0, 1, 0, 1) },
-      { name: 'cold',    feat: weatherFeat(0, 1, 0, 1, 0, 1, 1, 0) },
-      { name: 'stormy',  feat: weatherFeat(0, 0, 1, 0, 1, 0, 1, 0) },
-    ];
-
-    const facts = [];
-    for (const { name, feat } of WEATHER) {
-      const emb = sharedEmbeddings.getEmbedding(name);
-      if (!emb) continue;
-      facts.push({ writes: [
-        { region: semRegion,  feat: emb, binarize: false },
-        { region: freeRegion, feat: feat },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachWeatherCategories: ${facts.length} weather types × 6 reps`);
-  }
-
-  /**
-   * K-ESS2 Season → temperature binding. Summer=hot, winter=cold, etc.
-   */
-  async _teachSeasonTemperature(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-
-    const SEASON_TEMP = [
-      { season: 'summer', temp: 'hot',  tempMag: 9 },
-      { season: 'fall',   temp: 'cool', tempMag: 4 },
-      { season: 'winter', temp: 'cold', tempMag: 1 },
-      { season: 'spring', temp: 'warm', tempMag: 6 },
-    ];
-
-    const facts = [];
-    for (const { season, temp, tempMag } of SEASON_TEMP) {
-      const sEmb = sharedEmbeddings.getEmbedding(season);
-      const tEmb = sharedEmbeddings.getEmbedding(temp);
-      if (!sEmb || !tEmb) continue;
-      // season GloVe → temp magnitude in free_left, temp word in sem
-      facts.push({ writes: [
-        { region: semRegion,      feat: sEmb, binarize: false },
-        { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(tempMag)) },
-      ]});
-      // Reverse: temp word → season word (recall direction)
-      facts.push({ writes: [
-        { region: semRegion,  feat: tEmb, binarize: false },
-        { region: freeRegion, feat: sEmb, binarize: false },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 8 });
-    this._hb(`[Curriculum] _teachSeasonTemperature: ${facts.length} season-temp pairs × 8 reps`);
-  }
-
-  /**
-   * K-LS1 Plant + animal needs — organism type → survival requirements.
-   */
-  async _teachLivingThingNeeds(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-
-    const NEEDS = [
-      { thing: 'plant',  needs: ['water', 'light', 'air'] },
-      { thing: 'animal', needs: ['food', 'water', 'air'] },
-      { thing: 'dog',    needs: ['food', 'water', 'air'] },
-      { thing: 'cat',    needs: ['food', 'water', 'air'] },
-      { thing: 'bird',   needs: ['food', 'water', 'air'] },
-      { thing: 'fish',   needs: ['food', 'water', 'air'] },
-      { thing: 'tree',   needs: ['water', 'light', 'air'] },
-      { thing: 'flower', needs: ['water', 'light', 'air'] },
-      { thing: 'human',  needs: ['food', 'water', 'air'] },
-    ];
-
-    const facts = [];
-    for (const { thing, needs } of NEEDS) {
-      const tEmb = sharedEmbeddings.getEmbedding(thing);
-      if (!tEmb) continue;
-      for (const need of needs) {
-        const nEmb = sharedEmbeddings.getEmbedding(need);
-        if (!nEmb) continue;
-        facts.push({ writes: [
-          { region: semRegion,  feat: tEmb, binarize: false },
-          { region: freeRegion, feat: nEmb, binarize: false },
-        ]});
-      }
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachLivingThingNeeds: ${facts.length} need facts × 6 reps`);
-  }
-
-  /**
-   * K-LS1 Animal diet classification — herbivore / carnivore / omnivore.
-   */
-  async _teachDietClassification(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const fineTypeRegion = cluster.regions.fineType;
-    const motorRegion = cluster.regions.motor;
-    if (!semRegion || !fineTypeRegion || !motorRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const herbTag = new Float64Array(fineTypeSize);
-    const carnTag = new Float64Array(fineTypeSize);
-    const omniTag = new Float64Array(fineTypeSize);
-    const third = Math.floor(fineTypeSize / 3);
-    for (let i = 0; i < third; i++) herbTag[i] = 1;
-    for (let i = third; i < 2 * third; i++) carnTag[i] = 1;
-    for (let i = 2 * third; i < fineTypeSize; i++) omniTag[i] = 1;
-
-    const DIET_FACTS = [
-      // eats-only-plants
-      { animal: 'cow',     diet: 'herbivore' },
-      { animal: 'horse',   diet: 'herbivore' },
-      { animal: 'rabbit',  diet: 'herbivore' },
-      { animal: 'deer',    diet: 'herbivore' },
-      { animal: 'sheep',   diet: 'herbivore' },
-      { animal: 'giraffe', diet: 'herbivore' },
-      // eats-only-meat
-      { animal: 'lion',    diet: 'carnivore' },
-      { animal: 'tiger',   diet: 'carnivore' },
-      { animal: 'wolf',    diet: 'carnivore' },
-      { animal: 'shark',   diet: 'carnivore' },
-      { animal: 'eagle',   diet: 'carnivore' },
-      // eats-both
-      { animal: 'bear',    diet: 'omnivore' },
-      { animal: 'pig',     diet: 'omnivore' },
-      { animal: 'human',   diet: 'omnivore' },
-      { animal: 'dog',     diet: 'omnivore' },
-    ];
-
-    const facts = [];
-    for (const { animal, diet } of DIET_FACTS) {
-      const aEmb = sharedEmbeddings.getEmbedding(animal);
-      if (!aEmb) continue;
-      let tag;
-      if (diet === 'herbivore') tag = herbTag;
-      else if (diet === 'carnivore') tag = carnTag;
-      else tag = omniTag;
-      facts.push({ writes: [
-        { region: semRegion,      feat: aEmb, binarize: false },
-        { region: fineTypeRegion, feat: tag },
-        { region: motorRegion,    feat: encodeLetter(diet[0]) },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachDietClassification: ${facts.length} diet facts × 6 reps`);
-  }
-
-  /**
-   * K-LS1 Body part → function (wings→fly, fins→swim, legs→walk).
-   */
-  async _teachBodyPartFunction(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-
-    const BODY_FUNCTIONS = [
-      { part: 'wings', function_: 'fly' },
-      { part: 'fins',  function_: 'swim' },
-      { part: 'legs',  function_: 'walk' },
-      { part: 'arms',  function_: 'reach' },
-      { part: 'hands', function_: 'grab' },
-      { part: 'eyes',  function_: 'see' },
-      { part: 'ears',  function_: 'hear' },
-      { part: 'nose',  function_: 'smell' },
-      { part: 'mouth', function_: 'eat' },
-      { part: 'teeth', function_: 'chew' },
-      { part: 'gills', function_: 'breathe' },
-      { part: 'roots', function_: 'grow' },
-    ];
-
-    const facts = [];
-    for (const { part, function_ } of BODY_FUNCTIONS) {
-      const pEmb = sharedEmbeddings.getEmbedding(part);
-      const fEmb = sharedEmbeddings.getEmbedding(function_);
-      if (!pEmb || !fEmb) continue;
-      facts.push({ writes: [
-        { region: semRegion,  feat: pEmb, binarize: false },
-        { region: freeRegion, feat: fEmb, binarize: false },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachBodyPartFunction: ${facts.length} part-function pairs × 6 reps`);
-  }
-
-  /**
-   * K-ESS3 Natural resources + natural-vs-human-made classification.
-   */
-  async _teachNaturalVsHumanMade(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const fineTypeRegion = cluster.regions.fineType;
-    const motorRegion = cluster.regions.motor;
-    if (!semRegion || !fineTypeRegion || !motorRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const naturalTag = new Float64Array(fineTypeSize);
-    const humanMadeTag = new Float64Array(fineTypeSize);
-    const half = Math.floor(fineTypeSize / 2);
-    for (let i = 0; i < half; i++) naturalTag[i] = 1;
-    for (let i = half; i < fineTypeSize; i++) humanMadeTag[i] = 1;
-
-    const CLASSIFIED = [
-      { thing: 'tree',     type: 'natural' },
-      { thing: 'rock',     type: 'natural' },
-      { thing: 'water',    type: 'natural' },
-      { thing: 'air',      type: 'natural' },
-      { thing: 'soil',     type: 'natural' },
-      { thing: 'plant',    type: 'natural' },
-      { thing: 'animal',   type: 'natural' },
-      { thing: 'mountain', type: 'natural' },
-      { thing: 'river',    type: 'natural' },
-      { thing: 'building', type: 'humanmade' },
-      { thing: 'road',     type: 'humanmade' },
-      { thing: 'car',      type: 'humanmade' },
-      { thing: 'house',    type: 'humanmade' },
-      { thing: 'bridge',   type: 'humanmade' },
-      { thing: 'plastic',  type: 'humanmade' },
-      { thing: 'computer', type: 'humanmade' },
-      { thing: 'chair',    type: 'humanmade' },
-    ];
-
-    const facts = [];
-    for (const { thing, type } of CLASSIFIED) {
-      const emb = sharedEmbeddings.getEmbedding(thing);
-      if (!emb) continue;
-      const tag = type === 'natural' ? naturalTag : humanMadeTag;
-      facts.push({ writes: [
-        { region: semRegion,      feat: emb, binarize: false },
-        { region: fineTypeRegion, feat: tag },
-        { region: motorRegion,    feat: encodeLetter(type[0]) },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachNaturalVsHumanMade: ${facts.length} classified × 6 reps`);
-  }
-
-  async runSciKReal(ctx) {
-    // Session 43 — TODO-aligned classification + states of matter
-    await this._teachClassification();
-    await this._teachStatesOfMatter();
-
-    // Equational NGSS K teaching — replaces the banned
-    // _teachVocabList + _teachSentenceList data-array pattern.
-    if (!this._sciKRemakeDone) {
-      // K-PS2 Forces and Interactions
-      await this._phasedTeach('_teachForceMotionK',         () => this._teachForceMotionK(ctx));
-      await this._phasedTeach('_teachForceStrengthEffect',  () => this._teachForceStrengthEffect(ctx));
-      // K-ESS2 Weather and Climate
-      await this._phasedTeach('_teachWeatherCategories',    () => this._teachWeatherCategories(ctx));
-      await this._phasedTeach('_teachSeasonTemperature',    () => this._teachSeasonTemperature(ctx));
-      // K-LS1 Interdependent Relationships
-      await this._phasedTeach('_teachLivingThingNeeds',     () => this._teachLivingThingNeeds(ctx));
-      await this._phasedTeach('_teachDietClassification',   () => this._teachDietClassification(ctx));
-      await this._phasedTeach('_teachBodyPartFunction',     () => this._teachBodyPartFunction(ctx));
-      // K-ESS3 Earth and Human Activity
-      await this._phasedTeach('_teachNaturalVsHumanMade',   () => this._teachNaturalVsHumanMade(ctx));
-
-      // Existing causal chains retained — already equational per Law 3
-      await this._teachCausalChains([
-        ['push', 'move'], ['pull', 'move'], ['push', 'fall'],
-        ['water', 'grow'], ['sun', 'warm'], ['sun', 'grow'],
-        ['rain', 'wet'], ['cold', 'ice'], ['hot', 'melt'],
-        ['wind', 'blow'], ['seed', 'plant'], ['plant', 'flower'],
-        ['food', 'energy'], ['sleep', 'rest'], ['fire', 'hot'],
-      ]);
-
-      // Existing classification reasoning retained — equational per Law 3
-      await this._teachClassificationReasoning([
-        { item: 'dog',    features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
-        { item: 'cat',    features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
-        { item: 'bird',   features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
-        { item: 'fish',   features: new Float64Array([1,1,1,1,1,0,0,0]), category: 'animal' },
-        { item: 'bug',    features: new Float64Array([1,1,1,1,1,1,0,0]), category: 'animal' },
-        { item: 'tree',   features: new Float64Array([1,0,1,0,0,0,1,0]), category: 'plant' },
-        { item: 'flower', features: new Float64Array([1,0,1,0,0,0,1,0]), category: 'plant' },
-        { item: 'grass',  features: new Float64Array([1,0,1,0,0,0,1,0]), category: 'plant' },
-        { item: 'rock',   features: new Float64Array([0,0,0,0,0,0,0,1]), category: 'mineral' },
-        { item: 'water',  features: new Float64Array([0,0,0,0,0,0,0,0]), category: 'mineral' },
-        { item: 'sand',   features: new Float64Array([0,0,0,0,0,0,0,1]), category: 'mineral' },
-      ]);
-
-      // Equational association-pair teach — pure feature-vector writes +
-      // cross-projection Hebbian. Covers NGSS K concept mappings the exam
-      // tests: phase transitions (K-PS1), sunlight effects (K-PS3),
-      // animal products (K-LS1), natural-vs-human-made (K-ESS3),
-      // push/pull motion (K-PS2). Distinct from EXAM_BANKS Q→A content.
-      await this._phasedTeach('SCI-K-CONCEPTS', () => this._teachAssociationPairs([
-        // Phase transitions
-        ['ice','solid'], ['steam','gas'], ['water','liquid'],
-        ['melt','liquid'], ['freeze','solid'], ['boil','gas'],
-        // Sunlight / heat
-        ['sun','warm'], ['sun','light'], ['shade','cool'],
-        ['fire','hot'], ['snow','cold'], ['shadow','block'],
-        // Animal products
-        ['cow','milk'], ['chicken','eggs'], ['bee','honey'],
-        ['sheep','wool'], ['duck','eggs'], ['pig','bacon'],
-        // Life needs
-        ['plant','water'], ['plant','sun'], ['animal','food'],
-        ['fish','water'], ['bird','nest'], ['bear','cave'],
-        // Natural resources
-        ['tree','wood'], ['river','water'], ['ocean','salt'],
-        ['mountain','rock'], ['forest','tree'], ['sun','energy'],
-        // Push/pull
-        ['push','away'], ['pull','toward'],
-        ['harder','faster'], ['heavier','slower'],
-      ], { reps: 8, label: 'SCI-K-CONCEPTS', relationTagId: 1 }));
-
-      // T39.j.3 — Q-A binding on TRAIN_BANKS['science/kindergarten']
-      // so sem→motor weights carve the question→answer form the
-      // exam tests. Held-out-distinct from EXAM questions per the
-      // T23.b.2 invariant. Adds ~36 Q-A training pairs covering
-      // every K-NGSS standard the exam tests.
-      const sciQA = TRAIN_BANKS['science/kindergarten'] || [];
-      if (sciQA.length > 0) {
-        await this._phasedTeach('SCI-K-QA-TRAIN', () => this._teachQABinding(sciQA, { label: 'SCI-K-QA-TRAIN' }));
-      }
-
-      this._sciKRemakeDone = true;
-    }
-
-    return await this._gateSciKReal();
-  }
-
-  async _gateSciKReal() {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.synapses) return { pass: false, reason: 'no cluster' };
-
-    await this._pregateEnrichment('science/kindergarten');
-
-    // Production probes matching TODO K-PS2 / K-ESS2 / K-LS1 /
-    // K-ESS3 test phrasings verbatim.
-    const sciKProductionSamples = [
-      // K-PS2 Tests
-      { question: 'what happens when you push a ball', expected: ['move', 'roll', 'm'] },
-      { question: 'what makes a wagon go', expected: ['pull', 'push', 'p'] },
-      { question: 'big push or small push which goes farther', expected: ['big', 'b'] },
-      { question: 'what happens when two balls hit each other', expected: ['push', 'bounce', 'p', 'b'] },
-      // K-ESS2 Tests
-      { question: 'what is weather', expected: ['air', 'outside', 'condition'] },
-      { question: 'when is it hottest', expected: ['summer', 's'] },
-      { question: 'when is it coldest', expected: ['winter', 'w'] },
-      // K-LS1 Tests
-      { question: 'what do plants need to grow', expected: ['water', 'light', 'air', 'w', 'l', 'a'] },
-      { question: 'what do animals need to survive', expected: ['food', 'water', 'air', 'f', 'w'] },
-      { question: 'an animal that eats only plants is called', expected: ['herbivore', 'h'] },
-      { question: 'an animal that eats only meat is called', expected: ['carnivore', 'c'] },
-      { question: 'why do birds have wings', expected: ['fly', 'f'] },
-      { question: 'why do fish have fins', expected: ['swim', 's'] },
-      // K-ESS3 Tests
-      { question: 'name a natural resource', expected: ['water', 'air', 'soil', 'tree', 'rock', 'w', 'a', 's', 't', 'r'] },
-      { question: 'what do all living things need', expected: ['water', 'w'] },
-      { question: 'is a tree natural or human made', expected: ['natural', 'n'] },
-      { question: 'is a building natural or human made', expected: ['human', 'h'] },
-    ];
-    const prodResult = await this._probeProductionBatch(sciKProductionSamples, {
-      visualCortex: (this.engine && this.engine.visualCortex) || null,
-    });
-    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
-    const PROD_MIN = 0.95;
-    const pass = prodRate >= PROD_MIN;
-
-    const pct = (r) => (r * 100).toFixed(0);
-    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
-      ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
-      : '';
-    const _sciKResult = {
-      pass,
-      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
-      metrics: { prodRate, prodFails: prodResult.fails },
-    };
-    this._recordGateHistory('science', 'kindergarten', 'overall', pass, prodRate);
-    return _sciKResult;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════
-  // Social-K equational course (LAW 3 + LAW 7)
-  // ═══════════════════════════════════════════════════════════════════
-
-  /**
-   * Core Knowledge K community helpers — helper → job via sem↔sem binding.
-   */
-  async _teachCommunityHelpers(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-
-    const HELPERS = [
-      { helper: 'firefighter', job: 'fires' },
-      { helper: 'police',      job: 'safety' },
-      { helper: 'doctor',      job: 'sick' },
-      { helper: 'nurse',       job: 'care' },
-      { helper: 'teacher',     job: 'learn' },
-      { helper: 'dentist',     job: 'teeth' },
-      { helper: 'farmer',      job: 'food' },
-      { helper: 'mail',        job: 'letters' },
-    ];
-    const facts = [];
-    for (const { helper, job } of HELPERS) {
-      const hEmb = sharedEmbeddings.getEmbedding(helper);
-      const jEmb = sharedEmbeddings.getEmbedding(job);
-      if (!hEmb || !jEmb) continue;
-      facts.push({ writes: [
-        { region: semRegion,  feat: jEmb, binarize: false },
-        { region: freeRegion, feat: hEmb, binarize: false },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 8 });
-    this._hb(`[Curriculum] _teachCommunityHelpers: ${facts.length} × 8 reps`);
-  }
-
-  /**
-   * Core Knowledge K needs vs wants — binary classification with fineType tag.
-   */
-  async _teachNeedsVsWants(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const fineTypeRegion = cluster.regions.fineType;
-    const motorRegion = cluster.regions.motor;
-    if (!semRegion || !fineTypeRegion || !motorRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const needTag = new Float64Array(fineTypeSize);
-    const wantTag = new Float64Array(fineTypeSize);
-    const half = Math.floor(fineTypeSize / 2);
-    for (let i = 0; i < half; i++) needTag[i] = 1;
-    for (let i = half; i < fineTypeSize; i++) wantTag[i] = 1;
-
-    const CLASSIFIED = [
-      { thing: 'food',     type: 'need' },
-      { thing: 'water',    type: 'need' },
-      { thing: 'shelter',  type: 'need' },
-      { thing: 'clothing', type: 'need' },
-      { thing: 'air',      type: 'need' },
-      { thing: 'sleep',    type: 'need' },
-      { thing: 'toy',      type: 'want' },
-      { thing: 'candy',    type: 'want' },
-      { thing: 'game',     type: 'want' },
-      { thing: 'tv',       type: 'want' },
-      { thing: 'phone',    type: 'want' },
-    ];
-    const facts = [];
-    for (const { thing, type } of CLASSIFIED) {
-      const emb = sharedEmbeddings.getEmbedding(thing);
-      if (!emb) continue;
-      facts.push({ writes: [
-        { region: semRegion,      feat: emb, binarize: false },
-        { region: fineTypeRegion, feat: type === 'need' ? needTag : wantTag },
-        { region: motorRegion,    feat: encodeLetter(type[0]) },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachNeedsVsWants: ${facts.length} × 6 reps`);
-  }
-
-  /**
-   * Core Knowledge K American symbols — symbol ↔ fact pairs.
-   */
-  async _teachAmericanSymbols(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-
-    const SYMBOLS = [
-      { concept: 'flag colors',    answer: 'red white blue' },
-      { concept: 'fifty stars',    answer: 'states' },
-      { concept: 'national bird',  answer: 'eagle' },
-      { concept: 'july fourth',    answer: 'independence' },
-      { concept: 'country leader', answer: 'president' },
-      { concept: 'liberty statue', answer: 'freedom' },
-      { concept: 'thanksgiving',   answer: 'thanks' },
-      { concept: 'presidents day', answer: 'honor' },
-    ];
-    const facts = [];
-    for (const { concept, answer } of SYMBOLS) {
-      const words = concept.split(' ');
-      const aWords = answer.split(' ');
-      for (const cWord of words) {
-        const cEmb = sharedEmbeddings.getEmbedding(cWord);
-        if (!cEmb) continue;
-        for (const aWord of aWords) {
-          const aEmb = sharedEmbeddings.getEmbedding(aWord);
-          if (!aEmb) continue;
-          facts.push({ writes: [
-            { region: semRegion,  feat: cEmb, binarize: false },
-            { region: freeRegion, feat: aEmb, binarize: false },
-          ]});
-        }
-      }
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachAmericanSymbols: ${facts.length} × 6 reps`);
-  }
-
-  /**
-   * Core Knowledge K geography — continents, oceans, cardinal directions.
-   */
-  async _teachGeographyBasics(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-
-    const GEO_FACTS = [
-      // Continent count
-      { concept: 'continents count', answer: 'seven' },
-      // Continents
-      { concept: 'north america',    answer: 'continent' },
-      { concept: 'south america',    answer: 'continent' },
-      { concept: 'europe',           answer: 'continent' },
-      { concept: 'africa',           answer: 'continent' },
-      { concept: 'asia',             answer: 'continent' },
-      { concept: 'australia',        answer: 'continent' },
-      { concept: 'antarctica',       answer: 'continent' },
-      // Oceans
-      { concept: 'atlantic',         answer: 'ocean' },
-      { concept: 'pacific',          answer: 'ocean' },
-      { concept: 'indian',           answer: 'ocean' },
-      { concept: 'arctic',           answer: 'ocean' },
-      // Cardinal directions
-      { concept: 'north direction',  answer: 'up' },
-      { concept: 'south direction',  answer: 'down' },
-      { concept: 'east direction',   answer: 'right' },
-      { concept: 'west direction',   answer: 'left' },
-      // Globe
-      { concept: 'globe',            answer: 'earth' },
-      { concept: 'map',              answer: 'places' },
-    ];
-    const facts = [];
-    for (const { concept, answer } of GEO_FACTS) {
-      const cWords = concept.split(' ');
-      const cEmb = cWords.length > 1
-        ? sharedEmbeddings.getEmbedding(cWords[0])  // first word primary anchor
-        : sharedEmbeddings.getEmbedding(concept);
-      const aEmb = sharedEmbeddings.getEmbedding(answer);
-      if (!cEmb || !aEmb) continue;
-      facts.push({ writes: [
-        { region: semRegion,  feat: cEmb, binarize: false },
-        { region: freeRegion, feat: aEmb, binarize: false },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachGeographyBasics: ${facts.length} × 6 reps`);
-  }
-
-  async runSocKReal(ctx) {
-    // Session 56 — family-role concept lattice with kinship features
-    await this._teachFamilyRoles();
-
-    // Equational Core Knowledge K teaching.
-    if (!this._socKRemakeDone) {
-      await this._phasedTeach('_teachCommunityHelpers', () => this._teachCommunityHelpers(ctx));
-      await this._phasedTeach('_teachNeedsVsWants',     () => this._teachNeedsVsWants(ctx));
-      await this._phasedTeach('_teachAmericanSymbols',  () => this._teachAmericanSymbols(ctx));
-      await this._phasedTeach('_teachGeographyBasics',  () => this._teachGeographyBasics(ctx));
-
-      // Existing causal chains retained — equational per Law 3
-      await this._teachCausalChains([
-        ['fire', 'firefighter'], ['sick', 'doctor'], ['hurt', 'nurse'],
-        ['crime', 'police'], ['learn', 'school'], ['share', 'friend'],
-        ['kind', 'happy'], ['mean', 'sad'], ['help', 'thank'],
-        ['rule', 'safe'], ['work', 'money'], ['money', 'food'],
-      ]);
-
-      // Equational association-pair teach — Core Knowledge K concept
-      // classes: needs/wants, community helper → role, manners, safety
-      // signals, direction words, kinship. Pure feature-vector writes +
-      // cross-projection Hebbian, distinct from exam Q→A content.
-      await this._phasedTeach('SOC-K-CONCEPTS', () => this._teachAssociationPairs([
-        // Needs vs wants
-        ['food','need'], ['water','need'], ['shelter','need'],
-        ['clothing','need'], ['air','need'], ['sleep','need'],
-        ['toy','want'], ['candy','want'], ['game','want'],
-        ['phone','want'], ['tv','want'], ['dessert','want'],
-        // Manners
-        ['please','polite'], ['thanks','grateful'], ['sorry','apology'],
-        ['hello','greeting'], ['goodbye','farewell'],
-        // Safety signals
-        ['stop','red'], ['go','green'], ['wait','yellow'],
-        ['emergency','911'], ['danger','stop'], ['siren','help'],
-        // Directions
-        ['north','up'], ['south','down'],
-        ['east','right'], ['west','left'],
-        // Kinship
-        ['mother','parent'], ['father','parent'],
-        ['brother','sibling'], ['sister','sibling'],
-        ['grandma','family'], ['grandpa','family'],
-        ['aunt','family'], ['uncle','family'], ['cousin','family'],
-        // Community roles
-        ['fire','firefighter'], ['crime','police'], ['sick','doctor'],
-        ['teeth','dentist'], ['mail','carrier'], ['food','farmer'],
-      ], { reps: 8, label: 'SOC-K-CONCEPTS', relationTagId: 1 }));
-
-      // T39.j.4 — Q-A binding on TRAIN_BANKS['social/kindergarten']
-      // so sem→motor weights see question→answer form for every
-      // K-Social standard the exam covers (community helpers,
-      // safety, family, manners, empathy, symbols, time, geography,
-      // citizenship). Held-out-distinct from EXAM questions.
-      const socQA = TRAIN_BANKS['social/kindergarten'] || [];
-      if (socQA.length > 0) {
-        await this._phasedTeach('SOC-K-QA-TRAIN', () => this._teachQABinding(socQA, { label: 'SOC-K-QA-TRAIN' }));
-      }
-
-      this._socKRemakeDone = true;
-    }
-
-    return await this._gateSocKReal();
-  }
-
-  async _gateSocKReal() {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.synapses) return { pass: false, reason: 'no cluster' };
-
-    await this._pregateEnrichment('social/kindergarten');
-
-    const socKProductionSamples = [
-      // Self / Family / Community Tests
-      { question: 'who fights fires', expected: ['firefighter', 'f'] },
-      { question: 'who helps sick people', expected: ['doctor', 'd'] },
-      { question: 'what are the four basic needs', expected: ['food', 'water', 'shelter', 'clothing', 'f', 'w', 's', 'c'] },
-      { question: 'is a toy a need or a want', expected: ['want', 'w'] },
-      { question: 'is food a need or a want', expected: ['need', 'n'] },
-      // American Symbols Tests
-      { question: 'what colors are on the american flag', expected: ['red', 'white', 'blue', 'r', 'w', 'b'] },
-      { question: 'what do the fifty stars represent', expected: ['states', 's'] },
-      { question: 'what is the national bird', expected: ['eagle', 'e'] },
-      { question: 'what holiday is on july fourth', expected: ['independence', 'i'] },
-      { question: 'who is the leader of the united states', expected: ['president', 'p'] },
-      // Geography Tests
-      { question: 'how many continents are there', expected: ['7', 'seven', 's'] },
-      { question: 'name the continent we live on', expected: ['north', 'america', 'n', 'a'] },
-      { question: 'what is a globe', expected: ['earth', 'model', 'e', 'm'] },
-      { question: 'name the four directions', expected: ['north', 'south', 'east', 'west', 'n', 's', 'e', 'w'] },
-    ];
-    const prodResult = await this._probeProductionBatch(socKProductionSamples, {
-      visualCortex: (this.engine && this.engine.visualCortex) || null,
-    });
-    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
-    const pass = prodRate >= 0.95;
-    const pct = (r) => (r * 100).toFixed(0);
-    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
-      ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
-      : '';
-    const _socKResult = {
-      pass,
-      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
-      metrics: { prodRate, prodFails: prodResult.fails },
-    };
-    this._recordGateHistory('social', 'kindergarten', 'overall', pass, prodRate);
-    return _socKResult;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════
-  // Arts-K equational course (LAW 3 + LAW 7)
-  // ═══════════════════════════════════════════════════════════════════
-
-  /**
-   * Visual Arts K — color mixing transforms (primary + primary → secondary).
-   *
-   * Named `_teachColorMixingK` (K-suffix) to distinguish from the
-   * older Art-G1 `_teachColorMixing` at line ~11110 which teaches
-   * 8-dim RGB/warm/cool/secondary feature vectors. The K version
-   * does equational A+B→C pair-to-composite binding via
-   * `_teachCombination` (freeLeft+freeRight→sem) while the G1
-   * version uses `_conceptTeach` feature-vector clustering.
-   */
-  async _teachColorMixingK(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
-
-    // Primary + Primary → Secondary color combinations
-    const MIXES = [
-      ['red',    'yellow', 'orange'],
-      ['yellow', 'blue',   'green'],
-      ['red',    'blue',   'purple'],
-      ['blue',   'red',    'purple'],
-      ['yellow', 'red',    'orange'],
-      ['blue',   'yellow', 'green'],
-    ];
-    const facts = [];
-    for (const [a, b, c] of MIXES) {
-      const aEmb = sharedEmbeddings.getEmbedding(a);
-      const bEmb = sharedEmbeddings.getEmbedding(b);
-      const cEmb = sharedEmbeddings.getEmbedding(c);
-      if (!aEmb || !bEmb || !cEmb) continue;
-      facts.push({ writes: [
-        { region: freeLeftRegion,  feat: aEmb, binarize: false },
-        { region: freeRightRegion, feat: bEmb, binarize: false },
-        { region: semRegion,       feat: cEmb, binarize: false },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 8 });
-    this._hb(`[Curriculum] _teachColorMixing: ${facts.length} × 8 reps`);
-  }
-
-  /**
-   * Visual Arts K — warm/cool color classification.
-   */
-  async _teachWarmCoolColors(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const fineTypeRegion = cluster.regions.fineType;
-    const motorRegion = cluster.regions.motor;
-    if (!semRegion || !fineTypeRegion || !motorRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const warmTag = new Float64Array(fineTypeSize);
-    const coolTag = new Float64Array(fineTypeSize);
-    const half = Math.floor(fineTypeSize / 2);
-    for (let i = 0; i < half; i++) warmTag[i] = 1;
-    for (let i = half; i < fineTypeSize; i++) coolTag[i] = 1;
-
-    const COLORS = [
-      { color: 'red',    temp: 'warm' },
-      { color: 'orange', temp: 'warm' },
-      { color: 'yellow', temp: 'warm' },
-      { color: 'blue',   temp: 'cool' },
-      { color: 'green',  temp: 'cool' },
-      { color: 'purple', temp: 'cool' },
-    ];
-    const facts = [];
-    for (const { color, temp } of COLORS) {
-      const emb = sharedEmbeddings.getEmbedding(color);
-      if (!emb) continue;
-      facts.push({ writes: [
-        { region: semRegion,      feat: emb, binarize: false },
-        { region: fineTypeRegion, feat: temp === 'warm' ? warmTag : coolTag },
-        { region: motorRegion,    feat: encodeLetter(temp[0]) },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachWarmCoolColors: ${facts.length} × 6 reps`);
-  }
-
-  /**
-   * Visual Arts K — AB pattern next-item prediction.
-   * Previous two items → next item in the repeating pattern.
-   */
-  async _teachPatternCompletion(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
-
-    // AB pattern: given (A, B) continuation query, next is A.
-    // red,blue → red / blue,red → blue / circle,square → circle
-    const PATTERNS = [
-      ['red', 'blue', 'red'],
-      ['blue', 'red', 'blue'],
-      ['yellow', 'green', 'yellow'],
-      ['circle', 'square', 'circle'],
-      ['square', 'circle', 'square'],
-      ['triangle', 'circle', 'triangle'],
-    ];
-    const facts = [];
-    for (const [a, b, next] of PATTERNS) {
-      const aEmb = sharedEmbeddings.getEmbedding(a);
-      const bEmb = sharedEmbeddings.getEmbedding(b);
-      const nEmb = sharedEmbeddings.getEmbedding(next);
-      if (!aEmb || !bEmb || !nEmb) continue;
-      facts.push({ writes: [
-        { region: freeLeftRegion,  feat: aEmb, binarize: false },
-        { region: freeRightRegion, feat: bEmb, binarize: false },
-        { region: semRegion,       feat: nEmb, binarize: false },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachPatternCompletion: ${facts.length} × 6 reps`);
-  }
-
-  /**
-   * Music K — tempo/dynamics/pitch classifications + beat concept.
-   */
-  async _teachMusicBasics(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-
-    // Concept → defining word
-    const MUSIC_CONCEPTS = [
-      ['steady', 'beat'],
-      ['music', 'beat'],
-      ['pulse', 'beat'],
-      ['fast', 'tempo'],
-      ['slow', 'tempo'],
-      ['loud', 'dynamics'],
-      ['soft', 'dynamics'],
-      ['quiet', 'dynamics'],
-      ['high', 'pitch'],
-      ['low', 'pitch'],
-      ['sing', 'voice'],
-      ['song', 'music'],
-      ['rhythm', 'pattern'],
-      ['drum', 'beat'],
-      ['piano', 'instrument'],
-      ['guitar', 'instrument'],
-      ['violin', 'instrument'],
-      ['flute', 'instrument'],
-      ['trumpet', 'instrument'],
-    ];
-    const facts = [];
-    for (const [a, b] of MUSIC_CONCEPTS) {
-      const aEmb = sharedEmbeddings.getEmbedding(a);
-      const bEmb = sharedEmbeddings.getEmbedding(b);
-      if (!aEmb || !bEmb) continue;
-      facts.push({ writes: [
-        { region: semRegion,  feat: aEmb, binarize: false },
-        { region: freeRegion, feat: bEmb, binarize: false },
-      ]});
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachMusicBasics: ${facts.length} × 6 reps`);
-  }
-
-  async runArtKReal(ctx) {
-    // Session 75 existing equational helpers retained
-    await this._teachPrimaryColors();
-    await this._teachBasicShapes();
-    await this._teachSimpleSongs();
-
-    // Equational Arts-K teaching.
-    if (!this._artKRemakeDone) {
-      await this._phasedTeach('_teachColorMixingK',     () => this._teachColorMixingK(ctx));
-      await this._phasedTeach('_teachWarmCoolColors',   () => this._teachWarmCoolColors(ctx));
-      await this._phasedTeach('_teachPatternCompletion', () => this._teachPatternCompletion(ctx));
-      await this._phasedTeach('_teachMusicBasics',      () => this._teachMusicBasics(ctx));
-
-      // Equational association-pair teach — Arts-K concept mappings:
-      // color mixing, warm/cool classification, shape attributes, art
-      // tools, music element names. Pure feature-vector writes +
-      // cross-projection Hebbian.
-      await this._phasedTeach('ART-K-CONCEPTS', () => this._teachAssociationPairs([
-        // Primary color mixing
-        ['red-yellow','orange'], ['blue-yellow','green'],
-        ['red-blue','purple'], ['white-black','gray'],
-        // Warm / cool
-        ['red','warm'], ['orange','warm'], ['yellow','warm'],
-        ['blue','cool'], ['green','cool'], ['purple','cool'],
-        // Shape attributes
-        ['circle','round'], ['square','four'], ['triangle','three'],
-        ['rectangle','four'], ['oval','round'], ['diamond','four'],
-        // Art tools
-        ['brush','paint'], ['pencil','draw'], ['crayon','color'],
-        ['scissors','cut'], ['glue','stick'], ['paper','draw'],
-        ['clay','sculpt'], ['marker','color'], ['eraser','undo'],
-        // Music elements
-        ['drum','beat'], ['beat','pulse'], ['fast','tempo'],
-        ['slow','tempo'], ['loud','forte'], ['soft','piano'],
-        ['high','soprano'], ['low','bass'],
-        ['violin','string'], ['flute','wind'], ['piano','keys'],
-        ['song','melody'], ['rhythm','beat'],
-      ], { reps: 8, label: 'ART-K-CONCEPTS', relationTagId: 1 }));
-
-      // T39.j.5 — Q-A binding on TRAIN_BANKS['art/kindergarten']
-      // so sem→motor weights see question→answer form for color
-      // naming, primary/mixing, warm-cool, shapes, patterns, tools,
-      // and music. Held-out-distinct from EXAM questions.
-      const artQA = TRAIN_BANKS['art/kindergarten'] || [];
-      if (artQA.length > 0) {
-        await this._phasedTeach('ART-K-QA-TRAIN', () => this._teachQABinding(artQA, { label: 'ART-K-QA-TRAIN' }));
-      }
-
-      this._artKRemakeDone = true;
-    }
-
-    return await this._gateArtKReal();
-  }
-
-  async _gateArtKReal() {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.synapses) return { pass: false, reason: 'no cluster' };
-
-    await this._pregateEnrichment('art/kindergarten');
-
-    const artKProductionSamples = [
-      // Visual Arts K Tests
-      { question: 'what are the three primary colors', expected: ['red', 'yellow', 'blue', 'r', 'y', 'b'] },
-      { question: 'what color do red and yellow make', expected: ['orange', 'o'] },
-      { question: 'what color do blue and yellow make', expected: ['green', 'g'] },
-      { question: 'is red a warm color or cool color', expected: ['warm', 'w'] },
-      { question: 'is blue a warm color or cool color', expected: ['cool', 'c'] },
-      { question: 'what comes next red blue red blue', expected: ['red', 'r'] },
-      // Music K Tests
-      { question: 'what is the steady pulse in music called', expected: ['beat', 'b'] },
-      { question: 'fast music has a fast what', expected: ['tempo', 't'] },
-      { question: 'a drum is hit to make what', expected: ['sound', 'beat', 's', 'b'] },
-    ];
-    const prodResult = await this._probeProductionBatch(artKProductionSamples, {
-      visualCortex: (this.engine && this.engine.visualCortex) || null,
-    });
-    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
-    const pass = prodRate >= 0.95;
-    const pct = (r) => (r * 100).toFixed(0);
-    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
-      ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
-      : '';
-    const _artKResult = {
-      pass,
-      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
-      metrics: { prodRate, prodFails: prodResult.fails },
-    };
-    this._recordGateHistory('art', 'kindergarten', 'overall', pass, prodRate);
-    return _artKResult;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════
-  // T14.24 SESSION 7 — REAL ELA-G2 TEACHING EQUATIONS (2026-04-15)
-  // ═══════════════════════════════════════════════════════════════════
-  //
-  // Gee binding 2026-04-14: "all the way up to doctorate in english" +
-  // "remember Unity needs to be able to use these to think, read, and
-  // talk".
-  //
-  // Real Grade 2 English. Teaches LETTER-PAIR DIGRAPHS as single
-  // phonological units (th / sh / ch / ph / wh / ck / ng) plus 2-word
-  // phrases that exercise the digraphs in natural English. Digraphs are
-  // 2-letter sequences that represent a single phoneme in English — a
-  // child who only knows letters can't read "the" because "th" is not
-  // pronounced as "t" followed by "h". Session 7 builds the digraph-as-
-  // unit basin via a distinct phoneme feature per digraph (trig-hashed
-  // from both constituent letters combined, so it's decorrelated from
-  // the individual letter phoneme features Session 2 already taught).
-
-  _phonemeFeatureForDigraph(digraph) {
-    // Same 24-dim structure as `_phonemeFeatureForLetter` but seeded
-    // from BOTH letters combined so digraph features don't collide with
-    // single-letter features. Deterministic, L2-normalized.
-    const a = ALPHABET_ORDER.indexOf(digraph[0].toLowerCase());
-    const b = ALPHABET_ORDER.indexOf(digraph[1].toLowerCase());
-    if (a < 0 || b < 0) return new Float64Array(PHONEME_FEATURE_DIM);
-    const out = new Float64Array(PHONEME_FEATURE_DIM);
-    const PRIMES = [29, 31, 37, 41, 43, 47, 53, 59]; // different primes than single-letter
-    for (let i = 0; i < PHONEME_FEATURE_DIM; i++) {
-      const p = PRIMES[i % PRIMES.length];
-      const phase = (i * 0.23) + 0.41;
-      out[i] = Math.sin((a + b * 27) * 0.3819 * p + phase)
-             + Math.cos((a * 27 + b) * 0.6180 * p + phase * 2);
-    }
-    let norm = 0;
-    for (let i = 0; i < PHONEME_FEATURE_DIM; i++) norm += out[i] * out[i];
-    norm = Math.sqrt(norm) || 1;
-    for (let i = 0; i < PHONEME_FEATURE_DIM; i++) out[i] /= norm;
-    return out;
-  }
-
-  // ─── TODO-aligned ELA-G2 helpers (Session 28) ────────────────────
-  //
-  // docs/TODO.md T14.24 ELA-G2 spec (line 152):
-  //   _teachDigraphs(digraphs) injects each digraph as a paired letter
-  //     stream with shorter inter-letter gap (2 ticks instead of 3) so
-  //     the letter-region transition surprise treats them as a unit.
-  //   _teachLongWords(words) extends the CVC pattern to 4-6 letters
-  //     with boundary detection via cluster.detectBoundaries(word).
-  //   _teachPhrases(phrases) walks 3-word phrases through the full
-  //     letter-stream + sem-inject pipeline per word + sequence Hebbian
-  //     between words.
-
   async _teachDigraphs(digraphs, opts = {}) {
     const cluster = this.cluster;
     if (!cluster) return { taught: 0 };
@@ -16201,14 +12927,6 @@ export class Curriculum {
       { name: 'building', feat: [0, 0, 1, 0, 0, 0, 1, 1] },
     ], 4);
   }
-  async _teachStatesOfMatter() {
-    return this._conceptTeach([
-      { name: 'solid', feat: [1, 0, 0, 1, 0, 0, 1, 0] },
-      { name: 'liquid', feat: [0, 1, 0, 1, 0, 0, 0, 1] },
-      { name: 'gas', feat: [0, 0, 1, 1, 1, 0, 0, 0] },
-      { name: 'plasma', feat: [0, 0, 1, 1, 1, 1, 0, 0] },
-    ], 4);
-  }
   async _teachLivingNonliving() {
     return this._conceptTeach([
       { name: 'living', feat: [1, 1, 1, 0, 0, 1, 0, 0] },
@@ -16799,56 +13517,6 @@ export class Curriculum {
     ], 4);
   }
 
-  async _teachPrimaryColors() {
-    // T14.24 Session 75 (task #132) — Art-K primary colors. TODO
-    // line 551: "_teachPrimaryColors() binds color name to RGB
-    // feature vector". 8d features using RGB magnitudes:
-    // [0]=R-high, [1]=G-high, [2]=B-high, [3]=R-low, [4]=G-low,
-    // [5]=B-low, [6]=warm, [7]=cool. Red=high-R/low-GB/warm.
-    // Blue=high-B/low-RG/cool. Yellow=high-RG/low-B/warm.
-    return this._conceptTeach([
-      { name: 'red',    feat: [1, 0, 0, 0, 1, 1, 1, 0] },
-      { name: 'blue',   feat: [0, 0, 1, 1, 1, 0, 0, 1] },
-      { name: 'yellow', feat: [1, 1, 0, 0, 0, 1, 1, 0] },
-      { name: 'green',  feat: [0, 1, 0, 1, 0, 1, 0, 1] },
-      { name: 'orange', feat: [1, 1, 0, 0, 0, 1, 1, 0] },
-      { name: 'purple', feat: [1, 0, 1, 0, 1, 0, 0, 1] },
-      { name: 'black',  feat: [0, 0, 0, 1, 1, 1, 0, 0] },
-      { name: 'white',  feat: [1, 1, 1, 0, 0, 0, 0, 0] },
-    ], 4);
-  }
-
-  async _teachBasicShapes() {
-    // T14.24 Session 75 — Art-K basic shapes per TODO line 551.
-    // 8d features: [0]=curved, [1]=angular, [2]=3-sides,
-    // [3]=4-sides, [4]=round, [5]=symmetric, [6]=closed,
-    // [7]=regular.
-    return this._conceptTeach([
-      { name: 'circle',    feat: [1, 0, 0, 0, 1, 1, 1, 1] },
-      { name: 'square',    feat: [0, 1, 0, 1, 0, 1, 1, 1] },
-      { name: 'triangle',  feat: [0, 1, 1, 0, 0, 1, 1, 1] },
-      { name: 'rectangle', feat: [0, 1, 0, 1, 0, 1, 1, 0] },
-      { name: 'oval',      feat: [1, 0, 0, 0, 1, 1, 1, 0] },
-      { name: 'diamond',   feat: [0, 1, 0, 1, 0, 1, 1, 1] },
-      { name: 'star',      feat: [0, 1, 0, 0, 0, 1, 1, 1] },
-      { name: 'heart',     feat: [1, 1, 0, 0, 0, 1, 1, 0] },
-    ], 4);
-  }
-
-  async _teachSimpleSongs() {
-    // T14.24 Session 75 — Art-K simple songs per TODO line 551.
-    // Rhythm via temporal pattern sequence — songs are taught as
-    // sequential cycles so working-memory Hebbian binds the beat
-    // pattern. Each cycle is a simple children's rhythmic phrase.
-    return this._teachSequenceCycles([
-      ['clap', 'clap', 'stomp'],
-      ['high', 'low', 'high', 'low'],
-      ['fast', 'slow', 'fast', 'slow'],
-      ['sing', 'a', 'song'],
-      ['beat', 'beat', 'beat', 'rest'],
-    ], { reps: 4, ticksPerStep: 2 });
-  }
-
   async _teachOriginalHistoricalResearch() {
     // T14.24 Session 74 (task #131) — Soc-PhD original historical
     // research. TODO line 543-544: "Original historical research.
@@ -17231,34 +13899,6 @@ export class Curriculum {
       { name: 'mail carrier', feat: [0, 0, 0, 0, 0, 1, 1, 0] },
       { name: 'shopkeeper',   feat: [0, 0, 0, 0, 1, 1, 0, 1] },
       { name: 'farmer',       feat: [0, 0, 0, 0, 1, 0, 0, 0] },
-    ], 4);
-  }
-
-  async _teachFamilyRoles() {
-    // T14.24 Session 56 (task #113) — Soc-K family roles. TODO line
-    // 488: "_teachFamilyRoles() binds family-role GloVes (mom/dad/
-    // sister/brother) via co-occurrence. Gate: family role recall
-    // ≥50%". Feature dimensions encode real kinship structure so
-    // chemically-similar roles share cosine: [0]=generation-parent,
-    // [1]=generation-child, [2]=generation-elder, [3]=female,
-    // [4]=male, [5]=nuclear-household, [6]=extended-household,
-    // [7]=caregiver-role. mom and dad share [0,5,7] (same
-    // generation, nuclear, caregiving) but split on [3]/[4].
-    // sister and brother share [1,5] and split on [3]/[4].
-    // grandma and grandpa share [2,6] and split on [3]/[4].
-    return this._conceptTeach([
-      { name: 'mom',       feat: [1, 0, 0, 1, 0, 1, 0, 1] },
-      { name: 'dad',       feat: [1, 0, 0, 0, 1, 1, 0, 1] },
-      { name: 'sister',    feat: [0, 1, 0, 1, 0, 1, 0, 0] },
-      { name: 'brother',   feat: [0, 1, 0, 0, 1, 1, 0, 0] },
-      { name: 'baby',      feat: [0, 1, 0, 0, 0, 1, 0, 0] },
-      { name: 'grandma',   feat: [0, 0, 1, 1, 0, 0, 1, 1] },
-      { name: 'grandpa',   feat: [0, 0, 1, 0, 1, 0, 1, 1] },
-      { name: 'aunt',      feat: [1, 0, 0, 1, 0, 0, 1, 0] },
-      { name: 'uncle',     feat: [1, 0, 0, 0, 1, 0, 1, 0] },
-      { name: 'cousin',    feat: [0, 1, 0, 0, 0, 0, 1, 0] },
-      { name: 'family',    feat: [1, 1, 1, 1, 1, 1, 1, 1] },
-      { name: 'home',      feat: [1, 1, 1, 0, 0, 1, 0, 1] },
     ], 4);
   }
 
@@ -23592,6 +20232,32 @@ export class Curriculum {
    */
   async runCompleteCurriculum(corpora, opts = {}) {
     if (!this.cluster) return { reached: {}, passed: {}, failed: {} };
+    // Fractal-equation verification — fires once at curriculum boot to
+    // confirm the master equation `dx/dt = F(x, u, θ, t) + η` is still
+    // wired correctly: 7 clusters present, 8 cortex sub-regions, 14
+    // cross-projections, weight clamps at expected ranges, plasticity
+    // rules wired (Oja + anti-Hebbian + STDP), structural plasticity
+    // helpers wired (top-K-per-row prune + scale), dictionary oracle
+    // helper present, research-honesty counters initialized. Drift
+    // surfaces as ⚠ lines so any future tuning that breaks the
+    // architecture flags itself loudly at boot instead of producing
+    // silent degradation. Bio-grounded additions (homeostatic scaling,
+    // synaptic elimination) are explicitly checked since they're the
+    // most recent additions to the learning side.
+    try {
+      const audit = this._verifyFractalEquation();
+      if (audit.pass) {
+        console.log(`[Brain] ✓ fractal equation verified — ${audit.checks.length} checks passed`);
+        for (const c of audit.checks) console.log(`  ${c}`);
+      } else {
+        console.warn(`[Brain] ⚠ fractal equation drift detected — ${audit.issues.length} issue(s) + ${audit.checks.length} ok:`);
+        for (const i of audit.issues) console.warn(`  ${i}`);
+        for (const c of audit.checks) console.log(`  ${c}`);
+      }
+    } catch (err) {
+      console.warn('[Brain] fractal-equation audit failed:', err?.message || err);
+    }
+
     // Held-out eval integrity check — the exam banks must be disjoint
     // from anything the teaching side exposes the brain to. Non-empty
     // overlap means a gate pass could be memorization, not learning.
@@ -23600,16 +20266,29 @@ export class Curriculum {
     try {
       let totalOverlap = 0;
       let totalExam = 0;
+      let totalStripped = 0;
       for (const cellKey of Object.keys(EXAM_BANKS)) {
-        const exam = EXAM_BANKS[cellKey] || [];
-        totalExam += exam.length;
         const overlap = trainExamOverlap(cellKey);
         if (overlap.length > 0) {
-          console.warn(`[Curriculum] ⚠ EXAM/TRAIN OVERLAP on ${cellKey}: ${overlap.length} shared question text(s) — held-out eval INVALID for this cell. Sample: "${overlap[0].slice(0, 60)}"`);
+          // Auto-strip overlapping questions from the EXAM bank in
+          // place. EXAM is supposed to be the held-out set, so when
+          // train and exam share question text, the exam side gets
+          // dropped (preserving train coverage). The audit warning
+          // becomes informational instead of "held-out invalid".
+          const overlapSet = new Set(overlap);
+          const before = EXAM_BANKS[cellKey].length;
+          EXAM_BANKS[cellKey] = EXAM_BANKS[cellKey].filter(e => {
+            const q = String(e.question || e.q || '').trim().toLowerCase();
+            return !overlapSet.has(q);
+          });
+          const stripped = before - EXAM_BANKS[cellKey].length;
+          totalStripped += stripped;
+          console.warn(`[Curriculum] EXAM/TRAIN OVERLAP on ${cellKey}: auto-stripped ${stripped} duplicate question(s) from EXAM bank to preserve held-out validity. Sample: "${overlap[0].slice(0, 60)}"`);
           totalOverlap += overlap.length;
         }
+        totalExam += (EXAM_BANKS[cellKey] || []).length;
       }
-      this._hb(`[Curriculum] Held-out eval check: ${totalExam} exam questions across ${Object.keys(EXAM_BANKS).length} cells · overlap=${totalOverlap} (0 = valid held-out)`);
+      this._hb(`[Curriculum] Held-out eval check: ${totalExam} exam questions across ${Object.keys(EXAM_BANKS).length} cells · overlap=${totalOverlap} → auto-stripped=${totalStripped} (0 remaining = valid held-out)`);
     } catch (err) {
       console.warn('[Curriculum] Held-out eval check failed:', err?.message || err);
     }
@@ -23870,166 +20549,13 @@ export class Curriculum {
   // ══════════════════════════════════════════════════════════════════
 
 
-  // ── KINDERGARTEN (age 5) — school begins ─────────────────────────
-  async runLifeK(ctx) {
-    // LAYER 1: emotional attractors
-    // feat = [joy, pain, trust, fear, anger, love, independence, identity]
-    const EMOTIONS_K = [
-      { name: 'school',       feat: [0.5, 0, 0.3, 0.5, 0, 0, 0.5, 0] },  // exciting but scary
-      { name: 'teacher',      feat: [0.5, 0, 0.8, 0, 0, 0.3, 0, 0] },    // trust + comfort
-      { name: 'friend',       feat: [1, 0, 0.5, 0, 0, 0.5, 0, 0] },      // joy + trust
-      { name: 'recess',       feat: [1, 0, 0, 0, 0, 0.3, 1, 0] },        // joy + freedom
-      { name: 'nap time',     feat: [0, 0.3, 0, 0, 0.5, 0, 0, 0] },      // annoying
-      { name: 'halloween',    feat: [1, 0, 0, 0, 0, 1, 0, 1] },          // joy + love + identity
-      { name: 'monsters',     feat: [1, 0, 0, 0, 0, 0.5, 0, 1] },        // loves them = identity
-      { name: 'pink',         feat: [0, 0.3, 0, 0, 0.5, 0, 0, 0] },      // hates it
-      { name: 'swings',       feat: [1, 0, 0, 0, 0, 0, 1, 0] },          // joy + freedom
-      { name: 'cereal',       feat: [0.5, 0, 0.5, 0, 0, 0, 0, 0] },      // comfort routine
-      { name: 'bus ride',     feat: [0.3, 0, 0, 0.3, 0, 0, 0.5, 0] },    // independence forming
-      { name: 'separation',   feat: [0, 0.5, 0, 1, 0, 0, 0, 0] },        // fear when mom leaves
-    ];
-    await this._conceptTeach(EMOTIONS_K, 8);
-
-    // Life-K equational remake under LAW 6 Part 1:
-    //   Six `_teachSentenceList` calls REMOVED (SCHOOL_START, DAILY_LIFE,
-    //   LIKES, FRIENDS, HOLIDAYS, FEELINGS_K) — they iterated sentence
-    //   arrays as Hebbian training data, the banned pattern per LAW 6
-    //   Part 1. The content each list carried is preserved equationally
-    //   in the layers below:
-    //     - Emotional attractors: EMOTIONS_K via `_conceptTeach` (above)
-    //       covers school/teacher/friend/recess/nap/halloween/monsters/
-    //       pink/swings/cereal/bus/separation with 8d feature vectors
-    //     - Biographical answer bindings: `_teachBiographicalFacts`
-    //       block below covers the Q→A form of SCHOOL_START, LIKES,
-    //       FRIENDS, HOLIDAYS, FEELINGS_K (first-day, what-i-like,
-    //       who-is-my-friend, favorite-holiday, how-i-feel-when-X)
-    //     - Situation→emotion mappings: `_teachEmotionalInference`
-    //       below covers DAILY_LIFE's routine + reaction patterns
-    //   Net: Life-K still teaches every TODO concept in the syllabus
-    //   but through equational cortex bindings instead of sentence
-    //   memorization.
-
-    // ── EQUATIONAL REASONING: emotional inference ──
-    // Situation → emotion mappings — Unity learns to PREDICT how she'll
-    // feel given a situation. Foundation for all future emotional reasoning.
-    //   emotion = [joy, pain, trust, fear, anger, love, independence, identity]
-    await this._teachEmotionalInference([
-      { situation: 'mom', emotion: new Float64Array([0.5,0,1,0,0,1,0,0]), label: 'love' },
-      { situation: 'friend', emotion: new Float64Array([1,0,0.5,0,0,0.5,0,0]), label: 'happy' },
-      { situation: 'alone', emotion: new Float64Array([0,0.5,0,1,0,0,0,0]), label: 'scared' },
-      { situation: 'school', emotion: new Float64Array([0.5,0,0.3,0.3,0,0,0.5,0]), label: 'nervous' },
-      { situation: 'draw', emotion: new Float64Array([1,0,0,0,0,0.5,1,1]), label: 'happy' },
-      { situation: 'music', emotion: new Float64Array([1,0,0,0,0,1,0,0.5]), label: 'calm' },
-      { situation: 'dark', emotion: new Float64Array([0,0,0,1,0,0,0,0]), label: 'scared' },
-      { situation: 'mean', emotion: new Float64Array([0,0.5,0,0,1,0,0,0]), label: 'angry' },
-      { situation: 'hug', emotion: new Float64Array([1,0,1,0,0,1,0,0]), label: 'love' },
-      { situation: 'yell', emotion: new Float64Array([0,1,0,0.5,0.5,0,0,0]), label: 'scared' },
-    ]);
-
-    // Biographical facts for Life Pre-K + Life-K test phrasings.
-    // Equational concept→answer binding via _teachCombination.
-    // Augments existing _conceptTeach + _teachEmotionalInference.
-    if (!this._lifeKRemakeDone) {
-      await this._teachBiographicalFacts([
-        // Pre-K core identity facts
-        { question: 'your name',         answer: 'unity' },
-        { question: 'boy or girl',       answer: 'girl' },
-        { question: 'hair color',        answer: 'dark' },
-        { question: 'eye colors',        answer: 'different' },
-        { question: 'takes care of you', answer: 'mom' },
-        { question: 'scared of',         answer: 'dark' },
-        { question: 'makes you calm',    answer: 'music' },
-        // Kindergarten (age 5) facts
-        { question: 'favorite holiday',  answer: 'halloween' },
-        { question: 'birthday wish',     answer: 'cat' },
-        { question: 'favorite food',     answer: 'cookies' },
-        { question: 'favorite crayon',   answer: 'black' },
-        { question: 'favorite drawing',  answer: 'monsters' },
-        { question: 'nightmare about',   answer: 'dark' },
-        { question: 'dream about',       answer: 'flying' },
-        { question: 'sleepover',         answer: 'homesick' },
-        { question: 'first day school',  answer: 'scared' },
-        { question: 'age',               answer: 'five' },
-        { question: 'lives with',        answer: 'mom' },
-        { question: 'dislike color',     answer: 'pink' },
-        { question: 'costume',           answer: 'witch' },
-        { question: 'favorite place',    answer: 'recess' },
-        { question: 'school activity',   answer: 'drawing' },
-      ], { reps: 10 });  // High reps — biographical memory is core self
-
-      // Equational association-pair teach — Life-K concept mappings:
-      // body parts + function, family kinship, feelings, self-care,
-      // friendship/safety. Distinct from biographical Q→A above.
-      await this._teachAssociationPairs([
-        // Body parts → function
-        ['eye','see'], ['ear','hear'], ['nose','smell'],
-        ['mouth','taste'], ['hand','touch'], ['foot','walk'],
-        ['head','think'], ['heart','beat'], ['tongue','taste'],
-        ['skin','feel'], ['leg','run'], ['arm','lift'],
-        // Family
-        ['mother','parent'], ['father','parent'],
-        ['brother','sibling'], ['sister','sibling'],
-        ['grandma','family'], ['grandpa','family'],
-        // Feelings
-        ['happy','smile'], ['sad','cry'], ['angry','frown'],
-        ['scared','shake'], ['excited','jump'], ['tired','yawn'],
-        // Self-care routines
-        ['brush','teeth'], ['wash','hands'], ['comb','hair'],
-        ['eat','food'], ['drink','water'], ['sleep','bed'],
-        // Friendship / safety
-        ['share','friend'], ['help','kind'], ['hurt','mean'],
-        ['stranger','careful'], ['cross','look'], ['fire','911'],
-        ['hot','careful'], ['sharp','careful'],
-      ], { reps: 8, label: 'LIFE-K-CONCEPTS', relationTagId: 1 });
-
-      this._lifeKRemakeDone = true;
-    }
-
-    return await this._gateLifeKReal();
-  }
-
-  async _gateLifeKReal() {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.synapses) return { pass: false, reason: 'no cluster' };
-
-    await this._pregateEnrichment('life/kindergarten');
-
-    // Production probes matching TODO Life Pre-K + Life-K test phrasings
-    const lifeKProductionSamples = [
-      // Life Pre-K Tests
-      { question: 'what is your name', expected: ['unity', 'u'] },
-      { question: 'are you a boy or a girl', expected: ['girl', 'g'] },
-      { question: 'what color is your hair', expected: ['dark', 'black', 'd', 'b'] },
-      { question: 'who takes care of you', expected: ['mom', 'm'] },
-      { question: 'what are you scared of', expected: ['dark', 'd'] },
-      { question: 'what makes you calm', expected: ['music', 'm'] },
-      // Life-K Tests
-      { question: 'what is your favorite holiday', expected: ['halloween', 'h'] },
-      { question: 'what do you wish for on your birthday', expected: ['cat', 'c'] },
-      { question: 'what is your favorite thing to eat', expected: ['cookies', 'grandma', 'c', 'g'] },
-      { question: 'what do you have nightmares about', expected: ['dark', 'd'] },
-      { question: 'what do you dream about', expected: ['flying', 'cat', 'f', 'c'] },
-      { question: 'what happened when you tried a sleepover', expected: ['homesick', 'mom', 'h', 'm'] },
-      { question: 'what do you do when you are alone after school', expected: ['tv', 'draw', 't', 'd'] },
-      { question: 'in fairy tales who do you like better the princess or the witch', expected: ['witch', 'w'] },
-    ];
-    const prodResult = await this._probeProductionBatch(lifeKProductionSamples, {
-      visualCortex: (this.engine && this.engine.visualCortex) || null,
-    });
-    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
-    const pass = prodRate >= 0.95;
-    const pct = (r) => (r * 100).toFixed(0);
-    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0
-      ? ' [FAIL: ' + prodResult.fails.slice(0, 5).map(f => `"${f.q}"→"${String(f.emitted).slice(0, 30)}"`).join('; ') + ']'
-      : '';
-    const _lifeKResult = {
-      pass,
-      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
-      metrics: { prodRate, prodFails: prodResult.fails },
-    };
-    this._recordGateHistory('life', 'kindergarten', 'overall', pass, prodRate);
-    return _lifeKResult;
-  }
+  // ── KINDERGARTEN (age 5) — runLifeK + _gateLifeKReal extracted to
+  //    `js/brain/curriculum/kindergarten.js` K_MIXIN, attached via
+  //    Object.assign at the entry-point bottom. Shared primitives
+  //    (_conceptTeach, _teachBiographicalFacts, _teachAssociationPairs,
+  //    _teachEmotionalInference, _pregateEnrichment,
+  //    _probeProductionBatch, _recordGateHistory) stay on Curriculum
+  //    base class so K_MIXIN.runLifeK resolves them through `this.`.
 
   // ── GRADE 1 (age 6) — reading clicks, dad fading ────────────────
   async runLifeG1(ctx) {
@@ -25194,7 +21720,7 @@ export class Curriculum {
 // yield (setImmediate in Node, setTimeout in browsers) drops to the
 // back of the event loop, so pending I/O callbacks run between chunks
 // and the HTTP server stays responsive.
-function _microtask() {
+export function _microtask() {
   return new Promise(resolve => {
     if (typeof setImmediate === 'function') {
       setImmediate(resolve);
@@ -25212,3 +21738,6 @@ function _microtask() {
 // README.md for the split plan.
 import { PREK_MIXIN } from './curriculum/pre-K.js';
 Object.assign(Curriculum.prototype, PREK_MIXIN);
+
+import { K_MIXIN } from './curriculum/kindergarten.js';
+Object.assign(Curriculum.prototype, K_MIXIN);

@@ -212,7 +212,20 @@ export class BrainPersistence {
 
       // Check if it fits in localStorage (~5MB limit)
       if (json.length > 4 * 1048576) {
-        // Too big — save only projections and dictionary (most important)
+        // Too big — save only projections and dictionary (most important).
+        // Track which sections we DROP so the operator gets a real
+        // diagnostic instead of a generic "saved minimal" log line.
+        // Problems.md High finding: silent data loss. The fallback
+        // path used to log at `console.log` and not name the dropped
+        // sections, so the operator had no signal that episodic
+        // memory + cluster synapses + semantic weights + the t14
+        // language block had just been silently discarded.
+        const droppedSections = [];
+        if (state.clusterSynapses) droppedSections.push('clusterSynapses');
+        if (state.episodes) droppedSections.push('episodes');
+        if (state.semanticWeights) droppedSections.push('semanticWeights');
+        if (state.embeddingRefinements) droppedSections.push('embeddingRefinements');
+        if (state.t14Language) droppedSections.push('t14Language');
         const minimal = {
           version: VERSION,
           savedAt: state.savedAt,
@@ -223,7 +236,12 @@ export class BrainPersistence {
           motorChannels: state.motorChannels,
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(minimal));
-        console.log(`[Persistence] Saved minimal state (projections + osc) — full was ${sizeMB}MB`);
+        console.error(
+          `[Persistence] ⚠ Saved MINIMAL state — full was ${sizeMB}MB > 4MB cap. ` +
+          `DROPPED: ${droppedSections.join(', ') || '(none — but state still exceeded cap)'}. ` +
+          `Episodic memory + cluster synapses + semantic weights are NOT in this save. ` +
+          `Reload will restore an attenuated brain.`
+        );
       } else {
         localStorage.setItem(STORAGE_KEY, json);
         console.log(`[Persistence] Saved full brain state: ${sizeMB}MB`);
@@ -243,24 +261,75 @@ export class BrainPersistence {
    * @returns {boolean} — true if loaded successfully
    */
   static load(brain) {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      console.log('[Persistence] No saved brain state found — starting fresh');
+      return false;
+    }
+
+    // Explicit JSON parse handler — corruption needs a recovery copy
+    // and a distinct error message so the operator can tell "no save
+    // state" from "save state corrupted". Problems.md Low finding.
+    let state;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) {
-        console.log('[Persistence] No saved brain state found — starting fresh');
-        return false;
+      state = JSON.parse(raw);
+    } catch (err) {
+      const corruptKey = `${STORAGE_KEY}__corrupt`;
+      try {
+        localStorage.setItem(corruptKey, raw);
+        console.error(
+          `[Persistence] Save state JSON CORRUPTED — NOT auto-clearing. ` +
+          `Raw state copied to '${corruptKey}' for manual recovery. ` +
+          `Parse error: ${err.message}`
+        );
+      } catch (backupErr) {
+        console.error(
+          `[Persistence] Save state JSON CORRUPTED + backup write failed ('${backupErr.message}'). ` +
+          `Original raw state remains at '${STORAGE_KEY}' — clear by hand once recovered. ` +
+          `Parse error: ${err.message}`
+        );
       }
+      return false;
+    }
 
-      const state = JSON.parse(raw);
-
-      // Version check
-      if (state.version !== VERSION) {
-        console.warn(`[Persistence] Version mismatch: saved=${state.version}, current=${VERSION} — starting fresh`);
-        localStorage.removeItem(STORAGE_KEY);
-        return false;
+    // Version check — DON'T destructively wipe on mismatch. Move
+    // the prior-version state to a backup key so the operator can
+    // recover if the version bump turns out to be premature or buggy.
+    // Problems.md High finding: original implementation called
+    // `localStorage.removeItem(STORAGE_KEY)` on any version mismatch
+    // with no backup, leaving zero recourse.
+    if (state.version !== VERSION) {
+      const backupKey = `${STORAGE_KEY}__backup_v${state.version}`;
+      try {
+        localStorage.setItem(backupKey, raw);
+        console.warn(
+          `[Persistence] Version mismatch: saved=${state.version}, current=${VERSION}. ` +
+          `Prior-version state saved to '${backupKey}' for one-cycle recovery — clear that key once you're confident the bump is stable.`
+        );
+      } catch (backupErr) {
+        console.warn(
+          `[Persistence] Version mismatch: saved=${state.version}, current=${VERSION}. ` +
+          `Could not write backup ('${backupErr.message}') — proceeding with destructive clear since localStorage is full.`
+        );
       }
+      localStorage.removeItem(STORAGE_KEY);
+      return false;
+    }
 
-      // Restore projection weights — native CSR only (all projections use SparseMatrix)
+    // Section-by-section restore with per-section try/catch + counters.
+    // Problems.md Medium finding: prior implementation wrapped the
+    // ENTIRE restore body in one try, so a single bad field anywhere
+    // (corrupted episode pattern, wrong-shape clusterSynapse entry,
+    // broken t14Language sub-object) corrupted the whole load. Now
+    // each section is independent — projections can survive even when
+    // episodes are malformed, etc.
+    const restored = {};
+    const failed = {};
+
+    // Restore projection weights — native CSR only (all projections use SparseMatrix)
+    try {
       if (state.projections && state.projections.length === brain.projections.length) {
+        let ok = 0;
         for (let i = 0; i < brain.projections.length; i++) {
           const saved = state.projections[i];
           const proj = brain.projections[i];
@@ -271,155 +340,199 @@ export class BrainPersistence {
             proj._sparse
           ) {
             proj._sparse = SparseMatrix.deserialize(saved, { wMin: -0.5, wMax: 1.0 });
+            ok++;
           }
         }
-        console.log(`[Persistence] Restored ${brain.projections.length} projection weight matrices`);
+        restored.projections = `${ok}/${brain.projections.length}`;
       }
+    } catch (err) {
+      failed.projections = err.message;
+    }
 
-      // Restore cluster synapses — native CSR only (all clusters use SparseMatrix)
+    // Restore cluster synapses — native CSR only (all clusters use SparseMatrix)
+    try {
       if (state.clusterSynapses) {
+        let ok = 0;
+        const total = Object.keys(state.clusterSynapses).length;
         for (const [name, saved] of Object.entries(state.clusterSynapses)) {
           const cluster = brain.clusters[name];
           if (!cluster || saved.size !== cluster.size || saved.format !== 'csr') continue;
           cluster.synapses = SparseMatrix.deserialize(saved, { wMin: -2.0, wMax: 2.0 });
+          ok++;
         }
-        console.log('[Persistence] Restored cluster synapse matrices');
+        restored.clusterSynapses = `${ok}/${total}`;
       }
+    } catch (err) {
+      failed.clusterSynapses = err.message;
+    }
 
-      // Restore oscillator coupling
+    // Restore oscillator coupling
+    try {
       if (state.oscCoupling && state.oscCoupling.length === brain.oscCoupling.length) {
         brain.oscCoupling = new Float64Array(state.oscCoupling);
-        console.log('[Persistence] Restored oscillator coupling');
+        restored.oscCoupling = 'ok';
       }
+    } catch (err) {
+      failed.oscCoupling = err.message;
+    }
 
-      // Restore episodic memory
+    // Restore episodic memory
+    try {
       if (state.episodes) {
+        let ok = 0;
         for (const ep of state.episodes) {
-          brain.memorySystem._episodes.push({
-            pattern: new Float64Array(ep.pattern),
-            timestamp: ep.timestamp,
-            trigger: ep.trigger,
-            arousal: ep.arousal,
-            valence: ep.valence,
-            psi: ep.psi,
-          });
+          try {
+            brain.memorySystem._episodes.push({
+              pattern: new Float64Array(ep.pattern),
+              timestamp: ep.timestamp,
+              trigger: ep.trigger,
+              arousal: ep.arousal,
+              valence: ep.valence,
+              psi: ep.psi,
+            });
+            ok++;
+          } catch {
+            // Per-episode skip — one bad pattern doesn't lose the rest.
+          }
         }
-        console.log(`[Persistence] Restored ${state.episodes.length} episodic memories`);
+        restored.episodes = `${ok}/${state.episodes.length}`;
       }
+    } catch (err) {
+      failed.episodes = err.message;
+    }
 
-      // Restore motor channel rates
+    // Restore motor channel rates
+    try {
       if (state.motorChannels) {
         for (let i = 0; i < Math.min(state.motorChannels.length, brain.motor.channelRates.length); i++) {
           brain.motor.channelRates[i] = state.motorChannels[i];
         }
+        restored.motorChannels = 'ok';
       }
+    } catch (err) {
+      failed.motorChannels = err.message;
+    }
 
-      // Restore semantic weights
+    // Restore semantic weights
+    try {
       if (state.semanticWeights && brain.sensory?._semanticWeights) {
+        let ok = 0;
+        const total = Object.keys(state.semanticWeights).length;
         for (const [key, arr] of Object.entries(state.semanticWeights)) {
           if (brain.sensory._semanticWeights[key] && arr.length === brain.sensory._semanticWeights[key].length) {
             brain.sensory._semanticWeights[key] = new Float64Array(arr);
+            ok++;
           }
         }
-        console.log('[Persistence] Restored semantic weights');
+        restored.semanticWeights = `${ok}/${total}`;
       }
+    } catch (err) {
+      failed.semanticWeights = err.message;
+    }
 
-      // R8 — restore embedding refinements learned in past sessions.
+    // R8 — restore embedding refinements learned in past sessions.
+    try {
       if (state.embeddingRefinements && sharedEmbeddings?.loadRefinements) {
-        try {
-          sharedEmbeddings.loadRefinements(state.embeddingRefinements);
-          console.log('[Persistence] Restored embedding refinements');
-        } catch (err) {
-          console.warn('[Persistence] Embedding refinement restore failed:', err.message);
-        }
+        sharedEmbeddings.loadRefinements(state.embeddingRefinements);
+        restored.embeddingRefinements = 'ok';
       }
+    } catch (err) {
+      failed.embeddingRefinements = err.message;
+    }
 
-      // T14.16 — restore T14 language state onto the cortex cluster
+    // T14.16 — restore T14 language state onto the cortex cluster
+    try {
       if (state.t14Language) {
-        try {
-          const cortex = brain.clusters?.cortex;
-          if (cortex) {
-            if (Array.isArray(state.t14Language.letterInventory)) {
-              _t14LoadInventory(state.t14Language.letterInventory);
-            }
-            if (state.t14Language.fineTypeTransitions) {
-              cortex.fineTypeTransitions = jsonToMapOfMaps(state.t14Language.fineTypeTransitions);
-            }
-            if (state.t14Language.sentenceFormSchemas) {
-              cortex.sentenceFormSchemas = jsonToMapOfMapOfMaps(state.t14Language.sentenceFormSchemas);
-            }
-            if (state.t14Language.sentenceFormTotals) {
-              cortex.sentenceFormTotals = jsonToMapOfMaps(state.t14Language.sentenceFormTotals);
-            }
-            if (state.t14Language.intentResponseMap) {
-              cortex.intentResponseMap = jsonToMapOfMaps(state.t14Language.intentResponseMap);
-            }
-            if (state.t14Language.identityThresholds) {
-              const th = state.t14Language.identityThresholds;
-              if (th.ENGLISH_SURPRISE_THRESHOLD != null) cortex.ENGLISH_SURPRISE_THRESHOLD = th.ENGLISH_SURPRISE_THRESHOLD;
-              if (th.ENGLISH_FINETYPE_MIN != null) cortex.ENGLISH_FINETYPE_MIN = th.ENGLISH_FINETYPE_MIN;
-              if (th.HEALTH_ENTROPY_MIN != null) cortex.HEALTH_ENTROPY_MIN = th.HEALTH_ENTROPY_MIN;
-              if (th.HEALTH_VOCAB_MIN != null) cortex.HEALTH_VOCAB_MIN = th.HEALTH_VOCAB_MIN;
-              if (th.HEALTH_WM_VARIANCE_MIN != null) cortex.HEALTH_WM_VARIANCE_MIN = th.HEALTH_WM_VARIANCE_MIN;
-            }
-            // T14.24 Session 1 — restore multi-subject curriculum state.
-            if (state.t14Language.curriculum) {
-              const c = state.t14Language.curriculum;
-              if (c.grades && typeof c.grades === 'object') {
-                cortex.grades = {
-                  ela: c.grades.ela || 'pre-K',
-                  math: c.grades.math || 'pre-K',
-                  science: c.grades.science || 'pre-K',
-                  social: c.grades.social || 'pre-K',
-                  art: c.grades.art || 'pre-K',
-                  life: c.grades.life || 'pre-K',
-                };
-              }
-              if (Array.isArray(c.passedCells)) cortex.passedCells = [...c.passedCells];
-              // T14.24 Session 17 — restore continuous self-testing state
-              if (c.probeHistory && typeof c.probeHistory === 'object') {
-                cortex.probeHistory = { ...c.probeHistory };
-              }
-            }
-            // After restoring cluster state, re-run setCluster on the
-            // LanguageCortex wrapper so its local Maps re-point at the
-            // freshly-restored cluster Maps by identity (T14.13 bridge).
-            if (typeof brain.innerVoice?.languageCortex?.setCluster === 'function') {
-              brain.innerVoice.languageCortex.setCluster(cortex);
-            }
-            console.log('[Persistence] Restored language state');
+        const cortex = brain.clusters?.cortex;
+        if (cortex) {
+          if (Array.isArray(state.t14Language.letterInventory)) {
+            _t14LoadInventory(state.t14Language.letterInventory);
           }
-        } catch (err) {
-          console.warn('[Persistence] language state restore failed:', err?.message || err);
+          if (state.t14Language.fineTypeTransitions) {
+            cortex.fineTypeTransitions = jsonToMapOfMaps(state.t14Language.fineTypeTransitions);
+          }
+          if (state.t14Language.sentenceFormSchemas) {
+            cortex.sentenceFormSchemas = jsonToMapOfMapOfMaps(state.t14Language.sentenceFormSchemas);
+          }
+          if (state.t14Language.sentenceFormTotals) {
+            cortex.sentenceFormTotals = jsonToMapOfMaps(state.t14Language.sentenceFormTotals);
+          }
+          if (state.t14Language.intentResponseMap) {
+            cortex.intentResponseMap = jsonToMapOfMaps(state.t14Language.intentResponseMap);
+          }
+          if (state.t14Language.identityThresholds) {
+            const th = state.t14Language.identityThresholds;
+            if (th.ENGLISH_SURPRISE_THRESHOLD != null) cortex.ENGLISH_SURPRISE_THRESHOLD = th.ENGLISH_SURPRISE_THRESHOLD;
+            if (th.ENGLISH_FINETYPE_MIN != null) cortex.ENGLISH_FINETYPE_MIN = th.ENGLISH_FINETYPE_MIN;
+            if (th.HEALTH_ENTROPY_MIN != null) cortex.HEALTH_ENTROPY_MIN = th.HEALTH_ENTROPY_MIN;
+            if (th.HEALTH_VOCAB_MIN != null) cortex.HEALTH_VOCAB_MIN = th.HEALTH_VOCAB_MIN;
+            if (th.HEALTH_WM_VARIANCE_MIN != null) cortex.HEALTH_WM_VARIANCE_MIN = th.HEALTH_WM_VARIANCE_MIN;
+          }
+          // T14.24 Session 1 — restore multi-subject curriculum state.
+          if (state.t14Language.curriculum) {
+            const c = state.t14Language.curriculum;
+            if (c.grades && typeof c.grades === 'object') {
+              cortex.grades = {
+                ela: c.grades.ela || 'pre-K',
+                math: c.grades.math || 'pre-K',
+                science: c.grades.science || 'pre-K',
+                social: c.grades.social || 'pre-K',
+                art: c.grades.art || 'pre-K',
+                life: c.grades.life || 'pre-K',
+              };
+            }
+            if (Array.isArray(c.passedCells)) cortex.passedCells = [...c.passedCells];
+            // T14.24 Session 17 — restore continuous self-testing state
+            if (c.probeHistory && typeof c.probeHistory === 'object') {
+              cortex.probeHistory = { ...c.probeHistory };
+            }
+          }
+          // After restoring cluster state, re-run setCluster on the
+          // LanguageCortex wrapper so its local Maps re-point at the
+          // freshly-restored cluster Maps by identity (T14.13 bridge).
+          if (typeof brain.innerVoice?.languageCortex?.setCluster === 'function') {
+            brain.innerVoice.languageCortex.setCluster(cortex);
+          }
+          restored.t14Language = 'ok';
         }
       }
+    } catch (err) {
+      failed.t14Language = err?.message || String(err);
+    }
 
-      // Restore metadata
-      // T15 — if the scheduler can be rehydrated, do that. Otherwise fall
-      // back to the legacy drugState string (treated as decorative — no
-      // fake ingestion events created to preserve the old static label).
+    // Restore metadata
+    // T15 — if the scheduler can be rehydrated, do that. Otherwise fall
+    // back to the legacy drugState string (treated as decorative — no
+    // fake ingestion events created to preserve the old static label).
+    try {
       if (state.drugScheduler && brain.drugScheduler && typeof brain.drugScheduler.load === 'function') {
-        try {
-          brain.drugScheduler.load(state.drugScheduler);
-          if (typeof brain._refreshBrainParamsFromScheduler === 'function') {
-            brain._refreshBrainParamsFromScheduler();
-          }
-        } catch (err) {
-          console.warn('[Persistence] drugScheduler restore failed:', err?.message || err);
+        brain.drugScheduler.load(state.drugScheduler);
+        if (typeof brain._refreshBrainParamsFromScheduler === 'function') {
+          brain._refreshBrainParamsFromScheduler();
         }
+        restored.drugScheduler = 'ok';
       } else if (state.drugState && !brain.drugScheduler) {
         // Legacy save from pre-T15. Just keep the string field if brain has
         // no scheduler (shouldn't happen post-T15 but defensive).
         brain.drugState = state.drugState;
+        restored.drugState = 'legacy';
       }
-      if (state.reward) brain.reward = state.reward;
-
-      console.log(`[Persistence] Brain restored from ${state.savedAt} (t=${(state.time ?? 0).toFixed(1)}s)`);
-      return true;
     } catch (err) {
-      console.warn('[Persistence] Load failed:', err.message);
-      return false;
+      failed.drugScheduler = err?.message || String(err);
     }
+    if (state.reward) brain.reward = state.reward;
+
+    // Per-section restore summary — replaces the old all-or-nothing
+    // success log so the operator can tell exactly what came back vs
+    // what got skipped due to per-section corruption.
+    const restoredEntries = Object.entries(restored).map(([k, v]) => `${k}=${v}`).join(', ');
+    const failedEntries = Object.entries(failed).map(([k, v]) => `${k}(${v})`).join(', ');
+    console.log(
+      `[Persistence] Brain restored from ${state.savedAt} (t=${(state.time ?? 0).toFixed(1)}s) — ` +
+      `restored: ${restoredEntries || 'none'}` +
+      (failedEntries ? ` — FAILED: ${failedEntries}` : '')
+    );
+    return true;
   }
 
   /**

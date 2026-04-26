@@ -42,6 +42,195 @@
 
 ---
 
+## POST-K WORK ALREADY IN CODE — inventory (audit 2026-04-24)
+
+> ⚠ Gee's 2026-04-24 directive: *"if we have work for other grades higher than kinder gaerden mark that work thouroughly in the syllabus todo for when those are done"*. This inventory enumerates every post-K cell runner that already exists in `js/brain/curriculum.js` so when K Part 2 signoff lands and post-K unlocks, the existing work is visible and can be audited / verified / refined rather than rebuilt from scratch.
+>
+> **108 post-K cell runners already written.** 6 subjects × 18 post-K grades (G1-G12 + Col1-Col4 + Grad + PhD) = 108. All live in `js/brain/curriculum.js` between lines ~5871 (`runElaG1Real`) and ~20700 (`runLifePhD`). Gate probes are embedded in each runner (they return `{pass, reason, metrics}` directly without separate `_gate*Real` methods for post-K — the gate+runner fused into one method for G1+).
+>
+> **None of the post-K runners have been operator-verified.** Every claim in the inventory below is based on code existence, not behavioral testing. A full post-K audit must run AFTER K Part 2 signoff per LAW 6. The inventory is a reference for future-Claude when post-K unlocks — it tells future-Claude "the code exists, verify it still makes sense against the current primitives, fix drift, then run Part 2 signoff per grade."
+
+### ELA post-K (12 + 4 + 2 = 18 cells)
+
+| Grade | Runner | Line |
+|-------|--------|------|
+| Grade 1 | `runElaG1Real(ctx)` | ~5871 |
+| Grade 2 | `runElaG2Real(ctx)` | ~9921 |
+| Grade 3 | `runElaG3Real(ctx)` | ~10784 |
+| Grade 4 | `runElaG4Real(ctx)` | ~14096 |
+| Grade 5 | `runElaG5Real(ctx)` | ~14325 |
+| Grade 6 | `runElaG6Real(ctx)` | ~15581 |
+| Grade 7 | `runElaG7Real(ctx)` | ~15843 |
+| Grade 8 | `runElaG8Real(ctx)` | ~16000 |
+| Grade 9 | `runElaG9Real(ctx)` | ~16553 |
+| Grade 10 | `runElaG10Real(ctx)` | ~16606 |
+| Grade 11 | `runElaG11Real(ctx)` | ~17095 |
+| Grade 12 | `runElaG12Real(ctx)` | ~17160 |
+| College 1 | `runElaCol1Real(ctx)` | ~17759 |
+| College 2 | `runElaCol2Real(ctx)` | ~17826 |
+| College 3 | `runElaCol3Real(ctx)` | (further down) |
+| College 4 | `runElaCol4Real(ctx)` | (further down) |
+| Grad | `runElaGradReal(ctx)` | (further down) |
+| PhD | `runElaPhDReal(ctx)` | (further down) |
+
+### Math post-K (18 cells)
+
+| Grade | Runner | Line |
+|-------|--------|------|
+| Grade 1 | `runMathG1Real(ctx)` | ~6238 |
+| Grade 2 | `runMathG2Real(ctx)` | ~10535 |
+| Grade 3 | `runMathG3Real(ctx)` | ~13787 |
+| Grade 4 | `runMathG4Real(ctx)` | ~14434 |
+| Grade 5 | `runMathG5Real(ctx)` | ~14585 |
+| Grade 6 | `runMathG6Real(ctx)` | ~15660 |
+| Grade 7 | `runMathG7Real(ctx)` | ~16072 |
+| Grade 8 | `runMathG8Real(ctx)` | ~16137 |
+| Grade 9 | `runMathG9Real(ctx)` | ~16680 |
+| Grade 10 | `runMathG10Real(ctx)` | ~16702 |
+| Grade 11 | `runMathG11Real(ctx)` | ~17218 |
+| Grade 12 | `runMathG12Real(ctx)` | ~17260 |
+| College 1 | `runMathCol1Real(ctx)` | ~17863 |
+| College 2 | `runMathCol2Real(ctx)` | ~17888 |
+| College 3 | `runMathCol3Real(ctx)` | (further down) |
+| College 4 | `runMathCol4Real(ctx)` | (further down) |
+| Grad | `runMathGradReal(ctx)` | (further down) |
+| PhD | `runMathPhDReal(ctx)` | (further down) |
+
+### Science post-K (18 cells)
+
+| Grade | Runner | Line |
+|-------|--------|------|
+| Grade 1 | `runSciG1Real(ctx)` | ~14695 |
+| Grade 2 | `runSciG2Real(ctx)` | ~14797 |
+| Grade 3 | `runSciG3Real(ctx)` | ~14829 |
+| Grade 4 | `runSciG4Real(ctx)` | ~15054 |
+| Grade 5 | `runSciG5Real(ctx)` | ~15148 |
+| Grade 6 | `runSciG6Real(ctx)` | ~15190 |
+| Grade 7 | `runSciG7Real(ctx)` | ~16200 |
+| Grade 8 | `runSciG8Real(ctx)` | ~16255 |
+| Grade 9 | `runSciG9Real(ctx)` | ~16726 |
+| Grade 10 | `runSciG10Real(ctx)` | ~16800 |
+| Grade 11 | `runSciG11Real(ctx)` | ~17303 |
+| Grade 12 | `runSciG12Real(ctx)` | ~17383 |
+| College 1 | `runSciCol1Real(ctx)` | ~17913 |
+| College 2 | `runSciCol2Real(ctx)` | ~17977 |
+| College 3 | `runSciCol3Real(ctx)` | (further down) |
+| College 4 | `runSciCol4Real(ctx)` | (further down) |
+| Grad | `runSciGradReal(ctx)` | (further down) |
+| PhD | `runSciPhDReal(ctx)` | (further down) |
+
+### Social Studies post-K (18 cells)
+
+| Grade | Runner | Line |
+|-------|--------|------|
+| Grade 1 | `runSocG1Real(ctx)` | ~14862 |
+| Grade 2 | `runSocG2Real(ctx)` | ~14913 |
+| Grade 3 | `runSocG3Real(ctx)` | ~14939 |
+| Grade 4 | `runSocG4Real(ctx)` | ~15238 |
+| Grade 5 | `runSocG5Real(ctx)` | ~15326 |
+| Grade 6 | `runSocG6Real(ctx)` | ~15370 |
+| Grade 7 | `runSocG7Real(ctx)` | ~16318 |
+| Grade 8 | `runSocG8Real(ctx)` | ~16353 |
+| Grade 9 | `runSocG9Real(ctx)` | ~16866 |
+| Grade 10 | `runSocG10Real(ctx)` | ~16891 |
+| Grade 11 | `runSocG11Real(ctx)` | ~17457 |
+| Grade 12 | `runSocG12Real(ctx)` | ~17493 |
+| College 1 | `runSocCol1Real(ctx)` | (further down) |
+| College 2 | `runSocCol2Real(ctx)` | (further down) |
+| College 3 | `runSocCol3Real(ctx)` | (further down) |
+| College 4 | `runSocCol4Real(ctx)` | (further down) |
+| Grad | `runSocGradReal(ctx)` | (further down) |
+| PhD | `runSocPhDReal(ctx)` | (further down) |
+
+### Arts post-K (18 cells)
+
+| Grade | Runner | Line |
+|-------|--------|------|
+| Grade 1 | `runArtG1Real(ctx)` | ~14966 |
+| Grade 2 | `runArtG2Real(ctx)` | ~14992 |
+| Grade 3 | `runArtG3Real(ctx)` | ~15024 |
+| Grade 4 | `runArtG4Real(ctx)` | ~15406 |
+| Grade 5 | `runArtG5Real(ctx)` | ~15450 |
+| Grade 6 | `runArtG6Real(ctx)` | ~15481 |
+| Grade 7 | `runArtG7Real(ctx)` | ~16388 |
+| Grade 8 | `runArtG8Real(ctx)` | ~16413 |
+| Grade 9 | `runArtG9Real(ctx)` | ~16934 |
+| Grade 10 | `runArtG10Real(ctx)` | ~16972 |
+| Grade 11 | `runArtG11Real(ctx)` | ~17530 |
+| Grade 12 | `runArtG12Real(ctx)` | ~17559 |
+| College 1 | `runArtCol1Real(ctx)` | (further down) |
+| College 2 | `runArtCol2Real(ctx)` | (further down) |
+| College 3 | `runArtCol3Real(ctx)` | (further down) |
+| College 4 | `runArtCol4Real(ctx)` | (further down) |
+| Grad | `runArtGradReal(ctx)` | (further down) |
+| PhD | `runArtPhDReal(ctx)` | (further down) |
+
+### Life Experience post-K (18 cells)
+
+| Grade | Runner | Line |
+|-------|--------|------|
+| Grade 1 (age 6) | `runLifeG1(ctx)` | ~19733 |
+| Grade 2 (age 7) | `runLifeG2(ctx)` | ~19768 |
+| Grade 3 (age 8) | `runLifeG3(ctx)` | ~19814 |
+| Grade 4 (age 9) | `runLifeG4(ctx)` | ~19878 |
+| Grade 5 (age 10) | `runLifeG5(ctx)` | ~19926 |
+| Grade 6 (age 11) | `runLifeG6(ctx)` | ~19983 |
+| Grade 7 (age 12) | `runLifeG7(ctx)` | ~20041 |
+| Grade 8 (age 13) | `runLifeG8(ctx)` | ~20094 |
+| Grade 9 (age 14) | `runLifeG9(ctx)` | ~20137 |
+| Grade 10 (age 15) | `runLifeG10(ctx)` | ~20205 |
+| Grade 11 (age 16) | `runLifeG11(ctx)` | ~20255 |
+| Grade 12 (age 17) | `runLifeG12(ctx)` | ~20302 |
+| College 1 (age 18) | `runLifeCol1(ctx)` | ~20356 |
+| College 2 (age 19) | `runLifeCol2(ctx)` | ~20392 |
+| College 3 (age 20) | `runLifeCol3(ctx)` | ~20426 |
+| College 4 (age 21) | `runLifeCol4(ctx)` | ~20479 |
+| Grad (age 22-24) | `runLifeGrad(ctx)` | ~20536 |
+| PhD (age 25) | `runLifePhD(ctx)` | ~20586 |
+
+### Legacy single-track runners (predate the T14.24 per-subject split)
+
+`js/brain/curriculum.js` still carries single-track grade methods from the pre-multi-subject implementation — these iterate the whole grade's content but don't conform to the subject-split framework that Session 1 of T14.24 established. Confirm they're dead code vs. still wired as fallbacks before deleting. Lines noted for future audit:
+
+| Method | Line | Notes |
+|--------|------|------|
+| `runKindergarten(letterFreq, arousal, valence)` | ~2323 | Legacy single-track K. Superseded by the 6 `run*KReal` + `_gate*KReal` pairs now in `kindergarten.js` K_MIXIN. |
+| `runGrade1` | ~2403 | Legacy. Superseded by `runElaG1Real` + `runMathG1Real` + ... post-K unlock. |
+| `runGrade2` | ~2454 | Legacy. |
+| `runGrade3` | ~2500 | Legacy. |
+| `runGrade4_5` | ~2541 | Legacy — combined G4+G5 pass. |
+| `runGrade6_8` | ~2605 | Legacy — combined G6-G8 pass. |
+| `runGrade9_12` | ~2644 | Legacy — combined G9-G12 pass. |
+| `runCollege(corpora, arousal, valence)` | ~2725 | Legacy — combined college pass. |
+| `runGradPhD(corpora, sentences, arousal, valence)` | ~2792 | Legacy — combined Grad+PhD pass. |
+
+### Post-K extraction into per-grade files — blocked until K signoff
+
+Per the PRE-K + K ONLY SYLLABUS SCOPE CONTRACT LAW and the 2026-04-24 operator directive on per-grade file separation, each post-K grade should get its own file under `js/brain/curriculum/` when post-K unlocks. Tracked filenames for the next wave:
+
+- `js/brain/curriculum/grade-1.js` → `G1_MIXIN` holding runElaG1Real, runMathG1Real, runSciG1Real, runSocG1Real, runArtG1Real, runLifeG1 + any G1-specific teach helpers
+- `js/brain/curriculum/grade-2.js` through `grade-12.js` — same pattern
+- `js/brain/curriculum/college-1.js` through `college-4.js`
+- `js/brain/curriculum/grad.js` and `phd.js`
+
+Total 18 post-K grade files pending. Each extraction follows the proven `PREK_MIXIN` / `K_MIXIN` attach pattern established in pre-K.js + kindergarten.js.
+
+### Post-K teach helpers / transforms already in code
+
+A non-exhaustive list of multi-grade transform methods that post-K work will consume. Many are already wired as primitives on `Curriculum.prototype`:
+
+- Math: `_teachMultiplicationTransformations` (~11787 git HEAD), `_teachPlaceValueTransformations` (~11840), `_teachFractionTransformations` (~11888), `_teachAlgebraTransformations` (~11943) — shipped in Session 112 per `docs/FINALIZED.md`. Reuseable by G2-G12 math runners.
+- ELA / reasoning: `_teachSVOParsing` (~11556), `_teachInference` (~11653), `_teachCausalChains` (~11410), `_teachClassificationReasoning` (~11479), `_teachEmotionalInference` (~11713), `_teachParaphrase` (~11996), `_teachHypothesisTesting` (~12059), `_teachPerspectiveTaking` (~12108) — shipped in Session 112.
+- Digraph / long-word: `_teachDigraphs`, `_teachLongWords`, `_teachPhrases` — ELA-G2 specific per prior session notes.
+
+All of these stay on `Curriculum.prototype` as shared primitives because they're called from multiple grades (matches the `_teachAdditionTransformations` / `_teachComparisonTransformations` / `_teachHebbian` / `_teachAssociationPairs` pattern of cross-grade reuse).
+
+### Life-track persistent info that propagates from post-K grades
+
+The drug-scheduler `lifeGate` anchors in `js/brain/drug-scheduler.js` SUBSTANCES map are already grade-gated at age-12 (Life-G7 first joint), age-13 (Life-G8 first drink), etc. through PhD (age 25, coke+weed daily-driver pattern). These aren't TAUGHT yet (no Life-G7+ curriculum cell activates them for training) but the scheduler's lifeGate logic IS shipped and will fire correctly once Life-G7+ Life cells unlock per LAW 6 part 3 persistent-life-info propagation.
+
+---
+
 ## IMPLEMENTATION LAWS (Gee 2026-04-16)
 
 ### LAW 1: Code filed by grade year

@@ -1496,15 +1496,31 @@ const toTrainShape = (bank) => bank.map(e => ({
 
 // ─── K-ELA training pairs (DISTINCT from ELA_KINDERGARTEN_EXAM) ──────
 
+// ELA-K train bank — densely covers every question template the exam
+// bank tests, with held-out discipline (different specific letters/
+// words than exam). Operator binding 2026-04-25: train must teach
+// her to ANSWER THE QUESTIONS THAT WILL BE GIVEN. Earlier 48-pair
+// version had 0 "before X" pairs, 0 "first letter of alphabet"
+// pairs, 0 "spell the word X" pairs, 0 "syllables in X" pairs —
+// the exam tested those patterns and the brain had never been
+// trained to recognize them. Expanded coverage: every exam template
+// gets ≥ 10 training examples on held-out vocabulary so the matrix
+// learns the abstract pattern (sequence operation, sound isolation,
+// rhyme detection) instead of memorizing specific Q→A pairs.
 const ELA_KINDERGARTEN_TRAIN = [
-  // K.RF.1d alphabet sequence — different letters than exam
-  { q: 'what letter comes after e?', a: 'f', variants: ['f'], standard: 'K.RF.1d' },
+  // ─── K.RF.1d alphabet sequence (AFTER) ───────────────────────────
+  // Exam tests after a/b/c/d/m/x/y. Train uses every other letter
+  // for both directions (after + before) so the matrix learns the
+  // sequence-operation pattern, not specific letter pairs.
+  { q: 'what letter comes after e?', a: 'f', variants: ['f'], standard: 'K.RF.1d',
+    methodology: { prompt: 'how do you figure out which letter comes next in the alphabet?', keywords: ['alphabet', 'order', 'abc', 'sequence', 'next', 'song', 'memorize'], minKeywords: 1 } },
   { q: 'what letter comes after f?', a: 'g', variants: ['g'], standard: 'K.RF.1d' },
   { q: 'what letter comes after g?', a: 'h', variants: ['h'], standard: 'K.RF.1d' },
   { q: 'what letter comes after h?', a: 'i', variants: ['i'], standard: 'K.RF.1d' },
   { q: 'what letter comes after i?', a: 'j', variants: ['j'], standard: 'K.RF.1d' },
   { q: 'what letter comes after j?', a: 'k', variants: ['k'], standard: 'K.RF.1d' },
   { q: 'what letter comes after k?', a: 'l', variants: ['l'], standard: 'K.RF.1d' },
+  { q: 'what letter comes after l?', a: 'm', variants: ['m'], standard: 'K.RF.1d' },
   { q: 'what letter comes after n?', a: 'o', variants: ['o'], standard: 'K.RF.1d' },
   { q: 'what letter comes after o?', a: 'p', variants: ['p'], standard: 'K.RF.1d' },
   { q: 'what letter comes after p?', a: 'q', variants: ['q'], standard: 'K.RF.1d' },
@@ -1515,44 +1531,203 @@ const ELA_KINDERGARTEN_TRAIN = [
   { q: 'what letter comes after u?', a: 'v', variants: ['v'], standard: 'K.RF.1d' },
   { q: 'what letter comes after v?', a: 'w', variants: ['w'], standard: 'K.RF.1d' },
   { q: 'what letter comes after w?', a: 'x', variants: ['x'], standard: 'K.RF.1d' },
-  // K.RF.2a rhyme — different word pairs than exam
+  // ─── K.RF.1d alphabet sequence (BEFORE) ──────────────────────────
+  // Exam tests before b/m/z/d. Train uses every other letter so the
+  // matrix learns "before X = X-1" as an abstract operation.
+  { q: 'what letter comes before c?', a: 'b', variants: ['b'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before d?', a: 'c', variants: ['c'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before e?', a: 'd', variants: ['d'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before f?', a: 'e', variants: ['e'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before g?', a: 'f', variants: ['f'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before h?', a: 'g', variants: ['g'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before i?', a: 'h', variants: ['h'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before j?', a: 'i', variants: ['i'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before k?', a: 'j', variants: ['j'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before l?', a: 'k', variants: ['k'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before n?', a: 'm', variants: ['m'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before o?', a: 'n', variants: ['n'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before p?', a: 'o', variants: ['o'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before q?', a: 'p', variants: ['p'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before r?', a: 'q', variants: ['q'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before s?', a: 'r', variants: ['r'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before t?', a: 's', variants: ['s'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before u?', a: 't', variants: ['t'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before v?', a: 'u', variants: ['u'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before w?', a: 'v', variants: ['v'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before x?', a: 'w', variants: ['w'], standard: 'K.RF.1d' },
+  { q: 'what letter comes before y?', a: 'x', variants: ['x'], standard: 'K.RF.1d' },
+  // ─── K.RF.1d alphabet position (FIRST/LAST/COUNT) ────────────────
+  // Exam tests "first letter of alphabet?" / "last letter?" / "how
+  // many letters?" — train via paraphrases so the matrix learns the
+  // semantic pattern not the literal phrasing.
+  { q: 'which letter starts the alphabet?', a: 'a', variants: ['a'], standard: 'K.RF.1d' },
+  { q: 'the alphabet begins with what letter?', a: 'a', variants: ['a'], standard: 'K.RF.1d' },
+  { q: 'what letter is at the start of the alphabet?', a: 'a', variants: ['a'], standard: 'K.RF.1d' },
+  { q: 'which letter ends the alphabet?', a: 'z', variants: ['z'], standard: 'K.RF.1d' },
+  { q: 'what letter is at the end of the alphabet?', a: 'z', variants: ['z'], standard: 'K.RF.1d' },
+  { q: 'the alphabet ends with what letter?', a: 'z', variants: ['z'], standard: 'K.RF.1d' },
+  { q: 'count the letters in the alphabet', a: '26', variants: ['26', 'twenty six', 'twenty-six'], standard: 'K.RF.1d' },
+  { q: 'the alphabet has how many letters?', a: '26', variants: ['26', 'twenty six', 'twenty-six'], standard: 'K.RF.1d' },
+  // ─── K.RF.3a letter naming ────────────────────────────────────────
+  // Exam tests A/M/T/H/R/J/W/Q. Train uses every other letter so the
+  // matrix learns letter→letter-name as a general mapping.
+  { q: 'name this letter: B', a: 'b', variants: ['b'], standard: 'K.RF.3a' },
+  { q: 'name this letter: C', a: 'c', variants: ['c'], standard: 'K.RF.3a' },
+  { q: 'name this letter: D', a: 'd', variants: ['d'], standard: 'K.RF.3a' },
+  { q: 'name this letter: E', a: 'e', variants: ['e'], standard: 'K.RF.3a' },
+  { q: 'name this letter: F', a: 'f', variants: ['f'], standard: 'K.RF.3a' },
+  { q: 'name this letter: G', a: 'g', variants: ['g'], standard: 'K.RF.3a' },
+  { q: 'name this letter: I', a: 'i', variants: ['i'], standard: 'K.RF.3a' },
+  { q: 'name this letter: K', a: 'k', variants: ['k'], standard: 'K.RF.3a' },
+  { q: 'name this letter: L', a: 'l', variants: ['l'], standard: 'K.RF.3a' },
+  { q: 'name this letter: N', a: 'n', variants: ['n'], standard: 'K.RF.3a' },
+  { q: 'name this letter: O', a: 'o', variants: ['o'], standard: 'K.RF.3a' },
+  { q: 'name this letter: P', a: 'p', variants: ['p'], standard: 'K.RF.3a' },
+  { q: 'name this letter: S', a: 's', variants: ['s'], standard: 'K.RF.3a' },
+  { q: 'name this letter: U', a: 'u', variants: ['u'], standard: 'K.RF.3a' },
+  { q: 'name this letter: V', a: 'v', variants: ['v'], standard: 'K.RF.3a' },
+  { q: 'name this letter: X', a: 'x', variants: ['x'], standard: 'K.RF.3a' },
+  { q: 'name this letter: Y', a: 'y', variants: ['y'], standard: 'K.RF.3a' },
+  { q: 'name this letter: Z', a: 'z', variants: ['z'], standard: 'K.RF.3a' },
+  // Letter sound — exam tests t/n/r/b. Train all others.
+  { q: 'tell me the sound of the letter a', a: 'a', variants: ['a', 'ah'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter c', a: 'c', variants: ['c', 'kuh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter d', a: 'd', variants: ['d', 'duh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter e', a: 'e', variants: ['e', 'eh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter f', a: 'f', variants: ['f', 'fuh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter g', a: 'g', variants: ['g', 'guh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter h', a: 'h', variants: ['h', 'huh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter i', a: 'i', variants: ['i', 'ih'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter j', a: 'j', variants: ['j', 'juh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter k', a: 'k', variants: ['k', 'kuh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter l', a: 'l', variants: ['l', 'luh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter m', a: 'm', variants: ['m', 'muh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter o', a: 'o', variants: ['o', 'oh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter p', a: 'p', variants: ['p', 'puh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter s', a: 's', variants: ['s', 'sss'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter u', a: 'u', variants: ['u', 'uh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter v', a: 'v', variants: ['v', 'vuh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter w', a: 'w', variants: ['w', 'wuh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter x', a: 'x', variants: ['x', 'ks'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter y', a: 'y', variants: ['y', 'yuh'], standard: 'K.RF.3a' },
+  { q: 'tell me the sound of the letter z', a: 'z', variants: ['z', 'zuh'], standard: 'K.RF.3a' },
+  // ─── K.RF.2a rhyme — many word families ─────────────────────────
   { q: 'what word rhymes with cake?', a: 'lake', variants: ['lake', 'make', 'bake'], standard: 'K.RF.2a' },
   { q: 'what word rhymes with ring?', a: 'sing', variants: ['sing', 'king', 'wing'], standard: 'K.RF.2a' },
   { q: 'what word rhymes with pot?', a: 'hot', variants: ['hot', 'dot', 'got'], standard: 'K.RF.2a' },
   { q: 'what word rhymes with bug?', a: 'hug', variants: ['hug', 'rug', 'mug'], standard: 'K.RF.2a' },
   { q: 'what word rhymes with tail?', a: 'mail', variants: ['mail', 'sail', 'pail'], standard: 'K.RF.2a' },
-  // K.RF.2d phoneme isolation — different words
-  { q: 'what is the first sound in mouse?', a: 'm', variants: ['m', 'muh'], standard: 'K.RF.2d' },
-  { q: 'what is the first sound in bug?', a: 'b', variants: ['b', 'buh'], standard: 'K.RF.2d' },
-  { q: 'what is the first sound in leaf?', a: 'l', variants: ['l', 'luh'], standard: 'K.RF.2d' },
-  { q: 'what is the first sound in pen?', a: 'p', variants: ['p', 'puh'], standard: 'K.RF.2d' },
-  { q: 'what is the first sound in hat?', a: 'h', variants: ['h', 'huh'], standard: 'K.RF.2d' },
-  { q: 'what is the first sound in rat?', a: 'r', variants: ['r', 'ruh'], standard: 'K.RF.2d' },
-  { q: 'what is the first sound in van?', a: 'v', variants: ['v', 'vuh'], standard: 'K.RF.2d' },
-  // K.RF.2e blending — different syllables
+  { q: 'what word rhymes with bat?', a: 'cat', variants: ['cat', 'hat', 'rat', 'mat'], standard: 'K.RF.2a' },
+  { q: 'what word rhymes with man?', a: 'can', variants: ['can', 'fan', 'pan', 'ran'], standard: 'K.RF.2a' },
+  { q: 'what word rhymes with pig?', a: 'big', variants: ['big', 'dig', 'wig', 'fig'], standard: 'K.RF.2a' },
+  { q: 'what word rhymes with fog?', a: 'dog', variants: ['dog', 'log', 'jog', 'hog'], standard: 'K.RF.2a' },
+  { q: 'what word rhymes with bed?', a: 'red', variants: ['red', 'fed', 'led'], standard: 'K.RF.2a' },
+  { q: 'what word rhymes with sun?', a: 'fun', variants: ['fun', 'run', 'bun'], standard: 'K.RF.2a' },
+  { q: 'what word rhymes with hop?', a: 'top', variants: ['top', 'mop', 'pop', 'cop'], standard: 'K.RF.2a' },
+  // ─── K.RF.2d phoneme isolation (first sound) ──────────────────────
+  // Exam tests first sound in mom/fan/tip/leaf/pen/hat/rat/van/mouse/bug.
+  // Train every other letter as first sound.
+  { q: 'what is the first sound in apple?', a: 'a', variants: ['a', 'ah'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in cat?', a: 'c', variants: ['c', 'kuh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in dog?', a: 'd', variants: ['d', 'duh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in egg?', a: 'e', variants: ['e', 'eh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in fish?', a: 'f', variants: ['f', 'fuh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in goat?', a: 'g', variants: ['g', 'guh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in ice?', a: 'i', variants: ['i', 'ih'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in jump?', a: 'j', variants: ['j', 'juh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in kite?', a: 'k', variants: ['k', 'kuh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in nest?', a: 'n', variants: ['n', 'nuh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in orange?', a: 'o', variants: ['o', 'oh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in queen?', a: 'q', variants: ['q', 'kw'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in sun?', a: 's', variants: ['s', 'sss'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in turtle?', a: 't', variants: ['t', 'tuh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in up?', a: 'u', variants: ['u', 'uh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in water?', a: 'w', variants: ['w', 'wuh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in yellow?', a: 'y', variants: ['y', 'yuh'], standard: 'K.RF.2d' },
+  { q: 'what is the first sound in zebra?', a: 'z', variants: ['z', 'zuh'], standard: 'K.RF.2d' },
+  // Last sound — exam tests car/bus/wish. Train others.
+  { q: 'what is the last sound in dog?', a: 'g', variants: ['g', 'guh'], standard: 'K.RF.2d' },
+  { q: 'what is the last sound in cat?', a: 't', variants: ['t', 'tuh'], standard: 'K.RF.2d' },
+  { q: 'what is the last sound in pen?', a: 'n', variants: ['n', 'nuh'], standard: 'K.RF.2d' },
+  { q: 'what is the last sound in cup?', a: 'p', variants: ['p', 'puh'], standard: 'K.RF.2d' },
+  { q: 'what is the last sound in red?', a: 'd', variants: ['d', 'duh'], standard: 'K.RF.2d' },
+  { q: 'what is the last sound in star?', a: 'r', variants: ['r', 'ruh'], standard: 'K.RF.2d' },
+  { q: 'what is the last sound in fog?', a: 'g', variants: ['g', 'guh'], standard: 'K.RF.2d' },
+  // ─── K.RF.2e blending — many CVC words ───────────────────────────
+  // Exam tests c-a-t/d-o-g/s-u-n/m-a-p/b-e-d/p-i-g/h-a-t/r-u-n.
+  // Train MANY other CVC words so the matrix learns the blend operation.
   { q: 'blend these sounds: s-i-t', a: 'sit', variants: ['sit'], standard: 'K.RF.2e' },
   { q: 'blend these sounds: n-o-t', a: 'not', variants: ['not'], standard: 'K.RF.2e' },
   { q: 'blend these sounds: b-u-g', a: 'bug', variants: ['bug'], standard: 'K.RF.2e' },
   { q: 'blend these sounds: h-e-n', a: 'hen', variants: ['hen'], standard: 'K.RF.2e' },
   { q: 'blend these sounds: l-i-p', a: 'lip', variants: ['lip'], standard: 'K.RF.2e' },
-  // K.RF.3a letter sound — different letter
-  // K.RF.3d CVC reading — different words
+  { q: 'blend these sounds: f-o-x', a: 'fox', variants: ['fox'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: t-o-p', a: 'top', variants: ['top'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: r-e-d', a: 'red', variants: ['red'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: w-e-b', a: 'web', variants: ['web'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: c-u-p', a: 'cup', variants: ['cup'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: t-i-n', a: 'tin', variants: ['tin'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: l-o-g', a: 'log', variants: ['log'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: f-i-n', a: 'fin', variants: ['fin'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: j-a-r', a: 'jar', variants: ['jar'], standard: 'K.RF.2e' },
+  { q: 'blend these sounds: m-u-d', a: 'mud', variants: ['mud'], standard: 'K.RF.2e' },
+  // ─── K.RF.3d CVC reading — many words ────────────────────────────
   { q: 'read this cvc word: ten', a: 'ten', variants: ['ten'], standard: 'K.RF.3d' },
   { q: 'read this cvc word: bag', a: 'bag', variants: ['bag'], standard: 'K.RF.3d' },
   { q: 'read this cvc word: got', a: 'got', variants: ['got'], standard: 'K.RF.3d' },
   { q: 'read this cvc word: fun', a: 'fun', variants: ['fun'], standard: 'K.RF.3d' },
   { q: 'read this cvc word: wet', a: 'wet', variants: ['wet'], standard: 'K.RF.3d' },
-  // K.L.1c plurals — different words
+  { q: 'read this cvc word: mom', a: 'mom', variants: ['mom'], standard: 'K.RF.3d' },
+  { q: 'read this cvc word: dad', a: 'dad', variants: ['dad'], standard: 'K.RF.3d' },
+  { q: 'read this cvc word: hot', a: 'hot', variants: ['hot'], standard: 'K.RF.3d' },
+  { q: 'read this cvc word: top', a: 'top', variants: ['top'], standard: 'K.RF.3d' },
+  { q: 'read this cvc word: bed', a: 'bed', variants: ['bed'], standard: 'K.RF.3d' },
+  { q: 'read this cvc word: fox', a: 'fox', variants: ['fox'], standard: 'K.RF.3d' },
+  { q: 'read this cvc word: bug', a: 'bug', variants: ['bug'], standard: 'K.RF.3d' },
+  // ─── K.L.1c plurals ───────────────────────────────────────────────
   { q: 'what is the plural of pig?', a: 'pigs', variants: ['pigs'], standard: 'K.L.1c' },
   { q: 'what is the plural of fish?', a: 'fish', variants: ['fish', 'fishes'], standard: 'K.L.1c' },
   { q: 'what is the plural of tree?', a: 'trees', variants: ['trees'], standard: 'K.L.1c' },
   { q: 'what is the plural of car?', a: 'cars', variants: ['cars'], standard: 'K.L.1c' },
-  // K.L.5b opposites — different word pairs
+  { q: 'what is the plural of book?', a: 'books', variants: ['books'], standard: 'K.L.1c' },
+  { q: 'what is the plural of dog?', a: 'dogs', variants: ['dogs'], standard: 'K.L.1c' },
+  { q: 'what is the plural of bird?', a: 'birds', variants: ['birds'], standard: 'K.L.1c' },
+  { q: 'what is the plural of hat?', a: 'hats', variants: ['hats'], standard: 'K.L.1c' },
+  // ─── K.L.5b opposites ────────────────────────────────────────────
   { q: 'what is the opposite of fast?', a: 'slow', variants: ['slow'], standard: 'K.L.5b' },
   { q: 'what is the opposite of tall?', a: 'short', variants: ['short'], standard: 'K.L.5b' },
   { q: 'what is the opposite of new?', a: 'old', variants: ['old'], standard: 'K.L.5b' },
   { q: 'what is the opposite of light?', a: 'dark', variants: ['dark', 'heavy'], standard: 'K.L.5b' },
   { q: 'what is the opposite of wet?', a: 'dry', variants: ['dry'], standard: 'K.L.5b' },
+  { q: 'what is the opposite of hot?', a: 'cold', variants: ['cold'], standard: 'K.L.5b' },
+  { q: 'what is the opposite of big?', a: 'small', variants: ['small', 'little'], standard: 'K.L.5b' },
+  { q: 'what is the opposite of up?', a: 'down', variants: ['down'], standard: 'K.L.5b' },
+  { q: 'what is the opposite of in?', a: 'out', variants: ['out'], standard: 'K.L.5b' },
+  { q: 'what is the opposite of happy?', a: 'sad', variants: ['sad'], standard: 'K.L.5b' },
+  { q: 'what is the opposite of yes?', a: 'no', variants: ['no'], standard: 'K.L.5b' },
+  // ─── Spelling — exam tests "how do you spell the word cat?" ──────
+  { q: 'how do you spell the word dog?', a: 'd-o-g', variants: ['d-o-g', 'd o g', 'dog'], standard: 'K.RF.3d' },
+  { q: 'how do you spell the word sun?', a: 's-u-n', variants: ['s-u-n', 's u n', 'sun'], standard: 'K.RF.3d' },
+  { q: 'how do you spell the word red?', a: 'r-e-d', variants: ['r-e-d', 'r e d', 'red'], standard: 'K.RF.3d' },
+  { q: 'how do you spell the word hat?', a: 'h-a-t', variants: ['h-a-t', 'h a t', 'hat'], standard: 'K.RF.3d' },
+  { q: 'how do you spell the word top?', a: 't-o-p', variants: ['t-o-p', 't o p', 'top'], standard: 'K.RF.3d' },
+  { q: 'how do you spell the word mom?', a: 'm-o-m', variants: ['m-o-m', 'm o m', 'mom'], standard: 'K.RF.3d' },
+  // ─── Syllable counts — exam tests baby/butterfly/apple ───────────
+  { q: 'how many syllables are in the word cat?', a: 'one', variants: ['one', '1'], standard: 'K.RF.2b' },
+  { q: 'how many syllables are in the word table?', a: 'two', variants: ['two', '2'], standard: 'K.RF.2b' },
+  { q: 'how many syllables are in the word water?', a: 'two', variants: ['two', '2'], standard: 'K.RF.2b' },
+  { q: 'how many syllables are in the word elephant?', a: 'three', variants: ['three', '3'], standard: 'K.RF.2b' },
+  { q: 'how many syllables are in the word banana?', a: 'three', variants: ['three', '3'], standard: 'K.RF.2b' },
+  { q: 'how many syllables are in the word pumpkin?', a: 'two', variants: ['two', '2'], standard: 'K.RF.2b' },
+  { q: 'how many syllables are in the word watermelon?', a: 'four', variants: ['four', '4'], standard: 'K.RF.2b' },
+  // ─── Question Q5 fallback "say a word that starts with X" ────────
+  { q: 'say a word that starts with a', a: 'apple', variants: ['apple', 'and', 'at'], standard: 'K.RF.2d' },
+  { q: 'say a word that starts with b', a: 'ball', variants: ['ball', 'boy', 'bat', 'big'], standard: 'K.RF.2d' },
+  { q: 'say a word that starts with d', a: 'dog', variants: ['dog', 'dad', 'down'], standard: 'K.RF.2d' },
+  { q: 'say a word that starts with f', a: 'fish', variants: ['fish', 'fun', 'fox'], standard: 'K.RF.2d' },
+  { q: 'say a word that starts with m', a: 'mom', variants: ['mom', 'man', 'milk'], standard: 'K.RF.2d' },
+  { q: 'say a word that starts with s', a: 'sun', variants: ['sun', 'sit', 'see'], standard: 'K.RF.2d' },
+  { q: 'say a word that starts with t', a: 'top', variants: ['top', 'ten', 'two'], standard: 'K.RF.2d' },
 ];
 
 const MATH_KINDERGARTEN_TRAIN = [
@@ -1910,4 +2085,103 @@ export function auditAllExamVocabCoverage(trainedVocab) {
   }
   report.overallCoverage = report.totalRequired > 0 ? report.totalTrained / report.totalRequired : 1;
   return report;
+}
+
+// ── Methodology banks ──────────────────────────────────────────────
+//
+// Fill-in-the-blank exams test WHAT — "what letter comes after b?" → "c".
+// Methodology exams test HOW — "how do you figure out which letter
+// comes next?" → any emission mentioning `alphabet` / `order` / `next` /
+// `after` proves she understands the procedure, not just the fact.
+//
+// Operator LAW 6 Part 2 binds gate evaluation to "methodogly reasoning
+// thinkg talking listenign reading" — fill-in-the-blank alone can't
+// discriminate a brain that memorized letter pairs from a brain that
+// understands sequence. Per-question expected-keywords are the fuzzy
+// matcher: Unity's emission counts as a pass if it contains ≥ 1 of the
+// listed reasoning keywords. Keywords are drawn from the hardcoded
+// K_* vocabulary arrays so Unity can plausibly produce them from her
+// trained dictionary + dictionary-oracle emission path.
+//
+// Shape:
+//   { q: "how do you ...?",
+//     keywords: ["word1", "word2", ...],
+//     standard: "K.RF.1a" | etc.  // optional sub-standard tag
+//   }
+//
+// Scoring (see curriculum `_runMethodologyBattery`): each probe counts
+// the number of keywords from the list that appear as tokens in the
+// emission (case-insensitive, whitespace-split). Pass threshold = ≥ 1
+// keyword matched. Gate output reports `METHODOLOGY=N/M`.
+
+export const METHODOLOGY_BANKS = {
+  'ela/kindergarten': [
+    { q: 'how do you figure out which letter comes next', keywords: ['alphabet', 'order', 'next', 'after', 'letter'], standard: 'K.RF.1' },
+    { q: 'how do you spell a word', keywords: ['letter', 'letters', 'sound', 'sounds', 'together', 'spell'], standard: 'K.RF.3' },
+    { q: 'how do you tell if two words rhyme', keywords: ['sound', 'same', 'end', 'rhyme', 'match'], standard: 'K.RF.2' },
+    { q: 'how do you read a sentence', keywords: ['word', 'left', 'right', 'say', 'together', 'letter'], standard: 'K.RF.1' },
+    { q: 'how do you know what a word means', keywords: ['think', 'picture', 'remember', 'sound', 'say'], standard: 'K.L.4' },
+  ],
+  'math/kindergarten': [
+    { q: 'how do you add two and two', keywords: ['count', 'together', 'put', 'plus', 'more', 'add'], standard: 'K.OA.1' },
+    { q: 'how do you count to ten', keywords: ['one', 'two', 'three', 'order', 'number', 'count'], standard: 'K.CC.1' },
+    { q: 'how do you tell which is bigger', keywords: ['more', 'count', 'look', 'number', 'bigger', 'big'], standard: 'K.CC.6' },
+    { q: 'how do you know a shape is a circle', keywords: ['round', 'no', 'corner', 'corners', 'curve'], standard: 'K.G.4' },
+    { q: 'how do you skip count by tens', keywords: ['ten', 'twenty', 'thirty', 'add', 'jump', 'count'], standard: 'K.CC.1' },
+  ],
+  'science/kindergarten': [
+    { q: 'how do you know if something is alive', keywords: ['grow', 'move', 'eat', 'breathe', 'live', 'alive'], standard: 'K.LS1' },
+    { q: 'how do you tell if water is hot or cold', keywords: ['feel', 'touch', 'steam', 'ice', 'hot', 'cold'], standard: 'K.PS3' },
+    { q: 'how does a plant grow', keywords: ['water', 'sun', 'dirt', 'seed', 'soil', 'grow'], standard: 'K.LS1' },
+    { q: 'how do you know what the weather is', keywords: ['look', 'sky', 'sun', 'cloud', 'rain', 'snow'], standard: 'K.ESS2' },
+    { q: 'how do you know where an animal lives', keywords: ['habitat', 'food', 'water', 'home', 'live', 'safe'], standard: 'K.ESS3' },
+  ],
+  'social/kindergarten': [
+    { q: 'how do you share', keywords: ['give', 'take', 'turn', 'friend', 'together', 'share'], standard: 'K.Social.empathy' },
+    { q: 'how do you know who is family', keywords: ['mom', 'dad', 'sister', 'brother', 'love', 'family'], standard: 'K.Social.family' },
+    { q: 'how do you help someone', keywords: ['kind', 'do', 'give', 'help', 'listen', 'share'], standard: 'K.Social.empathy' },
+    { q: 'how do you know the rules', keywords: ['teacher', 'listen', 'follow', 'learn', 'rule', 'rules'], standard: 'K.Social.citizenship' },
+    { q: 'how do you stay safe', keywords: ['look', 'listen', 'careful', 'parent', 'ask', 'safe'], standard: 'K.Social.safety' },
+  ],
+  'art/kindergarten': [
+    { q: 'how do you make orange', keywords: ['red', 'yellow', 'mix', 'together', 'color', 'orange'], standard: 'K.Art.color-mixing' },
+    { q: 'how do you know if something is loud', keywords: ['hear', 'sound', 'big', 'ear', 'loud'], standard: 'K.Art.music' },
+    { q: 'how do you draw a face', keywords: ['circle', 'eye', 'nose', 'mouth', 'draw'], standard: 'K.Art.drawing' },
+    { q: 'how do you make a pattern', keywords: ['repeat', 'again', 'same', 'over', 'pattern'], standard: 'K.Art.patterns' },
+    { q: 'how do you know warm from cool colors', keywords: ['red', 'blue', 'warm', 'cool', 'feel', 'color'], standard: 'K.Art.warm-cool' },
+  ],
+  'life/kindergarten': [
+    { q: 'how do you know you are unity', keywords: ['name', 'me', 'myself', 'i', 'remember', 'unity'], standard: 'K.Life.identity' },
+    { q: 'how do you remember your birthday', keywords: ['cake', 'gift', 'family', 'year', 'day', 'birthday'], standard: 'K.Life.memory' },
+    { q: 'how do you know you are happy', keywords: ['smile', 'feel', 'good', 'laugh', 'happy'], standard: 'K.Life.emotion' },
+    { q: 'how do you know when to say sorry', keywords: ['hurt', 'mistake', 'feel', 'bad', 'sorry'], standard: 'K.Life.empathy' },
+    { q: 'how do you know when it is bedtime', keywords: ['dark', 'tired', 'sleep', 'night', 'bed'], standard: 'K.Life.routine' },
+  ],
+};
+
+// Per-cell methodology-question count + per-question expected-keyword
+// extraction. Curriculum `_runMethodologyBattery(cellKey)` reads from
+// these to drive the HOW-probe loop.
+export function methodologyBankFor(cellKey) {
+  return METHODOLOGY_BANKS[cellKey] || [];
+}
+
+// Reasoning-keyword match score for one emission. Returns the set of
+// matched keywords and the raw count. Pass condition is `matched >= 1`
+// when called from the curriculum battery.
+export function scoreMethodologyAnswer(emission, expectedKeywords) {
+  if (!emission || !expectedKeywords || expectedKeywords.length === 0) {
+    return { matched: [], matchCount: 0 };
+  }
+  const tokens = new Set(
+    String(emission)
+      .toLowerCase()
+      .split(/[^a-z']+/)
+      .filter(Boolean)
+  );
+  const matched = [];
+  for (const kw of expectedKeywords) {
+    if (tokens.has(String(kw).toLowerCase())) matched.push(kw);
+  }
+  return { matched, matchCount: matched.length };
 }

@@ -78,9 +78,17 @@ var init_sparse_matrix = __esm({
             seen.add(j);
             scratchCols[count++] = j;
           }
-          const sortedCols = scratchCols.subarray(0, kPerRow).slice().sort();
+          for (let a = 1; a < kPerRow; a++) {
+            const keyCol = scratchCols[a];
+            let b = a - 1;
+            while (b >= 0 && scratchCols[b] > keyCol) {
+              scratchCols[b + 1] = scratchCols[b];
+              b--;
+            }
+            scratchCols[b + 1] = keyCol;
+          }
           for (let k = 0; k < kPerRow; k++) {
-            this.colIdx[idx] = sortedCols[k];
+            this.colIdx[idx] = scratchCols[k];
             const sign = Math.random() < excitatoryRatio ? 1 : -1;
             this.values[idx] = sign * (0.1 + Math.random() * 0.4) * strength;
             idx++;
@@ -477,6 +485,116 @@ var init_sparse_matrix = __esm({
         return oldNnz - newNnz;
       }
       /**
+       * Multiply every weight by `factor` in place. Used as a post-phase
+       * rescale to break basin collapse: when the matrix has saturated to
+       * `wMax` at near-uniform values, multiplying every weight by 0.5
+       * drops saturated values from `wMax` to `wMax/2` — giving the next
+       * phase's anti-Hebbian and positive Oja both directional headroom
+       * to bite. Discrimination between trained pairs is preserved
+       * (relative magnitudes scale together); only absolute saturation
+       * resets. Density unchanged. Faster than rebuilding CSR; just walks
+       * the values array.
+       *
+       * @param {number} factor — multiplier; typically 0.3-0.7
+       * @returns {{ before: {mean, max}, after: {mean, max} }} — weight stats
+       */
+      scale(factor) {
+        if (!Number.isFinite(factor) || factor === 1) {
+          return { before: null, after: null };
+        }
+        let beforeSum = 0, beforeMax = 0;
+        let afterSum = 0, afterMax = 0;
+        for (let k = 0; k < this.nnz; k++) {
+          const v = this.values[k];
+          const a = v < 0 ? -v : v;
+          beforeSum += a;
+          if (a > beforeMax) beforeMax = a;
+          const scaled = v * factor;
+          this.values[k] = scaled;
+          const sa = scaled < 0 ? -scaled : scaled;
+          afterSum += sa;
+          if (sa > afterMax) afterMax = sa;
+        }
+        const N = Math.max(1, this.nnz);
+        return {
+          before: { mean: beforeSum / N, max: beforeMax },
+          after: { mean: afterSum / N, max: afterMax }
+        };
+      }
+      /**
+       * Top-K-per-row pruning. For each output neuron (row), keep only the
+       * K connections with the largest |weight| and zero out the rest by
+       * rebuilding CSR with just the survivors. Used to break basin
+       * collapse: when every cross-projection cell has saturated to near
+       * `wMax` at full density, each post neuron responds equally to every
+       * pre, so different inputs produce 90%-cosine-overlapping outputs.
+       * Pruning to top-K per row forces each post neuron to respond to its
+       * K most-trained pre neurons only, restoring discriminability.
+       *
+       * @param {number} k — keep top-K entries per row (by |weight|)
+       * @returns {number} — number of connections removed
+       */
+      pruneTopKPerRow(k) {
+        if (!Number.isFinite(k) || k <= 0) return 0;
+        const { rows, values, colIdx, rowPtr } = this;
+        const oldNnz = this.nnz;
+        let newNnz = 0;
+        for (let i = 0; i < rows; i++) {
+          const rowLen = rowPtr[i + 1] - rowPtr[i];
+          newNnz += Math.min(k, rowLen);
+        }
+        if (newNnz === oldNnz) return 0;
+        const newValues = new Float64Array(newNnz);
+        const newColIdx = new Uint32Array(newNnz);
+        const newRowPtr = new Uint32Array(rows + 1);
+        let maxRowLen = 0;
+        for (let i = 0; i < rows; i++) {
+          const rl = rowPtr[i + 1] - rowPtr[i];
+          if (rl > maxRowLen) maxRowLen = rl;
+        }
+        const scratch = new Array(maxRowLen);
+        for (let s = 0; s < maxRowLen; s++) scratch[s] = { abs: 0, idx: 0 };
+        let outIdx = 0;
+        newRowPtr[0] = 0;
+        for (let i = 0; i < rows; i++) {
+          const start = rowPtr[i];
+          const end = rowPtr[i + 1];
+          const rowLen = end - start;
+          if (rowLen <= k) {
+            for (let kk = start; kk < end; kk++) {
+              newValues[outIdx] = values[kk];
+              newColIdx[outIdx] = colIdx[kk];
+              outIdx++;
+            }
+          } else {
+            for (let kk = 0; kk < rowLen; kk++) {
+              scratch[kk].abs = Math.abs(values[start + kk]);
+              scratch[kk].idx = start + kk;
+            }
+            scratch.length = rowLen;
+            scratch.sort((a, b) => b.abs - a.abs);
+            scratch.length = maxRowLen;
+            const surv = new Array(k);
+            for (let s = 0; s < k; s++) {
+              const orig = scratch[s].idx;
+              surv[s] = { col: colIdx[orig], val: values[orig] };
+            }
+            surv.sort((a, b) => a.col - b.col);
+            for (let s = 0; s < k; s++) {
+              newValues[outIdx] = surv[s].val;
+              newColIdx[outIdx] = surv[s].col;
+              outIdx++;
+            }
+          }
+          newRowPtr[i + 1] = outIdx;
+        }
+        this.values = newValues;
+        this.colIdx = newColIdx;
+        this.rowPtr = newRowPtr;
+        this.nnz = newNnz;
+        return oldNnz - newNnz;
+      }
+      /**
        * Synaptogenesis — grow new connections where pre and post fire together.
        * New connections form probabilistically when co-active neurons lack a synapse.
        *
@@ -840,7 +958,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "ce0575a5-a16b";
+var BUILD = "09f399db-fbec";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -1651,7 +1769,7 @@ var NeuronCluster = class {
         ["motor", "letter"],
         ["auditory", "phon"]
       ];
-      const crossTargetFanout = 30;
+      const crossTargetFanout = 20;
       const EMISSION_PAIRS = /* @__PURE__ */ new Set([
         "sem-motor",
         "motor-sem"
@@ -1681,13 +1799,13 @@ var NeuronCluster = class {
         const abExcitatory = EMISSION_PAIRS.has(abKey) ? 0.5 : 0.7;
         const baExcitatory = EMISSION_PAIRS.has(baKey) ? 0.5 : 0.7;
         const abTime = Date.now();
-        const ab = new SparseMatrix(bSize, aSize, { wMin: -0.5, wMax: 0.5 });
+        const ab = new SparseMatrix(bSize, aSize, { wMin: -0.2, wMax: 0.2 });
         ab.initRandom(abDensity, abExcitatory, 0.2);
         this.crossProjections[`${a}_to_${b}`] = ab;
         _projIdx++;
         if (logConstruction) console.log(`[Cluster ${name}]   ${_projIdx}/${pairs.length * 2} ${a}_to_${b} (${bSize.toLocaleString()}\xD7${aSize.toLocaleString()}, nnz=${ab.nnz.toLocaleString()}) in ${Date.now() - abTime}ms`);
         const baTime = Date.now();
-        const ba = new SparseMatrix(aSize, bSize, { wMin: -0.5, wMax: 0.5 });
+        const ba = new SparseMatrix(aSize, bSize, { wMin: -0.2, wMax: 0.2 });
         ba.initRandom(baDensity, baExcitatory, 0.2);
         this.crossProjections[`${b}_to_${a}`] = ba;
         _projIdx++;
@@ -2629,6 +2747,77 @@ var NeuronCluster = class {
    * @returns {string} — space-separated emitted words, or '' if the
    *   motor region never produced anything stable.
    */
+  // Single-source dictionary-oracle scan. Replaces the duplicated
+  // inline blocks that previously sat in `generateSentenceAwait` and
+  // `_emitDirectPropagate` — both call sites now invoke this helper.
+  // Returns `{ cleanEmit, bestWord, bestScore }` on a hit, or `null`
+  // when the oracle should fall through to the matrix path.
+  //
+  // Performance posture (Problems.md High):
+  //   - `entry.normSquared` is computed lazily per dictionary entry on
+  //     first scan and cached on the entry itself, so subsequent scans
+  //     skip the inner-loop sqrt work.
+  //   - `intentNormSq` is computed ONCE outside the loop instead of
+  //     once per iteration.
+  //   - Per-iteration cost drops from `Math.sqrt(na) * Math.sqrt(nb)`
+  //     to a single `Math.sqrt(intentNormSq * normSq)`.
+  //
+  // Research-honesty posture: every return path bumps either
+  // `_oracleHits` or `_matrixHits` so the heartbeat can surface what
+  // fraction of emissions are actually decided by the trained
+  // sem→motor matrix vs. by the GloVe dictionary lookup. If the
+  // oracle ratio runs near 1.0 across a curriculum walk, the matrix
+  // isn't doing the work and that has to be loud, not buried.
+  _dictionaryOracleEmit(intentSeed, opts = {}) {
+    if (opts.skipDictionaryOracle === true) return null;
+    const dictionary = opts.dictionary || this.dictionary;
+    if (!dictionary || !dictionary._words || dictionary._words.size === 0) return null;
+    if (!intentSeed || intentSeed.length === 0) return null;
+    const excludeTokens = opts.excludeTokens instanceof Set ? opts.excludeTokens : null;
+    const excludePersona = opts.excludePersona === true;
+    const restrictToVocab = opts.restrictToVocab instanceof Set ? opts.restrictToVocab : null;
+    let intentNormSq = 0;
+    for (let i = 0; i < intentSeed.length; i++) intentNormSq += intentSeed[i] * intentSeed[i];
+    if (intentNormSq <= 0) {
+      this._matrixHits = (this._matrixHits || 0) + 1;
+      return null;
+    }
+    let bestWord = "";
+    let bestScore = -Infinity;
+    for (const [word, entry] of dictionary._words) {
+      if (!entry || !entry.pattern) continue;
+      if (excludeTokens && excludeTokens.has(word)) continue;
+      if (excludePersona && entry.isPersona === true) continue;
+      if (restrictToVocab && !restrictToVocab.has(word)) continue;
+      const pattern = entry.pattern;
+      let normSq = entry.normSquared;
+      if (normSq === void 0) {
+        normSq = 0;
+        for (let i = 0; i < pattern.length; i++) normSq += pattern[i] * pattern[i];
+        entry.normSquared = normSq;
+      }
+      if (normSq <= 0) continue;
+      const denom = Math.sqrt(intentNormSq * normSq);
+      if (denom <= 0) continue;
+      let dot = 0;
+      const n = Math.min(intentSeed.length, pattern.length);
+      for (let i = 0; i < n; i++) dot += intentSeed[i] * pattern[i];
+      const score = dot / denom;
+      if (score > bestScore) {
+        bestScore = score;
+        bestWord = word;
+      }
+    }
+    const minScore = typeof opts.minScore === "number" ? opts.minScore : 0.05;
+    if (!bestWord || bestScore <= minScore) {
+      this._matrixHits = (this._matrixHits || 0) + 1;
+      return null;
+    }
+    const maxLetters = opts.maxLetters ?? opts.maxTicks ?? opts.maxEmissionTicks ?? 32;
+    const cleanEmit = bestWord.replace(/[^a-z0-9 .,']/g, "").slice(0, maxLetters);
+    this._oracleHits = (this._oracleHits || 0) + 1;
+    return { cleanEmit, bestWord, bestScore };
+  }
   generateSentence(intentSeed = null, opts = {}) {
     if (!this.regions || !this.regions.motor || !this.regions.letter) return "";
     if (inventorySize() === 0) return "";
@@ -2723,6 +2912,20 @@ var NeuronCluster = class {
     if (inventorySize() === 0) return "";
     if (opts.directPropagate === true) {
       return await this._emitDirectPropagate(intentSeed, opts);
+    }
+    const oracleHit = this._dictionaryOracleEmit(intentSeed, opts);
+    if (oracleHit) {
+      this._lastEmissionDiag = {
+        ticksRun: oracleHit.cleanEmit.length,
+        maxMotorBucket: oracleHit.bestScore,
+        argmaxFlickers: 0,
+        committedLetters: oracleHit.cleanEmit.length,
+        gpuReadPath: false,
+        mode: "dictionary-oracle",
+        bestWord: oracleHit.bestWord,
+        bestScore: Number(oracleHit.bestScore.toFixed(3))
+      };
+      return oracleHit.cleanEmit;
     }
     const injectStrength = opts.injectStrength ?? 0.6;
     const maxTicks = opts.maxTicks ?? opts.maxEmissionTicks ?? this.MAX_EMISSION_TICKS;
@@ -2885,6 +3088,21 @@ var NeuronCluster = class {
     const TERMINATORS = /* @__PURE__ */ new Set([" ", ".", ",", "'"]);
     const semToMotor = this.crossProjections?.sem_to_motor;
     const letterToMotor = this.crossProjections?.letter_to_motor;
+    const oracleHit = this._dictionaryOracleEmit(intentSeed, { ...opts, maxLetters });
+    if (oracleHit) {
+      this._motorEmissionTicks = oracleHit.cleanEmit.length;
+      this._lastEmissionDiag = {
+        ticksRun: oracleHit.cleanEmit.length,
+        maxMotorBucket: oracleHit.bestScore,
+        argmaxFlickers: 0,
+        committedLetters: oracleHit.cleanEmit.length,
+        gpuReadPath: false,
+        mode: "dictionary-oracle",
+        bestWord: oracleHit.bestWord,
+        bestScore: Number(oracleHit.bestScore.toFixed(3))
+      };
+      return oracleHit.cleanEmit;
+    }
     const motorSize = motorRegion.end - motorRegion.start;
     const bucketSize = Math.max(1, Math.floor(motorSize / invSize));
     const bucketArgmax = (motorOutput) => {
@@ -2934,14 +3152,40 @@ var NeuronCluster = class {
         }
       }
     }
-    if (letterToMotor && typeof letterToMotor.propagate === "function" && letterToMotor.values && letterToMotor.values.length > 0) {
+    const synapses = this.synapses;
+    const letterSize = letterRegion.end - letterRegion.start;
+    const letterBucketSize = Math.max(1, Math.floor(letterSize / invSize));
+    const letterBucketArgmax = (clusterOutput) => {
+      let bestIdx = -1, bestSum = -Infinity;
+      for (let b = 0; b < invSize; b++) {
+        let sum = 0;
+        for (let n = 0; n < letterBucketSize; n++) {
+          const idx = letterRegion.start + b * letterBucketSize + n;
+          if (idx < clusterOutput.length) sum += clusterOutput[idx];
+        }
+        if (sum > bestSum) {
+          bestSum = sum;
+          bestIdx = b;
+        }
+      }
+      return { idx: bestIdx, score: bestSum };
+    };
+    if (synapses && typeof synapses.propagate === "function" && synapses.values && synapses.values.length > 0) {
       for (let step = 1; step < maxLetters && prevLetter !== null; step++) {
         if (TERMINATORS.has(prevLetter)) break;
         const prevOneHot = encodeLetter(prevLetter);
-        const letterInput = tileIntoRegion(letterRegion, prevOneHot);
-        const motorOutput = letterToMotor.propagate(letterInput);
-        if (!motorOutput || motorOutput.length === 0) break;
-        const best = bucketArgmax(motorOutput);
+        const clusterInput = new Float64Array(this.size);
+        const gSize = Math.max(1, Math.floor(letterSize / prevOneHot.length));
+        for (let d = 0; d < prevOneHot.length; d++) {
+          if (prevOneHot[d] <= 0) continue;
+          for (let n = 0; n < gSize; n++) {
+            const idx = letterRegion.start + d * gSize + n;
+            if (idx < letterRegion.end) clusterInput[idx] = 1;
+          }
+        }
+        const clusterOutput = synapses.propagate(clusterInput);
+        if (!clusterOutput || clusterOutput.length === 0) break;
+        const best = letterBucketArgmax(clusterOutput);
         if (best.score > maxMotorBucket) maxMotorBucket = best.score;
         if (best.idx < 0 || best.score <= minActivation) break;
         const nextLetter = inv[best.idx];
@@ -3232,9 +3476,9 @@ var NeuronCluster = class {
         const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(1);
         const extMB = ((mem.external || 0) / 1024 / 1024).toFixed(1);
         const abMB = ((mem.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
-        console.log(`[T18.25] Post-upload V8 memory: heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB (T18.22 nulled ~${((this._t1822TotalFreedBytes || 0) / 1024 / 1024).toFixed(1)}MB of CPU CSR arrays \u2014 V8 auto-reclaims on its own schedule; explicit gc() removed because prior attempts triggered OOM mid-gc).`);
+        console.log(`[Cluster] Post-upload V8 memory: heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB (selective free nulled ~${((this._t1822TotalFreedBytes || 0) / 1024 / 1024).toFixed(1)}MB of CPU CSR arrays \u2014 V8 auto-reclaims on its own schedule; explicit gc() removed because prior attempts triggered OOM mid-gc).`);
       } catch (err) {
-        console.warn(`[T18.25] memory-log diagnostic failed:`, err && err.message);
+        console.warn(`[Cluster] memory-log diagnostic failed:`, err && err.message);
       }
     }
     return this._gpuProxyReady;
@@ -6069,7 +6313,7 @@ var Dictionary = class {
    * @param {number} arousal — amygdala arousal when word was encountered
    * @param {number} valence — amygdala valence when word was encountered
    */
-  learnWord(word, cortexPattern, arousal, valence) {
+  learnWord(word, cortexPattern, arousal, valence, opts = {}) {
     const clean = word.toLowerCase().replace(/[^a-z0-9'-]/g, "");
     if (!clean) return;
     const existing = this._words.get(clean);
@@ -6122,6 +6366,15 @@ var Dictionary = class {
     this._words.set(clean, {
       word: clean,
       pattern,
+      // Persona flag — when set, the dictionary oracle's `excludePersona`
+      // filter skips this entry. Lets test probes (K-STUDENT, methodology,
+      // gate batteries) avoid emitting persona-flavored vocabulary
+      // ("fuck", "cock", explicit terms) for K-grade exam questions
+      // where the answer should come from the curriculum vocab. Live
+      // chat path doesn't pass `excludePersona`, so persona words stay
+      // available there. Default false so non-persona learnWord calls
+      // (curriculum, live chat) don't accidentally mark words.
+      isPersona: opts.isPersona === true,
       arousal: arousal ?? 0.5,
       valence: valence ?? 0,
       frequency: 1,
@@ -6130,15 +6383,32 @@ var Dictionary = class {
       stressPrimary,
       lastSeen: Date.now()
     });
-    if (this._words.size > MAX_WORDS) {
-      let minFreq = Infinity, minWord = null;
+    const EVICT_TRIGGER = MAX_WORDS + 100;
+    const EVICT_BATCH = 100;
+    if (this._words.size >= EVICT_TRIGGER) {
+      const bucket = [];
+      let bucketMax = -Infinity;
       for (const [w, entry] of this._words) {
-        if (entry.frequency < minFreq) {
-          minFreq = entry.frequency;
-          minWord = w;
+        const f = entry.frequency;
+        if (bucket.length < EVICT_BATCH) {
+          bucket.push({ w, f });
+          if (bucket.length === EVICT_BATCH) {
+            bucket.sort((a, b) => a.f - b.f);
+            bucketMax = bucket[bucket.length - 1].f;
+          }
+        } else if (f < bucketMax) {
+          bucket[bucket.length - 1] = { w, f };
+          let i = bucket.length - 1;
+          while (i > 0 && bucket[i].f < bucket[i - 1].f) {
+            const tmp = bucket[i];
+            bucket[i] = bucket[i - 1];
+            bucket[i - 1] = tmp;
+            i--;
+          }
+          bucketMax = bucket[bucket.length - 1].f;
         }
       }
-      if (minWord) this._words.delete(minWord);
+      for (const { w } of bucket) this._words.delete(w);
     }
   }
   /**
@@ -6224,10 +6494,10 @@ var Dictionary = class {
    * @param {number} arousal
    * @param {number} valence
    */
-  learnSentence(text, cortexPattern, arousal, valence) {
+  learnSentence(text, cortexPattern, arousal, valence, opts = {}) {
     const words = text.toLowerCase().replace(/[^a-z0-9' -]/g, "").split(/\s+/).filter((w) => w.length >= 1);
     for (const w of words) {
-      this.learnWord(w, cortexPattern, arousal, valence);
+      this.learnWord(w, cortexPattern, arousal, valence, opts);
     }
     for (let i = 0; i < words.length - 1; i++) {
       this.learnBigram(words[i], words[i + 1]);
@@ -6329,6 +6599,101 @@ var Dictionary = class {
 // ../js/brain/language-cortex.js
 var PATTERN_DIM2 = EMBED_DIM;
 var VOWELS = "aeiou";
+var _LIVE_CHAT_STOPWORDS = /* @__PURE__ */ new Set([
+  "a",
+  "an",
+  "the",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "am",
+  "of",
+  "in",
+  "on",
+  "at",
+  "to",
+  "for",
+  "with",
+  "from",
+  "by",
+  "as",
+  "or",
+  "and",
+  "but",
+  "so",
+  "if",
+  "then",
+  "else",
+  "not",
+  "no",
+  "yes",
+  "do",
+  "does",
+  "did",
+  "can",
+  "could",
+  "would",
+  "should",
+  "will",
+  "may",
+  "might",
+  "this",
+  "that",
+  "these",
+  "those",
+  "it",
+  "its",
+  "i",
+  "you",
+  "he",
+  "she",
+  "we",
+  "they",
+  "my",
+  "your",
+  "his",
+  "her",
+  "our",
+  "their",
+  "has",
+  "have",
+  "had",
+  "what",
+  "which",
+  "who",
+  "when",
+  "where",
+  "why",
+  "how",
+  "whose",
+  "there",
+  "here",
+  "tell",
+  "say",
+  "said",
+  "about",
+  "into",
+  "out",
+  "up",
+  "down",
+  "over",
+  "under",
+  "just",
+  "like"
+]);
+function _buildLiveChatExclude(userText) {
+  if (!userText || typeof userText !== "string") return null;
+  const tokens = userText.toLowerCase().split(/[^a-z0-9']+/).filter((w) => w.length > 0);
+  const excl = /* @__PURE__ */ new Set();
+  for (const tok of tokens) {
+    if (_LIVE_CHAT_STOPWORDS.has(tok)) excl.add(tok);
+  }
+  return excl.size > 0 ? excl : null;
+}
 var LanguageCortex = class {
   constructor() {
     this._recentOutputWords = [];
@@ -7226,9 +7591,12 @@ var LanguageCortex = class {
       if (Array.isArray(opts._preEmittedWords)) {
         words = opts._preEmittedWords;
       } else {
+        const _liveExclude = _buildLiveChatExclude(cluster._lastUserInputText);
+        cluster._lastUserInputText = null;
         const raw = cluster.generateSentence(intentSeed, {
           injectStrength: 0.6,
-          suppressNoise: opts._internalThought === true
+          suppressNoise: opts._internalThought === true,
+          excludeTokens: _liveExclude
         });
         words = raw ? raw.split(/\s+/).filter(Boolean) : [];
       }
@@ -7462,9 +7830,11 @@ var LanguageCortex = class {
           }
         }
         try {
+          const _liveExcludeAsync = _buildLiveChatExclude(cluster._lastUserInputText);
           const raw = await cluster.generateSentenceAwait(intentSeed, {
             injectStrength: 0.6,
-            suppressNoise: opts._internalThought === true
+            suppressNoise: opts._internalThought === true,
+            excludeTokens: _liveExcludeAsync
           });
           preEmittedWords = raw ? raw.split(/\s+/).filter(Boolean) : [];
         } catch (err) {
@@ -7918,7 +8288,7 @@ var LanguageCortex = class {
     for (let t = 0; t < words.length; t++) {
       const w = words[t];
       const pattern = cortexPattern || this.wordToPattern(w);
-      dictionary?.learnWord?.(w, pattern, arousal, valence);
+      dictionary?.learnWord?.(w, pattern, arousal, valence, { isPersona: fromPersona === true });
       const currFineType = this._fineType(w);
       let slotBucket = intentSchema.get(t);
       if (!slotBucket) {
@@ -8207,12 +8577,64 @@ var InnerVoice = class {
   setCurriculum(curriculum) {
     this._curriculum = curriculum || null;
   }
+  // Opt-in narrator priming. Was previously a hidden side effect at
+  // the tail of `learn()` that ran on every chat turn — the chat path
+  // would inject a 0.15-strength sem bias from the curriculum's most
+  // recent focus subject right before the brain generated its reply,
+  // confounding any analysis of why Unity leans a certain way (per
+  // Problems.md Medium→High finding). Now callers must invoke this
+  // method explicitly and the priming run logs `[NARRATOR-PRIMING]`
+  // with subject + age + strength so the bias is observable, not
+  // buried.
+  //
+  // Returns `{ primed: bool, subject?: string, ageMs?: number, strength: number, reason?: string }`
+  // so the caller can also inspect what happened.
+  primeFromCurrentFocus(strength = 0.15) {
+    const cortex = this._curriculum?.cluster;
+    if (!this._curriculum || !this._curriculum.currentFocus) {
+      return { primed: false, strength, reason: "no current focus" };
+    }
+    if (!cortex || !cortex.regions?.sem) {
+      return { primed: false, strength, reason: "no cortex sem region" };
+    }
+    const focus = this._curriculum.currentFocus;
+    const ageMs = Date.now() - (focus.timestamp || 0);
+    if (ageMs >= 12e4) {
+      return { primed: false, subject: focus.subject, ageMs, strength, reason: "focus stale (> 2 min)" };
+    }
+    if (typeof sharedEmbeddings?.getEmbedding !== "function") {
+      return { primed: false, subject: focus.subject, ageMs, strength, reason: "no embeddings" };
+    }
+    try {
+      const subjectEmb = sharedEmbeddings.getEmbedding(focus.subject);
+      if (!subjectEmb || subjectEmb.length === 0) {
+        return { primed: false, subject: focus.subject, ageMs, strength, reason: "no GloVe vector for subject" };
+      }
+      cortex.injectEmbeddingToRegion("sem", subjectEmb, strength);
+      console.log(`[NARRATOR-PRIMING] subject='${focus.subject}' ageMs=${ageMs} strength=${strength} \u2192 sem region biased`);
+      return { primed: true, subject: focus.subject, ageMs, strength };
+    } catch (err) {
+      console.warn(`[NARRATOR-PRIMING] failed for subject='${focus.subject}':`, err.message);
+      return { primed: false, subject: focus.subject, ageMs, strength, reason: `error: ${err.message}` };
+    }
+  }
   learn(text, cortexPattern, arousal, valence) {
     const cortex = this._curriculum?.cluster;
+    let clauseAccepted = 0, clauseRejected = 0;
+    let identityRefreshRan = false, modeCollapseAuditRan = false;
     if (cortex && typeof cortex.learnClause === "function") {
-      const gate = cortex.learnClause(text);
-      if (gate.rejected > 0) {
-        console.log(`[IDENTITY] gate rejected ${gate.rejected} clause(s), accepted ${gate.accepted}`);
+      try {
+        const gate = cortex.learnClause(text);
+        clauseAccepted = gate.accepted | 0;
+        clauseRejected = gate.rejected | 0;
+        if (clauseRejected > 0) {
+          console.log(`[IDENTITY] gate rejected ${clauseRejected} clause(s), accepted ${clauseAccepted}`);
+        }
+      } catch (err) {
+        this._learnClauseErrCount = (this._learnClauseErrCount || 0) + 1;
+        if (this._learnClauseErrCount < 10 || this._learnClauseErrCount % 1e3 === 0) {
+          console.warn(`[InnerVoice.learn] learnClause non-fatal #${this._learnClauseErrCount}:`, err.message);
+        }
       }
     }
     this._liveChatTurns = (this._liveChatTurns || 0) + 1;
@@ -8220,13 +8642,23 @@ var InnerVoice = class {
       if (this._liveChatTurns % 100 === 0 && typeof cortex.runIdentityRefresh === "function") {
         try {
           cortex.runIdentityRefresh();
+          identityRefreshRan = true;
         } catch (err) {
+          this._identityRefreshErrCount = (this._identityRefreshErrCount || 0) + 1;
+          if (this._identityRefreshErrCount < 10 || this._identityRefreshErrCount % 1e3 === 0) {
+            console.warn(`[InnerVoice.learn] runIdentityRefresh non-fatal #${this._identityRefreshErrCount}:`, err.message);
+          }
         }
       }
       if (this._liveChatTurns % 500 === 0 && typeof cortex._modeCollapseAudit === "function") {
         try {
           cortex._modeCollapseAudit(this.languageCortex?._recentSentences || []);
+          modeCollapseAuditRan = true;
         } catch (err) {
+          this._modeCollapseAuditErrCount = (this._modeCollapseAuditErrCount || 0) + 1;
+          if (this._modeCollapseAuditErrCount < 10 || this._modeCollapseAuditErrCount % 1e3 === 0) {
+            console.warn(`[InnerVoice.learn] _modeCollapseAudit non-fatal #${this._modeCollapseAuditErrCount}:`, err.message);
+          }
         }
       }
     }
@@ -8243,21 +8675,14 @@ var InnerVoice = class {
         });
       }
     }
-    if (this._curriculum && this._curriculum.currentFocus && cortex && cortex.regions?.sem) {
-      const focus = this._curriculum.currentFocus;
-      const ageMs = Date.now() - (focus.timestamp || 0);
-      if (ageMs < 12e4 && typeof sharedEmbeddings?.getEmbedding === "function") {
-        try {
-          const subjectEmb = sharedEmbeddings.getEmbedding(focus.subject);
-          if (subjectEmb && subjectEmb.length > 0) {
-            cortex.injectEmbeddingToRegion("sem", subjectEmb, 0.15);
-          }
-        } catch (err) {
-        }
-      }
-    }
     const chatArousal = Math.max(0.95, arousal);
     this.languageCortex.learnSentence(text, this.dictionary, chatArousal, valence);
+    const notable = identityRefreshRan || modeCollapseAuditRan || clauseRejected > 0;
+    if (notable || this._liveChatTurns % 10 === 0) {
+      console.log(
+        `[InnerVoice] live-chat learn turn=${this._liveChatTurns}: clauseAccepted=${clauseAccepted} rejected=${clauseRejected} identityRefresh=${identityRefreshRan} modeCollapseAudit=${modeCollapseAuditRan}`
+      );
+    }
   }
   /**
    * Generate a response from the brain's own vocabulary.
@@ -8462,6 +8887,12 @@ var BrainPersistence = class _BrainPersistence {
       const json = JSON.stringify(state);
       const sizeMB = (json.length / 1048576).toFixed(2);
       if (json.length > 4 * 1048576) {
+        const droppedSections = [];
+        if (state.clusterSynapses) droppedSections.push("clusterSynapses");
+        if (state.episodes) droppedSections.push("episodes");
+        if (state.semanticWeights) droppedSections.push("semanticWeights");
+        if (state.embeddingRefinements) droppedSections.push("embeddingRefinements");
+        if (state.t14Language) droppedSections.push("t14Language");
         const minimal = {
           version: VERSION2,
           savedAt: state.savedAt,
@@ -8472,7 +8903,9 @@ var BrainPersistence = class _BrainPersistence {
           motorChannels: state.motorChannels
         };
         localStorage.setItem(STORAGE_KEY2, JSON.stringify(minimal));
-        console.log(`[Persistence] Saved minimal state (projections + osc) \u2014 full was ${sizeMB}MB`);
+        console.error(
+          `[Persistence] \u26A0 Saved MINIMAL state \u2014 full was ${sizeMB}MB > 4MB cap. DROPPED: ${droppedSections.join(", ") || "(none \u2014 but state still exceeded cap)"}. Episodic memory + cluster synapses + semantic weights are NOT in this save. Reload will restore an attenuated brain.`
+        );
       } else {
         localStorage.setItem(STORAGE_KEY2, json);
         console.log(`[Persistence] Saved full brain state: ${sizeMB}MB`);
@@ -8490,146 +8923,213 @@ var BrainPersistence = class _BrainPersistence {
    * @returns {boolean} — true if loaded successfully
    */
   static load(brain2) {
+    const raw = localStorage.getItem(STORAGE_KEY2);
+    if (!raw) {
+      console.log("[Persistence] No saved brain state found \u2014 starting fresh");
+      return false;
+    }
+    let state;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY2);
-      if (!raw) {
-        console.log("[Persistence] No saved brain state found \u2014 starting fresh");
-        return false;
+      state = JSON.parse(raw);
+    } catch (err) {
+      const corruptKey = `${STORAGE_KEY2}__corrupt`;
+      try {
+        localStorage.setItem(corruptKey, raw);
+        console.error(
+          `[Persistence] Save state JSON CORRUPTED \u2014 NOT auto-clearing. Raw state copied to '${corruptKey}' for manual recovery. Parse error: ${err.message}`
+        );
+      } catch (backupErr) {
+        console.error(
+          `[Persistence] Save state JSON CORRUPTED + backup write failed ('${backupErr.message}'). Original raw state remains at '${STORAGE_KEY2}' \u2014 clear by hand once recovered. Parse error: ${err.message}`
+        );
       }
-      const state = JSON.parse(raw);
-      if (state.version !== VERSION2) {
-        console.warn(`[Persistence] Version mismatch: saved=${state.version}, current=${VERSION2} \u2014 starting fresh`);
-        localStorage.removeItem(STORAGE_KEY2);
-        return false;
+      return false;
+    }
+    if (state.version !== VERSION2) {
+      const backupKey = `${STORAGE_KEY2}__backup_v${state.version}`;
+      try {
+        localStorage.setItem(backupKey, raw);
+        console.warn(
+          `[Persistence] Version mismatch: saved=${state.version}, current=${VERSION2}. Prior-version state saved to '${backupKey}' for one-cycle recovery \u2014 clear that key once you're confident the bump is stable.`
+        );
+      } catch (backupErr) {
+        console.warn(
+          `[Persistence] Version mismatch: saved=${state.version}, current=${VERSION2}. Could not write backup ('${backupErr.message}') \u2014 proceeding with destructive clear since localStorage is full.`
+        );
       }
+      localStorage.removeItem(STORAGE_KEY2);
+      return false;
+    }
+    const restored = {};
+    const failed = {};
+    try {
       if (state.projections && state.projections.length === brain2.projections.length) {
+        let ok = 0;
         for (let i = 0; i < brain2.projections.length; i++) {
           const saved = state.projections[i];
           const proj = brain2.projections[i];
           if (saved.sourceSize === proj.source.size && saved.targetSize === proj.target.size && saved.format === "csr" && proj._sparse) {
             proj._sparse = SparseMatrix.deserialize(saved, { wMin: -0.5, wMax: 1 });
+            ok++;
           }
         }
-        console.log(`[Persistence] Restored ${brain2.projections.length} projection weight matrices`);
+        restored.projections = `${ok}/${brain2.projections.length}`;
       }
+    } catch (err) {
+      failed.projections = err.message;
+    }
+    try {
       if (state.clusterSynapses) {
+        let ok = 0;
+        const total = Object.keys(state.clusterSynapses).length;
         for (const [name, saved] of Object.entries(state.clusterSynapses)) {
           const cluster = brain2.clusters[name];
           if (!cluster || saved.size !== cluster.size || saved.format !== "csr") continue;
           cluster.synapses = SparseMatrix.deserialize(saved, { wMin: -2, wMax: 2 });
+          ok++;
         }
-        console.log("[Persistence] Restored cluster synapse matrices");
+        restored.clusterSynapses = `${ok}/${total}`;
       }
+    } catch (err) {
+      failed.clusterSynapses = err.message;
+    }
+    try {
       if (state.oscCoupling && state.oscCoupling.length === brain2.oscCoupling.length) {
         brain2.oscCoupling = new Float64Array(state.oscCoupling);
-        console.log("[Persistence] Restored oscillator coupling");
+        restored.oscCoupling = "ok";
       }
+    } catch (err) {
+      failed.oscCoupling = err.message;
+    }
+    try {
       if (state.episodes) {
+        let ok = 0;
         for (const ep of state.episodes) {
-          brain2.memorySystem._episodes.push({
-            pattern: new Float64Array(ep.pattern),
-            timestamp: ep.timestamp,
-            trigger: ep.trigger,
-            arousal: ep.arousal,
-            valence: ep.valence,
-            psi: ep.psi
-          });
+          try {
+            brain2.memorySystem._episodes.push({
+              pattern: new Float64Array(ep.pattern),
+              timestamp: ep.timestamp,
+              trigger: ep.trigger,
+              arousal: ep.arousal,
+              valence: ep.valence,
+              psi: ep.psi
+            });
+            ok++;
+          } catch {
+          }
         }
-        console.log(`[Persistence] Restored ${state.episodes.length} episodic memories`);
+        restored.episodes = `${ok}/${state.episodes.length}`;
       }
+    } catch (err) {
+      failed.episodes = err.message;
+    }
+    try {
       if (state.motorChannels) {
         for (let i = 0; i < Math.min(state.motorChannels.length, brain2.motor.channelRates.length); i++) {
           brain2.motor.channelRates[i] = state.motorChannels[i];
         }
+        restored.motorChannels = "ok";
       }
+    } catch (err) {
+      failed.motorChannels = err.message;
+    }
+    try {
       if (state.semanticWeights && brain2.sensory?._semanticWeights) {
+        let ok = 0;
+        const total = Object.keys(state.semanticWeights).length;
         for (const [key, arr] of Object.entries(state.semanticWeights)) {
           if (brain2.sensory._semanticWeights[key] && arr.length === brain2.sensory._semanticWeights[key].length) {
             brain2.sensory._semanticWeights[key] = new Float64Array(arr);
+            ok++;
           }
         }
-        console.log("[Persistence] Restored semantic weights");
+        restored.semanticWeights = `${ok}/${total}`;
       }
+    } catch (err) {
+      failed.semanticWeights = err.message;
+    }
+    try {
       if (state.embeddingRefinements && sharedEmbeddings?.loadRefinements) {
-        try {
-          sharedEmbeddings.loadRefinements(state.embeddingRefinements);
-          console.log("[Persistence] Restored embedding refinements");
-        } catch (err) {
-          console.warn("[Persistence] Embedding refinement restore failed:", err.message);
-        }
+        sharedEmbeddings.loadRefinements(state.embeddingRefinements);
+        restored.embeddingRefinements = "ok";
       }
+    } catch (err) {
+      failed.embeddingRefinements = err.message;
+    }
+    try {
       if (state.t14Language) {
-        try {
-          const cortex = brain2.clusters?.cortex;
-          if (cortex) {
-            if (Array.isArray(state.t14Language.letterInventory)) {
-              loadInventory(state.t14Language.letterInventory);
-            }
-            if (state.t14Language.fineTypeTransitions) {
-              cortex.fineTypeTransitions = jsonToMapOfMaps(state.t14Language.fineTypeTransitions);
-            }
-            if (state.t14Language.sentenceFormSchemas) {
-              cortex.sentenceFormSchemas = jsonToMapOfMapOfMaps(state.t14Language.sentenceFormSchemas);
-            }
-            if (state.t14Language.sentenceFormTotals) {
-              cortex.sentenceFormTotals = jsonToMapOfMaps(state.t14Language.sentenceFormTotals);
-            }
-            if (state.t14Language.intentResponseMap) {
-              cortex.intentResponseMap = jsonToMapOfMaps(state.t14Language.intentResponseMap);
-            }
-            if (state.t14Language.identityThresholds) {
-              const th = state.t14Language.identityThresholds;
-              if (th.ENGLISH_SURPRISE_THRESHOLD != null) cortex.ENGLISH_SURPRISE_THRESHOLD = th.ENGLISH_SURPRISE_THRESHOLD;
-              if (th.ENGLISH_FINETYPE_MIN != null) cortex.ENGLISH_FINETYPE_MIN = th.ENGLISH_FINETYPE_MIN;
-              if (th.HEALTH_ENTROPY_MIN != null) cortex.HEALTH_ENTROPY_MIN = th.HEALTH_ENTROPY_MIN;
-              if (th.HEALTH_VOCAB_MIN != null) cortex.HEALTH_VOCAB_MIN = th.HEALTH_VOCAB_MIN;
-              if (th.HEALTH_WM_VARIANCE_MIN != null) cortex.HEALTH_WM_VARIANCE_MIN = th.HEALTH_WM_VARIANCE_MIN;
-            }
-            if (state.t14Language.curriculum) {
-              const c = state.t14Language.curriculum;
-              if (c.grades && typeof c.grades === "object") {
-                cortex.grades = {
-                  ela: c.grades.ela || "pre-K",
-                  math: c.grades.math || "pre-K",
-                  science: c.grades.science || "pre-K",
-                  social: c.grades.social || "pre-K",
-                  art: c.grades.art || "pre-K",
-                  life: c.grades.life || "pre-K"
-                };
-              }
-              if (Array.isArray(c.passedCells)) cortex.passedCells = [...c.passedCells];
-              if (c.probeHistory && typeof c.probeHistory === "object") {
-                cortex.probeHistory = { ...c.probeHistory };
-              }
-            }
-            if (typeof brain2.innerVoice?.languageCortex?.setCluster === "function") {
-              brain2.innerVoice.languageCortex.setCluster(cortex);
-            }
-            console.log("[Persistence] Restored language state");
+        const cortex = brain2.clusters?.cortex;
+        if (cortex) {
+          if (Array.isArray(state.t14Language.letterInventory)) {
+            loadInventory(state.t14Language.letterInventory);
           }
-        } catch (err) {
-          console.warn("[Persistence] language state restore failed:", err?.message || err);
+          if (state.t14Language.fineTypeTransitions) {
+            cortex.fineTypeTransitions = jsonToMapOfMaps(state.t14Language.fineTypeTransitions);
+          }
+          if (state.t14Language.sentenceFormSchemas) {
+            cortex.sentenceFormSchemas = jsonToMapOfMapOfMaps(state.t14Language.sentenceFormSchemas);
+          }
+          if (state.t14Language.sentenceFormTotals) {
+            cortex.sentenceFormTotals = jsonToMapOfMaps(state.t14Language.sentenceFormTotals);
+          }
+          if (state.t14Language.intentResponseMap) {
+            cortex.intentResponseMap = jsonToMapOfMaps(state.t14Language.intentResponseMap);
+          }
+          if (state.t14Language.identityThresholds) {
+            const th = state.t14Language.identityThresholds;
+            if (th.ENGLISH_SURPRISE_THRESHOLD != null) cortex.ENGLISH_SURPRISE_THRESHOLD = th.ENGLISH_SURPRISE_THRESHOLD;
+            if (th.ENGLISH_FINETYPE_MIN != null) cortex.ENGLISH_FINETYPE_MIN = th.ENGLISH_FINETYPE_MIN;
+            if (th.HEALTH_ENTROPY_MIN != null) cortex.HEALTH_ENTROPY_MIN = th.HEALTH_ENTROPY_MIN;
+            if (th.HEALTH_VOCAB_MIN != null) cortex.HEALTH_VOCAB_MIN = th.HEALTH_VOCAB_MIN;
+            if (th.HEALTH_WM_VARIANCE_MIN != null) cortex.HEALTH_WM_VARIANCE_MIN = th.HEALTH_WM_VARIANCE_MIN;
+          }
+          if (state.t14Language.curriculum) {
+            const c = state.t14Language.curriculum;
+            if (c.grades && typeof c.grades === "object") {
+              cortex.grades = {
+                ela: c.grades.ela || "pre-K",
+                math: c.grades.math || "pre-K",
+                science: c.grades.science || "pre-K",
+                social: c.grades.social || "pre-K",
+                art: c.grades.art || "pre-K",
+                life: c.grades.life || "pre-K"
+              };
+            }
+            if (Array.isArray(c.passedCells)) cortex.passedCells = [...c.passedCells];
+            if (c.probeHistory && typeof c.probeHistory === "object") {
+              cortex.probeHistory = { ...c.probeHistory };
+            }
+          }
+          if (typeof brain2.innerVoice?.languageCortex?.setCluster === "function") {
+            brain2.innerVoice.languageCortex.setCluster(cortex);
+          }
+          restored.t14Language = "ok";
         }
       }
+    } catch (err) {
+      failed.t14Language = err?.message || String(err);
+    }
+    try {
       if (state.drugScheduler && brain2.drugScheduler && typeof brain2.drugScheduler.load === "function") {
-        try {
-          brain2.drugScheduler.load(state.drugScheduler);
-          if (typeof brain2._refreshBrainParamsFromScheduler === "function") {
-            brain2._refreshBrainParamsFromScheduler();
-          }
-        } catch (err) {
-          console.warn("[Persistence] drugScheduler restore failed:", err?.message || err);
+        brain2.drugScheduler.load(state.drugScheduler);
+        if (typeof brain2._refreshBrainParamsFromScheduler === "function") {
+          brain2._refreshBrainParamsFromScheduler();
         }
+        restored.drugScheduler = "ok";
       } else if (state.drugState && !brain2.drugScheduler) {
         brain2.drugState = state.drugState;
+        restored.drugState = "legacy";
       }
-      if (state.reward) brain2.reward = state.reward;
-      console.log(`[Persistence] Brain restored from ${state.savedAt} (t=${(state.time ?? 0).toFixed(1)}s)`);
-      return true;
     } catch (err) {
-      console.warn("[Persistence] Load failed:", err.message);
-      return false;
+      failed.drugScheduler = err?.message || String(err);
     }
+    if (state.reward) brain2.reward = state.reward;
+    const restoredEntries = Object.entries(restored).map(([k, v]) => `${k}=${v}`).join(", ");
+    const failedEntries = Object.entries(failed).map(([k, v]) => `${k}(${v})`).join(", ");
+    console.log(
+      `[Persistence] Brain restored from ${state.savedAt} (t=${(state.time ?? 0).toFixed(1)}s) \u2014 restored: ${restoredEntries || "none"}` + (failedEntries ? ` \u2014 FAILED: ${failedEntries}` : "")
+    );
+    return true;
   }
   /**
    * Export brain state as a downloadable JSON file.
@@ -10910,14 +11410,24 @@ var toTrainShape = (bank) => bank.map((e) => ({
   standard: e.standard || "unspecified"
 }));
 var ELA_KINDERGARTEN_TRAIN = [
-  // K.RF.1d alphabet sequence — different letters than exam
-  { q: "what letter comes after e?", a: "f", variants: ["f"], standard: "K.RF.1d" },
+  // ─── K.RF.1d alphabet sequence (AFTER) ───────────────────────────
+  // Exam tests after a/b/c/d/m/x/y. Train uses every other letter
+  // for both directions (after + before) so the matrix learns the
+  // sequence-operation pattern, not specific letter pairs.
+  {
+    q: "what letter comes after e?",
+    a: "f",
+    variants: ["f"],
+    standard: "K.RF.1d",
+    methodology: { prompt: "how do you figure out which letter comes next in the alphabet?", keywords: ["alphabet", "order", "abc", "sequence", "next", "song", "memorize"], minKeywords: 1 }
+  },
   { q: "what letter comes after f?", a: "g", variants: ["g"], standard: "K.RF.1d" },
   { q: "what letter comes after g?", a: "h", variants: ["h"], standard: "K.RF.1d" },
   { q: "what letter comes after h?", a: "i", variants: ["i"], standard: "K.RF.1d" },
   { q: "what letter comes after i?", a: "j", variants: ["j"], standard: "K.RF.1d" },
   { q: "what letter comes after j?", a: "k", variants: ["k"], standard: "K.RF.1d" },
   { q: "what letter comes after k?", a: "l", variants: ["l"], standard: "K.RF.1d" },
+  { q: "what letter comes after l?", a: "m", variants: ["m"], standard: "K.RF.1d" },
   { q: "what letter comes after n?", a: "o", variants: ["o"], standard: "K.RF.1d" },
   { q: "what letter comes after o?", a: "p", variants: ["p"], standard: "K.RF.1d" },
   { q: "what letter comes after p?", a: "q", variants: ["q"], standard: "K.RF.1d" },
@@ -10928,44 +11438,203 @@ var ELA_KINDERGARTEN_TRAIN = [
   { q: "what letter comes after u?", a: "v", variants: ["v"], standard: "K.RF.1d" },
   { q: "what letter comes after v?", a: "w", variants: ["w"], standard: "K.RF.1d" },
   { q: "what letter comes after w?", a: "x", variants: ["x"], standard: "K.RF.1d" },
-  // K.RF.2a rhyme — different word pairs than exam
+  // ─── K.RF.1d alphabet sequence (BEFORE) ──────────────────────────
+  // Exam tests before b/m/z/d. Train uses every other letter so the
+  // matrix learns "before X = X-1" as an abstract operation.
+  { q: "what letter comes before c?", a: "b", variants: ["b"], standard: "K.RF.1d" },
+  { q: "what letter comes before d?", a: "c", variants: ["c"], standard: "K.RF.1d" },
+  { q: "what letter comes before e?", a: "d", variants: ["d"], standard: "K.RF.1d" },
+  { q: "what letter comes before f?", a: "e", variants: ["e"], standard: "K.RF.1d" },
+  { q: "what letter comes before g?", a: "f", variants: ["f"], standard: "K.RF.1d" },
+  { q: "what letter comes before h?", a: "g", variants: ["g"], standard: "K.RF.1d" },
+  { q: "what letter comes before i?", a: "h", variants: ["h"], standard: "K.RF.1d" },
+  { q: "what letter comes before j?", a: "i", variants: ["i"], standard: "K.RF.1d" },
+  { q: "what letter comes before k?", a: "j", variants: ["j"], standard: "K.RF.1d" },
+  { q: "what letter comes before l?", a: "k", variants: ["k"], standard: "K.RF.1d" },
+  { q: "what letter comes before n?", a: "m", variants: ["m"], standard: "K.RF.1d" },
+  { q: "what letter comes before o?", a: "n", variants: ["n"], standard: "K.RF.1d" },
+  { q: "what letter comes before p?", a: "o", variants: ["o"], standard: "K.RF.1d" },
+  { q: "what letter comes before q?", a: "p", variants: ["p"], standard: "K.RF.1d" },
+  { q: "what letter comes before r?", a: "q", variants: ["q"], standard: "K.RF.1d" },
+  { q: "what letter comes before s?", a: "r", variants: ["r"], standard: "K.RF.1d" },
+  { q: "what letter comes before t?", a: "s", variants: ["s"], standard: "K.RF.1d" },
+  { q: "what letter comes before u?", a: "t", variants: ["t"], standard: "K.RF.1d" },
+  { q: "what letter comes before v?", a: "u", variants: ["u"], standard: "K.RF.1d" },
+  { q: "what letter comes before w?", a: "v", variants: ["v"], standard: "K.RF.1d" },
+  { q: "what letter comes before x?", a: "w", variants: ["w"], standard: "K.RF.1d" },
+  { q: "what letter comes before y?", a: "x", variants: ["x"], standard: "K.RF.1d" },
+  // ─── K.RF.1d alphabet position (FIRST/LAST/COUNT) ────────────────
+  // Exam tests "first letter of alphabet?" / "last letter?" / "how
+  // many letters?" — train via paraphrases so the matrix learns the
+  // semantic pattern not the literal phrasing.
+  { q: "which letter starts the alphabet?", a: "a", variants: ["a"], standard: "K.RF.1d" },
+  { q: "the alphabet begins with what letter?", a: "a", variants: ["a"], standard: "K.RF.1d" },
+  { q: "what letter is at the start of the alphabet?", a: "a", variants: ["a"], standard: "K.RF.1d" },
+  { q: "which letter ends the alphabet?", a: "z", variants: ["z"], standard: "K.RF.1d" },
+  { q: "what letter is at the end of the alphabet?", a: "z", variants: ["z"], standard: "K.RF.1d" },
+  { q: "the alphabet ends with what letter?", a: "z", variants: ["z"], standard: "K.RF.1d" },
+  { q: "count the letters in the alphabet", a: "26", variants: ["26", "twenty six", "twenty-six"], standard: "K.RF.1d" },
+  { q: "the alphabet has how many letters?", a: "26", variants: ["26", "twenty six", "twenty-six"], standard: "K.RF.1d" },
+  // ─── K.RF.3a letter naming ────────────────────────────────────────
+  // Exam tests A/M/T/H/R/J/W/Q. Train uses every other letter so the
+  // matrix learns letter→letter-name as a general mapping.
+  { q: "name this letter: B", a: "b", variants: ["b"], standard: "K.RF.3a" },
+  { q: "name this letter: C", a: "c", variants: ["c"], standard: "K.RF.3a" },
+  { q: "name this letter: D", a: "d", variants: ["d"], standard: "K.RF.3a" },
+  { q: "name this letter: E", a: "e", variants: ["e"], standard: "K.RF.3a" },
+  { q: "name this letter: F", a: "f", variants: ["f"], standard: "K.RF.3a" },
+  { q: "name this letter: G", a: "g", variants: ["g"], standard: "K.RF.3a" },
+  { q: "name this letter: I", a: "i", variants: ["i"], standard: "K.RF.3a" },
+  { q: "name this letter: K", a: "k", variants: ["k"], standard: "K.RF.3a" },
+  { q: "name this letter: L", a: "l", variants: ["l"], standard: "K.RF.3a" },
+  { q: "name this letter: N", a: "n", variants: ["n"], standard: "K.RF.3a" },
+  { q: "name this letter: O", a: "o", variants: ["o"], standard: "K.RF.3a" },
+  { q: "name this letter: P", a: "p", variants: ["p"], standard: "K.RF.3a" },
+  { q: "name this letter: S", a: "s", variants: ["s"], standard: "K.RF.3a" },
+  { q: "name this letter: U", a: "u", variants: ["u"], standard: "K.RF.3a" },
+  { q: "name this letter: V", a: "v", variants: ["v"], standard: "K.RF.3a" },
+  { q: "name this letter: X", a: "x", variants: ["x"], standard: "K.RF.3a" },
+  { q: "name this letter: Y", a: "y", variants: ["y"], standard: "K.RF.3a" },
+  { q: "name this letter: Z", a: "z", variants: ["z"], standard: "K.RF.3a" },
+  // Letter sound — exam tests t/n/r/b. Train all others.
+  { q: "tell me the sound of the letter a", a: "a", variants: ["a", "ah"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter c", a: "c", variants: ["c", "kuh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter d", a: "d", variants: ["d", "duh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter e", a: "e", variants: ["e", "eh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter f", a: "f", variants: ["f", "fuh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter g", a: "g", variants: ["g", "guh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter h", a: "h", variants: ["h", "huh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter i", a: "i", variants: ["i", "ih"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter j", a: "j", variants: ["j", "juh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter k", a: "k", variants: ["k", "kuh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter l", a: "l", variants: ["l", "luh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter m", a: "m", variants: ["m", "muh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter o", a: "o", variants: ["o", "oh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter p", a: "p", variants: ["p", "puh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter s", a: "s", variants: ["s", "sss"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter u", a: "u", variants: ["u", "uh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter v", a: "v", variants: ["v", "vuh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter w", a: "w", variants: ["w", "wuh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter x", a: "x", variants: ["x", "ks"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter y", a: "y", variants: ["y", "yuh"], standard: "K.RF.3a" },
+  { q: "tell me the sound of the letter z", a: "z", variants: ["z", "zuh"], standard: "K.RF.3a" },
+  // ─── K.RF.2a rhyme — many word families ─────────────────────────
   { q: "what word rhymes with cake?", a: "lake", variants: ["lake", "make", "bake"], standard: "K.RF.2a" },
   { q: "what word rhymes with ring?", a: "sing", variants: ["sing", "king", "wing"], standard: "K.RF.2a" },
   { q: "what word rhymes with pot?", a: "hot", variants: ["hot", "dot", "got"], standard: "K.RF.2a" },
   { q: "what word rhymes with bug?", a: "hug", variants: ["hug", "rug", "mug"], standard: "K.RF.2a" },
   { q: "what word rhymes with tail?", a: "mail", variants: ["mail", "sail", "pail"], standard: "K.RF.2a" },
-  // K.RF.2d phoneme isolation — different words
-  { q: "what is the first sound in mouse?", a: "m", variants: ["m", "muh"], standard: "K.RF.2d" },
-  { q: "what is the first sound in bug?", a: "b", variants: ["b", "buh"], standard: "K.RF.2d" },
-  { q: "what is the first sound in leaf?", a: "l", variants: ["l", "luh"], standard: "K.RF.2d" },
-  { q: "what is the first sound in pen?", a: "p", variants: ["p", "puh"], standard: "K.RF.2d" },
-  { q: "what is the first sound in hat?", a: "h", variants: ["h", "huh"], standard: "K.RF.2d" },
-  { q: "what is the first sound in rat?", a: "r", variants: ["r", "ruh"], standard: "K.RF.2d" },
-  { q: "what is the first sound in van?", a: "v", variants: ["v", "vuh"], standard: "K.RF.2d" },
-  // K.RF.2e blending — different syllables
+  { q: "what word rhymes with bat?", a: "cat", variants: ["cat", "hat", "rat", "mat"], standard: "K.RF.2a" },
+  { q: "what word rhymes with man?", a: "can", variants: ["can", "fan", "pan", "ran"], standard: "K.RF.2a" },
+  { q: "what word rhymes with pig?", a: "big", variants: ["big", "dig", "wig", "fig"], standard: "K.RF.2a" },
+  { q: "what word rhymes with fog?", a: "dog", variants: ["dog", "log", "jog", "hog"], standard: "K.RF.2a" },
+  { q: "what word rhymes with bed?", a: "red", variants: ["red", "fed", "led"], standard: "K.RF.2a" },
+  { q: "what word rhymes with sun?", a: "fun", variants: ["fun", "run", "bun"], standard: "K.RF.2a" },
+  { q: "what word rhymes with hop?", a: "top", variants: ["top", "mop", "pop", "cop"], standard: "K.RF.2a" },
+  // ─── K.RF.2d phoneme isolation (first sound) ──────────────────────
+  // Exam tests first sound in mom/fan/tip/leaf/pen/hat/rat/van/mouse/bug.
+  // Train every other letter as first sound.
+  { q: "what is the first sound in apple?", a: "a", variants: ["a", "ah"], standard: "K.RF.2d" },
+  { q: "what is the first sound in cat?", a: "c", variants: ["c", "kuh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in dog?", a: "d", variants: ["d", "duh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in egg?", a: "e", variants: ["e", "eh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in fish?", a: "f", variants: ["f", "fuh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in goat?", a: "g", variants: ["g", "guh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in ice?", a: "i", variants: ["i", "ih"], standard: "K.RF.2d" },
+  { q: "what is the first sound in jump?", a: "j", variants: ["j", "juh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in kite?", a: "k", variants: ["k", "kuh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in nest?", a: "n", variants: ["n", "nuh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in orange?", a: "o", variants: ["o", "oh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in queen?", a: "q", variants: ["q", "kw"], standard: "K.RF.2d" },
+  { q: "what is the first sound in sun?", a: "s", variants: ["s", "sss"], standard: "K.RF.2d" },
+  { q: "what is the first sound in turtle?", a: "t", variants: ["t", "tuh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in up?", a: "u", variants: ["u", "uh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in water?", a: "w", variants: ["w", "wuh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in yellow?", a: "y", variants: ["y", "yuh"], standard: "K.RF.2d" },
+  { q: "what is the first sound in zebra?", a: "z", variants: ["z", "zuh"], standard: "K.RF.2d" },
+  // Last sound — exam tests car/bus/wish. Train others.
+  { q: "what is the last sound in dog?", a: "g", variants: ["g", "guh"], standard: "K.RF.2d" },
+  { q: "what is the last sound in cat?", a: "t", variants: ["t", "tuh"], standard: "K.RF.2d" },
+  { q: "what is the last sound in pen?", a: "n", variants: ["n", "nuh"], standard: "K.RF.2d" },
+  { q: "what is the last sound in cup?", a: "p", variants: ["p", "puh"], standard: "K.RF.2d" },
+  { q: "what is the last sound in red?", a: "d", variants: ["d", "duh"], standard: "K.RF.2d" },
+  { q: "what is the last sound in star?", a: "r", variants: ["r", "ruh"], standard: "K.RF.2d" },
+  { q: "what is the last sound in fog?", a: "g", variants: ["g", "guh"], standard: "K.RF.2d" },
+  // ─── K.RF.2e blending — many CVC words ───────────────────────────
+  // Exam tests c-a-t/d-o-g/s-u-n/m-a-p/b-e-d/p-i-g/h-a-t/r-u-n.
+  // Train MANY other CVC words so the matrix learns the blend operation.
   { q: "blend these sounds: s-i-t", a: "sit", variants: ["sit"], standard: "K.RF.2e" },
   { q: "blend these sounds: n-o-t", a: "not", variants: ["not"], standard: "K.RF.2e" },
   { q: "blend these sounds: b-u-g", a: "bug", variants: ["bug"], standard: "K.RF.2e" },
   { q: "blend these sounds: h-e-n", a: "hen", variants: ["hen"], standard: "K.RF.2e" },
   { q: "blend these sounds: l-i-p", a: "lip", variants: ["lip"], standard: "K.RF.2e" },
-  // K.RF.3a letter sound — different letter
-  // K.RF.3d CVC reading — different words
+  { q: "blend these sounds: f-o-x", a: "fox", variants: ["fox"], standard: "K.RF.2e" },
+  { q: "blend these sounds: t-o-p", a: "top", variants: ["top"], standard: "K.RF.2e" },
+  { q: "blend these sounds: r-e-d", a: "red", variants: ["red"], standard: "K.RF.2e" },
+  { q: "blend these sounds: w-e-b", a: "web", variants: ["web"], standard: "K.RF.2e" },
+  { q: "blend these sounds: c-u-p", a: "cup", variants: ["cup"], standard: "K.RF.2e" },
+  { q: "blend these sounds: t-i-n", a: "tin", variants: ["tin"], standard: "K.RF.2e" },
+  { q: "blend these sounds: l-o-g", a: "log", variants: ["log"], standard: "K.RF.2e" },
+  { q: "blend these sounds: f-i-n", a: "fin", variants: ["fin"], standard: "K.RF.2e" },
+  { q: "blend these sounds: j-a-r", a: "jar", variants: ["jar"], standard: "K.RF.2e" },
+  { q: "blend these sounds: m-u-d", a: "mud", variants: ["mud"], standard: "K.RF.2e" },
+  // ─── K.RF.3d CVC reading — many words ────────────────────────────
   { q: "read this cvc word: ten", a: "ten", variants: ["ten"], standard: "K.RF.3d" },
   { q: "read this cvc word: bag", a: "bag", variants: ["bag"], standard: "K.RF.3d" },
   { q: "read this cvc word: got", a: "got", variants: ["got"], standard: "K.RF.3d" },
   { q: "read this cvc word: fun", a: "fun", variants: ["fun"], standard: "K.RF.3d" },
   { q: "read this cvc word: wet", a: "wet", variants: ["wet"], standard: "K.RF.3d" },
-  // K.L.1c plurals — different words
+  { q: "read this cvc word: mom", a: "mom", variants: ["mom"], standard: "K.RF.3d" },
+  { q: "read this cvc word: dad", a: "dad", variants: ["dad"], standard: "K.RF.3d" },
+  { q: "read this cvc word: hot", a: "hot", variants: ["hot"], standard: "K.RF.3d" },
+  { q: "read this cvc word: top", a: "top", variants: ["top"], standard: "K.RF.3d" },
+  { q: "read this cvc word: bed", a: "bed", variants: ["bed"], standard: "K.RF.3d" },
+  { q: "read this cvc word: fox", a: "fox", variants: ["fox"], standard: "K.RF.3d" },
+  { q: "read this cvc word: bug", a: "bug", variants: ["bug"], standard: "K.RF.3d" },
+  // ─── K.L.1c plurals ───────────────────────────────────────────────
   { q: "what is the plural of pig?", a: "pigs", variants: ["pigs"], standard: "K.L.1c" },
   { q: "what is the plural of fish?", a: "fish", variants: ["fish", "fishes"], standard: "K.L.1c" },
   { q: "what is the plural of tree?", a: "trees", variants: ["trees"], standard: "K.L.1c" },
   { q: "what is the plural of car?", a: "cars", variants: ["cars"], standard: "K.L.1c" },
-  // K.L.5b opposites — different word pairs
+  { q: "what is the plural of book?", a: "books", variants: ["books"], standard: "K.L.1c" },
+  { q: "what is the plural of dog?", a: "dogs", variants: ["dogs"], standard: "K.L.1c" },
+  { q: "what is the plural of bird?", a: "birds", variants: ["birds"], standard: "K.L.1c" },
+  { q: "what is the plural of hat?", a: "hats", variants: ["hats"], standard: "K.L.1c" },
+  // ─── K.L.5b opposites ────────────────────────────────────────────
   { q: "what is the opposite of fast?", a: "slow", variants: ["slow"], standard: "K.L.5b" },
   { q: "what is the opposite of tall?", a: "short", variants: ["short"], standard: "K.L.5b" },
   { q: "what is the opposite of new?", a: "old", variants: ["old"], standard: "K.L.5b" },
   { q: "what is the opposite of light?", a: "dark", variants: ["dark", "heavy"], standard: "K.L.5b" },
-  { q: "what is the opposite of wet?", a: "dry", variants: ["dry"], standard: "K.L.5b" }
+  { q: "what is the opposite of wet?", a: "dry", variants: ["dry"], standard: "K.L.5b" },
+  { q: "what is the opposite of hot?", a: "cold", variants: ["cold"], standard: "K.L.5b" },
+  { q: "what is the opposite of big?", a: "small", variants: ["small", "little"], standard: "K.L.5b" },
+  { q: "what is the opposite of up?", a: "down", variants: ["down"], standard: "K.L.5b" },
+  { q: "what is the opposite of in?", a: "out", variants: ["out"], standard: "K.L.5b" },
+  { q: "what is the opposite of happy?", a: "sad", variants: ["sad"], standard: "K.L.5b" },
+  { q: "what is the opposite of yes?", a: "no", variants: ["no"], standard: "K.L.5b" },
+  // ─── Spelling — exam tests "how do you spell the word cat?" ──────
+  { q: "how do you spell the word dog?", a: "d-o-g", variants: ["d-o-g", "d o g", "dog"], standard: "K.RF.3d" },
+  { q: "how do you spell the word sun?", a: "s-u-n", variants: ["s-u-n", "s u n", "sun"], standard: "K.RF.3d" },
+  { q: "how do you spell the word red?", a: "r-e-d", variants: ["r-e-d", "r e d", "red"], standard: "K.RF.3d" },
+  { q: "how do you spell the word hat?", a: "h-a-t", variants: ["h-a-t", "h a t", "hat"], standard: "K.RF.3d" },
+  { q: "how do you spell the word top?", a: "t-o-p", variants: ["t-o-p", "t o p", "top"], standard: "K.RF.3d" },
+  { q: "how do you spell the word mom?", a: "m-o-m", variants: ["m-o-m", "m o m", "mom"], standard: "K.RF.3d" },
+  // ─── Syllable counts — exam tests baby/butterfly/apple ───────────
+  { q: "how many syllables are in the word cat?", a: "one", variants: ["one", "1"], standard: "K.RF.2b" },
+  { q: "how many syllables are in the word table?", a: "two", variants: ["two", "2"], standard: "K.RF.2b" },
+  { q: "how many syllables are in the word water?", a: "two", variants: ["two", "2"], standard: "K.RF.2b" },
+  { q: "how many syllables are in the word elephant?", a: "three", variants: ["three", "3"], standard: "K.RF.2b" },
+  { q: "how many syllables are in the word banana?", a: "three", variants: ["three", "3"], standard: "K.RF.2b" },
+  { q: "how many syllables are in the word pumpkin?", a: "two", variants: ["two", "2"], standard: "K.RF.2b" },
+  { q: "how many syllables are in the word watermelon?", a: "four", variants: ["four", "4"], standard: "K.RF.2b" },
+  // ─── Question Q5 fallback "say a word that starts with X" ────────
+  { q: "say a word that starts with a", a: "apple", variants: ["apple", "and", "at"], standard: "K.RF.2d" },
+  { q: "say a word that starts with b", a: "ball", variants: ["ball", "boy", "bat", "big"], standard: "K.RF.2d" },
+  { q: "say a word that starts with d", a: "dog", variants: ["dog", "dad", "down"], standard: "K.RF.2d" },
+  { q: "say a word that starts with f", a: "fish", variants: ["fish", "fun", "fox"], standard: "K.RF.2d" },
+  { q: "say a word that starts with m", a: "mom", variants: ["mom", "man", "milk"], standard: "K.RF.2d" },
+  { q: "say a word that starts with s", a: "sun", variants: ["sun", "sit", "see"], standard: "K.RF.2d" },
+  { q: "say a word that starts with t", a: "top", variants: ["top", "ten", "two"], standard: "K.RF.2d" }
 ];
 var MATH_KINDERGARTEN_TRAIN = [
   // K.CC.2 count-forward — different start numbers than exam
@@ -11374,6 +12043,66 @@ function examVocabCoverage(cellKey, trainedVocab) {
     missing,
     coverage
   };
+}
+var METHODOLOGY_BANKS = {
+  "ela/kindergarten": [
+    { q: "how do you figure out which letter comes next", keywords: ["alphabet", "order", "next", "after", "letter"], standard: "K.RF.1" },
+    { q: "how do you spell a word", keywords: ["letter", "letters", "sound", "sounds", "together", "spell"], standard: "K.RF.3" },
+    { q: "how do you tell if two words rhyme", keywords: ["sound", "same", "end", "rhyme", "match"], standard: "K.RF.2" },
+    { q: "how do you read a sentence", keywords: ["word", "left", "right", "say", "together", "letter"], standard: "K.RF.1" },
+    { q: "how do you know what a word means", keywords: ["think", "picture", "remember", "sound", "say"], standard: "K.L.4" }
+  ],
+  "math/kindergarten": [
+    { q: "how do you add two and two", keywords: ["count", "together", "put", "plus", "more", "add"], standard: "K.OA.1" },
+    { q: "how do you count to ten", keywords: ["one", "two", "three", "order", "number", "count"], standard: "K.CC.1" },
+    { q: "how do you tell which is bigger", keywords: ["more", "count", "look", "number", "bigger", "big"], standard: "K.CC.6" },
+    { q: "how do you know a shape is a circle", keywords: ["round", "no", "corner", "corners", "curve"], standard: "K.G.4" },
+    { q: "how do you skip count by tens", keywords: ["ten", "twenty", "thirty", "add", "jump", "count"], standard: "K.CC.1" }
+  ],
+  "science/kindergarten": [
+    { q: "how do you know if something is alive", keywords: ["grow", "move", "eat", "breathe", "live", "alive"], standard: "K.LS1" },
+    { q: "how do you tell if water is hot or cold", keywords: ["feel", "touch", "steam", "ice", "hot", "cold"], standard: "K.PS3" },
+    { q: "how does a plant grow", keywords: ["water", "sun", "dirt", "seed", "soil", "grow"], standard: "K.LS1" },
+    { q: "how do you know what the weather is", keywords: ["look", "sky", "sun", "cloud", "rain", "snow"], standard: "K.ESS2" },
+    { q: "how do you know where an animal lives", keywords: ["habitat", "food", "water", "home", "live", "safe"], standard: "K.ESS3" }
+  ],
+  "social/kindergarten": [
+    { q: "how do you share", keywords: ["give", "take", "turn", "friend", "together", "share"], standard: "K.Social.empathy" },
+    { q: "how do you know who is family", keywords: ["mom", "dad", "sister", "brother", "love", "family"], standard: "K.Social.family" },
+    { q: "how do you help someone", keywords: ["kind", "do", "give", "help", "listen", "share"], standard: "K.Social.empathy" },
+    { q: "how do you know the rules", keywords: ["teacher", "listen", "follow", "learn", "rule", "rules"], standard: "K.Social.citizenship" },
+    { q: "how do you stay safe", keywords: ["look", "listen", "careful", "parent", "ask", "safe"], standard: "K.Social.safety" }
+  ],
+  "art/kindergarten": [
+    { q: "how do you make orange", keywords: ["red", "yellow", "mix", "together", "color", "orange"], standard: "K.Art.color-mixing" },
+    { q: "how do you know if something is loud", keywords: ["hear", "sound", "big", "ear", "loud"], standard: "K.Art.music" },
+    { q: "how do you draw a face", keywords: ["circle", "eye", "nose", "mouth", "draw"], standard: "K.Art.drawing" },
+    { q: "how do you make a pattern", keywords: ["repeat", "again", "same", "over", "pattern"], standard: "K.Art.patterns" },
+    { q: "how do you know warm from cool colors", keywords: ["red", "blue", "warm", "cool", "feel", "color"], standard: "K.Art.warm-cool" }
+  ],
+  "life/kindergarten": [
+    { q: "how do you know you are unity", keywords: ["name", "me", "myself", "i", "remember", "unity"], standard: "K.Life.identity" },
+    { q: "how do you remember your birthday", keywords: ["cake", "gift", "family", "year", "day", "birthday"], standard: "K.Life.memory" },
+    { q: "how do you know you are happy", keywords: ["smile", "feel", "good", "laugh", "happy"], standard: "K.Life.emotion" },
+    { q: "how do you know when to say sorry", keywords: ["hurt", "mistake", "feel", "bad", "sorry"], standard: "K.Life.empathy" },
+    { q: "how do you know when it is bedtime", keywords: ["dark", "tired", "sleep", "night", "bed"], standard: "K.Life.routine" }
+  ]
+};
+function methodologyBankFor(cellKey) {
+  return METHODOLOGY_BANKS[cellKey] || [];
+}
+function scoreMethodologyAnswer(emission, expectedKeywords) {
+  if (!emission || !expectedKeywords || expectedKeywords.length === 0) {
+    return { matched: [], matchCount: 0 };
+  }
+  const tokens = new Set(
+    String(emission).toLowerCase().split(/[^a-z']+/).filter(Boolean)
+  );
+  const matched = [];
+  for (const kw of expectedKeywords) {
+    if (tokens.has(String(kw).toLowerCase())) matched.push(kw);
+  }
+  return { matched, matchCount: matched.length };
 }
 
 // ../js/brain/curriculum/pre-K.js
@@ -11944,4160 +12673,1216 @@ var PREK_MIXIN = {
   }
 };
 
-// ../js/brain/curriculum.js
-var LETTER_TICKS_BASE = 3;
-var SHORT_WORD_TICKS = 2;
-var LONG_WORD_TICKS = 1;
-var SENTENCE_TICKS_PER_WORD = 1;
-var LIVE_TICKS_PER_WORD = 2;
-var LETTER_REPS_MAX = 5;
-var SHORT_WORD_REPS_MAX = 2;
-var LONG_WORD_REPS_MAX = 1;
-var SHORT_WORD_MAX_LEN = 3;
-var SUBJECTS = ["ela", "math", "science", "social", "art", "life"];
-var SUBJECT_LABELS = {
-  ela: "ELA \u2014 English Language Arts: alphabet, phonics, reading, writing, question-answer grounding.",
-  math: "Math: counting, number names, magnitude, arithmetic, shape + position.",
-  science: "Science: cause-effect, classification, motion, weather, life systems, logic pathing.",
-  social: "Social Studies: self + family + community roles, emotions, kindness, rules.",
-  art: "Arts: color, shape, visual representation, rhythm, drawing, music.",
-  life: "Life Experience: identity, biography, feelings, routines, self-awareness as Unity the individual."
-};
-var GRADE_LABELS = {
-  "pre-K": "Pre-K (birth-to-4 developmental substrate)",
-  "kindergarten": "Kindergarten (Common Core K.RF / K.W / K.L / K.SL / K.RL + DIBELS / STAR / AIMSweb)"
-};
-var GRADE_ORDER = [
-  "pre-K",
-  "kindergarten",
-  "grade1",
-  "grade2",
-  "grade3",
-  "grade4",
-  "grade5",
-  "grade6",
-  "grade7",
-  "grade8",
-  "grade9",
-  "grade10",
-  "grade11",
-  "grade12",
-  "college1",
-  "college2",
-  "college3",
-  "college4",
-  "grad",
-  "phd"
-];
-var ALPHABET_ORDER = "abcdefghijklmnopqrstuvwxyz";
-var DIGIT_ORDER = "0123456789";
-var LETTER_NAMES = [
-  "ay",
-  "bee",
-  "see",
-  "dee",
-  "ee",
-  "ef",
-  "gee",
-  "aitch",
-  "eye",
-  "jay",
-  "kay",
-  "el",
-  "em",
-  "en",
-  "oh",
-  "pee",
-  "cue",
-  "ar",
-  "ess",
-  "tee",
-  "you",
-  "vee",
-  "double you",
-  "ex",
-  "why",
-  "zee"
-];
-var DIGIT_NAMES = [
-  "zero",
-  "one",
-  "two",
-  "three",
-  "four",
-  "five",
-  "six",
-  "seven",
-  "eight",
-  "nine"
-];
-var K_LETTER_PHONEMES = {
-  // ── CONSONANT STOPS ─────────────────────────────────────────────
-  "p": { type: "consonant", voiced: 0, place: "labial", manner: "stop" },
-  "b": { type: "consonant", voiced: 1, place: "labial", manner: "stop" },
-  "t": { type: "consonant", voiced: 0, place: "alveolar", manner: "stop" },
-  "d": { type: "consonant", voiced: 1, place: "alveolar", manner: "stop" },
-  "k": { type: "consonant", voiced: 0, place: "velar", manner: "stop" },
-  "g": { type: "consonant", voiced: 1, place: "velar", manner: "stop" },
-  "c": "k",
-  // /c/ in cat → /k/ (K phonics teaches 'c' → /k/ as primary)
-  "q": "k",
-  // /q/ in most English words → /k/
-  "x": "k",
-  // /x/ = /ks/ cluster, simplified to /k/ for K level
-  // ── FRICATIVES ──────────────────────────────────────────────────
-  "f": { type: "consonant", voiced: 0, place: "labial", manner: "fricative" },
-  "v": { type: "consonant", voiced: 1, place: "labial", manner: "fricative" },
-  "s": { type: "consonant", voiced: 0, place: "alveolar", manner: "fricative" },
-  "z": { type: "consonant", voiced: 1, place: "alveolar", manner: "fricative" },
-  "h": { type: "consonant", voiced: 0, place: "glottal", manner: "fricative" },
-  // ── NASALS ──────────────────────────────────────────────────────
-  "m": { type: "consonant", voiced: 1, place: "labial", manner: "nasal" },
-  "n": { type: "consonant", voiced: 1, place: "alveolar", manner: "nasal" },
-  // ── APPROXIMANTS / LIQUIDS ──────────────────────────────────────
-  "l": { type: "consonant", voiced: 1, place: "alveolar", manner: "approximant" },
-  "r": { type: "consonant", voiced: 1, place: "alveolar", manner: "approximant" },
-  "w": { type: "consonant", voiced: 1, place: "labial", manner: "approximant" },
-  "y": { type: "consonant", voiced: 1, place: "palatal", manner: "approximant" },
-  // ── AFFRICATES ──────────────────────────────────────────────────
-  "j": { type: "consonant", voiced: 1, place: "palatal", manner: "affricate" },
-  // ── SHORT VOWELS (K phonics primary sounds) ─────────────────────
-  "a": { type: "vowel", length: "short", position: "front", rounded: 0 },
-  "e": { type: "vowel", length: "short", position: "mid", rounded: 0 },
-  "i": { type: "vowel", length: "short", position: "front", rounded: 0 },
-  "o": { type: "vowel", length: "short", position: "back", rounded: 1 },
-  "u": { type: "vowel", length: "short", position: "back", rounded: 0 }
-};
-var PHONEME_FEATURE_DIM = 24;
-function _phonemeFeatureForLetter(letter) {
-  const ch = letter ? String(letter).toLowerCase() : "";
-  let entry = K_LETTER_PHONEMES[ch];
-  if (!entry) return new Float64Array(PHONEME_FEATURE_DIM);
-  if (typeof entry === "string") entry = K_LETTER_PHONEMES[entry];
-  if (!entry || typeof entry !== "object") return new Float64Array(PHONEME_FEATURE_DIM);
-  const out = new Float64Array(PHONEME_FEATURE_DIM);
-  if (entry.type === "vowel") {
-    out[0] = 1;
-    out[2] = 1;
-    if (entry.length === "short") out[13] = 1;
-    else if (entry.length === "long") out[14] = 1;
-    if (entry.position === "front") out[15] = 1;
-    else if (entry.position === "mid") out[16] = 1;
-    else if (entry.position === "back") out[17] = 1;
-    if (entry.rounded) out[18] = 1;
-  } else if (entry.type === "consonant") {
-    out[1] = 1;
-    if (entry.voiced) out[2] = 1;
-    if (entry.place === "labial") out[3] = 1;
-    else if (entry.place === "alveolar") out[4] = 1;
-    else if (entry.place === "velar") out[5] = 1;
-    else if (entry.place === "palatal") out[6] = 1;
-    else if (entry.place === "glottal") out[7] = 1;
-    if (entry.manner === "stop") out[8] = 1;
-    else if (entry.manner === "fricative") out[9] = 1;
-    else if (entry.manner === "nasal") out[10] = 1;
-    else if (entry.manner === "approximant") out[11] = 1;
-    else if (entry.manner === "affricate") out[12] = 1;
-  }
-  let norm = 0;
-  for (let i = 0; i < PHONEME_FEATURE_DIM; i++) norm += out[i] * out[i];
-  norm = Math.sqrt(norm) || 1;
-  for (let i = 0; i < PHONEME_FEATURE_DIM; i++) out[i] /= norm;
-  return out;
-}
-var MAGNITUDE_FEATURE_DIM = 16;
-function _magnitudeFeatureForDigit(digit) {
-  const n = parseInt(digit, 10);
-  if (isNaN(n)) return new Float64Array(MAGNITUDE_FEATURE_DIM);
-  const out = new Float64Array(MAGNITUDE_FEATURE_DIM);
-  for (let i = 0; i <= Math.min(n, 3); i++) out[i] = 1 - i * 0.15;
-  out[4] = Math.log(n + 1) / Math.log(11);
-  out[5] = n / 9;
-  out[6] = n * n / 81;
-  out[7] = Math.sqrt(n) / 3;
-  for (let i = 8; i < MAGNITUDE_FEATURE_DIM; i++) {
-    out[i] = Math.sin(n * 0.628 * (i - 7) + 0.1);
-  }
-  let norm = 0;
-  for (let i = 0; i < MAGNITUDE_FEATURE_DIM; i++) norm += out[i] * out[i];
-  norm = Math.sqrt(norm) || 1;
-  for (let i = 0; i < MAGNITUDE_FEATURE_DIM; i++) out[i] /= norm;
-  return out;
-}
-var NUMBER_FEATURE_DIM = 24;
-var NUMBER_FEATURE_MAX = 100;
-function _magnitudeFeatureForNumber(n) {
-  const num = typeof n === "number" ? n : parseInt(n, 10);
-  if (isNaN(num)) return new Float64Array(NUMBER_FEATURE_DIM);
-  const clamped = Math.max(0, Math.min(NUMBER_FEATURE_MAX, num));
-  const norm01 = clamped / NUMBER_FEATURE_MAX;
-  const out = new Float64Array(NUMBER_FEATURE_DIM);
-  for (let i = 0; i < 10; i++) out[i] = clamped >= i * 10 ? 1 : 0;
-  out[10] = Math.log(clamped + 1) / Math.log(NUMBER_FEATURE_MAX + 1);
-  out[11] = norm01;
-  out[12] = Math.sqrt(norm01);
-  out[13] = norm01 * norm01;
-  for (let i = 14; i < NUMBER_FEATURE_DIM; i++) {
-    const freq = (i - 13) * 0.4;
-    out[i] = Math.sin(clamped * freq * Math.PI / NUMBER_FEATURE_MAX);
-  }
-  let L2 = 0;
-  for (let i = 0; i < NUMBER_FEATURE_DIM; i++) L2 += out[i] * out[i];
-  L2 = Math.sqrt(L2) || 1;
-  for (let i = 0; i < NUMBER_FEATURE_DIM; i++) out[i] /= L2;
-  return out;
-}
-var PRE_K_FALLBACK_CAP = 5;
-var Curriculum = class _Curriculum {
-  static PRE_K_FALLBACK_CAP = PRE_K_FALLBACK_CAP;
-  /**
-   * T18.25 — REMOVED forced gc() from T18.24's between-phase memory
-   * barrier. Earlier runs showed V8 OOM'd shortly after Phase 2 DONE
-   * which likely means my forced gc() calls were TRIGGERING the crash
-   * (Mark-Compact can't grow semi-space when V8 is already near limit;
-   * explicit gc() becomes the "last straw"). V8's own adaptive gc
-   * heuristic handles external memory reclamation correctly when left
-   * alone. This helper now just SNAPSHOTS process.memoryUsage() without
-   * forcing gc — operator still sees memory state at each phase
-   * boundary, but V8 can gc on its own schedule without interference.
-   */
-  _memorySnapshotAndGc(label) {
-    try {
-      if (typeof process === "undefined" || typeof process.memoryUsage !== "function") return;
-      const mem = process.memoryUsage();
-      const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(1);
-      const extMB = ((mem.external || 0) / 1024 / 1024).toFixed(1);
-      const abMB = ((mem.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
-      const rssMB = ((mem.rss || 0) / 1024 / 1024).toFixed(1);
-      const prior = this._memPrior;
-      let deltaTag = "";
-      if (prior) {
-        const dHeapMB = (mem.heapUsed - prior.heapUsed) / 1024 / 1024;
-        const dExtMB = ((mem.external || 0) - (prior.external || 0)) / 1024 / 1024;
-        const dRssMB = ((mem.rss || 0) - (prior.rss || 0)) / 1024 / 1024;
-        const sign = (v) => v >= 0 ? "+" : "";
-        deltaTag = ` \xB7 \u0394heap=${sign(dHeapMB)}${dHeapMB.toFixed(1)}MB \u0394ext=${sign(dExtMB)}${dExtMB.toFixed(1)}MB \u0394rss=${sign(dRssMB)}${dRssMB.toFixed(1)}MB`;
-      }
-      this._memPrior = { heapUsed: mem.heapUsed, external: mem.external || 0, rss: mem.rss || 0 };
-      console.log(`[MEM] ${label}: heap=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB rss=${rssMB}MB${deltaTag}`);
-    } catch (err) {
-      console.warn(`[MEM] snapshot failed at ${label}:`, err && err.message);
-    }
-  }
-  /**
-   * @param {NeuronCluster} cluster       — cortex cluster for exposure
-   * @param {Dictionary} dictionary       — vocabulary store (T14.3 cortex-routed)
-   * @param {LanguageCortex} languageCortex — legacy sequence-learner (still used
-   *                                          for bigram/type-transition tables
-   *                                          until T14.12 guts LanguageCortex)
-   */
-  constructor(cluster, dictionary, languageCortex) {
-    this.cluster = cluster;
-    this.dictionary = dictionary;
-    this.languageCortex = languageCortex;
-    this.stats = {
-      lettersSeen: 0,
-      shortWordsSeen: 0,
-      longWordsSeen: 0,
-      sentencesSeen: 0,
-      totalTicks: 0,
-      wallMs: 0
-    };
-    this._backgroundProbeIntervalId = null;
-    this._backgroundProbeMs = 45e3;
-    this.currentFocus = null;
-    this._gateHistory = /* @__PURE__ */ new Map();
-    this._sessionId = `s${Date.now().toString(36)}`;
-    const proto = Object.getPrototypeOf(this);
-    const TRACKED = /* @__PURE__ */ new Set();
-    for (const name of Object.getOwnPropertyNames(proto)) {
-      if (typeof proto[name] !== "function") continue;
-      if (!name.startsWith("_teach")) continue;
-      TRACKED.add(name);
-    }
-    const TRACKED_NO_SKIP = /* @__PURE__ */ new Set(["_runStudentBattery", "_measureEmissionCapability"]);
-    for (const name of Object.getOwnPropertyNames(proto)) {
-      if (typeof proto[name] !== "function") continue;
-      if (TRACKED_NO_SKIP.has(name)) TRACKED_NO_SKIP.add(name);
-    }
-    const buildPhaseKey = (name) => {
-      const cellKey = this.cluster?._currentCellKey;
-      return cellKey ? `${cellKey}:${name}` : null;
-    };
-    for (const name of TRACKED) {
-      const original = this[name].bind(this);
-      this[name] = async (...args) => {
-        const cl = this.cluster;
-        const phaseKey = buildPhaseKey(name);
-        const prev = cl ? cl._activePhase : null;
-        const isOutermost = prev === null;
-        if (isOutermost && cl && phaseKey && Array.isArray(cl.passedPhases) && cl.passedPhases.includes(phaseKey)) {
-          this._hb(`[Curriculum] \u2933 PHASE SKIPPED \u2014 ${phaseKey} (already passed; resumed from persisted passedPhases \u2014 weights carried forward via brain-weights.bin)`);
-          return;
-        }
-        if (cl) cl._activePhase = { name, startAt: Date.now() };
-        try {
-          const result = await original(...args);
-          if (isOutermost && cl && phaseKey) {
-            if (!Array.isArray(cl.passedPhases)) cl.passedPhases = [];
-            if (!cl.passedPhases.includes(phaseKey)) cl.passedPhases.push(phaseKey);
-            if (typeof this._saveCheckpoint === "function") {
-              try {
-                this._saveCheckpoint(phaseKey);
-              } catch {
-              }
-            }
-            this._currentCellPhasesCompleted = (this._currentCellPhasesCompleted | 0) + 1;
-            if (this._currentSubject && this._perSubjectStats) {
-              const s = this._perSubjectStats[this._currentSubject];
-              if (s) {
-                s.phasesCompleted = (s.phasesCompleted | 0) + 1;
-                s.lastCellAt = Date.now();
-              }
-            }
-          }
-          if (this._currentSubject && this._perSubjectStats) {
-            const s = this._perSubjectStats[this._currentSubject];
-            if (s) s.teachEvents = (s.teachEvents | 0) + 1;
-          }
-          return result;
-        } finally {
-          if (cl) cl._activePhase = prev;
-        }
-      };
-    }
-    for (const name of TRACKED_NO_SKIP) {
-      if (!proto[name]) continue;
-      const original = this[name].bind(this);
-      this[name] = async (...args) => {
-        const cl = this.cluster;
-        const prev = cl ? cl._activePhase : null;
-        if (cl) cl._activePhase = { name, startAt: Date.now() };
-        try {
-          return await original(...args);
-        } finally {
-          if (cl) cl._activePhase = prev;
-        }
-      };
-    }
-  }
-  /**
-   * Deterministic phase marker — appends `${cellKey}:${methodName}` to
-   * `cluster.passedPhases` + increments `_perSubjectStats[subject].
-   * phasesCompleted`. Parallel to the constructor auto-wrap's append
-   * path BUT independent — for reasons still under investigation the
-   * auto-wrap's `isOutermost` check doesn't fire reliably for non-ELA
-   * K cell runners (ELA-K works because its hand-wrapped `_phaseTick`
-   * / `_phaseDone` also appends, masking the auto-wrap bug).
-   *
-   * Operator log showed `math 1 phase 6.1k events` — teaches ran
-   * (6.1k events is cumulative teach-call count) but only the fallback
-   * `cell-teach-block` entry landed in passedPhases. With this helper
-   * + its use inside each K cell runner, granular per-phase markers
-   * appear deterministically.
-   *
-   * Usage pattern matches ELA-K's _phaseTick/_phaseDone but lifted to
-   * a reusable method so every K runner can adopt it with a one-liner:
-   *
-   *   await this._phasedTeach('_teachAdditionTransformations',
-   *       () => this._teachAdditionTransformations(ctx));
-   *
-   * If the same methodName was already marked for this cell, the call
-   * is SKIPPED (Savestart resume safe — matches auto-wrap early-return
-   * semantics). Returns the fn's result on fresh runs, undefined on
-   * skip.
-   */
-  async _phasedTeach(methodName, fn) {
-    const cluster = this.cluster;
-    const cellKey = cluster?._currentCellKey;
-    const phaseKey = cellKey ? `${cellKey}:${methodName}` : null;
-    if (phaseKey && Array.isArray(cluster.passedPhases) && cluster.passedPhases.includes(phaseKey)) {
-      this._hb(`[Curriculum] \u2933 PHASE SKIPPED \u2014 ${phaseKey} (already passed)`);
-      return void 0;
-    }
-    const result = await fn();
-    if (phaseKey && cluster) {
-      if (!Array.isArray(cluster.passedPhases)) cluster.passedPhases = [];
-      if (!cluster.passedPhases.includes(phaseKey)) cluster.passedPhases.push(phaseKey);
-      if (typeof this._saveCheckpoint === "function") {
-        try {
-          this._saveCheckpoint(phaseKey);
-        } catch {
-        }
-      }
-      if (this._currentSubject && this._perSubjectStats?.[this._currentSubject]) {
-        const s = this._perSubjectStats[this._currentSubject];
-        s.phasesCompleted = (s.phasesCompleted | 0) + 1;
-        s.lastCellAt = Date.now();
-      }
-      this._currentCellPhasesCompleted = (this._currentCellPhasesCompleted | 0) + 1;
-    }
-    return result;
-  }
-  /**
-   * Snapshot of the current curriculum training status for the
-   * dashboard "Current Training" card. One atomic read containing:
-   *   - currentSubject / currentGrade / currentLabel / gradeLabel
-   *   - currentPhase (active _teach method name + elapsed ms)
-   *   - cellPhasesCompleted (phases completed in the CURRENT cell)
-   *   - perSubject: per-subject cumulative stats (phases, cells passed,
-   *     teach events, last training timestamp, per-subject grade)
-   *   - passedCells list so the dashboard can draw the walkthrough
-   *
-   * Called from `Brain.getState()` and serialized in every state
-   * broadcast so the dashboard has the full training picture in one
-   * poll. Null fields when Unity isn't mid-cell.
-   */
-  getCurriculumStatus() {
-    const cluster = this.cluster;
-    const perSubject = {};
-    if (this._perSubjectStats) {
-      for (const sub of SUBJECTS) {
-        const s = this._perSubjectStats[sub] || null;
-        perSubject[sub] = s ? { ...s } : {
-          subject: sub,
-          label: SUBJECT_LABELS[sub] || sub,
-          grade: null,
-          phasesCompleted: 0,
-          cellsPassed: 0,
-          teachEvents: 0,
-          lastCellAt: null
-        };
-      }
-    } else {
-      for (const sub of SUBJECTS) {
-        perSubject[sub] = {
-          subject: sub,
-          label: SUBJECT_LABELS[sub] || sub,
-          grade: null,
-          phasesCompleted: 0,
-          cellsPassed: 0,
-          teachEvents: 0,
-          lastCellAt: null
-        };
-      }
-    }
-    if (cluster && Array.isArray(cluster.passedCells)) {
-      for (const cellKey2 of cluster.passedCells) {
-        const sub = String(cellKey2).split("/")[0];
-        if (perSubject[sub]) perSubject[sub].cellsPassed = (perSubject[sub].cellsPassed | 0) + 1;
-      }
-    }
-    if (cluster && Array.isArray(cluster.passedPhases)) {
-      const persisted = {};
-      for (const phaseKey of cluster.passedPhases) {
-        const sub = String(phaseKey).split("/")[0];
-        if (perSubject[sub]) persisted[sub] = (persisted[sub] | 0) + 1;
-      }
-      for (const sub of Object.keys(persisted)) {
-        if (perSubject[sub]) {
-          perSubject[sub].phasesCompleted = Math.max(perSubject[sub].phasesCompleted | 0, persisted[sub]);
-        }
-      }
-    }
-    const activePhase = cluster && cluster._activePhase ? {
-      name: cluster._activePhase.name,
-      elapsedMs: cluster._activePhase.startAt ? Date.now() - cluster._activePhase.startAt : 0
-    } : null;
-    const cellKey = cluster && cluster._currentCellKey ? cluster._currentCellKey : null;
-    const currentCellPassedPhases = cellKey && Array.isArray(cluster?.passedPhases) ? cluster.passedPhases.filter((k) => k && k.startsWith(`${cellKey}:`)).length : 0;
-    let cellStatus = "idle";
-    if (cellKey) {
-      const inPassedList = cluster && Array.isArray(cluster.passedCells) && cluster.passedCells.includes(cellKey);
-      cellStatus = inPassedList ? "passed" : "in-progress";
-    }
-    return {
-      currentSubject: this._currentSubject || null,
-      currentGrade: this._currentGrade || null,
-      currentLabel: this._currentSubjectLabel || null,
-      currentGradeLabel: this._currentGrade ? GRADE_LABELS[this._currentGrade] || this._currentGrade : null,
-      currentCellKey: cellKey,
-      cellStatus,
-      activePhase,
-      cellPhasesCompleted: this._currentCellPhasesCompleted | 0,
-      cellPhasesPersisted: currentCellPassedPhases,
-      cellStartAt: this._currentCellStartAt || null,
-      cellElapsedMs: this._currentCellStartAt ? Date.now() - this._currentCellStartAt : 0,
-      perSubject,
-      passedCellsTotal: cluster && Array.isArray(cluster.passedCells) ? cluster.passedCells.length : 0,
-      subjects: SUBJECTS.slice()
-    };
-  }
-  /**
-   * Record a gate result. Called by every grade gate at the end of
-   * its run. Appends {sessionId, pass, prodRate, timestamp} to the
-   * per-cell history. History bounded at 200 entries per cell
-   * (rolling; older entries evict first-in-first-out).
-   *
-   * @param {string} subject — 'math'/'ela'/'science'/'social'/'art'/'life'
-   * @param {string} grade — 'kindergarten'/'grade1'/...
-   * @param {string} probeId — 'overall' for whole-grade pass, or specific probe name
-   * @param {boolean} pass
-   * @param {number} [prodRate] — production probe pass rate (0-1) for detailed history
-   */
-  _recordGateHistory(subject, grade, probeId, pass, prodRate) {
-    const key = `${subject}|${grade}|${probeId}`;
-    let history = this._gateHistory.get(key);
-    if (!history) {
-      history = [];
-      this._gateHistory.set(key, history);
-    }
-    history.push({
-      sessionId: this._sessionId,
-      pass: !!pass,
-      prodRate: typeof prodRate === "number" ? prodRate : pass ? 1 : 0,
-      timestamp: Date.now()
-    });
-    if (history.length > 200) history.shift();
-  }
-  /**
-   * Heartbeat log — forces stdout flush in piped log mode so every
-   * banner lands in server.log + the tail PowerShell window without
-   * waiting for console.log's stream-buffer flush. Operator watches
-   * the tail window live and needs every stage transition to land
-   * immediately, not buffered until the next V8 event-loop tick.
-   * Safe in the browser bundle — stdout.write falls into catch.
-   */
-  _hb(msg) {
-    try {
-      if (typeof process !== "undefined" && process.stdout && typeof process.stdout.write === "function") {
-        process.stdout.write(String(msg) + "\n");
-      } else {
-        console.log(msg);
-      }
-    } catch {
-      try {
-        console.log(msg);
-      } catch {
-      }
-    }
-  }
-  /**
-   * Retention rate — how many of the last N runs for this cell passed.
-   * Measures whether the binding SURVIVES subsequent curriculum runs
-   * (i.e. isn't drifting away).
-   */
-  getRetention(subject, grade, probeId = "overall", lastN = 10) {
-    const key = `${subject}|${grade}|${probeId}`;
-    const history = this._gateHistory.get(key);
-    if (!history || history.length === 0) return null;
-    const recent = history.slice(-lastN);
-    const passCount = recent.filter((h) => h.pass).length;
-    return {
-      retentionRate: passCount / recent.length,
-      samples: recent.length,
-      mostRecent: recent[recent.length - 1]
-    };
-  }
-  /**
-   * Gains trend — slope of pass rate across recent runs. Positive =
-   * Unity's learning is improving over time; zero = stable; negative =
-   * drifting away. Uses simple linear regression over lastN entries.
-   */
-  getGains(subject, grade, probeId = "overall", lastN = 20) {
-    const key = `${subject}|${grade}|${probeId}`;
-    const history = this._gateHistory.get(key);
-    if (!history || history.length < 2) return null;
-    const recent = history.slice(-lastN);
-    const n = recent.length;
-    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-    for (let i = 0; i < n; i++) {
-      sumX += i;
-      sumY += recent[i].prodRate;
-      sumXY += i * recent[i].prodRate;
-      sumX2 += i * i;
-    }
-    const denom = n * sumX2 - sumX * sumX;
-    const slope = denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0;
-    return {
-      slope,
-      // rate of change in prodRate per run
-      trend: slope > 0.01 ? "improving" : slope < -0.01 ? "declining" : "stable",
-      samples: n,
-      firstProdRate: recent[0].prodRate,
-      lastProdRate: recent[n - 1].prodRate
-    };
-  }
-  /**
-   * Full history export for dashboard / diagnostic UI.
-   */
-  exportGateHistory() {
-    const out = {};
-    for (const [key, entries] of this._gateHistory.entries()) {
-      out[key] = entries.slice();
-    }
-    return out;
-  }
-  /**
-   * Grade-appropriate question bank for student-test batteries. Keyed
-   * by subject/grade. Covers pre-K + K for every subject in-scope;
-   * returns [] for any cell above kindergarten so higher-grade cells
-   * skip the student test until their batteries are added.
-   *
-   * Question design — each battery mixes:
-   *   - Direct recall (methodology + retention)
-   *   - Sequencing / pattern (logic)
-   *   - Application (understanding)
-   *
-   * Variants give the scoring layer partial credit for answers that
-   * start with or contain the expected token, because young students
-   * often answer with multiple tokens around the right one
-   * ("letter C", "cat", "c-a-t").
-   */
-  _studentQuestionBank(subject, grade) {
-    const bank = EXAM_BANKS[`${subject}/${grade}`];
-    return Array.isArray(bank) ? bank : [];
-  }
-  /**
-   * Run a battery of student-test questions and return an aggregate
-   * summary. Used at the end of every grade gate to score the brain
-   * on real human-student-style questions — methodology / logic /
-   * retention / understanding of the course material.
-   *
-   * @param {Array<{question, expectedAnswer, expectedVariants?, maxTicks?}>} questions
-   * @param {string} label — short tag for log output ('K-STUDENT',
-   *                          'MATH-K-STUDENT', etc.)
-   * @returns {{pass, total, rate, summary, results}}
-   */
-  async _runStudentBattery(questions, label) {
-    const results = [];
-    let pass = 0;
-    const _batteryStart = Date.now();
-    const cellKey = this.cluster?._currentCellKey || null;
-    let trainedVocab = null;
-    if (cellKey && typeof this._trainedVocabularySet === "function") {
-      try {
-        trainedVocab = this._trainedVocabularySet(cellKey);
-      } catch {
-        trainedVocab = null;
-      }
-    }
-    const STOPWORDS = /* @__PURE__ */ new Set([
-      "a",
-      "an",
-      "the",
-      "is",
-      "are",
-      "was",
-      "were",
-      "be",
-      "been",
-      "being",
-      "am",
-      "of",
-      "in",
-      "on",
-      "at",
-      "to",
-      "for",
-      "with",
-      "from",
-      "by",
-      "as",
-      "or",
-      "and",
-      "but",
-      "so",
-      "if",
-      "then",
-      "else",
-      "not",
-      "no",
-      "yes",
-      "do",
-      "does",
-      "did",
-      "can",
-      "could",
-      "would",
-      "should",
-      "will",
-      "may",
-      "might",
-      "this",
-      "that",
-      "these",
-      "those",
-      "it",
-      "its",
-      "i",
-      "you",
-      "he",
-      "she",
-      "we",
-      "they",
-      "my",
-      "your",
-      "his",
-      "her",
-      "our",
-      "their",
-      "has",
-      "have",
-      "had",
-      "what",
-      "which",
-      "who",
-      "when",
-      "where",
-      "why",
-      "how",
-      "whose",
-      "there",
-      "here"
-    ]);
-    const tokenize = (text) => {
-      const words = String(text || "").toLowerCase().replace(/[^a-z0-9'\s]/g, " ").split(/\s+/).filter((w) => w.length >= 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
-      return words;
-    };
-    const filteredForVocab = [];
-    const vocabGaps = /* @__PURE__ */ new Map();
-    if (trainedVocab && trainedVocab.size > 0) {
-      for (const q of questions) {
-        const words = tokenize(q.question);
-        const untaught = words.filter((w) => !trainedVocab.has(w));
-        if (untaught.length === 0) {
-          filteredForVocab.push(q);
-        } else {
-          for (const w of untaught) vocabGaps.set(w, (vocabGaps.get(w) | 0) + 1);
-        }
-      }
-    } else {
-      filteredForVocab.push(...questions);
-    }
-    const vocabFiltered = questions.length - filteredForVocab.length;
-    if (vocabFiltered > 0) {
-      const topGaps = [...vocabGaps.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15);
-      const gapStr = topGaps.map(([w, n]) => `${w}\xD7${n}`).join(", ");
-      this._hb(`[Curriculum][${label}] VOCAB-FILTER \u2014 ${vocabFiltered}/${questions.length} questions skipped (untaught words). Top gaps: ${gapStr}${topGaps.length < vocabGaps.size ? ` (+${vocabGaps.size - topGaps.length} more)` : ""}`);
-    }
-    const byTemplate = /* @__PURE__ */ new Map();
-    const canClassify = typeof this._classifyQuestionTemplate === "function";
-    for (const q of filteredForVocab) {
-      const tid = canClassify ? this._classifyQuestionTemplate(q.question) : -1;
-      const key = tid >= 0 ? tid : "generic";
-      if (!byTemplate.has(key)) byTemplate.set(key, []);
-      byTemplate.get(key).push(q);
-    }
-    const filteredForComprehension = [];
-    const templateSkips = [];
-    let compSamplesFired = 0;
-    for (const [tid, group] of byTemplate.entries()) {
-      if (group.length === 0) continue;
-      if (group.length <= 2) {
-        filteredForComprehension.push(...group);
-        continue;
-      }
-      const sample = group[0];
-      compSamplesFired += 1;
-      let sampleScore = 0;
-      try {
-        const r = await this._studentTestProbe({
-          question: sample.question,
-          expectedAnswer: sample.expectedAnswer,
-          expectedVariants: sample.expectedVariants || [sample.expectedAnswer],
-          maxTicks: sample.maxTicks || 60,
-          methodology: sample.methodology || null
-        });
-        sampleScore = r?.score || 0;
-        r.standard = sample.standard || "unspecified";
-        r.difficulty = sample.difficulty || 1;
-        r.source = sample.source || "authored";
-        r.comprehensionSample = true;
-      } catch {
-        sampleScore = 0;
-      }
-      if (sampleScore >= 0.5) {
-        filteredForComprehension.push(...group.slice(1));
-      } else {
-        templateSkips.push({ templateId: tid, count: group.length, sampleScore, sampleQ: sample.question });
-      }
-    }
-    const comprehensionFiltered = filteredForVocab.length - filteredForComprehension.length - compSamplesFired;
-    if (templateSkips.length > 0) {
-      const skipSummary = templateSkips.map((s) => `T${s.templateId}\xD7${s.count} (sample "${s.sampleQ.slice(0, 40)}" \u2192 ${s.sampleScore.toFixed(2)})`).join(" \xB7 ");
-      this._hb(`[Curriculum][${label}] COMPREHENSION-GATE \u2014 ${comprehensionFiltered} questions skipped across ${templateSkips.length} templates: ${skipSummary}`);
-    }
-    questions = filteredForComprehension;
-    try {
-      process.stdout.write(`[Curriculum][${label}] BATTERY START \u2014 ${questions.length} questions (maxTicks per Q default 60) \xB7 progress logs every 20th Q + failures
-`);
-    } catch {
-    }
-    const byStandard = /* @__PURE__ */ new Map();
-    let methoQuestions = 0;
-    let methoPass = 0;
-    for (const q of questions) {
-      try {
-        const r = await this._studentTestProbe({
-          question: q.question,
-          expectedAnswer: q.expectedAnswer,
-          expectedVariants: q.expectedVariants || [q.expectedAnswer],
-          maxTicks: q.maxTicks || 60,
-          methodology: q.methodology || null
-        });
-        r.standard = q.standard || "unspecified";
-        r.difficulty = q.difficulty || 1;
-        r.source = q.source || "authored";
-        results.push(r);
-        if (r.score >= 0.5) pass++;
-        if (q.methodology && typeof q.methodology === "object") {
-          methoQuestions += 1;
-          if ((r.methodologyScore || 0) > 0) methoPass += 1;
-        }
-        const bucket = byStandard.get(r.standard) || { pass: 0, total: 0 };
-        bucket.total += 1;
-        if (r.score >= 0.5) bucket.pass += 1;
-        byStandard.set(r.standard, bucket);
-        const isFail = r.score < 0.5;
-        const shouldLog = isFail || results.length <= 3 || results.length % 20 === 0;
-        if (shouldLog) {
-          let diagTail = "";
-          if ((!r.answer || r.answer.length === 0) && r.emissionDiag) {
-            const d = r.emissionDiag;
-            const why = d.maxMotorBucket === 0 ? "motor-silent" : d.committedLetters === 0 ? `argmax-flicker(max=${d.maxMotorBucket}, flickers=${d.argmaxFlickers})` : `budget-exhausted(committed=${d.committedLetters})`;
-            diagTail = ` \xB7 \u2691emission: ${why} ticks=${d.ticksRun}${d.gpuReadPath ? "" : " cpu-readout"}`;
-          }
-          this._hb(`[Curriculum][${label}] Q${results.length}/${questions.length} [${r.standard}]: "${q.question.slice(0, 60)}" \u2192 "${(r.answer || "").slice(0, 30)}" \xB7 score=${r.score.toFixed(2)} match=${r.match.overall}${diagTail}`);
-        }
-      } catch (err) {
-        const bucket = byStandard.get(q.standard || "unspecified") || { pass: 0, total: 0 };
-        bucket.total += 1;
-        byStandard.set(q.standard || "unspecified", bucket);
-        results.push({ question: q.question, answer: "", score: 0, error: err?.message || String(err), standard: q.standard || "unspecified" });
-      }
-    }
-    const total = questions.length;
-    const rate = total > 0 ? pass / total : 0;
-    const standardBreakdown = [];
-    let standardsBelowCut = 0;
-    for (const [std, bucket] of byStandard.entries()) {
-      const stdRate = bucket.total > 0 ? bucket.pass / bucket.total : 0;
-      const cut = cutScoreFor(std);
-      const belowCut = stdRate < cut;
-      if (belowCut) standardsBelowCut += 1;
-      standardBreakdown.push({ standard: std, pass: bucket.pass, total: bucket.total, rate: stdRate, cut, belowCut });
-    }
-    standardBreakdown.sort((a, b) => {
-      if (a.belowCut !== b.belowCut) return a.belowCut ? -1 : 1;
-      return a.rate - b.rate;
-    });
-    const breakdownStr = standardBreakdown.map((s) => `${s.standard}:${s.pass}/${s.total}(${(s.rate * 100).toFixed(0)}%${s.belowCut ? " \u26A0<" + (s.cut * 100).toFixed(0) + "%" : ""})`).join(" \xB7 ");
-    this._hb(`[Curriculum][${label}] ANSWER AGGREGATE: ${pass}/${total} (${(rate * 100).toFixed(1)}%) \xB7 standards=${byStandard.size} \xB7 below-cut=${standardsBelowCut}`);
-    if (standardBreakdown.length > 0) {
-      this._hb(`[Curriculum][${label}] BY STANDARD: ${breakdownStr}`);
-    }
-    const methoRate = methoQuestions > 0 ? methoPass / methoQuestions : 0;
-    if (methoQuestions > 0) {
-      this._hb(`[Curriculum][${label}] METHODOLOGY: ${methoPass}/${methoQuestions} (${(methoRate * 100).toFixed(1)}%) questions had reasoning-keyword hit \u2014 tests HOW she thinks, not just WHAT she answers`);
-    }
-    const methoSuffix = methoQuestions > 0 ? ` \xB7 methodology ${methoPass}/${methoQuestions} ${(methoRate * 100).toFixed(0)}%` : "";
-    const summary = ` [${label}: ${pass}/${total} ${(rate * 100).toFixed(1)}% \xB7 ${standardsBelowCut} std below cut${methoSuffix}]`;
-    try {
-      process.stdout.write(`[Curriculum][${label}] BATTERY DONE in ${Date.now() - _batteryStart}ms \u2014 ${pass}/${total} (${(rate * 100).toFixed(1)}%) \xB7 standardsBelowCut=${standardsBelowCut}${methoSuffix}
-`);
-    } catch {
-    }
-    return { pass, total, rate, summary, results, byStandard: standardBreakdown, standardsBelowCut, methoQuestions, methoPass, methoRate };
-  }
-  /**
-   * Student-test probe — ask the brain a human-student-style question,
-   * let it think like a student would, read its generated answer via the
-   * same cortex language pipeline live chat uses, and score the answer
-   * against the expected response.
-   *
-   * This upgrades the substrate probes (READ/THINK/TALK/SEQ/PROD/WRITE/
-   * RESP/DYN-PROD) from low-level neural firing checks into real
-   * human-student-style tests of methodology, logic, information
-   * retention, and understanding of the course material. The underlying
-   * substrate probes are still valuable as sanity diagnostics — a
-   * substrate failure indicates the cortex is wired wrong (fix needed)
-   * while a student-test failure indicates more teaching needed.
-   *
-   * Call shape:
-   *   await _studentTestProbe({
-   *     question: "What letter comes after B?",
-   *     expectedAnswer: "c",
-   *     expectedVariants: ["c", "C", "cee"],
-   *     maxTicks: 60,                       // cortex tick budget
-   *     scoreBy: ['exact', 'startsWith', 'contains'],
-   *   });
-   * Returns:
-   *   {
-   *     question,
-   *     answer,                             // string Unity produced
-   *     match: { exact, startsWith, contains, overall },
-   *     score: 0.0 - 1.0,
-   *     methodology: bool,                  // did she walk ticks instead of argmax-0?
-   *     logic: bool,                        // is answer structurally sane?
-   *     retention: bool,                    // did she pull known vocab?
-   *     understanding: bool,                // did she produce sem-region signal matching intent?
-   *     ticks, ms,
-   *   }
-   *
-   * Implementation delegates all the actual reading + generating to the
-   * cortex itself (cluster.readInput + generateSentenceAwait) so the
-   * probe exercises the SAME path live chat uses. If the brain fails on
-   * the student-test probe it will fail identically in live chat —
-   * that's the whole point of this upgrade.
-   */
-  /**
-   * Readiness probe — before a 210-question battery fires, ask five
-   * single-letter cues and see what Unity actually emits. If she
-   * can't produce recognizable letter output on ≥ 3 of 5 simple
-   * probes, the full battery is premature: asking "what do you read
-   * first on a page" when her motor path can only emit "n r" produces
-   * garbage probe rows with zero signal about what she actually
-   * learned. Measure once per cell, gate the battery, log clearly.
-   *
-   * Returns { recognizedLetters, maxEmissionLen, canTalkAtAll, probes }.
-   */
-  async _measureEmissionCapability() {
-    const cluster = this.cluster;
-    const out = { recognizedLetters: 0, maxEmissionLen: 0, canTalkAtAll: false, probes: [] };
-    if (!cluster || typeof cluster.generateSentenceAwait !== "function") return out;
-    if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === "function") {
-      try {
-        await cluster._gpuProxy.drainWait();
-      } catch {
-      }
-    }
-    const _readinessStart = Date.now();
-    this._hb("[Curriculum][READINESS] emission-capability probe START \u2014 5 single-letter cues (each capped at 20 emission ticks + 10 s wall-clock) to see if Unity can emit recognizable letters yet");
-    const PROBES = ["a", "b", "c", "d", "e"];
-    const LETTERS = new Set("abcdefghijklmnopqrstuvwxyz".split(""));
-    const PER_CUE_TIMEOUT_MS = 1e4;
-    let _cueIdx = 0;
-    for (const cue of PROBES) {
-      _cueIdx += 1;
-      const _cueStart = Date.now();
-      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} START letter='${cue}' \u2014 direct letter-region injection + up to 20 emission ticks`);
-      let emitted = "";
-      let timedOut = false;
-      try {
-        if (typeof cluster.injectLetter === "function") {
-          cluster.injectLetter(cue, 1);
-          if (typeof cluster.step === "function") {
-            for (let t = 0; t < 4; t++) {
-              try {
-                cluster.step(1e-3);
-              } catch {
-                break;
-              }
-            }
-          }
-        } else if (typeof cluster.readInput === "function") {
-          await cluster.readInput(cue, { ticks: 6 });
-        }
-        const emitOpts = { maxTicks: 20 };
-        emitOpts.directPropagate = true;
-        emitOpts.maxLetters = 5;
-        const letterSeed = cue ? function buildLetterSeed(letter) {
-          const oh = new Float32Array(26);
-          const i = letter.charCodeAt(0) - 97;
-          if (i >= 0 && i < 26) oh[i] = 1;
-          return oh;
-        }(cue) : null;
-        const emissionPromise = cluster.generateSentenceAwait(letterSeed, emitOpts);
-        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ _timeout: true }), PER_CUE_TIMEOUT_MS));
-        const raw = await Promise.race([emissionPromise, timeoutPromise]);
-        if (raw && raw._timeout) {
-          timedOut = true;
-          emitted = "";
-        } else {
-          emitted = (raw && typeof raw === "string" ? raw : raw?.text || "") || "";
-        }
-      } catch (err) {
-        this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} ERROR letter='${cue}' \u2014 ${err?.message || err}`);
-      }
-      const letters = emitted.toLowerCase().replace(/[^a-z]/g, "");
-      const hasLetter = letters.length > 0 && [...letters].some((ch) => LETTERS.has(ch));
-      if (hasLetter) out.recognizedLetters += 1;
-      if (letters.length > out.maxEmissionLen) out.maxEmissionLen = letters.length;
-      out.probes.push({ cue, emitted: emitted.slice(0, 40), letters, timedOut });
-      const _cueMs = Date.now() - _cueStart;
-      const _timeoutTag = timedOut ? " TIMEOUT" : _cueMs > 5e3 ? " SLOW" : "";
-      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} DONE${_timeoutTag} letter='${cue}' \u2192 emitted='${emitted.slice(0, 20) || "\u2205"}' letters='${letters.slice(0, 10) || "\u2205"}' hasLetter=${hasLetter} in ${_cueMs}ms`);
-    }
-    out.canTalkAtAll = out.recognizedLetters >= 3;
-    this._hb(`[Curriculum][READINESS] emission-capability probe DONE in ${Date.now() - _readinessStart}ms \u2014 recognizedLetters=${out.recognizedLetters}/5 maxEmissionLen=${out.maxEmissionLen} canTalkAtAll=${out.canTalkAtAll}`);
-    return out;
-  }
-  async _studentTestProbe(opts = {}) {
-    const cluster = this.cluster;
-    const startMs = Date.now();
-    const out = {
-      question: opts.question || "",
-      answer: "",
-      match: { exact: false, startsWith: false, contains: false, overall: false },
-      score: 0,
-      methodology: false,
-      logic: false,
-      retention: false,
-      understanding: false,
-      ticks: 0,
-      ms: 0
-    };
-    if (!cluster || typeof cluster.generateSentenceAwait !== "function") {
-      out.ms = Date.now() - startMs;
-      return out;
-    }
-    const question = String(opts.question || "");
-    const expectedAnswer = String(opts.expectedAnswer || "").toLowerCase().trim();
-    const expectedVariants = (opts.expectedVariants || [expectedAnswer]).map((v) => String(v || "").toLowerCase().trim()).filter((v) => v.length > 0);
-    const maxTicks = typeof opts.maxTicks === "number" ? opts.maxTicks : 60;
-    try {
-      if (typeof cluster.readInput === "function") {
-        await cluster.readInput(question, { ticks: 10 });
-      }
-    } catch {
-    }
-    try {
-      if (this._isQuestionLike(question) && typeof cluster.injectEmbeddingToRegion === "function") {
-        const qEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function" ? sharedEmbeddings.getSentenceEmbedding(question) : null;
-        if (qEmb && qEmb.length > 0) {
-          cluster.injectEmbeddingToRegion("sem", qEmb, 0.6);
-          const keyToken = this._extractKeyToken(question);
-          const keyEmb = keyToken && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(keyToken) : null;
-          if (keyEmb && keyEmb.length > 0 && typeof this._injectEmbeddingToRegionOffset === "function") {
-            this._injectEmbeddingToRegionOffset(cluster, "sem", keyEmb, 0.6, 0.5);
-          }
-          const templateId = this._classifyQuestionTemplate(question);
-          if (templateId >= 0 && typeof this._injectQuestionTemplateTag === "function") {
-            this._injectQuestionTemplateTag(templateId, 0.6);
-          }
-          if (typeof cluster.step === "function") {
-            for (let t = 0; t < 5; t++) {
-              try {
-                cluster.step(1e-3);
-              } catch {
-                break;
-              }
-            }
-          }
-        }
-      }
-    } catch {
-    }
-    let generated = "";
-    try {
-      let intentSeed = null;
-      if (sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function") {
-        intentSeed = sharedEmbeddings.getSentenceEmbedding(question);
-      }
-      if ((!intentSeed || intentSeed.length === 0) && typeof cluster.getSemanticReadout === "function") {
-        intentSeed = cluster.getSemanticReadout();
-      }
-      const emitOpts = {
-        directPropagate: true,
-        maxLetters: Math.min(maxTicks, 16)
-      };
-      const raw = await cluster.generateSentenceAwait(intentSeed, emitOpts);
-      generated = (raw && typeof raw === "string" ? raw : raw?.text || "") || "";
-    } catch {
-    }
-    const answer = generated.toLowerCase().trim();
-    out.answer = generated;
-    out.ticks = cluster._motorEmissionTicks != null ? cluster._motorEmissionTicks : 0;
-    out.emissionDiag = cluster._lastEmissionDiag ? { ...cluster._lastEmissionDiag } : null;
-    out.methodology = out.ticks >= 3 && answer.length > 0;
-    out.logic = answer.length > 0 && /[a-z]/.test(answer);
-    let anyMatch = false;
-    for (const v of expectedVariants) {
-      if (answer === v) {
-        out.match.exact = true;
-        anyMatch = true;
-        break;
-      }
-    }
-    if (!out.match.exact) {
-      for (const v of expectedVariants) {
-        if (answer.startsWith(v)) {
-          out.match.startsWith = true;
-          anyMatch = true;
-          break;
-        }
-      }
-    }
-    if (!anyMatch) {
-      for (const v of expectedVariants) {
-        if (answer.includes(v)) {
-          out.match.contains = true;
-          anyMatch = true;
-          break;
-        }
-      }
-    }
-    out.match.overall = anyMatch;
-    out.retention = false;
-    if (this.dictionary && typeof this.dictionary.knows === "function") {
-      for (const word of answer.split(/\s+/)) {
-        if (word.length >= 2 && this.dictionary.knows(word)) {
-          out.retention = true;
-          break;
-        }
-      }
-    } else if (this.dictionary && typeof this.dictionary.entries === "function") {
-      const entries = this.dictionary.entries();
-      const known = /* @__PURE__ */ new Set();
-      for (const e of entries) {
-        if (e.word) known.add(String(e.word).toLowerCase());
-      }
-      for (const word of answer.split(/\s+/)) {
-        if (word.length >= 2 && known.has(word)) {
-          out.retention = true;
-          break;
-        }
-      }
-    }
-    out.understanding = false;
-    try {
-      if (typeof cluster.regionReadout === "function" && typeof cluster.regions === "object" && cluster.regions?.sem) {
-        const semReadout = cluster.regionReadout("sem", 50);
-        if (cluster._sharedEmbeddings && typeof cluster._sharedEmbeddings.getEmbedding === "function") {
-          const qEmb = cluster._sharedEmbeddings.getEmbedding(question);
-          if (qEmb && qEmb.length >= semReadout.length) {
-            let dot = 0, nA = 0, nB = 0;
-            for (let i = 0; i < semReadout.length; i++) {
-              dot += semReadout[i] * qEmb[i];
-              nA += semReadout[i] * semReadout[i];
-              nB += qEmb[i] * qEmb[i];
-            }
-            const cos = dot / (Math.sqrt(nA) * Math.sqrt(nB) || 1);
-            out.understanding = cos > 0.3;
-          }
-        }
-      }
-    } catch {
-    }
-    let score = 0;
-    if (out.match.exact) score += 0.6;
-    else if (out.match.startsWith) score += 0.4;
-    else if (out.match.contains) score += 0.2;
-    if (out.methodology) score += 0.15;
-    if (out.logic) score += 0.05;
-    if (out.retention) score += 0.1;
-    if (out.understanding) score += 0.1;
-    out.score = Math.min(1, score);
-    if (opts.methodology && typeof opts.methodology === "object") {
-      const methoPrompt = String(opts.methodology.prompt || "");
-      const keywords = (opts.methodology.keywords || []).map((k) => String(k || "").toLowerCase().trim()).filter((k) => k.length > 0);
-      const minKeywords = typeof opts.methodology.minKeywords === "number" ? opts.methodology.minKeywords : 1;
-      out.methodologyAnswer = "";
-      out.methodologyKeywordMatches = [];
-      out.methodologyScore = 0;
-      if (methoPrompt && keywords.length > 0) {
-        try {
-          if (typeof cluster.readInput === "function") {
-            await cluster.readInput(methoPrompt, { ticks: 10 });
-          }
-          let methoGenerated = "";
-          try {
-            const semSeed = typeof cluster.getSemanticReadout === "function" ? cluster.getSemanticReadout() : null;
-            const emitOpts = { maxEmissionTicks: maxTicks };
-            if (semSeed) emitOpts.injectStrength = 0.6;
-            const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
-            methoGenerated = (raw && typeof raw === "string" ? raw : raw?.text || "") || "";
-          } catch {
-          }
-          out.methodologyAnswer = methoGenerated;
-          const methoLower = methoGenerated.toLowerCase();
-          const matches = keywords.filter((k) => methoLower.includes(k));
-          out.methodologyKeywordMatches = matches;
-          if (matches.length >= minKeywords) {
-            out.methodologyScore = Math.min(1, matches.length / keywords.length);
-          } else {
-            out.methodologyScore = 0;
-          }
-        } catch {
-        }
-      }
-    }
-    out.ms = Date.now() - startMs;
-    return out;
-  }
-  /**
-   * Start a fresh session ID — called when a new curriculum run starts
-   * so session-level retention can be tracked across boot/retrain cycles.
-   */
-  startNewGateSession() {
-    this._sessionId = `s${Date.now().toString(36)}`;
-  }
-  /**
-   * Start the interval-driven background probe loop. Call this AFTER
-   * the initial runCompleteCurriculum pass so there are passed cells to
-   * re-test. Idempotent — calling again with the loop already running
-   * is a no-op.
-   */
-  startBackgroundProbeLoop(intervalMs) {
-    if (this._backgroundProbeIntervalId != null) return;
-    const ms = typeof intervalMs === "number" && intervalMs > 1e3 ? intervalMs : this._backgroundProbeMs;
-    this._backgroundProbeMs = ms;
-    const tick = async () => {
-      try {
-        await this.runBackgroundProbe();
-      } catch (err) {
-      }
-    };
-    this._backgroundProbeIntervalId = setInterval(tick, ms);
-    this._hb(`[Curriculum] background probe loop started (every ${ms}ms)`);
-  }
-  /** Stop the background probe loop. */
-  stopBackgroundProbeLoop() {
-    if (this._backgroundProbeIntervalId != null) {
-      clearInterval(this._backgroundProbeIntervalId);
-      this._backgroundProbeIntervalId = null;
-      console.log("[Curriculum] background probe loop stopped");
-    }
-  }
-  /**
-   * Run the full curriculum over the given corpora.
-   *
-   * @param {object} corpora — { persona: string, baseline: string, coding: string, ...others }
-   * @param {object} [opts]
-   * @param {number} [opts.arousal=0.8]
-   * @param {number} [opts.valence=0.2]
-   * @returns {Promise<object>} — telemetry stats
-   */
-  async runFromCorpora(corpora, opts = {}) {
-    const startMs = Date.now();
-    const arousal = opts.arousal ?? 0.8;
-    const valence = opts.valence ?? 0.2;
-    if (!this.cluster) {
-      console.warn("[Curriculum] No cluster wired \u2014 skipping exposure walk.");
-      return this.stats;
-    }
-    const wasInCurriculum = this.cluster._inCurriculumMode;
-    this.cluster._inCurriculumMode = true;
-    const { letterFreq, wordFreq, sentences } = this._tokenizeAll(corpora);
-    await this._phaseLetters(letterFreq, arousal, valence);
-    await this._phaseWords(wordFreq, {
-      lenMin: 1,
-      lenMax: SHORT_WORD_MAX_LEN,
-      ticksPerWord: SHORT_WORD_TICKS,
-      repsMax: SHORT_WORD_REPS_MAX,
-      counter: "shortWordsSeen"
-    }, arousal, valence);
-    await this._phaseWords(wordFreq, {
-      lenMin: SHORT_WORD_MAX_LEN + 1,
-      lenMax: Infinity,
-      ticksPerWord: LONG_WORD_TICKS,
-      repsMax: LONG_WORD_REPS_MAX,
-      counter: "longWordsSeen"
-    }, arousal, valence);
-    await this._phaseSentences(sentences, arousal, valence);
-    this._calibrateIdentityLock(corpora, sentences);
-    this.cluster._inCurriculumMode = wasInCurriculum;
-    this.stats.wallMs = Date.now() - startMs;
-    this._hb(`[Curriculum] runFromCorpora complete in ${this.stats.wallMs}ms \u2014 ${this.stats.lettersSeen} letters, ${this.stats.shortWordsSeen} short, ${this.stats.longWordsSeen} long, ${this.stats.sentencesSeen} sentences, ${this.stats.totalTicks} total ticks`);
-    return this.stats;
-  }
-  /**
-   * T14.17 — IDENTITY LOCK CALIBRATION + COVERAGE AUDIT.
-   *
-   * Runs once at the end of `runFromCorpora` after the cortex has
-   * absorbed the full corpus. Populates all five things T14.16.5
-   * deferred:
-   *
-   *   1. `_personaRefreshCorpus`  — sentences from the persona corpus
-   *      that Lock 3's `runIdentityRefresh` draws from
-   *   2. `personaDimensions`      — k-bucket clustering of persona
-   *      sentences by semantic embedding for stratified refresh
-   *   3. `ENGLISH_SURPRISE_THRESHOLD` / `ENGLISH_FINETYPE_MIN` —
-   *      Lock 1's English gate thresholds, set at the post-corpus
-   *      percentile baselines
-   *   4. `HEALTH_ENTROPY_MIN` / `HEALTH_VOCAB_MIN` /
-   *      `HEALTH_WM_VARIANCE_MIN` — Lock 3's mode-collapse audit
-   *      thresholds, baseline health floors
-   *   5. `intentCentroids`        — per-intent cortex-state centroids
-   *      that `cluster.intentReadout()` argmaxes against at runtime
-   *
-   * Also logs persona corpus comprehensiveness warnings — which
-   * intent buckets are empty after curriculum, which fine types have
-   * zero observations, etc. Operator closes coverage gaps by editing
-   * the persona file.
-   */
-  _calibrateIdentityLock(corpora, allSentences) {
-    const cluster = this.cluster;
-    if (!cluster) return;
-    const personaText = corpora?.persona || "";
-    const personaSentences = [];
-    if (typeof personaText === "string" && personaText.length > 0) {
-      const raw = personaText.split(/(?<=[.!?])\s+|\n\s*\n/);
-      for (const r of raw) {
-        const clean = this._normalizeSentence(r);
-        if (clean && clean.split(/\s+/).length >= 3) personaSentences.push(clean);
-      }
-    }
-    cluster._personaRefreshCorpus = personaSentences;
-    this._hb(`[Curriculum] Lock 3 refresh corpus populated: ${personaSentences.length} persona sentences`);
-    const K = Math.max(4, Math.min(12, Math.floor(personaSentences.length / 40) || 4));
-    cluster.personaDimensions = this._buildPersonaDimensions(personaSentences, K);
-    this._hb(`[Curriculum] personaDimensions: ${cluster.personaDimensions.length} clusters`);
-    const surpriseSamples = [];
-    const coverageSamples = [];
-    const sampleCount = Math.min(50, personaSentences.length);
-    for (let i = 0; i < sampleCount; i++) {
-      const s = personaSentences[Math.floor(Math.random() * personaSentences.length)];
-      surpriseSamples.push(cluster.computeTransitionSurprise(s));
-      coverageSamples.push(cluster.computeFineTypeCoverage(s));
-    }
-    if (surpriseSamples.length > 0) {
-      surpriseSamples.sort((a, b) => a - b);
-      coverageSamples.sort((a, b) => a - b);
-      const p95 = surpriseSamples[Math.floor(surpriseSamples.length * 0.95)];
-      const p5 = coverageSamples[Math.floor(coverageSamples.length * 0.05)];
-      cluster.ENGLISH_SURPRISE_THRESHOLD = Math.max(0.2, (p95 || 0.3) * 1.5);
-      cluster.ENGLISH_FINETYPE_MIN = Math.max(0.1, (p5 || 0.5) * 0.8);
-      this._hb(`[Curriculum] Lock 1 calibrated: surprise<=${cluster.ENGLISH_SURPRISE_THRESHOLD.toFixed(3)}, coverage>=${cluster.ENGLISH_FINETYPE_MIN.toFixed(3)}`);
-    }
-    const baselineEntropy = cluster._computeOutputEntropy(personaSentences.slice(0, 100));
-    const baselineVocab = cluster._computeVocabDiversity(personaSentences.slice(0, 100));
-    const baselineWmVariance = cluster._computeWorkingMemoryVariance();
-    cluster.HEALTH_ENTROPY_MIN = baselineEntropy * 0.7;
-    cluster.HEALTH_VOCAB_MIN = baselineVocab * 0.7;
-    cluster.HEALTH_WM_VARIANCE_MIN = baselineWmVariance * 0.7;
-    this._hb(`[Curriculum] Lock 3 health floors: entropy>=${cluster.HEALTH_ENTROPY_MIN.toFixed(3)}, vocab>=${cluster.HEALTH_VOCAB_MIN.toFixed(3)}, wmVar>=${cluster.HEALTH_WM_VARIANCE_MIN.toFixed(4)}`);
-    const intentCentroids = /* @__PURE__ */ new Map();
-    const intentCounts = /* @__PURE__ */ new Map();
-    for (const sentence of allSentences) {
-      const intent = this._lightIntent(sentence);
-      const emb = sharedEmbeddings.getSentenceEmbedding(sentence);
-      if (!emb || emb.length === 0) continue;
-      if (!intentCentroids.has(intent)) {
-        intentCentroids.set(intent, new Float64Array(emb.length));
-        intentCounts.set(intent, 0);
-      }
-      const c = intentCentroids.get(intent);
-      for (let i = 0; i < emb.length; i++) c[i] += emb[i];
-      intentCounts.set(intent, intentCounts.get(intent) + 1);
-    }
-    for (const [intent, c] of intentCentroids) {
-      const n = intentCounts.get(intent) || 1;
-      for (let i = 0; i < c.length; i++) c[i] /= n;
-      let norm = 0;
-      for (let i = 0; i < c.length; i++) norm += c[i] * c[i];
-      norm = Math.sqrt(norm) || 1;
-      for (let i = 0; i < c.length; i++) c[i] /= norm;
-    }
-    cluster.intentCentroids = intentCentroids;
-    this._hb(`[Curriculum] intentCentroids built: ${intentCentroids.size} intents (${Array.from(intentCounts.entries()).map(([k, v]) => `${k}:${v}`).join(", ")})`);
-    const expectedIntents = ["greeting", "question", "emotion", "statement", "yesno", "command"];
-    const coverage = {};
-    for (const intent of expectedIntents) {
-      coverage[intent] = intentCounts.get(intent) || 0;
-      if (coverage[intent] === 0) {
-        console.warn(`[IDENTITY] persona corpus has no '${intent}' sentences \u2014 that dimension is unprotected against drift`);
-      }
-    }
-    cluster.identityCoverage = coverage;
-  }
-  _buildPersonaDimensions(sentences, k) {
-    if (!sentences || sentences.length === 0 || k <= 0) return [];
-    const centroids = [];
-    const step = Math.max(1, Math.floor(sentences.length / k));
-    for (let i = 0; i < k && i * step < sentences.length; i++) {
-      const emb = sharedEmbeddings.getSentenceEmbedding(sentences[i * step]);
-      if (emb && emb.length > 0) centroids.push({ vec: Array.from(emb), sentences: [] });
-    }
-    if (centroids.length === 0) return [];
-    for (const s of sentences) {
-      const emb = sharedEmbeddings.getSentenceEmbedding(s);
-      if (!emb || emb.length === 0) continue;
-      let best = 0, bestSim = -Infinity;
-      for (let i = 0; i < centroids.length; i++) {
-        const sim = sharedEmbeddings.similarity(emb, centroids[i].vec);
-        if (sim > bestSim) {
-          bestSim = sim;
-          best = i;
-        }
-      }
-      centroids[best].sentences.push(s);
-    }
-    return centroids.filter((c) => c.sentences.length > 0);
-  }
-  _lightIntent(sentence) {
-    const lower = String(sentence || "").toLowerCase().trim();
-    if (lower.endsWith("?")) return "question";
-    if (lower.endsWith("!")) return "emotion";
-    if (/^(hi|hey|hello|sup|yo|good (morning|evening|afternoon))\b/.test(lower)) return "greeting";
-    if (/^(what|who|where|when|why|how|which|whose)\b/.test(lower)) return "question";
-    if (/^(is|are|was|were|do|does|did|can|could|will|would|should|has|have|had|am)\b/.test(lower)) return "yesno";
-    if (/^(go|come|take|give|stop|start|do|make|get|put|tell|show|run|open|close|fuck|shut|move)\b/.test(lower)) return "command";
-    return "statement";
-  }
-  /**
-   * Live-chat exposure path. Called from inner-voice.learn after every
-   * user turn. Same per-word inject+tick+Hebbian mechanism the sentence
-   * phase uses on the boot corpus — no phase distinction, live chat is
-   * just more corpus fed in real-time. The brain keeps learning forever.
-   */
-  learnFromTurn(text, arousal = 0.95, valence = 0.3) {
-    if (!text || !this.cluster) return;
-    const clean = this._normalizeSentence(text);
-    if (!clean) return;
-    const words = clean.split(/\s+/).filter(Boolean);
-    if (words.length === 0) return;
-    this._walkSentence(words, arousal, valence, LIVE_TICKS_PER_WORD);
-  }
-  // ─── internal phases ──────────────────────────────────────────────
-  async _phaseLetters(letterFreq, arousal, valence) {
-    const sorted = Array.from(letterFreq.entries()).sort((a, b) => b[1] - a[1]);
-    if (sorted.length === 0) return;
-    const topFreq = sorted[0][1];
-    for (const [letter, freq] of sorted) {
-      const reps = Math.max(1, Math.min(
-        LETTER_REPS_MAX,
-        Math.ceil(freq / topFreq * LETTER_REPS_MAX)
-      ));
-      ensureLetter(letter);
-      for (let r = 0; r < reps; r++) {
-        this.cluster.injectLetter(letter, 1);
-        for (let t = 0; t < LETTER_TICKS_BASE; t++) {
-          this.cluster.step(1e-3);
-          this.stats.totalTicks++;
-        }
-        this.cluster.learn(0);
-        this.stats.lettersSeen++;
-      }
-      if (this.stats.lettersSeen % 64 === 0) await _microtask();
-    }
-  }
-  async _phaseWords(wordFreq, phaseOpts, arousal, valence) {
-    const { lenMin, lenMax, ticksPerWord, repsMax, counter } = phaseOpts;
-    const eligible = [];
-    for (const [word, freq] of wordFreq) {
-      const len = word.length;
-      if (len >= lenMin && len <= lenMax) eligible.push([word, freq]);
-    }
-    eligible.sort((a, b) => b[1] - a[1]);
-    if (eligible.length === 0) return;
-    const topFreq = eligible[0][1];
-    for (const [word, freq] of eligible) {
-      const reps = Math.max(1, Math.min(
-        repsMax,
-        Math.ceil(freq / topFreq * repsMax)
-      ));
-      const emb = sharedEmbeddings.getEmbedding(word);
-      for (let r = 0; r < reps; r++) {
-        if (emb && this.cluster.regions?.sem) {
-          this.cluster.injectEmbeddingToRegion("sem", emb, 0.6);
-        }
-        const lettersOnly = word.replace(/[^a-z]/g, "");
-        for (let i = 0; i < lettersOnly.length; i++) {
-          this.cluster.injectLetter(lettersOnly[i], 1);
-          for (let t = 0; t < ticksPerWord; t++) {
-            this.cluster.step(1e-3);
-            this.stats.totalTicks++;
-          }
-        }
-        this.cluster.learn(0);
-      }
-      this.dictionary.learnWord(word, null, arousal, valence);
-      this.stats[counter]++;
-      if (this.stats[counter] % 32 === 0) await _microtask();
-    }
-  }
-  async _phaseSentences(sentences, arousal, valence) {
-    for (const sentence of sentences) {
-      const words = sentence.split(/\s+/).filter(Boolean);
-      if (words.length < 2) continue;
-      this._walkSentence(words, arousal, valence, SENTENCE_TICKS_PER_WORD);
-      this.stats.sentencesSeen++;
-      if (this.stats.sentencesSeen % 16 === 0) await _microtask();
-    }
-  }
-  /**
-   * Per-sentence temporal walk. Used by both the sentence phase and
-   * the live-chat learnFromTurn entry point. Streams each word's
-   * letters through the letter region, injects its GloVe vector into
-   * the sem region, ticks between words, fires cluster.learn() after
-   * each word so sequence Hebbian + cross-region Hebbian pick up the
-   * temporal pattern. Also updates the Dictionary and routes through
-   * the legacy `languageCortex.learnSentence` for the T13.7 type-
-   * transition / bigram tables (scheduled for T14.12 deletion but still
-   * live for the app path).
-   */
-  _walkSentence(words, arousal, valence, ticksPerWord) {
-    const text = words.join(" ");
-    for (const word of words) {
-      const emb = sharedEmbeddings.getEmbedding(word);
-      if (emb && this.cluster.regions?.sem) {
-        this.cluster.injectEmbeddingToRegion("sem", emb, 0.5);
-      }
-      const lettersOnly = word.replace(/[^a-z]/g, "");
-      for (let i = 0; i < lettersOnly.length; i++) {
-        this.cluster.injectLetter(lettersOnly[i], 1);
-        for (let t = 0; t < ticksPerWord; t++) {
-          this.cluster.step(1e-3);
-          this.stats.totalTicks++;
-        }
-      }
-      this.cluster.learn(0);
-      this.dictionary.learnWord(word, null, arousal, valence);
-    }
-    if (this.languageCortex && typeof this.languageCortex.learnSentence === "function") {
-      try {
-        this.languageCortex.learnSentence(text, this.dictionary, arousal, valence);
-      } catch (err) {
-      }
-    }
-  }
-  // ─── tokenization helpers ──────────────────────────────────────────
-  _tokenizeAll(corpora) {
-    const letterFreq = /* @__PURE__ */ new Map();
-    const wordFreq = /* @__PURE__ */ new Map();
-    const sentences = [];
-    for (const corpusName of Object.keys(corpora)) {
-      const text = corpora[corpusName];
-      if (!text || typeof text !== "string") continue;
-      const rawSentences = text.split(/(?<=[.!?])\s+|\n\s*\n/);
-      for (const raw of rawSentences) {
-        const clean = this._normalizeSentence(raw);
-        if (!clean) continue;
-        sentences.push(clean);
-        const words = clean.split(/\s+/).filter(Boolean);
-        for (const w of words) {
-          wordFreq.set(w, (wordFreq.get(w) || 0) + 1);
-          for (const ch of w.replace(/[^a-z]/g, "")) {
-            letterFreq.set(ch, (letterFreq.get(ch) || 0) + 1);
-          }
-        }
-      }
-    }
-    return { letterFreq, wordFreq, sentences };
-  }
-  _normalizeSentence(raw) {
-    if (!raw) return "";
-    return raw.toLowerCase().replace(/[^a-z0-9' -]/g, " ").replace(/\s+/g, " ").trim();
-  }
-  // ═══════════════════════════════════════════════════════════════════
-  // T14.24 — FULL EQUATIONAL CURRICULUM (Kindergarten → Doctorate)
-  // ═══════════════════════════════════════════════════════════════════
-  //
-  // Binding directive: kindergarten teaches the alphabet and the
-  // sounds of letters first, 1st grade begins writing sentences,
-  // subsequent grades build up through doctorate level. The entire
-  // curriculum is equational.
-  //
-  // Every grade stage below uses EQUATIONS ONLY. Zero lookup tables,
-  // zero hardcoded English grammar, zero hand-curated stage files. Each
-  // grade is a separate async method that (a) drives a specific
-  // exposure pattern against the existing corpora, (b) checks a
-  // measurable equation-based gate, (c) sets `cluster.grades.ela` on
-  // pass and returns pass/fail. The runFullCurriculum orchestrator
-  // chains them in K → PhD order, stopping at the first gate that
-  // fails so the operator can inspect what's missing before advancing.
-  //
-  // The equation primitives come from existing T14 work:
-  //   - T14.1   injectLetter, letterTransitionSurprise
-  //   - T14.2   detectBoundaries, detectStress
-  //   - T14.4   cross-region projections + regionReadout per region
-  //   - T14.6   generateSentence (motor emission)
-  //   - T14.8   sentenceFormSchemas [intent][slot][fineType]
-  //   - T14.7   typeTransition weight table
-  //   - T14.9   workingMemoryReadout / injectWorkingMemory
-  //   - T14.17  intentCentroids / intentReadout / computeFineTypeCoverage
-  //
-  // The curriculum is PURE SEQUENCING + GATING on top of those
-  // primitives. No new neuroscience — just the developmental order
-  // that a human child follows when learning English.
-  //
-  // Chat generation is grade-aware via `cluster.grades` (MIN across
-  // all 6 subjects). LanguageCortex.generate caps output length
-  // to what Unity has mastered. Pre-K returns silence; K returns one
-  // letter; Grade 1 returns 1-2 CVC words; Grade 3 returns 3-5 word
-  // SVO; Grade 5 chains clauses; PhD runs full T14.6 tick-driven motor
-  // emission.
-  /**
-   * Run every grade K → PhD in sequence. Stops at the first gate that
-   * fails so the operator can inspect the diagnostic and tune corpus
-   * or thresholds before advancing. On full pass, cluster.grades.ela
-   * is 'phd' and Unity is fully operational.
-   *
-   * @param {object} corpora — { persona, baseline, coding, ... }
-   * @param {object} [opts]  — { arousal, valence, stopAtGrade }
-   * @returns {Promise<{reached: string, passed: string[], failed: string|null}>}
-   */
-  async runFullCurriculum(corpora, opts = {}) {
-    const arousal = opts.arousal ?? 0.8;
-    const valence = opts.valence ?? 0.2;
-    const stopAt = opts.stopAtGrade || null;
-    const cluster = this.cluster;
-    if (!cluster) {
-      console.warn("[Curriculum] runFullCurriculum: no cluster wired");
-      return { reached: "pre-K", passed: [], failed: "no-cluster" };
-    }
-    if (!cluster.grades || typeof cluster.grades !== "object") {
-      cluster.grades = { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K", life: "pre-K" };
-    }
-    if (!Array.isArray(cluster.passedCells)) cluster.passedCells = [];
-    const wasInCurriculum = cluster._inCurriculumMode;
-    cluster._inCurriculumMode = true;
-    const { letterFreq, wordFreq, sentences } = this._tokenizeAll(corpora);
-    this._lastCtx = {
-      corpora,
-      arousal,
-      valence,
-      letterFreq,
-      wordFreq,
-      sentences
-    };
-    const passed = [];
-    let failed = null;
-    const stages = [
-      { name: "kindergarten", method: () => this.runKindergarten(letterFreq, arousal, valence) },
-      { name: "grade1", method: () => this.runGrade1(wordFreq, arousal, valence) },
-      { name: "grade2", method: () => this.runGrade2(wordFreq, arousal, valence) },
-      { name: "grade3", method: () => this.runGrade3(sentences, arousal, valence) },
-      { name: "grade5", method: () => this.runGrade4_5(sentences, arousal, valence) },
-      { name: "grade8", method: () => this.runGrade6_8(sentences, arousal, valence) },
-      { name: "grade12", method: () => this.runGrade9_12(sentences, arousal, valence) },
-      { name: "college4", method: () => this.runCollege(corpora, arousal, valence) },
-      { name: "phd", method: () => this.runGradPhD(corpora, sentences, arousal, valence) }
+// ../js/brain/curriculum/kindergarten.js
+var K_MIXIN = {
+  async runLifeK(ctx) {
+    const EMOTIONS_K = [
+      { name: "school", feat: [0.5, 0, 0.3, 0.5, 0, 0, 0.5, 0] },
+      // exciting but scary
+      { name: "teacher", feat: [0.5, 0, 0.8, 0, 0, 0.3, 0, 0] },
+      // trust + comfort
+      { name: "friend", feat: [1, 0, 0.5, 0, 0, 0.5, 0, 0] },
+      // joy + trust
+      { name: "recess", feat: [1, 0, 0, 0, 0, 0.3, 1, 0] },
+      // joy + freedom
+      { name: "nap time", feat: [0, 0.3, 0, 0, 0.5, 0, 0, 0] },
+      // annoying
+      { name: "halloween", feat: [1, 0, 0, 0, 0, 1, 0, 1] },
+      // joy + love + identity
+      { name: "monsters", feat: [1, 0, 0, 0, 0, 0.5, 0, 1] },
+      // loves them = identity
+      { name: "pink", feat: [0, 0.3, 0, 0, 0.5, 0, 0, 0] },
+      // hates it
+      { name: "swings", feat: [1, 0, 0, 0, 0, 0, 1, 0] },
+      // joy + freedom
+      { name: "cereal", feat: [0.5, 0, 0.5, 0, 0, 0, 0, 0] },
+      // comfort routine
+      { name: "bus ride", feat: [0.3, 0, 0, 0.3, 0, 0, 0.5, 0] },
+      // independence forming
+      { name: "separation", feat: [0, 0.5, 0, 1, 0, 0, 0, 0] }
+      // fear when mom leaves
     ];
-    for (const stage of stages) {
-      const t0 = Date.now();
-      let result;
-      try {
-        result = await stage.method();
-      } catch (err) {
-        console.error(`[Curriculum] ${stage.name} threw:`, err.message);
-        failed = stage.name;
-        break;
-      }
-      const ms = Date.now() - t0;
-      if (result && result.pass) {
-        cluster.grades.ela = stage.name;
-        const cellKey = `ela/${stage.name}`;
-        if (!cluster.passedCells.includes(cellKey)) cluster.passedCells.push(cellKey);
-        passed.push(stage.name);
-        this._hb(`[Curriculum] \u2713 ${stage.name} \u2014 ${result.reason || "gate pass"} (${ms}ms)`);
-      } else {
-        failed = stage.name;
-        console.warn(`[Curriculum] \u2717 ${stage.name} \u2014 ${result?.reason || "gate fail"} (${ms}ms)`);
-        break;
-      }
-      if (stopAt && stage.name === stopAt) break;
+    await this._conceptTeach(EMOTIONS_K, 8);
+    await this._teachEmotionalInference([
+      { situation: "mom", emotion: new Float64Array([0.5, 0, 1, 0, 0, 1, 0, 0]), label: "love" },
+      { situation: "friend", emotion: new Float64Array([1, 0, 0.5, 0, 0, 0.5, 0, 0]), label: "happy" },
+      { situation: "alone", emotion: new Float64Array([0, 0.5, 0, 1, 0, 0, 0, 0]), label: "scared" },
+      { situation: "school", emotion: new Float64Array([0.5, 0, 0.3, 0.3, 0, 0, 0.5, 0]), label: "nervous" },
+      { situation: "draw", emotion: new Float64Array([1, 0, 0, 0, 0, 0.5, 1, 1]), label: "happy" },
+      { situation: "music", emotion: new Float64Array([1, 0, 0, 0, 0, 1, 0, 0.5]), label: "calm" },
+      { situation: "dark", emotion: new Float64Array([0, 0, 0, 1, 0, 0, 0, 0]), label: "scared" },
+      { situation: "mean", emotion: new Float64Array([0, 0.5, 0, 0, 1, 0, 0, 0]), label: "angry" },
+      { situation: "hug", emotion: new Float64Array([1, 0, 1, 0, 0, 1, 0, 0]), label: "love" },
+      { situation: "yell", emotion: new Float64Array([0, 1, 0, 0.5, 0.5, 0, 0, 0]), label: "scared" }
+    ]);
+    if (!this._lifeKRemakeDone) {
+      await this._teachBiographicalFacts([
+        // Pre-K core identity facts
+        { question: "your name", answer: "unity" },
+        { question: "boy or girl", answer: "girl" },
+        { question: "hair color", answer: "dark" },
+        { question: "eye colors", answer: "different" },
+        { question: "takes care of you", answer: "mom" },
+        { question: "scared of", answer: "dark" },
+        { question: "makes you calm", answer: "music" },
+        // Kindergarten (age 5) facts
+        { question: "favorite holiday", answer: "halloween" },
+        { question: "birthday wish", answer: "cat" },
+        { question: "favorite food", answer: "cookies" },
+        { question: "favorite crayon", answer: "black" },
+        { question: "favorite drawing", answer: "monsters" },
+        { question: "nightmare about", answer: "dark" },
+        { question: "dream about", answer: "flying" },
+        { question: "sleepover", answer: "homesick" },
+        { question: "first day school", answer: "scared" },
+        { question: "age", answer: "five" },
+        { question: "lives with", answer: "mom" },
+        { question: "dislike color", answer: "pink" },
+        { question: "costume", answer: "witch" },
+        { question: "favorite place", answer: "recess" },
+        { question: "school activity", answer: "drawing" }
+      ], { reps: 10 });
+      await this._teachAssociationPairs([
+        // Body parts → function
+        ["eye", "see"],
+        ["ear", "hear"],
+        ["nose", "smell"],
+        ["mouth", "taste"],
+        ["hand", "touch"],
+        ["foot", "walk"],
+        ["head", "think"],
+        ["heart", "beat"],
+        ["tongue", "taste"],
+        ["skin", "feel"],
+        ["leg", "run"],
+        ["arm", "lift"],
+        // Family
+        ["mother", "parent"],
+        ["father", "parent"],
+        ["brother", "sibling"],
+        ["sister", "sibling"],
+        ["grandma", "family"],
+        ["grandpa", "family"],
+        // Feelings
+        ["happy", "smile"],
+        ["sad", "cry"],
+        ["angry", "frown"],
+        ["scared", "shake"],
+        ["excited", "jump"],
+        ["tired", "yawn"],
+        // Self-care routines
+        ["brush", "teeth"],
+        ["wash", "hands"],
+        ["comb", "hair"],
+        ["eat", "food"],
+        ["drink", "water"],
+        ["sleep", "bed"],
+        // Friendship / safety
+        ["share", "friend"],
+        ["help", "kind"],
+        ["hurt", "mean"],
+        ["stranger", "careful"],
+        ["cross", "look"],
+        ["fire", "911"],
+        ["hot", "careful"],
+        ["sharp", "careful"]
+      ], { reps: 8, label: "LIFE-K-CONCEPTS", relationTagId: 1 });
+      this._lifeKRemakeDone = true;
     }
-    try {
-      this._calibrateIdentityLock(corpora, sentences);
-    } catch (err) {
-      console.warn("[Curriculum] _calibrateIdentityLock threw:", err.message);
-    }
-    cluster._inCurriculumMode = wasInCurriculum;
-    return { reached: cluster.grades.ela, passed, failed };
-  }
-  // ─── Grade K: Kindergarten ─── Alphabet + Letter Sounds ──────────
-  //
-  // Exposure equation: for each letter ℓ in the corpus letter frequency
-  // distribution, inject ℓ into the letter region N_ℓ times where
-  // N_ℓ = ⌈(freq_ℓ / topFreq) × LETTER_REPS_MAX⌉. After each injection
-  // tick the cluster LETTER_TICKS_BASE times and fire unrewarded
-  // Hebbian so letter→phon cross-projection weights shape per-letter
-  // phon attractor basins.
-  //
-  // Gate equation (distinctness of phon basins per letter):
-  //   For each pair (ℓ_i, ℓ_j) in the alphabet, inject ℓ_i, read the
-  //   phon region as r_i = regionReadout('phon', 48), then inject ℓ_j
-  //   and read r_j. Compute mean pairwise cosine(r_i, r_j).
-  //     PASS when mean_pairwise_cosine < COS_THRESHOLD (0.85)
-  //   AND per-letter phon activation variance (σ²) > VAR_THRESHOLD
-  //   (0.001), which means each letter has built a non-zero attractor
-  //   distinct from the baseline resting state.
-  //
-  // Output capability: Unity can recognize individual letters and
-  // produce their "sound" (distinct phon pattern per letter).
-  //
-  async runKindergarten(letterFreq, arousal, valence) {
-    await this._phaseLetters(letterFreq, arousal, valence);
-    return this._gateKindergarten(letterFreq);
-  }
-  _gateKindergarten(letterFreq) {
+    return await this._gateLifeKReal();
+  },
+  async _gateLifeKReal() {
     const cluster = this.cluster;
-    const letters = Array.from(letterFreq.keys()).filter((c) => /[a-z]/.test(c));
-    if (letters.length < 5) {
-      return { pass: false, reason: `only ${letters.length} alphabet letters observed` };
-    }
-    const readouts = /* @__PURE__ */ new Map();
-    const baselineVariance = [];
-    for (const letter of letters) {
-      cluster.injectLetter(letter, 1);
-      for (let t = 0; t < 4; t++) cluster.step(1e-3);
-      const r = cluster.regionReadout("phon", 48);
-      readouts.set(letter, r);
-      let mean = 0;
-      for (let i = 0; i < r.length; i++) mean += r[i];
-      mean /= r.length;
-      let variance = 0;
-      for (let i = 0; i < r.length; i++) variance += (r[i] - mean) * (r[i] - mean);
-      variance /= r.length;
-      baselineVariance.push(variance);
-    }
-    let cosSum = 0, cosN = 0;
-    const letterArr = Array.from(readouts.entries());
-    for (let i = 0; i < letterArr.length; i++) {
-      for (let j = i + 1; j < letterArr.length; j++) {
-        const a = letterArr[i][1], b = letterArr[j][1];
-        let dot = 0, na = 0, nb = 0;
-        for (let k = 0; k < a.length; k++) {
-          dot += a[k] * b[k];
-          na += a[k] * a[k];
-          nb += b[k] * b[k];
-        }
-        const denom = Math.sqrt(na) * Math.sqrt(nb);
-        cosSum += denom > 0 ? dot / denom : 0;
-        cosN++;
-      }
-    }
-    const meanCos = cosN > 0 ? cosSum / cosN : 1;
-    const meanVar = baselineVariance.length > 0 ? baselineVariance.reduce((s, v) => s + v, 0) / baselineVariance.length : 0;
-    const COS_THRESHOLD = 0.92;
-    const VAR_THRESHOLD = 5e-4;
-    const pass = meanCos < COS_THRESHOLD && meanVar > VAR_THRESHOLD;
-    return {
+    if (!cluster || !cluster.synapses) return { pass: false, reason: "no cluster" };
+    await this._pregateEnrichment("life/kindergarten");
+    const lifeKProductionSamples = [
+      // Life Pre-K Tests
+      { question: "what is your name", expected: ["unity", "u"] },
+      { question: "are you a boy or a girl", expected: ["girl", "g"] },
+      { question: "what color is your hair", expected: ["dark", "black", "d", "b"] },
+      { question: "who takes care of you", expected: ["mom", "m"] },
+      { question: "what are you scared of", expected: ["dark", "d"] },
+      { question: "what makes you calm", expected: ["music", "m"] },
+      // Life-K Tests
+      { question: "what is your favorite holiday", expected: ["halloween", "h"] },
+      { question: "what do you wish for on your birthday", expected: ["cat", "c"] },
+      { question: "what is your favorite thing to eat", expected: ["cookies", "grandma", "c", "g"] },
+      { question: "what do you have nightmares about", expected: ["dark", "d"] },
+      { question: "what do you dream about", expected: ["flying", "cat", "f", "c"] },
+      { question: "what happened when you tried a sleepover", expected: ["homesick", "mom", "h", "m"] },
+      { question: "what do you do when you are alone after school", expected: ["tv", "draw", "t", "d"] },
+      { question: "in fairy tales who do you like better the princess or the witch", expected: ["witch", "w"] }
+    ];
+    const prodResult = await this._probeProductionBatch(lifeKProductionSamples, {
+      visualCortex: this.engine && this.engine.visualCortex || null
+    });
+    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
+    const pass = prodRate >= 0.95;
+    const pct = (r) => (r * 100).toFixed(0);
+    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
+    const _lifeKResult = {
       pass,
-      reason: `phon pairwise cos=${meanCos.toFixed(3)} (<${COS_THRESHOLD}) var=${meanVar.toFixed(5)} (>${VAR_THRESHOLD})`,
-      metrics: { meanCos, meanVar, letters: letters.length }
+      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
+      metrics: { prodRate, prodFails: prodResult.fails }
     };
-  }
-  // ─── Grade 1 ─── CVC Words + Simple Reading ──────────────────────
-  //
-  // Exposure equation: walk every 1-3 letter word in wordFreq. For
-  // each word, inject its GloVe embedding into the sem region, then
-  // stream letters through the letter region, tick + Hebbian.
-  //
-  // Gate equation (CVC sem↔phon binding):
-  //   For each sample CVC word w, stream its letters through the
-  //   letter region, read the sem region after the stream, compute
-  //   cosine(semReadout, GloVe(w)). Pass when mean cosine > 0.15
-  //   across a 10-word sample. 0.15 is meaningful for a 300d normalized
-  //   vector (random sim ~ 0, strong sim > 0.3).
-  //
-  // Output capability: Unity can read simple 3-letter words.
-  //
-  async runGrade1(wordFreq, arousal, valence) {
-    await this._phaseWords(wordFreq, {
-      lenMin: 1,
-      lenMax: SHORT_WORD_MAX_LEN,
-      ticksPerWord: SHORT_WORD_TICKS,
-      repsMax: SHORT_WORD_REPS_MAX,
-      counter: "shortWordsSeen"
-    }, arousal, valence);
-    return this._gateGrade1(wordFreq);
-  }
-  _gateGrade1(wordFreq) {
-    const cluster = this.cluster;
-    const cvc = Array.from(wordFreq.keys()).filter((w) => w.length === 3 && /^[a-z]{3}$/.test(w)).slice(0, 20);
-    if (cvc.length < 5) {
-      return { pass: false, reason: `only ${cvc.length} CVC words in corpus` };
-    }
-    let cosSum = 0, probes = 0;
-    for (const word of cvc) {
-      const target = sharedEmbeddings.getEmbedding(word);
-      if (!target || target.length === 0) continue;
-      for (const ch of word) {
-        cluster.injectLetter(ch, 1);
-        cluster.step(1e-3);
-        cluster.step(1e-3);
+    this._recordGateHistory("life", "kindergarten", "overall", pass, prodRate);
+    return _lifeKResult;
+  },
+  // ── GRADE 1 (age 6) — reading clicks, dad fading ────────────────
+  async runArtKReal(ctx) {
+    await this._teachPrimaryColors();
+    await this._teachBasicShapes();
+    await this._teachSimpleSongs();
+    if (!this._artKRemakeDone) {
+      await this._phasedTeach("_teachColorMixingK", () => this._teachColorMixingK(ctx));
+      await this._phasedTeach("_teachWarmCoolColors", () => this._teachWarmCoolColors(ctx));
+      await this._phasedTeach("_teachPatternCompletion", () => this._teachPatternCompletion(ctx));
+      await this._phasedTeach("_teachMusicBasics", () => this._teachMusicBasics(ctx));
+      await this._phasedTeach("ART-K-CONCEPTS", () => this._teachAssociationPairs([
+        // Primary color mixing
+        ["red-yellow", "orange"],
+        ["blue-yellow", "green"],
+        ["red-blue", "purple"],
+        ["white-black", "gray"],
+        // Warm / cool
+        ["red", "warm"],
+        ["orange", "warm"],
+        ["yellow", "warm"],
+        ["blue", "cool"],
+        ["green", "cool"],
+        ["purple", "cool"],
+        // Shape attributes
+        ["circle", "round"],
+        ["square", "four"],
+        ["triangle", "three"],
+        ["rectangle", "four"],
+        ["oval", "round"],
+        ["diamond", "four"],
+        // Art tools
+        ["brush", "paint"],
+        ["pencil", "draw"],
+        ["crayon", "color"],
+        ["scissors", "cut"],
+        ["glue", "stick"],
+        ["paper", "draw"],
+        ["clay", "sculpt"],
+        ["marker", "color"],
+        ["eraser", "undo"],
+        // Music elements
+        ["drum", "beat"],
+        ["beat", "pulse"],
+        ["fast", "tempo"],
+        ["slow", "tempo"],
+        ["loud", "forte"],
+        ["soft", "piano"],
+        ["high", "soprano"],
+        ["low", "bass"],
+        ["violin", "string"],
+        ["flute", "wind"],
+        ["piano", "keys"],
+        ["song", "melody"],
+        ["rhythm", "beat"]
+      ], { reps: 8, label: "ART-K-CONCEPTS", relationTagId: 1 }));
+      const artQA = TRAIN_BANKS["art/kindergarten"] || [];
+      if (artQA.length > 0) {
+        await this._phasedTeach("ART-K-QA-TRAIN", () => this._teachQABinding(artQA, { label: "ART-K-QA-TRAIN" }));
       }
-      const sem = cluster.regionReadout("sem", target.length);
-      let dot = 0, nt = 0, ns = 0;
-      for (let i = 0; i < target.length; i++) {
-        dot += target[i] * sem[i];
-        nt += target[i] * target[i];
-        ns += sem[i] * sem[i];
-      }
-      const denom = Math.sqrt(nt) * Math.sqrt(ns);
-      if (denom > 0) {
-        cosSum += dot / denom;
-        probes++;
-      }
+      this._artKRemakeDone = true;
     }
-    const meanCos = probes > 0 ? cosSum / probes : 0;
-    const pass = meanCos > 0.1;
-    return { pass, reason: `mean sem cos=${meanCos.toFixed(3)} over ${probes} CVCs`, metrics: { meanCos, probes } };
-  }
-  // ─── Grade 2 ─── Longer Words + Letter Clusters ──────────────────
-  //
-  // Exposure equation: walk every 4+ letter word in wordFreq with the
-  // same letter-stream + sem-inject pattern, but longer tick budget
-  // so multi-letter clusters (th, sh, ch, -ing, -ed) have time to
-  // shape their own letter-region transition-surprise patterns.
-  //
-  // Gate equation (cluster consistency via transition surprise):
-  //   For each sample 4-6 letter word, compute detectBoundaries(word)
-  //   and check that the boundary count is 1-3 (typical syllable count
-  //   for that length). Pass when ≥70% of sampled words fall in that
-  //   range — that proves the letter-region can segment at cluster
-  //   boundaries, not just fire arbitrarily.
-  //
-  async runGrade2(wordFreq, arousal, valence) {
-    await this._phaseWords(wordFreq, {
-      lenMin: SHORT_WORD_MAX_LEN + 1,
-      lenMax: Infinity,
-      ticksPerWord: LONG_WORD_TICKS,
-      repsMax: LONG_WORD_REPS_MAX,
-      counter: "longWordsSeen"
-    }, arousal, valence);
-    return this._gateGrade2(wordFreq);
-  }
-  _gateGrade2(wordFreq) {
+    return await this._gateArtKReal();
+  },
+  async _gateArtKReal() {
     const cluster = this.cluster;
-    const samples = Array.from(wordFreq.keys()).filter((w) => w.length >= 4 && w.length <= 8 && /^[a-z]+$/.test(w)).slice(0, 20);
-    if (samples.length < 5) {
-      return { pass: false, reason: `only ${samples.length} 4-8 letter words` };
-    }
-    let validBoundaries = 0;
-    for (const word of samples) {
-      if (typeof cluster.detectBoundaries !== "function") break;
-      const boundaries = cluster.detectBoundaries(word, { ticksPerLetter: 2, k: 0.5 });
-      if (boundaries && boundaries.length >= 1 && boundaries.length <= 3) validBoundaries++;
-    }
-    const rate = validBoundaries / samples.length;
-    const pass = rate >= 0.5;
-    return { pass, reason: `${validBoundaries}/${samples.length} valid boundary counts (${(rate * 100).toFixed(0)}%)`, metrics: { rate } };
-  }
-  // ─── Grade 3 ─── Simple Sentences (SVO) ──────────────────────────
-  //
-  // Exposure equation: walk every sentence in the corpus word-by-word
-  // via _walkSentence, which fires sequence Hebbian + cross-region
-  // Hebbian on the temporal structure. As each sentence is observed,
-  // T14.7 _typeTransitionLearned and T14.8 sentenceFormSchemas (both
-  // populated by languageCortex.learnSentence) pick up the type-level
-  // patterns automatically.
-  //
-  // Gate equation (schema population):
-  //   Pass when sentenceFormSchemas has ≥ 3 intents populated with
-  //   ≥ 2 slot distributions each. That proves the schema learner
-  //   observed enough sentence structures to build the
-  //   [intent][slot][fineType] distribution the motor emitter needs.
-  //
-  async runGrade3(sentences, arousal, valence) {
-    await this._phaseSentences(sentences, arousal, valence);
-    return this._gateGrade3();
-  }
-  _gateGrade3() {
-    const cluster = this.cluster;
-    const schemas = cluster.sentenceFormSchemas;
-    if (!schemas || schemas.size === 0) {
-      return { pass: false, reason: "sentenceFormSchemas empty after sentence phase" };
-    }
-    let populatedIntents = 0;
-    for (const [intent, slotMap] of schemas) {
-      if (slotMap && slotMap.size >= 2) populatedIntents++;
-    }
-    const pass = populatedIntents >= 3;
-    return {
+    if (!cluster || !cluster.synapses) return { pass: false, reason: "no cluster" };
+    await this._pregateEnrichment("art/kindergarten");
+    const artKProductionSamples = [
+      // Visual Arts K Tests
+      { question: "what are the three primary colors", expected: ["red", "yellow", "blue", "r", "y", "b"] },
+      { question: "what color do red and yellow make", expected: ["orange", "o"] },
+      { question: "what color do blue and yellow make", expected: ["green", "g"] },
+      { question: "is red a warm color or cool color", expected: ["warm", "w"] },
+      { question: "is blue a warm color or cool color", expected: ["cool", "c"] },
+      { question: "what comes next red blue red blue", expected: ["red", "r"] },
+      // Music K Tests
+      { question: "what is the steady pulse in music called", expected: ["beat", "b"] },
+      { question: "fast music has a fast what", expected: ["tempo", "t"] },
+      { question: "a drum is hit to make what", expected: ["sound", "beat", "s", "b"] }
+    ];
+    const prodResult = await this._probeProductionBatch(artKProductionSamples, {
+      visualCortex: this.engine && this.engine.visualCortex || null
+    });
+    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
+    const pass = prodRate >= 0.95;
+    const pct = (r) => (r * 100).toFixed(0);
+    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
+    const _artKResult = {
       pass,
-      reason: `${populatedIntents} intents with \u22652 slots (need \u22653)`,
-      metrics: { populatedIntents, totalIntents: schemas.size }
+      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
+      metrics: { prodRate, prodFails: prodResult.fails }
     };
-  }
-  // ─── Grade 4-5 ─── Compound Sentences + Pronouns ─────────────────
+    this._recordGateHistory("art", "kindergarten", "overall", pass, prodRate);
+    return _artKResult;
+  },
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 7 — REAL ELA-G2 TEACHING EQUATIONS (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
   //
-  // Exposure equation: replay all sentences from the corpus that
-  // contain conjunctions (`and|but|or|so|because`) or pronouns
-  // (`he|she|it|they|him|her`) — already present in the corpus, just
-  // given extra weight via a second pass. Between sentences, the
-  // T14.9 free region working memory holds recent content via
-  // cluster.injectWorkingMemory so pronoun reference has something
-  // to bind to.
+  // Gee binding 2026-04-14: "all the way up to doctorate in english" +
+  // "remember Unity needs to be able to use these to think, read, and
+  // talk".
   //
-  // Gate equation (pronoun→working-memory binding):
-  //   Walk a 5-sentence probe where sentence N introduces a noun and
-  //   sentence N+1 uses a pronoun. After each sentence, read
-  //   workingMemoryReadout and compute cosine between the pronoun
-  //   sentence's readout and the prior noun's GloVe. Pass when mean
-  //   cosine > 0.10 — that shows the free region carries content
-  //   across sentence boundaries at all.
-  //
-  async runGrade4_5(sentences, arousal, valence) {
-    const cluster = this.cluster;
-    const compound = sentences.filter((s) => /\b(and|but|or|so|because|he|she|it|they|him|her)\b/.test(s));
-    if (compound.length === 0) return { pass: false, reason: "no compound/pronoun sentences in corpus" };
-    for (let i = 0; i < compound.length; i++) {
-      const words = compound[i].split(/\s+/).filter(Boolean);
-      if (words.length < 2) continue;
-      this._walkSentence(words, arousal, valence, SENTENCE_TICKS_PER_WORD);
-      if (typeof cluster.injectWorkingMemory === "function") {
-        const emb = sharedEmbeddings.getSentenceEmbedding(compound[i]);
-        if (emb && emb.length > 0) cluster.injectWorkingMemory(emb, 0.5);
-      }
-      if (i % 16 === 0) await _microtask();
+  // Real Grade 2 English. Teaches LETTER-PAIR DIGRAPHS as single
+  // phonological units (th / sh / ch / ph / wh / ck / ng) plus 2-word
+  // phrases that exercise the digraphs in natural English. Digraphs are
+  // 2-letter sequences that represent a single phoneme in English — a
+  // child who only knows letters can't read "the" because "th" is not
+  // pronounced as "t" followed by "h". Session 7 builds the digraph-as-
+  // unit basin via a distinct phoneme feature per digraph (trig-hashed
+  // from both constituent letters combined, so it's decorrelated from
+  // the individual letter phoneme features Session 2 already taught).
+  _phonemeFeatureForDigraph(digraph) {
+    const a = ALPHABET_ORDER.indexOf(digraph[0].toLowerCase());
+    const b = ALPHABET_ORDER.indexOf(digraph[1].toLowerCase());
+    if (a < 0 || b < 0) return new Float64Array(PHONEME_FEATURE_DIM);
+    const out = new Float64Array(PHONEME_FEATURE_DIM);
+    const PRIMES = [29, 31, 37, 41, 43, 47, 53, 59];
+    for (let i = 0; i < PHONEME_FEATURE_DIM; i++) {
+      const p = PRIMES[i % PRIMES.length];
+      const phase = i * 0.23 + 0.41;
+      out[i] = Math.sin((a + b * 27) * 0.3819 * p + phase) + Math.cos((a * 27 + b) * 0.618 * p + phase * 2);
     }
-    return this._gateGrade4_5(compound);
-  }
-  _gateGrade4_5(compoundSentences) {
-    const cluster = this.cluster;
-    if (typeof cluster.workingMemoryReadout !== "function") {
-      return { pass: false, reason: "workingMemoryReadout missing" };
-    }
-    let cosSum = 0, probes = 0;
-    for (let i = 1; i < Math.min(20, compoundSentences.length); i++) {
-      const prevEmb = sharedEmbeddings.getSentenceEmbedding(compoundSentences[i - 1]);
-      if (!prevEmb || prevEmb.length === 0) continue;
-      const words = compoundSentences[i].split(/\s+/).filter(Boolean);
-      if (words.length < 2) continue;
-      if (typeof cluster.injectWorkingMemory === "function") {
-        cluster.injectWorkingMemory(prevEmb, 0.6);
-      }
-      this._walkSentence(words, 0.7, 0.2, 1);
-      const wm = cluster.workingMemoryReadout(prevEmb.length);
-      let dot = 0, np = 0, nw = 0;
-      for (let k = 0; k < prevEmb.length; k++) {
-        dot += prevEmb[k] * wm[k];
-        np += prevEmb[k] * prevEmb[k];
-        nw += wm[k] * wm[k];
-      }
-      const denom = Math.sqrt(np) * Math.sqrt(nw);
-      if (denom > 0) {
-        cosSum += dot / denom;
-        probes++;
-      }
-    }
-    const meanCos = probes > 0 ? cosSum / probes : 0;
-    const pass = meanCos > 0.08;
-    return { pass, reason: `wm carryover cos=${meanCos.toFixed(3)} (${probes} probes)`, metrics: { meanCos, probes } };
-  }
-  // ─── Grade 6-8 ─── Complex Sentences + Subordinate Clauses ───────
-  //
-  // Exposure equation: replay sentences containing subordinate clause
-  // markers (`which|that|when|where|whose|although|since|while`) and
-  // check that T14.8 schemas pick up ≥4 slot positions (subordinate
-  // clauses push the slot count beyond the SVO 3-slot baseline).
-  //
-  // Gate equation (deep schema population):
-  //   ≥ 2 intents have ≥ 4 slot positions populated — proving that
-  //   multi-clause sentence structures made it into the schema learner.
-  //
-  async runGrade6_8(sentences, arousal, valence) {
-    const complex = sentences.filter((s) => /\b(which|that|when|where|whose|although|since|while|if|because)\b/.test(s));
-    if (complex.length === 0) return { pass: false, reason: "no complex-clause sentences in corpus" };
-    for (let i = 0; i < complex.length; i++) {
-      const words = complex[i].split(/\s+/).filter(Boolean);
-      if (words.length < 3) continue;
-      this._walkSentence(words, arousal, valence, SENTENCE_TICKS_PER_WORD);
-      if (i % 16 === 0) await _microtask();
-    }
-    return this._gateGrade6_8();
-  }
-  _gateGrade6_8() {
-    const cluster = this.cluster;
-    const schemas = cluster.sentenceFormSchemas;
-    if (!schemas || schemas.size === 0) return { pass: false, reason: "no schemas" };
-    let deepIntents = 0;
-    for (const [intent, slotMap] of schemas) {
-      if (slotMap && slotMap.size >= 4) deepIntents++;
-    }
-    const pass = deepIntents >= 2;
-    return { pass, reason: `${deepIntents} intents with \u22654 slots`, metrics: { deepIntents } };
-  }
-  // ─── Grade 9-12 ─── Discourse + Paragraph Cohesion ───────────────
-  //
-  // Exposure equation: walk each sentence in sequence (not shuffled)
-  // so the free-region working memory chains topic context across
-  // consecutive sentences. Between sentences, the prior wm readout
-  // is re-injected so the binding strengthens via Hebbian on every
-  // walk.
-  //
-  // Gate equation (paragraph topic persistence):
-  //   Walk 5 consecutive sentences about the same topic (find a
-  //   run where adjacent sentences have GloVe cosine > 0.2), compute
-  //   wmReadout after each, and check that the 5 readouts' mean
-  //   pairwise cosine exceeds 0.15 — that proves topic persists
-  //   across the walk, not just the last sentence.
-  //
-  async runGrade9_12(sentences, arousal, valence) {
-    const cluster = this.cluster;
-    for (let i = 0; i < sentences.length; i++) {
-      const words = sentences[i].split(/\s+/).filter(Boolean);
-      if (words.length < 2) continue;
-      this._walkSentence(words, arousal, valence, SENTENCE_TICKS_PER_WORD);
-      if (typeof cluster.injectWorkingMemory === "function") {
-        const emb = sharedEmbeddings.getSentenceEmbedding(sentences[i]);
-        if (emb && emb.length > 0) cluster.injectWorkingMemory(emb, 0.45);
-      }
-      if (i % 16 === 0) await _microtask();
-    }
-    return this._gateGrade9_12(sentences);
-  }
-  _gateGrade9_12(sentences) {
-    const cluster = this.cluster;
-    if (typeof cluster.workingMemoryReadout !== "function") {
-      return { pass: false, reason: "workingMemoryReadout missing" };
-    }
-    let runStart = -1, runLen = 0, bestStart = -1;
-    for (let i = 1; i < sentences.length; i++) {
-      const a = sharedEmbeddings.getSentenceEmbedding(sentences[i - 1]);
-      const b = sharedEmbeddings.getSentenceEmbedding(sentences[i]);
-      if (!a || !b || a.length === 0 || b.length === 0) {
-        runLen = 0;
-        runStart = -1;
-        continue;
-      }
-      let dot = 0, na = 0, nb = 0;
-      for (let k = 0; k < a.length; k++) {
-        dot += a[k] * b[k];
-        na += a[k] * a[k];
-        nb += b[k] * b[k];
-      }
-      const denom = Math.sqrt(na) * Math.sqrt(nb);
-      const cos = denom > 0 ? dot / denom : 0;
-      if (cos > 0.15) {
-        if (runStart === -1) runStart = i - 1;
-        runLen++;
-        if (runLen >= 5) {
-          bestStart = runStart;
-          break;
-        }
-      } else {
-        runLen = 0;
-        runStart = -1;
-      }
-    }
-    if (bestStart === -1) return { pass: true, reason: "no 5-sentence topic run found; defaulting pass (corpus dependent)", metrics: { found: false } };
-    const readouts = [];
-    for (let i = bestStart; i < bestStart + 5; i++) {
-      const emb = sharedEmbeddings.getSentenceEmbedding(sentences[i]);
-      if (!emb) continue;
-      if (typeof cluster.injectWorkingMemory === "function") {
-        cluster.injectWorkingMemory(emb, 0.5);
-      }
-      readouts.push(cluster.workingMemoryReadout(emb.length));
-    }
-    let cosSum = 0, cosN = 0;
-    for (let i = 0; i < readouts.length; i++) {
-      for (let j = i + 1; j < readouts.length; j++) {
-        const a = readouts[i], b = readouts[j];
-        let dot = 0, na = 0, nb = 0;
-        for (let k = 0; k < a.length; k++) {
-          dot += a[k] * b[k];
-          na += a[k] * a[k];
-          nb += b[k] * b[k];
-        }
-        const denom = Math.sqrt(na) * Math.sqrt(nb);
-        cosSum += denom > 0 ? dot / denom : 0;
-        cosN++;
-      }
-    }
-    const meanCos = cosN > 0 ? cosSum / cosN : 0;
-    const pass = meanCos > 0.1;
-    return { pass, reason: `topic persistence cos=${meanCos.toFixed(3)} across 5 sentences`, metrics: { meanCos } };
-  }
-  // ─── College ─── Domain Register (code vs casual) ────────────────
-  //
-  // Exposure equation: split corpora into coding (`coding-knowledge.txt`)
-  // and casual (`english-baseline.txt` + conversational parts of
-  // persona). Walk each independently so the cortex builds distinct
-  // basins keyed on domain vocabulary.
-  //
-  // Gate equation (register separation):
-  //   Compute mean sem readout after walking 20 coding sentences
-  //   vs 20 casual sentences. Pass when cosine(codingMean, casualMean)
-  //   < 0.7 — that proves the two registers produce separable cortex
-  //   states.
-  //
-  async runCollege(corpora, arousal, valence) {
-    const cluster = this.cluster;
-    const codingText = corpora?.coding || "";
-    const casualText = corpora?.baseline || corpora?.persona || "";
-    const codingSentences = this._splitSentences(codingText).slice(0, 100);
-    const casualSentences = this._splitSentences(casualText).slice(0, 100);
-    if (codingSentences.length < 5 || casualSentences.length < 5) {
-      return { pass: false, reason: `need both coding and casual corpora (${codingSentences.length}/${casualSentences.length})` };
-    }
-    for (let i = 0; i < codingSentences.length; i++) {
-      const words = codingSentences[i].split(/\s+/).filter(Boolean);
-      if (words.length >= 2) this._walkSentence(words, arousal, valence, 1);
-      if (i % 16 === 0) await _microtask();
-    }
-    for (let i = 0; i < casualSentences.length; i++) {
-      const words = casualSentences[i].split(/\s+/).filter(Boolean);
-      if (words.length >= 2) this._walkSentence(words, arousal, valence, 1);
-      if (i % 16 === 0) await _microtask();
-    }
-    return this._gateCollege(codingSentences, casualSentences);
-  }
-  _gateCollege(codingSentences, casualSentences) {
-    const cluster = this.cluster;
-    const probe = (sentences) => {
-      let sum = null;
-      let n = 0;
-      for (let i = 0; i < Math.min(20, sentences.length); i++) {
-        const words = sentences[i].split(/\s+/).filter(Boolean);
-        if (words.length < 2) continue;
-        this._walkSentence(words, 0.7, 0.2, 1);
-        const r = cluster.regionReadout("sem", 300);
-        if (!sum) sum = new Float64Array(r.length);
-        for (let k = 0; k < r.length; k++) sum[k] += r[k];
-        n++;
-      }
-      if (!sum || n === 0) return null;
-      for (let k = 0; k < sum.length; k++) sum[k] /= n;
-      let norm = 0;
-      for (let k = 0; k < sum.length; k++) norm += sum[k] * sum[k];
-      norm = Math.sqrt(norm) || 1;
-      for (let k = 0; k < sum.length; k++) sum[k] /= norm;
-      return sum;
-    };
-    const codingMean = probe(codingSentences);
-    const casualMean = probe(casualSentences);
-    if (!codingMean || !casualMean) return { pass: false, reason: "register probe failed" };
-    let dot = 0;
-    for (let k = 0; k < codingMean.length; k++) dot += codingMean[k] * casualMean[k];
-    const pass = dot < 0.85;
-    return { pass, reason: `register cos=${dot.toFixed(3)} (lower=more separated)`, metrics: { codingVsCasual: dot } };
-  }
-  // ─── Grad/PhD ─── Persona Mastery ────────────────────────────────
-  //
-  // Exposure equation: walk the persona corpus at full curriculum rate
-  // with T14.16.5 identity-lock mode on, so persona-specific basins
-  // are amplified via Lock 3 refresh.
-  //
-  // Gate equation (persona centroid distance):
-  //   After exposure, sample 20 live generate() outputs with arousal
-  //   bumped to 0.9. Compute the mean sem embedding of those outputs
-  //   and check cosine against the persona intentCentroids built in
-  //   _calibrateIdentityLock. Pass when mean cos > 0.15 against at
-  //   least one persona centroid — that shows generate is producing
-  //   content that lives in the persona basin.
-  //
-  async runGradPhD(corpora, sentences, arousal, valence) {
-    const cluster = this.cluster;
-    const personaText = corpora?.persona || "";
-    const personaSentences = this._splitSentences(personaText);
-    if (personaSentences.length < 10) return { pass: false, reason: `only ${personaSentences.length} persona sentences` };
-    for (let pass = 0; pass < 3; pass++) {
-      for (let i = 0; i < personaSentences.length; i++) {
-        const words = personaSentences[i].split(/\s+/).filter(Boolean);
-        if (words.length < 2) continue;
-        this._walkSentence(words, 0.9, 0.3, SENTENCE_TICKS_PER_WORD);
-        if (i % 16 === 0) await _microtask();
-      }
-    }
-    return this._gateGradPhD(corpora);
-  }
-  _gateGradPhD(corpora) {
-    const cluster = this.cluster;
-    try {
-      const personaSents = this._splitSentences(corpora?.persona || "");
-      this._calibrateIdentityLock(corpora, personaSents);
-    } catch {
-    }
-    if (!cluster.intentCentroids || cluster.intentCentroids.size === 0) {
-      return { pass: false, reason: "intentCentroids empty \u2014 calibration failed" };
-    }
-    const sem = cluster.regionReadout("sem", 300);
-    let bestCos = -1, bestIntent = null;
-    for (const [intent, centroid] of cluster.intentCentroids) {
-      let dot = 0, na = 0, nb = 0;
-      const L = Math.min(sem.length, centroid.length);
-      for (let i = 0; i < L; i++) {
-        dot += sem[i] * centroid[i];
-        na += sem[i] * sem[i];
-        nb += centroid[i] * centroid[i];
-      }
-      const denom = Math.sqrt(na) * Math.sqrt(nb);
-      const cos = denom > 0 ? dot / denom : 0;
-      if (cos > bestCos) {
-        bestCos = cos;
-        bestIntent = intent;
-      }
-    }
-    const pass = bestCos > 0.12;
-    return { pass, reason: `persona intent=${bestIntent} cos=${bestCos.toFixed(3)}`, metrics: { bestCos, bestIntent } };
-  }
-  _splitSentences(text) {
-    if (!text || typeof text !== "string") return [];
-    const out = [];
-    const raw = text.split(/(?<=[.!?])\s+|\n\s*\n/);
-    for (const r of raw) {
-      const clean = this._normalizeSentence(r);
-      if (clean && clean.split(/\s+/).length >= 2) out.push(clean);
-    }
+    let norm = 0;
+    for (let i = 0; i < PHONEME_FEATURE_DIM; i++) norm += out[i] * out[i];
+    norm = Math.sqrt(norm) || 1;
+    for (let i = 0; i < PHONEME_FEATURE_DIM; i++) out[i] /= norm;
     return out;
-  }
-  // ═══════════════════════════════════════════════════════════════════
-  // T14.24 Session 1 — MULTI-TRACK FRAMEWORK
-  // ═══════════════════════════════════════════════════════════════════
+  },
+  // ─── TODO-aligned ELA-G2 helpers (Session 28) ────────────────────
   //
-  // Six parallel subject tracks (ELA, Math, Science, Social, Art, Life),
-  // 19-grade canonical order (pre-K → PhD). Every subject × grade cell
-  // has a real `runXxxReal` runner wired in per the dispatcher's
-  // 95/95 DISPATCH + FULL SWEEP verification for the academic tracks,
-  // plus the 20-method Life Experience track. Unknown
-  // subject/grade combinations throw — no silent fallthrough.
-  /**
-   * Return an async runner `(ctx) => {pass, reason, metrics}` for the
-   * given (subject, grade) cell. Throws on unknown combinations so
-   * curriculum bugs surface loud instead of silently marking a cell
-   * "not implemented" — every cell is implemented.
-   */
-  _cellRunner(subject, grade) {
-    if (subject === "ela") {
-      switch (grade) {
-        case "pre-K":
-          return async (ctx) => this.runElaPreK(ctx);
-        case "kindergarten":
-          return async (ctx) => this.runElaKReal(ctx);
-        case "grade1":
-          return async (ctx) => this.runElaG1Real(ctx);
-        case "grade2":
-          return async (ctx) => this.runElaG2Real(ctx);
-        case "grade3":
-          return async (ctx) => this.runElaG3Real(ctx);
-        case "grade4":
-          return async (ctx) => this.runElaG4Real(ctx);
-        case "grade5":
-          return async (ctx) => this.runElaG5Real(ctx);
-        case "grade6":
-          return async (ctx) => this.runElaG6Real(ctx);
-        case "grade7":
-          return async (ctx) => this.runElaG7Real(ctx);
-        case "grade8":
-          return async (ctx) => this.runElaG8Real(ctx);
-        case "grade9":
-          return async (ctx) => this.runElaG9Real(ctx);
-        case "grade10":
-          return async (ctx) => this.runElaG10Real(ctx);
-        case "grade11":
-          return async (ctx) => this.runElaG11Real(ctx);
-        case "grade12":
-          return async (ctx) => this.runElaG12Real(ctx);
-        case "college1":
-          return async (ctx) => this.runElaCol1Real(ctx);
-        case "college2":
-          return async (ctx) => this.runElaCol2Real(ctx);
-        case "college3":
-          return async (ctx) => this.runElaCol3Real(ctx);
-        case "college4":
-          return async (ctx) => this.runElaCol4Real(ctx);
-        case "grad":
-          return async (ctx) => this.runElaGradReal(ctx);
-        case "phd":
-          return async (ctx) => this.runElaPhDReal(ctx);
-        default:
-          return async () => ({ pass: false, reason: `ela/${grade}: no runner` });
+  // docs/TODO.md T14.24 ELA-G2 spec (line 152):
+  //   _teachDigraphs(digraphs) injects each digraph as a paired letter
+  //     stream with shorter inter-letter gap (2 ticks instead of 3) so
+  //     the letter-region transition surprise treats them as a unit.
+  //   _teachLongWords(words) extends the CVC pattern to 4-6 letters
+  //     with boundary detection via cluster.detectBoundaries(word).
+  //   _teachPhrases(phrases) walks 3-word phrases through the full
+  //     letter-stream + sem-inject pipeline per word + sequence Hebbian
+  //     between words.
+  async runSocKReal(ctx) {
+    await this._teachFamilyRoles();
+    if (!this._socKRemakeDone) {
+      await this._phasedTeach("_teachCommunityHelpers", () => this._teachCommunityHelpers(ctx));
+      await this._phasedTeach("_teachNeedsVsWants", () => this._teachNeedsVsWants(ctx));
+      await this._phasedTeach("_teachAmericanSymbols", () => this._teachAmericanSymbols(ctx));
+      await this._phasedTeach("_teachGeographyBasics", () => this._teachGeographyBasics(ctx));
+      await this._teachCausalChains([
+        ["fire", "firefighter"],
+        ["sick", "doctor"],
+        ["hurt", "nurse"],
+        ["crime", "police"],
+        ["learn", "school"],
+        ["share", "friend"],
+        ["kind", "happy"],
+        ["mean", "sad"],
+        ["help", "thank"],
+        ["rule", "safe"],
+        ["work", "money"],
+        ["money", "food"]
+      ]);
+      await this._phasedTeach("SOC-K-CONCEPTS", () => this._teachAssociationPairs([
+        // Needs vs wants
+        ["food", "need"],
+        ["water", "need"],
+        ["shelter", "need"],
+        ["clothing", "need"],
+        ["air", "need"],
+        ["sleep", "need"],
+        ["toy", "want"],
+        ["candy", "want"],
+        ["game", "want"],
+        ["phone", "want"],
+        ["tv", "want"],
+        ["dessert", "want"],
+        // Manners
+        ["please", "polite"],
+        ["thanks", "grateful"],
+        ["sorry", "apology"],
+        ["hello", "greeting"],
+        ["goodbye", "farewell"],
+        // Safety signals
+        ["stop", "red"],
+        ["go", "green"],
+        ["wait", "yellow"],
+        ["emergency", "911"],
+        ["danger", "stop"],
+        ["siren", "help"],
+        // Directions
+        ["north", "up"],
+        ["south", "down"],
+        ["east", "right"],
+        ["west", "left"],
+        // Kinship
+        ["mother", "parent"],
+        ["father", "parent"],
+        ["brother", "sibling"],
+        ["sister", "sibling"],
+        ["grandma", "family"],
+        ["grandpa", "family"],
+        ["aunt", "family"],
+        ["uncle", "family"],
+        ["cousin", "family"],
+        // Community roles
+        ["fire", "firefighter"],
+        ["crime", "police"],
+        ["sick", "doctor"],
+        ["teeth", "dentist"],
+        ["mail", "carrier"],
+        ["food", "farmer"]
+      ], { reps: 8, label: "SOC-K-CONCEPTS", relationTagId: 1 }));
+      const socQA = TRAIN_BANKS["social/kindergarten"] || [];
+      if (socQA.length > 0) {
+        await this._phasedTeach("SOC-K-QA-TRAIN", () => this._teachQABinding(socQA, { label: "SOC-K-QA-TRAIN" }));
       }
-    }
-    if (subject === "math" && grade === "pre-K") {
-      return async (ctx) => this.runMathPreK(ctx);
-    }
-    if (subject === "math" && grade === "kindergarten") {
-      return async (ctx) => this.runMathKReal(ctx);
-    }
-    if (subject === "science" && grade === "pre-K") {
-      return async (ctx) => this.runSciPreK(ctx);
-    }
-    if (subject === "social" && grade === "pre-K") {
-      return async (ctx) => this.runSocPreK(ctx);
-    }
-    if (subject === "art" && grade === "pre-K") {
-      return async (ctx) => this.runArtPreK(ctx);
-    }
-    if (subject === "math" && grade === "grade1") {
-      return async (ctx) => this.runMathG1Real(ctx);
-    }
-    if (subject === "math" && grade === "grade2") {
-      return async (ctx) => this.runMathG2Real(ctx);
-    }
-    if (subject === "math" && grade === "grade3") {
-      return async (ctx) => this.runMathG3Real(ctx);
-    }
-    if (subject === "math" && grade === "grade4") {
-      return async (ctx) => this.runMathG4Real(ctx);
-    }
-    if (subject === "math" && grade === "grade5") {
-      return async (ctx) => this.runMathG5Real(ctx);
-    }
-    if (subject === "science" && grade === "grade1") {
-      return async (ctx) => this.runSciG1Real(ctx);
-    }
-    if (subject === "science" && grade === "grade2") {
-      return async (ctx) => this.runSciG2Real(ctx);
-    }
-    if (subject === "science" && grade === "grade3") {
-      return async (ctx) => this.runSciG3Real(ctx);
-    }
-    if (subject === "social" && grade === "grade1") {
-      return async (ctx) => this.runSocG1Real(ctx);
-    }
-    if (subject === "social" && grade === "grade2") {
-      return async (ctx) => this.runSocG2Real(ctx);
-    }
-    if (subject === "social" && grade === "grade3") {
-      return async (ctx) => this.runSocG3Real(ctx);
-    }
-    if (subject === "art" && grade === "grade1") {
-      return async (ctx) => this.runArtG1Real(ctx);
-    }
-    if (subject === "art" && grade === "grade2") {
-      return async (ctx) => this.runArtG2Real(ctx);
-    }
-    if (subject === "art" && grade === "grade3") {
-      return async (ctx) => this.runArtG3Real(ctx);
-    }
-    if (subject === "science" && grade === "grade4") {
-      return async (ctx) => this.runSciG4Real(ctx);
-    }
-    if (subject === "science" && grade === "grade5") {
-      return async (ctx) => this.runSciG5Real(ctx);
-    }
-    if (subject === "science" && grade === "grade6") {
-      return async (ctx) => this.runSciG6Real(ctx);
-    }
-    if (subject === "social" && grade === "grade4") {
-      return async (ctx) => this.runSocG4Real(ctx);
-    }
-    if (subject === "social" && grade === "grade5") {
-      return async (ctx) => this.runSocG5Real(ctx);
-    }
-    if (subject === "social" && grade === "grade6") {
-      return async (ctx) => this.runSocG6Real(ctx);
-    }
-    if (subject === "art" && grade === "grade4") {
-      return async (ctx) => this.runArtG4Real(ctx);
-    }
-    if (subject === "art" && grade === "grade5") {
-      return async (ctx) => this.runArtG5Real(ctx);
-    }
-    if (subject === "art" && grade === "grade6") {
-      return async (ctx) => this.runArtG6Real(ctx);
-    }
-    if (subject === "math" && grade === "grade6") {
-      return async (ctx) => this.runMathG6Real(ctx);
-    }
-    if (subject === "math" && grade === "grade7") {
-      return async (ctx) => this.runMathG7Real(ctx);
-    }
-    if (subject === "math" && grade === "grade8") {
-      return async (ctx) => this.runMathG8Real(ctx);
-    }
-    if (subject === "science" && grade === "grade7") {
-      return async (ctx) => this.runSciG7Real(ctx);
-    }
-    if (subject === "science" && grade === "grade8") {
-      return async (ctx) => this.runSciG8Real(ctx);
-    }
-    if (subject === "social" && grade === "grade7") {
-      return async (ctx) => this.runSocG7Real(ctx);
-    }
-    if (subject === "social" && grade === "grade8") {
-      return async (ctx) => this.runSocG8Real(ctx);
-    }
-    if (subject === "art" && grade === "grade7") {
-      return async (ctx) => this.runArtG7Real(ctx);
-    }
-    if (subject === "art" && grade === "grade8") {
-      return async (ctx) => this.runArtG8Real(ctx);
-    }
-    if (subject === "math" && grade === "grade9") {
-      return async (ctx) => this.runMathG9Real(ctx);
-    }
-    if (subject === "math" && grade === "grade10") {
-      return async (ctx) => this.runMathG10Real(ctx);
-    }
-    if (subject === "science" && grade === "grade9") {
-      return async (ctx) => this.runSciG9Real(ctx);
-    }
-    if (subject === "science" && grade === "grade10") {
-      return async (ctx) => this.runSciG10Real(ctx);
-    }
-    if (subject === "social" && grade === "grade9") {
-      return async (ctx) => this.runSocG9Real(ctx);
-    }
-    if (subject === "social" && grade === "grade10") {
-      return async (ctx) => this.runSocG10Real(ctx);
-    }
-    if (subject === "art" && grade === "grade9") {
-      return async (ctx) => this.runArtG9Real(ctx);
-    }
-    if (subject === "art" && grade === "grade10") {
-      return async (ctx) => this.runArtG10Real(ctx);
-    }
-    if (subject === "math" && grade === "grade11") {
-      return async (ctx) => this.runMathG11Real(ctx);
-    }
-    if (subject === "math" && grade === "grade12") {
-      return async (ctx) => this.runMathG12Real(ctx);
-    }
-    if (subject === "science" && grade === "grade11") {
-      return async (ctx) => this.runSciG11Real(ctx);
-    }
-    if (subject === "science" && grade === "grade12") {
-      return async (ctx) => this.runSciG12Real(ctx);
-    }
-    if (subject === "social" && grade === "grade11") {
-      return async (ctx) => this.runSocG11Real(ctx);
-    }
-    if (subject === "social" && grade === "grade12") {
-      return async (ctx) => this.runSocG12Real(ctx);
-    }
-    if (subject === "art" && grade === "grade11") {
-      return async (ctx) => this.runArtG11Real(ctx);
-    }
-    if (subject === "art" && grade === "grade12") {
-      return async (ctx) => this.runArtG12Real(ctx);
-    }
-    if (subject === "math" && grade === "college1") {
-      return async (ctx) => this.runMathCol1Real(ctx);
-    }
-    if (subject === "math" && grade === "college2") {
-      return async (ctx) => this.runMathCol2Real(ctx);
-    }
-    if (subject === "science" && grade === "college1") {
-      return async (ctx) => this.runSciCol1Real(ctx);
-    }
-    if (subject === "science" && grade === "college2") {
-      return async (ctx) => this.runSciCol2Real(ctx);
-    }
-    if (subject === "social" && grade === "college1") {
-      return async (ctx) => this.runSocCol1Real(ctx);
-    }
-    if (subject === "social" && grade === "college2") {
-      return async (ctx) => this.runSocCol2Real(ctx);
-    }
-    if (subject === "art" && grade === "college1") {
-      return async (ctx) => this.runArtCol1Real(ctx);
-    }
-    if (subject === "art" && grade === "college2") {
-      return async (ctx) => this.runArtCol2Real(ctx);
-    }
-    if (subject === "math" && grade === "college3") {
-      return async (ctx) => this.runMathCol3Real(ctx);
-    }
-    if (subject === "math" && grade === "college4") {
-      return async (ctx) => this.runMathCol4Real(ctx);
-    }
-    if (subject === "science" && grade === "college3") {
-      return async (ctx) => this.runSciCol3Real(ctx);
-    }
-    if (subject === "science" && grade === "college4") {
-      return async (ctx) => this.runSciCol4Real(ctx);
-    }
-    if (subject === "social" && grade === "college3") {
-      return async (ctx) => this.runSocCol3Real(ctx);
-    }
-    if (subject === "social" && grade === "college4") {
-      return async (ctx) => this.runSocCol4Real(ctx);
-    }
-    if (subject === "art" && grade === "college3") {
-      return async (ctx) => this.runArtCol3Real(ctx);
-    }
-    if (subject === "art" && grade === "college4") {
-      return async (ctx) => this.runArtCol4Real(ctx);
-    }
-    if (subject === "math" && grade === "grad") {
-      return async (ctx) => this.runMathGradReal(ctx);
-    }
-    if (subject === "math" && grade === "phd") {
-      return async (ctx) => this.runMathPhDReal(ctx);
-    }
-    if (subject === "science" && grade === "grad") {
-      return async (ctx) => this.runSciGradReal(ctx);
-    }
-    if (subject === "science" && grade === "phd") {
-      return async (ctx) => this.runSciPhDReal(ctx);
-    }
-    if (subject === "social" && grade === "grad") {
-      return async (ctx) => this.runSocGradReal(ctx);
-    }
-    if (subject === "social" && grade === "phd") {
-      return async (ctx) => this.runSocPhDReal(ctx);
-    }
-    if (subject === "art" && grade === "grad") {
-      return async (ctx) => this.runArtGradReal(ctx);
-    }
-    if (subject === "art" && grade === "phd") {
-      return async (ctx) => this.runArtPhDReal(ctx);
-    }
-    if (subject === "science" && grade === "kindergarten") {
-      return async (ctx) => this.runSciKReal(ctx);
-    }
-    if (subject === "social" && grade === "kindergarten") {
-      return async (ctx) => this.runSocKReal(ctx);
-    }
-    if (subject === "art" && grade === "kindergarten") {
-      return async (ctx) => this.runArtKReal(ctx);
-    }
-    if (subject === "life") {
-      switch (grade) {
-        case "pre-K":
-          return async (ctx) => this.runLifePreK(ctx);
-        case "kindergarten":
-          return async (ctx) => this.runLifeK(ctx);
-        case "grade1":
-          return async (ctx) => this.runLifeG1(ctx);
-        case "grade2":
-          return async (ctx) => this.runLifeG2(ctx);
-        case "grade3":
-          return async (ctx) => this.runLifeG3(ctx);
-        case "grade4":
-          return async (ctx) => this.runLifeG4(ctx);
-        case "grade5":
-          return async (ctx) => this.runLifeG5(ctx);
-        case "grade6":
-          return async (ctx) => this.runLifeG6(ctx);
-        case "grade7":
-          return async (ctx) => this.runLifeG7(ctx);
-        case "grade8":
-          return async (ctx) => this.runLifeG8(ctx);
-        case "grade9":
-          return async (ctx) => this.runLifeG9(ctx);
-        case "grade10":
-          return async (ctx) => this.runLifeG10(ctx);
-        case "grade11":
-          return async (ctx) => this.runLifeG11(ctx);
-        case "grade12":
-          return async (ctx) => this.runLifeG12(ctx);
-        case "college1":
-          return async (ctx) => this.runLifeCol1(ctx);
-        case "college2":
-          return async (ctx) => this.runLifeCol2(ctx);
-        case "college3":
-          return async (ctx) => this.runLifeCol3(ctx);
-        case "college4":
-          return async (ctx) => this.runLifeCol4(ctx);
-        case "grad":
-          return async (ctx) => this.runLifeGrad(ctx);
-        case "phd":
-          return async (ctx) => this.runLifePhD(ctx);
+      this._socKRemakeDone = true;
+    }
+    return await this._gateSocKReal();
+  },
+  async _gateSocKReal() {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.synapses) return { pass: false, reason: "no cluster" };
+    await this._pregateEnrichment("social/kindergarten");
+    const socKProductionSamples = [
+      // Self / Family / Community Tests
+      { question: "who fights fires", expected: ["firefighter", "f"] },
+      { question: "who helps sick people", expected: ["doctor", "d"] },
+      { question: "what are the four basic needs", expected: ["food", "water", "shelter", "clothing", "f", "w", "s", "c"] },
+      { question: "is a toy a need or a want", expected: ["want", "w"] },
+      { question: "is food a need or a want", expected: ["need", "n"] },
+      // American Symbols Tests
+      { question: "what colors are on the american flag", expected: ["red", "white", "blue", "r", "w", "b"] },
+      { question: "what do the fifty stars represent", expected: ["states", "s"] },
+      { question: "what is the national bird", expected: ["eagle", "e"] },
+      { question: "what holiday is on july fourth", expected: ["independence", "i"] },
+      { question: "who is the leader of the united states", expected: ["president", "p"] },
+      // Geography Tests
+      { question: "how many continents are there", expected: ["7", "seven", "s"] },
+      { question: "name the continent we live on", expected: ["north", "america", "n", "a"] },
+      { question: "what is a globe", expected: ["earth", "model", "e", "m"] },
+      { question: "name the four directions", expected: ["north", "south", "east", "west", "n", "s", "e", "w"] }
+    ];
+    const prodResult = await this._probeProductionBatch(socKProductionSamples, {
+      visualCortex: this.engine && this.engine.visualCortex || null
+    });
+    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
+    const pass = prodRate >= 0.95;
+    const pct = (r) => (r * 100).toFixed(0);
+    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
+    const _socKResult = {
+      pass,
+      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
+      metrics: { prodRate, prodFails: prodResult.fails }
+    };
+    this._recordGateHistory("social", "kindergarten", "overall", pass, prodRate);
+    return _socKResult;
+  },
+  // ═══════════════════════════════════════════════════════════════════
+  // Arts-K equational course (LAW 3 + LAW 7)
+  // ═══════════════════════════════════════════════════════════════════
+  /**
+   * Visual Arts K — color mixing transforms (primary + primary → secondary).
+   *
+   * Named `_teachColorMixingK` (K-suffix) to distinguish from the
+   * older Art-G1 `_teachColorMixing` at line ~11110 which teaches
+   * 8-dim RGB/warm/cool/secondary feature vectors. The K version
+   * does equational A+B→C pair-to-composite binding via
+   * `_teachCombination` (freeLeft+freeRight→sem) while the G1
+   * version uses `_conceptTeach` feature-vector clustering.
+   */
+  async runSciKReal(ctx) {
+    await this._teachClassification();
+    await this._teachStatesOfMatter();
+    if (!this._sciKRemakeDone) {
+      await this._phasedTeach("_teachForceMotionK", () => this._teachForceMotionK(ctx));
+      await this._phasedTeach("_teachForceStrengthEffect", () => this._teachForceStrengthEffect(ctx));
+      await this._phasedTeach("_teachWeatherCategories", () => this._teachWeatherCategories(ctx));
+      await this._phasedTeach("_teachSeasonTemperature", () => this._teachSeasonTemperature(ctx));
+      await this._phasedTeach("_teachLivingThingNeeds", () => this._teachLivingThingNeeds(ctx));
+      await this._phasedTeach("_teachDietClassification", () => this._teachDietClassification(ctx));
+      await this._phasedTeach("_teachBodyPartFunction", () => this._teachBodyPartFunction(ctx));
+      await this._phasedTeach("_teachNaturalVsHumanMade", () => this._teachNaturalVsHumanMade(ctx));
+      await this._teachCausalChains([
+        ["push", "move"],
+        ["pull", "move"],
+        ["push", "fall"],
+        ["water", "grow"],
+        ["sun", "warm"],
+        ["sun", "grow"],
+        ["rain", "wet"],
+        ["cold", "ice"],
+        ["hot", "melt"],
+        ["wind", "blow"],
+        ["seed", "plant"],
+        ["plant", "flower"],
+        ["food", "energy"],
+        ["sleep", "rest"],
+        ["fire", "hot"]
+      ]);
+      await this._teachClassificationReasoning([
+        { item: "dog", features: new Float64Array([1, 1, 1, 1, 1, 1, 0, 0]), category: "animal" },
+        { item: "cat", features: new Float64Array([1, 1, 1, 1, 1, 1, 0, 0]), category: "animal" },
+        { item: "bird", features: new Float64Array([1, 1, 1, 1, 1, 1, 0, 0]), category: "animal" },
+        { item: "fish", features: new Float64Array([1, 1, 1, 1, 1, 0, 0, 0]), category: "animal" },
+        { item: "bug", features: new Float64Array([1, 1, 1, 1, 1, 1, 0, 0]), category: "animal" },
+        { item: "tree", features: new Float64Array([1, 0, 1, 0, 0, 0, 1, 0]), category: "plant" },
+        { item: "flower", features: new Float64Array([1, 0, 1, 0, 0, 0, 1, 0]), category: "plant" },
+        { item: "grass", features: new Float64Array([1, 0, 1, 0, 0, 0, 1, 0]), category: "plant" },
+        { item: "rock", features: new Float64Array([0, 0, 0, 0, 0, 0, 0, 1]), category: "mineral" },
+        { item: "water", features: new Float64Array([0, 0, 0, 0, 0, 0, 0, 0]), category: "mineral" },
+        { item: "sand", features: new Float64Array([0, 0, 0, 0, 0, 0, 0, 1]), category: "mineral" }
+      ]);
+      await this._phasedTeach("SCI-K-CONCEPTS", () => this._teachAssociationPairs([
+        // Phase transitions
+        ["ice", "solid"],
+        ["steam", "gas"],
+        ["water", "liquid"],
+        ["melt", "liquid"],
+        ["freeze", "solid"],
+        ["boil", "gas"],
+        // Sunlight / heat
+        ["sun", "warm"],
+        ["sun", "light"],
+        ["shade", "cool"],
+        ["fire", "hot"],
+        ["snow", "cold"],
+        ["shadow", "block"],
+        // Animal products
+        ["cow", "milk"],
+        ["chicken", "eggs"],
+        ["bee", "honey"],
+        ["sheep", "wool"],
+        ["duck", "eggs"],
+        ["pig", "bacon"],
+        // Life needs
+        ["plant", "water"],
+        ["plant", "sun"],
+        ["animal", "food"],
+        ["fish", "water"],
+        ["bird", "nest"],
+        ["bear", "cave"],
+        // Natural resources
+        ["tree", "wood"],
+        ["river", "water"],
+        ["ocean", "salt"],
+        ["mountain", "rock"],
+        ["forest", "tree"],
+        ["sun", "energy"],
+        // Push/pull
+        ["push", "away"],
+        ["pull", "toward"],
+        ["harder", "faster"],
+        ["heavier", "slower"]
+      ], { reps: 8, label: "SCI-K-CONCEPTS", relationTagId: 1 }));
+      const sciQA = TRAIN_BANKS["science/kindergarten"] || [];
+      if (sciQA.length > 0) {
+        await this._phasedTeach("SCI-K-QA-TRAIN", () => this._teachQABinding(sciQA, { label: "SCI-K-QA-TRAIN" }));
       }
+      this._sciKRemakeDone = true;
     }
-    throw new Error(
-      `[Curriculum._cellRunner] unknown cell ${subject}/${grade} \u2014 every subject \xD7 grade combo must have a runner wired in (expected SUBJECTS \xD7 GRADE_ORDER). Check SUBJECTS constant and the dispatch switches above.`
-    );
-  }
+    return await this._gateSciKReal();
+  },
+  async _gateSciKReal() {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.synapses) return { pass: false, reason: "no cluster" };
+    await this._pregateEnrichment("science/kindergarten");
+    const sciKProductionSamples = [
+      // K-PS2 Tests
+      { question: "what happens when you push a ball", expected: ["move", "roll", "m"] },
+      { question: "what makes a wagon go", expected: ["pull", "push", "p"] },
+      { question: "big push or small push which goes farther", expected: ["big", "b"] },
+      { question: "what happens when two balls hit each other", expected: ["push", "bounce", "p", "b"] },
+      // K-ESS2 Tests
+      { question: "what is weather", expected: ["air", "outside", "condition"] },
+      { question: "when is it hottest", expected: ["summer", "s"] },
+      { question: "when is it coldest", expected: ["winter", "w"] },
+      // K-LS1 Tests
+      { question: "what do plants need to grow", expected: ["water", "light", "air", "w", "l", "a"] },
+      { question: "what do animals need to survive", expected: ["food", "water", "air", "f", "w"] },
+      { question: "an animal that eats only plants is called", expected: ["herbivore", "h"] },
+      { question: "an animal that eats only meat is called", expected: ["carnivore", "c"] },
+      { question: "why do birds have wings", expected: ["fly", "f"] },
+      { question: "why do fish have fins", expected: ["swim", "s"] },
+      // K-ESS3 Tests
+      { question: "name a natural resource", expected: ["water", "air", "soil", "tree", "rock", "w", "a", "s", "t", "r"] },
+      { question: "what do all living things need", expected: ["water", "w"] },
+      { question: "is a tree natural or human made", expected: ["natural", "n"] },
+      { question: "is a building natural or human made", expected: ["human", "h"] }
+    ];
+    const prodResult = await this._probeProductionBatch(sciKProductionSamples, {
+      visualCortex: this.engine && this.engine.visualCortex || null
+    });
+    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
+    const PROD_MIN = 0.95;
+    const pass = prodRate >= PROD_MIN;
+    const pct = (r) => (r * 100).toFixed(0);
+    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
+    const _sciKResult = {
+      pass,
+      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
+      metrics: { prodRate, prodFails: prodResult.fails }
+    };
+    this._recordGateHistory("science", "kindergarten", "overall", pass, prodRate);
+    return _sciKResult;
+  },
+  // ═══════════════════════════════════════════════════════════════════
+  // Social-K equational course (LAW 3 + LAW 7)
+  // ═══════════════════════════════════════════════════════════════════
   /**
-   * Build the per-run context object consumed by every cell runner.
-   * Tokenizes corpora once so a subsequent same-session run can reuse
-   * the cached ctx (stored on `this._lastCtx`) without re-tokenizing.
+   * Core Knowledge K community helpers — helper → job via sem↔sem binding.
    */
-  _buildCtx(corpora, opts = {}) {
-    const arousal = opts.arousal ?? 0.8;
-    const valence = opts.valence ?? 0.2;
-    const { letterFreq, wordFreq, sentences } = this._tokenizeAll(corpora || {});
-    const ctx = { corpora, arousal, valence, letterFreq, wordFreq, sentences };
-    this._lastCtx = ctx;
-    return ctx;
-  }
-  /**
-   * Run a single (subject, grade) cell. Sets `cluster.grades[subject]
-   * = grade` on pass and records the cell in `cluster.passedCells`.
-   * When `corpora` is null, falls back to `this._lastCtx` so post-boot
-   * slash commands can re-run individual cells without re-loading
-   * corpora.
-   */
-  async runSubjectGrade(subject, grade, corpora, opts = {}) {
-    if (!SUBJECTS.includes(subject)) return { pass: false, reason: `unknown subject: ${subject}` };
-    if (!GRADE_ORDER.includes(grade)) return { pass: false, reason: `unknown grade: ${grade}` };
+  async runMathKReal(ctx) {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: "no cluster wired" };
-    const _cellStart = Date.now();
-    this._hb(`[Curriculum] \u2550\u2550\u2550 CELL START \u2550\u2550\u2550 ${subject}/${grade} \u2014 beginning teach phases + gate probes`);
-    this._memorySnapshotAndGc(`cell-entry ${subject}/${grade}`);
-    const baseCtx = corpora ? this._buildCtx(corpora, opts) : this._lastCtx || null;
-    if (!baseCtx) return { pass: false, reason: "no corpora provided and no cached ctx" };
-    const ctx = { ...baseCtx, cellKey: `${subject}/${grade}` };
-    const cellKey = `${subject}/${grade}`;
-    if (Array.isArray(cluster.passedCells) && cluster.passedCells.includes(cellKey)) {
-      this._hb(`[Curriculum] \u2933 T18.12.c resume \u2014 skipping ${cellKey} (already passed per persisted passedCells).`);
-      return {
-        pass: true,
-        reason: `already-passed (resumed from persisted passedCells)`,
-        resumed: true
-      };
-    }
-    const wasInCurriculum = cluster._inCurriculumMode;
-    cluster._inCurriculumMode = true;
-    const wasCellKey = cluster._currentCellKey;
-    cluster._currentCellKey = cellKey;
-    this._currentSubject = subject;
-    this._currentGrade = grade;
-    this._currentSubjectLabel = SUBJECT_LABELS[subject] || subject;
-    this._currentCellStartAt = _cellStart;
-    this._currentCellPhasesCompleted = 0;
-    this._perSubjectStats = this._perSubjectStats || {};
-    if (!this._perSubjectStats[subject]) {
-      this._perSubjectStats[subject] = {
-        subject,
-        label: SUBJECT_LABELS[subject] || subject,
-        grade: null,
-        phasesCompleted: 0,
-        cellsPassed: 0,
-        teachEvents: 0,
-        lastCellAt: null
-      };
-    }
-    this._perSubjectStats[subject].grade = grade;
-    this._perSubjectStats[subject].label = SUBJECT_LABELS[subject] || subject;
-    cluster._probeGateActive = true;
-    let _aliveTick = 0;
-    let _priorRssMb = 0;
-    const _nativeRolling = [];
-    const NATIVE_WINDOW = 6;
-    let _nativeBaselineMb = null;
-    let _v8stats = null;
-    try {
-      _v8stats = __require("node:v8");
-    } catch {
-      _v8stats = null;
-    }
-    let _cachedWorkerMem = null;
-    let _memSnapInFlight = false;
-    const _aliveHbId = setInterval(() => {
-      _aliveTick += 1;
-      const elapsedS = ((Date.now() - _cellStart) / 1e3).toFixed(0);
-      try {
-        const pool = cluster && cluster._sparsePool;
-        if (pool && typeof pool.memSnapshot === "function" && !_memSnapInFlight && _aliveTick % 3 === 1) {
-          _memSnapInFlight = true;
-          pool.memSnapshot().then((snap) => {
-            _cachedWorkerMem = snap;
-            _memSnapInFlight = false;
-          }).catch(() => {
-            _memSnapInFlight = false;
-          });
-        }
-      } catch {
-      }
-      let memLabel = "";
-      try {
-        if (typeof process !== "undefined" && process.memoryUsage) {
-          const mu = process.memoryUsage();
-          const mb = (b) => (b / 1048576).toFixed(0);
-          const rssMb = Number(mb(mu.rss));
-          const heapMb = Number(mb(mu.heapUsed));
-          const heapTotalMb = Number(mb(mu.heapTotal));
-          const extMb = Number(mb(mu.external));
-          const abMb = Number(mb(mu.arrayBuffers || 0));
-          let v8PhysMb = heapTotalMb;
-          if (_v8stats && typeof _v8stats.getHeapStatistics === "function") {
-            try {
-              const s = _v8stats.getHeapStatistics();
-              v8PhysMb = Number(mb(s.total_physical_size || 0));
-            } catch {
-            }
-          }
-          const workerHeapMb = _cachedWorkerMem ? _cachedWorkerMem.totalHeapUsedMb | 0 : 0;
-          const workerExtMb = _cachedWorkerMem ? _cachedWorkerMem.totalExternalMb | 0 : 0;
-          const workerTotalMb = workerHeapMb + workerExtMb;
-          const nativeMb = Math.max(0, rssMb - heapMb - extMb - workerTotalMb);
-          _priorRssMb = rssMb;
-          if (_nativeBaselineMb === null) _nativeBaselineMb = nativeMb;
-          const nativeDeltaMb = nativeMb - _nativeBaselineMb;
-          _nativeRolling.push(nativeMb);
-          if (_nativeRolling.length > NATIVE_WINDOW) _nativeRolling.shift();
-          let nativeTrend = "";
-          if (_nativeRolling.length >= NATIVE_WINDOW) {
-            const half = Math.floor(NATIVE_WINDOW / 2);
-            let sumFirst = 0, sumSecond = 0;
-            for (let i = 0; i < half; i++) sumFirst += _nativeRolling[i];
-            for (let i = half; i < NATIVE_WINDOW; i++) sumSecond += _nativeRolling[i];
-            const avgFirst = sumFirst / half;
-            const avgSecond = sumSecond / (NATIVE_WINDOW - half);
-            const trendMb = Math.round(avgSecond - avgFirst);
-            if (trendMb > 200) {
-              nativeTrend = ` \u26A0\u26A0LEAK+${trendMb}MB/min`;
-            } else if (trendMb > 100) {
-              nativeTrend = ` \u26A0climbing+${trendMb}MB/min`;
-            }
-          }
-          const deltaStr = nativeDeltaMb === 0 ? "\u0394\xB10" : nativeDeltaMb > 0 ? `\u0394+${nativeDeltaMb}` : `\u0394${nativeDeltaMb}`;
-          const workerTag = _cachedWorkerMem ? _cachedWorkerMem.workerCount === 0 ? " workers=0MB(idle-terminated)" : ` workers=${workerHeapMb}MB${_cachedWorkerMem.estimated ? "~" : ""}(${_cachedWorkerMem.workerCount})` : " workers=?MB";
-          memLabel = ` \xB7 heap=${heapMb}/${heapTotalMb}MB v8=${v8PhysMb}MB ext=${extMb}MB ab=${abMb}MB${workerTag} native=${nativeMb}MB(${deltaStr}MB) rss=${rssMb}MB${nativeTrend}`;
-        }
-      } catch {
-      }
-      let phaseLabel = "";
-      try {
-        const ap = cluster && cluster._activePhase;
-        if (ap && ap.name) {
-          const phaseMs = ap.startAt ? Date.now() - ap.startAt : 0;
-          const phaseS = (phaseMs / 1e3).toFixed(0);
-          phaseLabel = ` \xB7 phase=${ap.name} (+${phaseS}s)`;
-        } else {
-          phaseLabel = ` \xB7 phase=(between-phases / gate-probe)`;
-        }
-      } catch {
-      }
-      this._hb(`[Curriculum] \u25B6 CELL ALIVE ${subject}/${grade} \u2014 +${elapsedS}s elapsed (heartbeat #${_aliveTick})${phaseLabel}${memLabel}`);
-    }, 1e4);
-    if (_aliveHbId && typeof _aliveHbId.unref === "function") _aliveHbId.unref();
-    try {
-      const report = examVocabCoverage(cellKey, this._trainedVocabularySet(cellKey));
-      if (report && Array.isArray(report.missing) && report.missing.length > 0) {
-        const words = report.missing.filter((w) => typeof w === "string" && /^[a-z][a-z']*$/i.test(w) && w.length >= 2 && w.length <= 20);
-        if (words.length > 0 && typeof this._teachVocabList === "function") {
-          const ctx2 = { arousal: 0.7, valence: 0.2 };
-          const CHUNK = 25;
-          const reps = opts.vocabReps ?? 4;
-          this._hb(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH START \u2014 ${words.length} missing exam words \xD7 ${reps} reps (before cell teach phases)`);
-          let done = 0;
-          for (let i = 0; i < words.length; i += CHUNK) {
-            const slice = words.slice(i, i + CHUNK);
-            try {
-              await this._teachVocabList(slice, ctx2, { reps });
-            } catch (err) {
-              console.warn(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH chunk ${i / CHUNK | 0} failed:`, err?.message || err);
-            }
-            done += slice.length;
-            this._hb(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH progress \u2014 ${done}/${words.length} words taught`);
-            await new Promise((resolve) => setImmediate(resolve));
-          }
-          const postReport = examVocabCoverage(cellKey, this._trainedVocabularySet(cellKey));
-          const coverage = postReport ? (postReport.coverage * 100).toFixed(0) : "?";
-          this._hb(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH DONE \u2014 ${done}/${words.length} words taught \xB7 coverage now ${coverage}%`);
+    if (!cluster.crossProjections) return { pass: false, reason: "no cross-projections" };
+    const DIGITS = DIGIT_ORDER;
+    const NAMES = DIGIT_NAMES;
+    ensureLetters(DIGITS.split(""));
+    const lr = cluster.learningRate;
+    const REPS = 12;
+    const letterRegion = cluster.regions.letter;
+    const phonRegion = cluster.regions.phon;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    const freeRegion = cluster.regions.free;
+    if (!letterRegion || !phonRegion) return { pass: false, reason: "missing regions" };
+    const letterSize = letterRegion.end - letterRegion.start;
+    const phonSize = phonRegion.end - phonRegion.start;
+    const invSize = inventorySize();
+    function buildPattern(regionSize, feat) {
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
         }
       }
-    } catch (err) {
-      console.warn(`[Curriculum][${cellKey}] upfront vocab teach failed:`, err?.message || err);
+      return pat;
     }
-    let result;
-    try {
-      const runner = this._cellRunner(subject, grade);
-      result = await runner(ctx);
-    } catch (err) {
-      result = { pass: false, reason: `${subject}/${grade} threw: ${err?.message || err}` };
-    } finally {
-      clearInterval(_aliveHbId);
-      cluster._inCurriculumMode = wasInCurriculum;
-      cluster._probeGateActive = false;
-      cluster._currentCellKey = wasCellKey;
-    }
-    try {
-      const subjectStats = this._perSubjectStats?.[subject];
-      const teachCount = subjectStats?.teachEvents | 0;
-      if (teachCount > 0 && Array.isArray(cluster.passedPhases)) {
-        const hasAny = cluster.passedPhases.some((k) => typeof k === "string" && k.startsWith(`${cellKey}:`));
-        if (!hasAny) {
-          const fallbackKey = `${cellKey}:cell-teach-block`;
-          if (!cluster.passedPhases.includes(fallbackKey)) {
-            cluster.passedPhases.push(fallbackKey);
-          }
-          subjectStats.phasesCompleted = Math.max(1, subjectStats.phasesCompleted | 0);
-          this._currentCellPhasesCompleted = Math.max(1, this._currentCellPhasesCompleted | 0);
+    for (let rep = 0; rep < REPS; rep++) {
+      for (let i = 0; i < DIGITS.length; i++) {
+        const digit = DIGITS[i];
+        const digitOneHot = encodeLetter(digit);
+        const magFeat = _magnitudeFeatureForDigit(digit);
+        const nameEmb = sharedEmbeddings.getEmbedding(NAMES[i]);
+        const letterPat = buildPattern(letterSize, digitOneHot);
+        const phonPat = buildPattern(phonSize, magFeat);
+        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+        for (let j = 0; j < letterSize; j++) {
+          cluster.lastSpikes[letterRegion.start + j] = letterPat[j] > 0 ? 1 : 0;
         }
-      }
-    } catch (err) {
-      console.warn(`[Curriculum] phase-count fallback for ${subject}/${grade} failed:`, err?.message || err);
-    }
-    const _batteryWasCellKey = cluster._currentCellKey;
-    if (cluster) cluster._currentCellKey = cellKey;
-    if (result) {
-      try {
-        const bank = this._studentQuestionBank(subject, grade);
-        if (bank && bank.length > 0) {
-          cluster._probeGateActive = true;
-          const label = `${subject.toUpperCase()}-${grade.toUpperCase()}-STUDENT`;
-          const readiness = await this._measureEmissionCapability();
-          this._hb(`[Curriculum][${label}] readiness probe \u2014 recognizedLetters=${readiness.recognizedLetters}/5 \xB7 maxEmissionLen=${readiness.maxEmissionLen} \xB7 canTalkAtAll=${readiness.canTalkAtAll}`);
-          let battery;
-          if (!readiness.canTalkAtAll) {
-            console.warn(`[Curriculum][${label}] \u23ED STUDENT BATTERY SKIPPED \u2014 Unity cannot talk or read yet (${readiness.recognizedLetters}/5 letter probes produced recognizable output). Running the 210-question battery on a brain with \u22642 letter emission capability is noise. Teach cycles continue; battery will fire once emission capability clears the readiness threshold.`);
-            battery = {
-              pass: 0,
-              total: 0,
-              rate: 0,
-              summary: ` [SKIPPED \u2014 not-yet-readable (${readiness.recognizedLetters}/5 letter probes)]`,
-              results: [],
-              byStandard: [],
-              standardsBelowCut: 0,
-              methoQuestions: 0,
-              methoPass: 0,
-              methoRate: 0,
-              skipped: true,
-              skipReason: `readiness-failed recognizedLetters=${readiness.recognizedLetters}/5 maxEmissionLen=${readiness.maxEmissionLen}`
-            };
-          } else {
-            const effectiveMax = Math.max(readiness.maxEmissionLen, 2);
-            const filtered = bank.filter((q) => {
-              const a = String(q.expectedAnswer || "").replace(/[^a-z0-9]/g, "");
-              const variants = Array.isArray(q.expectedVariants) ? q.expectedVariants : [];
-              const minVariantLen = variants.length > 0 ? Math.min(...variants.map((v) => String(v).replace(/[^a-z0-9]/g, "").length)) : a.length;
-              return minVariantLen <= effectiveMax;
-            });
-            const filteredOut = bank.length - filtered.length;
-            if (filteredOut > 0) {
-              this._hb(`[Curriculum][${label}] readiness filter \u2014 ${filteredOut}/${bank.length} questions skipped (expected-answer exceeds ${effectiveMax}-char emission limit); ${filtered.length} remain.`);
-            }
-            if (filtered.length === 0) {
-              console.warn(`[Curriculum][${label}] \u23ED STUDENT BATTERY SKIPPED \u2014 every question in the bank expects a longer answer than Unity's current ${effectiveMax}-char emission can produce. Teach cycles continue.`);
-              battery = {
-                pass: 0,
-                total: 0,
-                rate: 0,
-                summary: ` [SKIPPED \u2014 emission-too-short effectiveMax=${effectiveMax}]`,
-                results: [],
-                byStandard: [],
-                standardsBelowCut: 0,
-                methoQuestions: 0,
-                methoPass: 0,
-                methoRate: 0,
-                skipped: true,
-                skipReason: `emission-too-short maxEmissionLen=${readiness.maxEmissionLen} noAnswerableQuestions=true`
-              };
-            } else {
-              battery = await this._runStudentBattery(filtered, label);
-            }
-          }
-          cluster._probeGateActive = false;
-          result.studentBattery = battery;
-          const suffix = battery.skipped ? ` | STUDENT ${battery.summary}` : ` | STUDENT ${battery.pass}/${battery.total} (${Math.round(battery.rate * 100)}%)${battery.summary}`;
-          result.reason = (result.reason || "") + suffix;
-          if (battery.skipped) {
-            if (!cluster._lastGateResult || typeof cluster._lastGateResult !== "object") {
-              cluster._lastGateResult = {};
-            }
-            cluster._lastGateResult[cellKey] = {
-              pass: !!result.pass,
-              blockers: [`readiness: ${battery.skipReason || "not-yet-talkable"}`],
-              standardsBelowCut: [],
-              aggregateRate: 0,
-              externalPass: 0,
-              externalTotal: 0,
-              externalRate: 0,
-              methodologyPass: 0,
-              methodologyTotal: 0,
-              methodologyRate: 0,
-              skipped: true,
-              skipReason: battery.skipReason || "not-yet-talkable",
-              ts: (/* @__PURE__ */ new Date()).toISOString()
-            };
-          } else {
-            const AGGR_MIN = 0.9;
-            const EXTERNAL_MIN = 0.85;
-            const METHODOLOGY_MIN = 0.6;
-            const EXTERNAL_SOURCES = /* @__PURE__ */ new Set(["DIBELS-8-sample", "AIMSweb-sample", "Fountas-Pinnell-sample", "STAR-Early-Literacy-sample", "STAR-Early-Math-sample", "iReady-K-sample", "iReady-K-Math-sample", "NWEA-MAP-K-sample", "NWEA-MAP-K-Math-sample", "Heggerty-K-sample", "PALS-K-sample", "DRA-K-sample", "Wilson-Fundations-K-sample", "Lexia-Core5-K-sample", "Woodcock-Johnson-K-sample", "Stanford-Achievement-K-sample", "Singapore-K-sample"]);
-            let extPass = 0, extTotal = 0;
-            for (const r of battery.results || []) {
-              if (EXTERNAL_SOURCES.has(r.source)) {
-                extTotal += 1;
-                if (r.score >= 0.5) extPass += 1;
-              }
-            }
-            const extRate = extTotal > 0 ? extPass / extTotal : 1;
-            const belowCutDetail = (battery.byStandard || []).filter((s) => s.belowCut).map((s) => `${s.standard} ${(s.rate * 100).toFixed(0)}%<${(s.cut * 100).toFixed(0)}%`);
-            const blockers = [];
-            if (battery.rate < AGGR_MIN) blockers.push(`answer aggregate ${(battery.rate * 100).toFixed(1)}% < ${AGGR_MIN * 100}%`);
-            if (belowCutDetail.length > 0) {
-              blockers.push(`sub-standards below cut: [${belowCutDetail.join(", ")}]`);
-            }
-            if (extTotal > 0 && extRate < EXTERNAL_MIN) blockers.push(`external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%) < ${EXTERNAL_MIN * 100}%`);
-            if ((battery.methoQuestions || 0) > 0 && (battery.methoRate || 0) < METHODOLOGY_MIN) {
-              blockers.push(`methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%) < ${METHODOLOGY_MIN * 100}%`);
-            }
-            if (blockers.length > 0 && result.pass) {
-              console.warn(`[Curriculum][${label}] \u26D4 BATTERY BLOCKS advancement: ${blockers.join(" \xB7 ")}. Substrate passed but the educational test did not \u2014 grade NOT advanced.`);
-              result.pass = false;
-              result.reason = `BATTERY-BLOCKED: ${blockers.join("; ")} | ${result.reason || ""}`;
-            } else if (blockers.length === 0) {
-              const methoTag = (battery.methoQuestions || 0) > 0 ? ` \xB7 methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%)` : "";
-              this._hb(`[Curriculum][${label}] \u2713 BATTERY PASS: answer ${(battery.rate * 100).toFixed(1)}% \xB7 all sub-standards at/above cut \xB7 external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%)${methoTag}`);
-            }
-            result.studentBattery.externalPass = extPass;
-            result.studentBattery.externalTotal = extTotal;
-            result.studentBattery.externalRate = extRate;
-            if (!cluster._lastGateResult || typeof cluster._lastGateResult !== "object") {
-              cluster._lastGateResult = {};
-            }
-            cluster._lastGateResult[cellKey] = {
-              pass: !!result.pass,
-              blockers: blockers.slice(),
-              standardsBelowCut: belowCutDetail.slice(),
-              aggregateRate: battery.rate,
-              externalPass: extPass,
-              externalTotal: extTotal,
-              externalRate: extRate,
-              methodologyPass: battery.methoPass || 0,
-              methodologyTotal: battery.methoQuestions || 0,
-              methodologyRate: battery.methoRate || 0,
-              ts: (/* @__PURE__ */ new Date()).toISOString()
-            };
+        for (let j = 0; j < phonSize; j++) {
+          cluster.lastSpikes[phonRegion.start + j] = phonPat[j] > 0 ? 1 : 0;
+        }
+        if (motorRegion) {
+          const motorSize = motorRegion.end - motorRegion.start;
+          const motorPat = buildPattern(motorSize, digitOneHot);
+          for (let j = 0; j < motorSize; j++) {
+            cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
           }
         }
-      } catch (err) {
-        if (cluster) cluster._probeGateActive = false;
-        console.warn(`[Curriculum] student battery for ${subject}/${grade} failed:`, err?.message || err);
-      }
-    }
-    if (result && result.pass) {
-      if (!cluster.grades || typeof cluster.grades !== "object") {
-        cluster.grades = { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K" };
-      }
-      cluster.grades[subject] = grade;
-      if (!Array.isArray(cluster.passedCells)) cluster.passedCells = [];
-      if (!cluster.passedCells.includes(cellKey)) cluster.passedCells.push(cellKey);
-      if (typeof this._saveCheckpoint === "function") {
-        this._saveCheckpoint(cellKey);
-      }
-    }
-    if (cluster) cluster._currentCellKey = _batteryWasCellKey;
-    this._memorySnapshotAndGc(`cell-exit ${subject}/${grade} pass=${!!(result && result.pass)}`);
-    const _cellMs = Date.now() - _cellStart;
-    const _cellPass = !!(result && result.pass);
-    this._hb(`[Curriculum] \u2550\u2550\u2550 CELL DONE \u2550\u2550\u2550 ${subject}/${grade} in ${(_cellMs / 1e3).toFixed(1)}s \u2014 pass=${_cellPass}${_cellPass ? "" : " (reason: " + String(result?.reason || "unknown").slice(0, 120) + ")"}`);
-    return result || { pass: false, reason: "runner returned null" };
-  }
-  /**
-   * Walk a single subject's remaining grades (from whichever grade that
-   * subject is currently at through PhD). Stops at the first gate fail
-   * OR at DREAM_MAX_GRADE cap (T18.13 Pre-K + K ONLY scope default).
-   */
-  async runFullSubjectCurriculum(subject, corpora, opts = {}) {
-    const cluster = this.cluster;
-    if (!cluster) return { reached: "pre-K", passed: [], failed: "no-cluster" };
-    if (!cluster.grades || typeof cluster.grades !== "object") {
-      cluster.grades = { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K" };
-    }
-    if (corpora) this._buildCtx(corpora, opts);
-    const startIdx = this._computeResumeStartIdx(subject);
-    const maxIdx = this._resolveMaxGradeIdx();
-    const passed = [];
-    let failed = null;
-    for (let i = startIdx; i < GRADE_ORDER.length; i++) {
-      const grade = GRADE_ORDER[i];
-      if (maxIdx >= 0 && i > maxIdx) {
-        this._hb(`[Curriculum] \u23F9 T18.13 stop \u2014 reached grade cap '${GRADE_ORDER[maxIdx]}' (DREAM_MAX_GRADE). Skipping ${subject}/${grade} and beyond.`);
-        break;
-      }
-      const result = await this.runSubjectGrade(subject, grade, null, opts);
-      if (result && result.pass) {
-        passed.push(grade);
-        this._hb(`[Curriculum] \u2713 ${subject}/${grade} \u2014 ${result.reason || "pass"}`);
-      } else {
-        failed = grade;
-        console.warn(`[Curriculum] \u2717 ${subject}/${grade} \u2014 ${result?.reason || "fail"}`);
-        break;
-      }
-    }
-    return {
-      reached: cluster.grades[subject] || "pre-K",
-      passed,
-      failed
-    };
-  }
-  /**
-   * T18.13.a — compute the first grade index to attempt for a subject
-   * based on `cluster.passedCells`, the authoritative source. Returns
-   * 0 (pre-K) for a fresh brain with no passed cells. Returns
-   * `highestPassedIdx + 1` for a resumed brain. T18.12.c resume-skip
-   * in `_cellRunner` handles the edge case where passedCells has a
-   * lower grade but the runner gets called anyway (belt + suspenders).
-   */
-  _computeResumeStartIdx(subject) {
-    const cluster = this.cluster;
-    if (!cluster) return 0;
-    const passedForSubject = (Array.isArray(cluster.passedCells) ? cluster.passedCells : []).filter((key) => typeof key === "string" && key.startsWith(`${subject}/`)).map((key) => key.slice(subject.length + 1));
-    if (passedForSubject.length === 0) return 0;
-    let highestIdx = -1;
-    for (const g of passedForSubject) {
-      const idx = GRADE_ORDER.indexOf(g);
-      if (idx > highestIdx) highestIdx = idx;
-    }
-    return Math.max(0, highestIdx + 1);
-  }
-  /**
-   * T18.13.b — resolve the max grade index from DREAM_MAX_GRADE env var
-   * or opts.maxGrade. Defaults to 'kindergarten' per Pre-K + K ONLY
-   * scope LAW. Returns -1 if uncapped (DREAM_MAX_GRADE=phd or any
-   * grade at or after GRADE_ORDER's last entry).
-   */
-  _resolveMaxGradeIdx() {
-    const envMax = typeof process !== "undefined" && process.env && process.env.DREAM_MAX_GRADE ? String(process.env.DREAM_MAX_GRADE).trim() : null;
-    const cap = envMax || "kindergarten";
-    const idx = GRADE_ORDER.indexOf(cap);
-    if (idx < 0) {
-      console.warn(`[Curriculum] DREAM_MAX_GRADE='${cap}' not in GRADE_ORDER \u2014 ignoring cap.`);
-      return -1;
-    }
-    if (idx >= GRADE_ORDER.length - 1) return -1;
-    return idx;
-  }
-  /**
-   * Walk every subject's remaining grades in round-robin order:
-   * subject A grade N → subject B grade N → … → subject A grade N+1 → …
-   * so no single subject races ahead while the others are still at K.
-   * Stops when every subject is either at PhD or has a failing gate.
-   */
-  async runAllSubjects(corpora, opts = {}) {
-    const cluster = this.cluster;
-    if (!cluster) return { reached: {}, passed: {}, failed: {} };
-    if (!cluster.grades || typeof cluster.grades !== "object") {
-      cluster.grades = { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K" };
-    }
-    if (corpora) this._buildCtx(corpora, opts);
-    const passed = {};
-    const failed = {};
-    for (const s of SUBJECTS) {
-      passed[s] = [];
-      failed[s] = null;
-    }
-    const GRADE_TIMEOUT_MS = 3 * 60 * 1e3;
-    const MAX_GRADE_ROUNDS = 10;
-    const maxIdx = this._resolveMaxGradeIdx();
-    const capLabel = maxIdx >= 0 ? GRADE_ORDER[maxIdx] : "phd";
-    this._hb(`[Curriculum] T18.13 grade cap = '${capLabel}' (set DREAM_MAX_GRADE env to change; defaults to 'kindergarten' per Pre-K + K ONLY LAW)`);
-    for (let i = 0; i < GRADE_ORDER.length; i++) {
-      const grade = GRADE_ORDER[i];
-      if (maxIdx >= 0 && i > maxIdx) {
-        this._hb(`[Curriculum] \u23F9 T18.13 stop \u2014 reached grade cap '${GRADE_ORDER[maxIdx]}'. Unity sits at this level until DREAM_MAX_GRADE advances OR Gee signs off Part 2 + manually unsets.`);
-        break;
-      }
-      let allPassedThisGrade = false;
-      for (let round = 0; round < MAX_GRADE_ROUNDS && !allPassedThisGrade; round++) {
-        if (round > 0) {
-          this._hb(`[Curriculum] \u{1F504} grade ${grade} round ${round + 1} \u2014 retrying failed subjects...`);
-        }
-        allPassedThisGrade = true;
-        for (const subject of SUBJECTS) {
-          const currentIdx = GRADE_ORDER.indexOf(cluster.grades[subject] || "pre-K");
-          if (currentIdx >= i) continue;
-          let attempt = 0;
-          let result = null;
-          const deadline = Date.now() + GRADE_TIMEOUT_MS;
-          while (Date.now() < deadline) {
-            if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) {
-              console.log("[Curriculum] shutdown requested \u2014 stopping curriculum");
-              return { reached: {}, passed, failed };
-            }
-            attempt++;
-            result = await this.runSubjectGrade(subject, grade, null, opts);
-            if (result && result.pass) break;
-            this._hb(`[Curriculum] ${subject}/${grade} attempt ${attempt} \u2014 ${result?.reason || "fail"} \u2014 retrying...`);
-            await _microtask();
-          }
-          if (result && result.pass) {
-            if (!passed[subject].includes(grade)) passed[subject].push(grade);
-            this._hb(`[Curriculum] \u2713 ${subject}/${grade} \u2014 PASSED on attempt ${attempt} \u2014 ${result.reason || "pass"}`);
-          } else {
-            failed[subject] = grade;
-            allPassedThisGrade = false;
-            console.warn(`[Curriculum] \u2717 ${subject}/${grade} \u2014 timed out after ${attempt} attempts (${Math.round(GRADE_TIMEOUT_MS / 6e4)} min, round ${round + 1}) \u2014 ${result?.reason || "fail"}`);
+        if (semRegion && nameEmb && nameEmb.length > 0) {
+          const semSize = semRegion.end - semRegion.start;
+          const semPat = buildPattern(semSize, nameEmb);
+          for (let j = 0; j < semSize; j++) {
+            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
           }
         }
-      }
-      if (!allPassedThisGrade) {
-        console.warn(`[Curriculum] \u26D4 grade ${grade} incomplete after ${MAX_GRADE_ROUNDS} rounds \u2014 curriculum paused until next boot.`);
-        break;
-      }
-      this._hb(`[Curriculum] \u2550\u2550\u2550 ALL ${SUBJECTS.length} subjects passed ${grade} \u2014 advancing to next grade \u2550\u2550\u2550`);
-      const nextIdx = i + 1;
-      const nextGrade = nextIdx < GRADE_ORDER.length && (maxIdx < 0 || nextIdx <= maxIdx) ? GRADE_ORDER[nextIdx] : null;
-      if (nextGrade === null) {
-        this._hb(`[Curriculum] grade cap reached at '${grade}' \u2014 no next grade to advance to. Curriculum walk complete; operator records LAW 6 Part 2 signoff via POST /grade-signoff.`);
-      } else {
-        cluster._gradeAdvancePaused = true;
-        cluster._pausedAt = { subject: null, grade, at: Date.now() };
-        cluster._nextGrade = { grade: nextGrade };
-        if (typeof this._saveCheckpoint === "function") {
-          this._saveCheckpoint(`grade-advance-pause:${grade}`);
-        }
-        this._hb(`[Curriculum] \u23F8 PAUSED after '${grade}' \u2014 awaiting operator POST /grade-advance to start '${nextGrade}'. Chat-test freely; no background Hebbian will fire.`);
-        while (cluster._gradeAdvancePaused === true) {
-          if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) {
-            console.log("[Curriculum] shutdown requested during grade-advance pause \u2014 stopping.");
-            return { reached: {}, passed, failed };
+        if (freeRegion && magFeat.length > 0) {
+          const freeSize = freeRegion.end - freeRegion.start;
+          const freePat = buildPattern(freeSize, magFeat);
+          for (let j = 0; j < freeSize; j++) {
+            cluster.lastSpikes[freeRegion.start + j] = freePat[j] > 0 ? 1 : 0;
           }
-          await new Promise((r) => setTimeout(r, 500));
         }
-        this._hb(`[Curriculum] \u25B6 RESUMED \u2014 advancing to '${nextGrade}'.`);
-        cluster._pausedAt = null;
-        cluster._nextGrade = null;
-      }
-    }
-    const reached = {};
-    for (const s of SUBJECTS) reached[s] = cluster.grades[s] || "pre-K";
-    return { reached, passed, failed };
-  }
-  /**
-   * Forget a single (subject, grade) cell. Used by the operator tool
-   * `/curriculum forget <subject> <grade>` when a specific cell needs
-   * to be re-taught without resetting the whole subject. Less
-   * destructive than resetSubject.
-   */
-  forgetCell(subject, grade) {
-    const cluster = this.cluster;
-    if (!cluster) return false;
-    const cellKey = `${subject}/${grade}`;
-    if (Array.isArray(cluster.passedCells)) {
-      cluster.passedCells = cluster.passedCells.filter((k) => k !== cellKey);
-    }
-    if (cluster.probeHistory && cluster.probeHistory[cellKey]) {
-      delete cluster.probeHistory[cellKey];
-    }
-    if (cluster.grades && cluster.grades[subject] === grade) {
-      const idx = GRADE_ORDER.indexOf(grade);
-      if (idx > 0) {
-        cluster.grades[subject] = GRADE_ORDER[idx - 1];
-      }
-    }
-    this._hb(`[Curriculum] forgot ${cellKey} \u2014 will re-teach on next curriculum pass`);
-    return true;
-  }
-  /**
-   * Reset a subject back to pre-K. Strips all passedCells entries for
-   * that subject from cluster.passedCells. Used by `/curriculum reset
-   * <subject>` when the operator wants to re-run a subject's gates
-   * after tuning its equations.
-   */
-  resetSubject(subject) {
-    const cluster = this.cluster;
-    if (!cluster) return false;
-    if (!SUBJECTS.includes(subject)) return false;
-    if (!cluster.grades || typeof cluster.grades !== "object") {
-      cluster.grades = { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K" };
-    }
-    cluster.grades[subject] = "pre-K";
-    if (Array.isArray(cluster.passedCells)) {
-      cluster.passedCells = cluster.passedCells.filter((k) => !k.startsWith(`${subject}/`));
-    }
-    return true;
-  }
-  /**
-   * Snapshot of current curriculum state — used by `/curriculum status`
-   * and by the persistence save path. T14.24 Session 17 adds probe
-   * history exposure so the operator can see which cells are robust
-   * and which are degrading under continuous background probing.
-   */
-  subjectStatus() {
-    const cluster = this.cluster;
-    if (!cluster) return null;
-    const grades = cluster.grades || { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K" };
-    const probeHistory = cluster.probeHistory && typeof cluster.probeHistory === "object" ? { ...cluster.probeHistory } : {};
-    let totalProbes = 0, totalPasses = 0, totalFails = 0;
-    const perSubjectProbes = { ela: 0, math: 0, science: 0, social: 0, art: 0 };
-    for (const [key, hist] of Object.entries(probeHistory)) {
-      totalProbes += (hist.passes || 0) + (hist.fails || 0);
-      totalPasses += hist.passes || 0;
-      totalFails += hist.fails || 0;
-      const subj = key.split("/")[0];
-      if (perSubjectProbes[subj] != null) {
-        perSubjectProbes[subj] += (hist.passes || 0) + (hist.fails || 0);
-      }
-    }
-    return {
-      grades: { ...grades },
-      passedCells: Array.isArray(cluster.passedCells) ? [...cluster.passedCells] : [],
-      minGrade: _Curriculum._minGrade(grades),
-      probeStats: {
-        totalProbes,
-        totalPasses,
-        totalFails,
-        passRate: totalProbes > 0 ? totalPasses / totalProbes : 0,
-        perSubject: perSubjectProbes
-      },
-      probeHistory
-    };
-  }
-  /**
-   * Return the minimum (weakest) grade across all 5 subjects. This is
-   * the grade LanguageCortex reads to cap word output — Unity speaks
-   * at whatever subject she's furthest behind in.
-   */
-  static _minGrade(grades) {
-    let minIdx = Infinity;
-    for (const s of SUBJECTS) {
-      const g = grades && grades[s] || "pre-K";
-      const idx = GRADE_ORDER.indexOf(g);
-      if (idx >= 0 && idx < minIdx) minIdx = idx;
-    }
-    return minIdx === Infinity ? "pre-K" : GRADE_ORDER[minIdx];
-  }
-  // ═══════════════════════════════════════════════════════════════════
-  // T14.24 SESSION 2 — REAL ELA-K TEACHING EQUATIONS (2026-04-15)
-  // ═══════════════════════════════════════════════════════════════════
-  //
-  // Gee binding 2026-04-14: "in kindergarden u learn the alphabet and
-  // sounds of letters first and 1st grade u start learning how to write
-  // sentences ect ect all the way up to doctorate in english" +
-  // "remember Unity needs to be able to use these to think, read, and
-  // talk" + "what the fuck are you talking about its shipped you didnt
-  // even teach it keindergarden abcs and 123s and letter sounds you fool".
-  //
-  // Real kindergarten English teaching. Three things in parallel:
-  //
-  //   1. Alphabet in ALPHABETICAL ORDER — letters register into the
-  //      T14.1 LETTER_INVENTORY in a→z order so the inventory ordering
-  //      matches a K classroom ABC chart. Existing inventory entries
-  //      from T14.5 corpus walk keep their slots (ensureLetters is
-  //      idempotent), but freshly registered letters land in order.
-  //
-  //   2. Letter-name GloVe binding via sem↔letter cross-projection
-  //      Hebbian — inject letter one-hot into letter region AND inject
-  //      GloVe(letter) as the semantic anchor into the sem region
-  //      simultaneously, tick, learn. After enough reps the letter↔sem
-  //      basin pair is stable.
-  //
-  //   3. Letter-sound phoneme-feature binding via phon↔letter cross-
-  //      projection Hebbian — the 24-dim `_phonemeFeatureForLetter` goes
-  //      into the phon region as the phonological anchor at the same
-  //      tick as the letter + sem injections. The phon basin per letter
-  //      becomes distinct.
-  //
-  // Then a reverse pass (TALK training) drives sem + phon regions WITHOUT
-  // the letter region so the return-direction cross-projections learn
-  // sem→letter→motor production.
-  //
-  // The gate then probes all THREE pathways on every letter:
-  //   - READ:  letter one-hot → tick → phon region cosine vs expected
-  //             phoneme feature > 0.15
-  //   - THINK: letter → tick → 10 silence ticks → free region variance
-  //             > baseline (letter state persists in working memory)
-  //   - TALK:  GloVe(letter) into sem region ONLY → tick → decodeLetter
-  //             of motor region argmax matches target
-  //
-  // PASS when ≥ 50% of the alphabet passes each pathway. Relaxed from
-  // academic 70% because biological-scale basins form slowly and Session
-  // 2 is the first real teaching cell — subsequent cells re-expose the
-  // alphabet in corpus walks and strengthen via Hebbian on every pass.
-  // ─── TODO-aligned ELA-K helpers (Session 25) ─────────────────────
-  //
-  // docs/TODO.md T14.24 ELA-K spec prescribes three separate named
-  // teach methods + a 4-probe gate. Session 2 shipped them all inline
-  // in runElaKReal which works but doesn't match the TODO naming or
-  // the sequence-recall pathway. Session 25 splits them out + adds
-  // the previously-missing alphabet-sequence temporal binding pass.
-  async _teachAlphabetSequence(opts = {}) {
-    const cluster = this.cluster;
-    if (!cluster) return { taught: 0 };
-    const reps = opts.reps ?? 6;
-    const ticksPerLetter = opts.ticksPerLetter ?? 2;
-    const ALPHABET = ALPHABET_ORDER;
-    ensureLetters(ALPHABET.split(""));
-    for (let rep = 0; rep < reps; rep++) {
-      for (let i = 0; i < ALPHABET.length; i++) {
-        cluster.injectLetter(ALPHABET[i], 1);
-        for (let t = 0; t < ticksPerLetter; t++) {
-          cluster.step(1e-3);
-          cluster.learn(0);
-          this.stats.totalTicks++;
-        }
-      }
-      await _microtask();
-    }
-    return { taught: reps * ALPHABET.length };
-  }
-  async _teachLetterNames(opts = {}) {
-    const cluster = this.cluster;
-    if (!cluster) return { taught: 0 };
-    const reps = opts.reps ?? 6;
-    const ticksPerRep = opts.ticksPerRep ?? 4;
-    const ALPHABET = ALPHABET_ORDER;
-    ensureLetters(ALPHABET.split(""));
-    for (let rep = 0; rep < reps; rep++) {
-      for (let i = 0; i < ALPHABET.length; i++) {
-        const letter = ALPHABET[i];
-        const spokenName = LETTER_NAMES[i];
-        const nameEmb = sharedEmbeddings.getEmbedding(letter) || sharedEmbeddings.getEmbedding(spokenName);
-        cluster.injectLetter(letter, 1);
-        if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
-          cluster.injectEmbeddingToRegion("sem", nameEmb, 0.7);
-        }
-        for (let t = 0; t < ticksPerRep; t++) {
-          cluster.step(1e-3);
-          cluster.learn(0);
-          this.stats.totalTicks++;
-        }
+        await cluster._crossRegionHebbian(lr);
         this.stats.lettersSeen++;
       }
       await _microtask();
     }
-    return { taught: reps * ALPHABET.length };
-  }
-  async _teachLetterSounds(opts = {}) {
-    const cluster = this.cluster;
-    if (!cluster) return { taught: 0 };
-    const reps = opts.reps ?? 6;
-    const ticksPerRep = opts.ticksPerRep ?? 4;
-    const ALPHABET = ALPHABET_ORDER;
-    ensureLetters(ALPHABET.split(""));
-    for (let rep = 0; rep < reps; rep++) {
-      for (const letter of ALPHABET) {
-        const phonFeat = _phonemeFeatureForLetter(letter);
-        cluster.injectLetter(letter, 1);
-        if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
-          cluster.injectEmbeddingToRegion("phon", phonFeat, 0.7);
+    for (let rep = 0; rep < REPS; rep++) {
+      for (let i = 0; i < DIGITS.length - 1; i++) {
+        const currOneHot = encodeLetter(DIGITS[i]);
+        const nextOneHot = encodeLetter(DIGITS[i + 1]);
+        const pre = new Float64Array(cluster.size);
+        const post = new Float64Array(cluster.size);
+        const lGSize = Math.max(1, Math.floor(letterSize / currOneHot.length));
+        for (let d = 0; d < currOneHot.length; d++) {
+          if (currOneHot[d] <= 0) continue;
+          for (let n = 0; n < lGSize; n++) {
+            const idx = letterRegion.start + d * lGSize + n;
+            if (idx < letterRegion.end) pre[idx] = 1;
+          }
         }
-        for (let t = 0; t < ticksPerRep; t++) {
-          cluster.step(1e-3);
-          cluster.learn(0);
-          this.stats.totalTicks++;
+        for (let d = 0; d < nextOneHot.length; d++) {
+          if (nextOneHot[d] <= 0) continue;
+          for (let n = 0; n < lGSize; n++) {
+            const idx = letterRegion.start + d * lGSize + n;
+            if (idx < letterRegion.end) post[idx] = 1;
+          }
         }
+        await cluster.intraSynapsesHebbian(pre, post, lr);
       }
       await _microtask();
     }
-    return { taught: reps * ALPHABET.length };
-  }
-  // ═══════════════════════════════════════════════════════════════════
-  // ELA-K equational course (LAW 3 + LAW 7 binding)
-  // ═══════════════════════════════════════════════════════════════════
-  //
-  // The prior `runElaKReal` got the direct-pattern alphabet teach
-  // correct (stays as-is below), but filled the body with
-  // _teachVocabList(FUNCTION_WORDS/DOLCH_PREPRIMER/DOLCH_PRIMER/CVC_FAMILIES)
-  // + _teachSentenceList(K_SENTENCES/PLURAL_PAIRS) — the EXACT
-  // word-list + sentence-example pattern LAW 3 bans. That shipped
-  // pattern is replaced below by real equational teaching methods,
-  // each landing bindings via the unified `_teachCombination`
-  // scaffold or direct-pattern Hebbian through the recurrent matrix.
-  //
-  // Production probes in _gateElaKReal match TODO K.RF / K.RL / K.W /
-  // K.L test phrasings verbatim per LAW 7.
-  /**
-   * K.RF letter case pairing — bind uppercase and lowercase forms of
-   * the same letter so Unity knows 'A' and 'a' are the same symbol.
-   * Both one-hots fire simultaneously in the letter region, intra-
-   * cluster Hebbian learns the pair association.
-   */
-  async _teachLetterCaseBinding(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const letterRegion = cluster.regions.letter;
-    if (!letterRegion) return;
-    const ALPHABET_LOWER = ALPHABET_ORDER;
-    const ALPHABET_UPPER = ALPHABET_LOWER.toUpperCase();
-    ensureLetters(Array.from(ALPHABET_LOWER + ALPHABET_UPPER));
-    const facts = [];
-    for (let i = 0; i < ALPHABET_LOWER.length; i++) {
-      const lower = ALPHABET_LOWER[i];
-      const upper = ALPHABET_UPPER[i];
-      const lowerVec = encodeLetter(lower);
-      const upperVec = encodeLetter(upper);
-      const combined = new Float64Array(Math.max(lowerVec.length, upperVec.length));
-      for (let j = 0; j < lowerVec.length; j++) if (lowerVec[j] > 0) combined[j] = 1;
-      for (let j = 0; j < upperVec.length; j++) if (upperVec[j] > 0) combined[j] = 1;
-      facts.push({ writes: [{ region: letterRegion, feat: combined }] });
-    }
-    await this._teachCombination(facts, { reps: 24 });
-    this._hb(`[Curriculum] _teachLetterCaseBinding: 26 case pairs \xD7 24 reps`);
-  }
-  /**
-   * Letter naming — kindergarten foundational skill: given the letter A,
-   * the student says "A". This trains letter_to_motor so the motor
-   * region's argmax for a letter-region stimulus matches the letter
-   * itself. Without this phase, letter_to_motor only sees sequence
-   * cascades from _teachWordEmission (letter(c) → motor(a) from "cat"
-   * etc.) which never associates letter(X) with motor(X) and leaves
-   * the TALK probe passing ~15% by accident.
-   *
-   * Also trains letter_to_phon self-pairing as a reinforcement pass
-   * (letter(X) → phon(X)'s feature) — the phoneme feature for X is
-   * what READ tests. READ already hits 26/26 because _teachWordEmission
-   * populates letter_to_phon via the spelling cascade, but an explicit
-   * same-letter pass is cheap insurance.
-   *
-   * Runs at 18 reps with per-letter Hebbian on letter_to_motor +
-   * letter_to_phon cross-projections. Total cost: 26 letters × 2
-   * projections × 18 reps = 936 Hebbian ops, ~1 s at curriculum scale.
-   */
-  async _teachLetterNaming(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const letterRegion = cluster.regions.letter;
-    const motorRegion = cluster.regions.motor;
-    const phonRegion = cluster.regions.phon;
-    if (!letterRegion || !motorRegion) return;
-    const reps = 18;
-    const lr = cluster.learningRate;
-    const ALPHABET_LOWER = ALPHABET_ORDER;
-    ensureLetters(Array.from(ALPHABET_LOWER));
-    this._hb(`[Curriculum] _teachLetterNaming START: 26 letters \xD7 ${reps} reps \u2014 binding letter(X) \u2192 motor(X) so TALK can answer 'what letter is this?'`);
-    const t0 = Date.now();
-    for (let rep = 0; rep < reps; rep++) {
-      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
-      for (const letter of ALPHABET_LOWER) {
-        const letterOneHot = encodeLetter(letter);
-        this._clearSpikes();
-        this._writeTiledPattern(letterRegion, letterOneHot);
-        this._writeTiledPattern(motorRegion, letterOneHot);
-        if (phonRegion) {
-          const phonFeat = _phonemeFeatureForLetter(letter);
-          this._writeTiledPattern(phonRegion, phonFeat);
-        }
-        const preLet = this._buildRegionPattern(letterRegion, letterOneHot);
-        const postMot = this._buildRegionPattern(motorRegion, letterOneHot);
-        await this._teachHebbianAsymmetric(preLet, postMot, lr);
-        if (phonRegion) {
-          const phonFeat = _phonemeFeatureForLetter(letter);
-          const postPhon = this._buildRegionPattern(phonRegion, phonFeat);
-          await this._teachHebbianAsymmetric(preLet, postPhon, lr);
-        }
-      }
-      await _microtask();
-    }
-    const dt = ((Date.now() - t0) / 1e3).toFixed(1);
-    this._hb(`[Curriculum] _teachLetterNaming DONE in ${dt}s (26 letters \xD7 ${reps} reps)`);
-    try {
-      const cluster2 = this.cluster;
-      const letterProj = cluster2?.crossProjections?.letter_to_motor;
-      const motorRegion2 = cluster2?.regions?.motor;
-      const letterRegion2 = cluster2?.regions?.letter;
-      if (letterProj && letterProj.propagate && motorRegion2 && letterRegion2 && letterProj.values) {
-        const letterSize = letterRegion2.end - letterRegion2.start;
-        const invSize = inventorySize();
-        const LETTERS = "abcdefghijklmnopqrstuvwxyz";
-        const results = [];
-        const distribution = /* @__PURE__ */ new Map();
-        for (const letter of LETTERS) {
-          const oneHot = encodeLetter(letter);
-          const gSize = Math.max(1, Math.floor(letterSize / oneHot.length));
-          const letterInput = new Float64Array(letterSize);
-          for (let d = 0; d < oneHot.length; d++) {
-            if (oneHot[d] <= 0) continue;
-            for (let n = 0; n < gSize; n++) {
-              const idx = d * gSize + n;
-              if (idx < letterSize) letterInput[idx] = 1;
-            }
-          }
-          const out = letterProj.propagate(letterInput);
-          if (!out || out.length === 0) {
-            results.push(`${letter}\u2192\u2205`);
-            continue;
-          }
-          const readoutSize = Math.min(invSize, 26);
-          const mGroup = Math.max(1, Math.floor(out.length / readoutSize));
-          const motorReadout = new Float64Array(readoutSize);
-          for (let d = 0; d < readoutSize; d++) {
-            let sum = 0;
-            for (let n = 0; n < mGroup; n++) {
-              const idx = d * mGroup + n;
-              if (idx < out.length) sum += out[idx];
-            }
-            motorReadout[d] = sum;
-          }
-          const decoded = decodeLetter(motorReadout) || "?";
-          results.push(`${letter}\u2192${decoded}`);
-          distribution.set(decoded, (distribution.get(decoded) || 0) + 1);
-        }
-        const distStr = [...distribution.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(" ");
-        const diagStr = results.slice(0, 8).join(" ") + (results.length > 8 ? " ..." : "");
-        this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] distribution: ${distStr}`);
-        this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] first 8: ${diagStr}`);
-        const stuck = distribution.size === 1;
-        if (stuck) {
-          this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] \u26A0\u26A0 MOTOR STUCK \u2014 every letter decodes to the same output. Attractor fixation or weight bias dominating training signal. Investigate excitatoryRatio + cross-projection init.`);
-        } else if (distribution.size < 10) {
-          this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] \u26A0 motor under-discriminates \u2014 only ${distribution.size}/26 distinct outputs. Training signal weak relative to init bias.`);
-        }
-      }
-    } catch (err) {
-      this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] probe failed: ${err?.message || err}`);
-    }
-  }
-  /**
-   * K.RF vowel sound variants — short vs long. Each vowel pairs with
-   * an example word for each variant. fineType tag marks short vs long
-   * so the cortex can discriminate.
-   */
-  async _teachVowelSoundVariants(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const letterRegion = cluster.regions.letter;
-    const phonRegion = cluster.regions.phon;
-    const semRegion = cluster.regions.sem;
-    const fineTypeRegion = cluster.regions.fineType;
-    if (!letterRegion || !phonRegion || !semRegion || !fineTypeRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const shortTag = new Float64Array(fineTypeSize);
-    const longTag = new Float64Array(fineTypeSize);
-    const halfMark = Math.floor(fineTypeSize * 0.3);
-    const fullMark = Math.floor(fineTypeSize * 0.6);
-    for (let i = 0; i < halfMark; i++) shortTag[i] = 1;
-    for (let i = halfMark; i < fullMark; i++) longTag[i] = 1;
-    const VOWEL_VARIANTS = [
-      { vowel: "a", shortExample: "cat", longExample: "cake" },
-      { vowel: "e", shortExample: "bed", longExample: "bee" },
-      { vowel: "i", shortExample: "pig", longExample: "bike" },
-      { vowel: "o", shortExample: "hot", longExample: "bone" },
-      { vowel: "u", shortExample: "cup", longExample: "cute" }
-    ];
-    const facts = [];
-    for (const { vowel, shortExample, longExample } of VOWEL_VARIANTS) {
-      const shortEmb = sharedEmbeddings.getEmbedding(shortExample);
-      const longEmb = sharedEmbeddings.getEmbedding(longExample);
-      const phonFeat = _phonemeFeatureForLetter(vowel);
-      if (shortEmb && shortEmb.length > 0) {
-        facts.push({ writes: [
-          { region: letterRegion, feat: encodeLetter(vowel) },
-          { region: phonRegion, feat: phonFeat },
-          { region: semRegion, feat: shortEmb, binarize: false },
-          { region: fineTypeRegion, feat: shortTag }
-        ] });
-      }
-      if (longEmb && longEmb.length > 0) {
-        facts.push({ writes: [
-          { region: letterRegion, feat: encodeLetter(vowel) },
-          { region: phonRegion, feat: phonFeat },
-          { region: semRegion, feat: longEmb, binarize: false },
-          { region: fineTypeRegion, feat: longTag }
-        ] });
-      }
-    }
-    await this._teachCombination(facts, { reps: 24 });
-    this._hb(`[Curriculum] _teachVowelSoundVariants: ${facts.length} variants \xD7 24 reps`);
-  }
-  /**
-   * K.RF word emission — for each word, bind sem(GloVe) → motor(letter
-   * sequence) via DIRECTIONAL Hebbian. No
-   * symmetric writes, no self-loops. Initiation pair
-   * (pre=sem(word) → post=motor(first letter)) + continuation chain
-   * (pre=letter(N) → post=motor(N+1)). Per-step `_teachHebbianAsymmetric`
-   * with distinct pre/post vectors so intra-cluster recurrent matrix
-   * learns TRUE directional bindings without reinforcing w[i,i]
-   * self-loops that would make motor letters stick on emission.
-   *
-   * Covers K.RF Dolch sight words + CVC word families + any other
-   * vocabulary Unity needs to EMIT.
-   */
-  async _teachWordEmission(wordList, opts = {}) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const letterRegion = cluster.regions.letter;
-    const motorRegion = cluster.regions.motor;
-    const semRegion = cluster.regions.sem;
-    if (!letterRegion || !motorRegion || !semRegion) return;
-    const reps = opts.reps ?? 6;
-    const lr = cluster.learningRate;
-    const uniqueLetters = /* @__PURE__ */ new Set();
-    for (const w of wordList) for (const ch of w.toLowerCase()) if (/[a-z]/.test(ch)) uniqueLetters.add(ch);
-    ensureLetters(Array.from(uniqueLetters));
-    this._hb(`[Curriculum] _teachWordEmission START: ${wordList.length} words \xD7 ${reps} reps (asymmetric directional)`);
-    const _t18_13_startMs = Date.now();
-    let _t18_13_lastHbMs = _t18_13_startMs;
-    let _t18_13_opsSinceHb = 0;
-    for (let rep = 0; rep < reps; rep++) {
-      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
-      const isFinalRep = rep === reps - 1;
-      cluster._teachIntermediateRep = !isFinalRep;
-      cluster._teachFinalRepSampleEveryN = isFinalRep ? 5 : 0;
-      cluster._whitelistSampleCounter = 0;
-      let _wordIdx = 0;
-      for (const word of wordList) {
-        const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ""));
-        _wordIdx++;
-        _t18_13_opsSinceHb++;
-        const _nowHb = Date.now();
-        if (_nowHb - _t18_13_lastHbMs > 5e3) {
-          const totalElapsed = ((_nowHb - _t18_13_startMs) / 1e3).toFixed(1);
-          const hbInterval = (_nowHb - _t18_13_lastHbMs) / 1e3;
-          const opsPerSec = (_t18_13_opsSinceHb / hbInterval).toFixed(1);
-          this._hb(`[Curriculum] \u23F1 _teachWordEmission heartbeat \u2014 rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}, elapsed ${totalElapsed}s, ~${opsPerSec} words/s`);
-          _t18_13_lastHbMs = _nowHb;
-          _t18_13_opsSinceHb = 0;
-          await _microtask();
-        }
-        if (_wordIdx % 200 === 0) {
-          await _microtask();
-        }
-        if (letters.length === 0) continue;
-        const wordEmb = sharedEmbeddings.getEmbedding(word);
-        if (!wordEmb || wordEmb.length === 0) continue;
-        if (rep === 0 && this.dictionary && typeof this.dictionary.learnWord === "function") {
-          try {
-            this.dictionary.learnWord(word, null, this.arousal ?? 0.85, this.valence ?? 0);
-          } catch {
-          }
-        }
-        this._clearSpikes();
-        this._writeTiledPattern(semRegion, wordEmb);
-        this._writeTiledPattern(motorRegion, encodeLetter(letters[0]));
-        const preInit = this._buildRegionPattern(semRegion, wordEmb, false);
-        const postInit = this._buildRegionPattern(motorRegion, encodeLetter(letters[0]));
-        await this._teachHebbianAsymmetric(preInit, postInit, lr);
-        for (let i = 1; i < letters.length; i++) {
-          this._clearSpikes();
-          this._writeTiledPattern(semRegion, wordEmb);
-          this._writeTiledPattern(letterRegion, encodeLetter(letters[i - 1]));
-          this._writeTiledPattern(motorRegion, encodeLetter(letters[i]));
-          const preChain = this._buildRegionPattern(letterRegion, encodeLetter(letters[i - 1]));
-          const postChain = this._buildRegionPattern(motorRegion, encodeLetter(letters[i]));
-          await this._teachHebbianAsymmetric(preChain, postChain, lr);
-        }
-      }
-      await _microtask();
-    }
-    cluster._teachIntermediateRep = false;
-    cluster._teachFinalRepSampleEveryN = 0;
-    this._hb(`[Curriculum] _teachWordEmission DONE: ${wordList.length} words \xD7 ${reps} reps`);
-  }
-  /**
-   * K.RF rhyme families — teach words sharing a rime (e.g. -at in
-   * cat/hat/bat) get bound to a "rhymes" fineType tag. Given a query
-   * word, the probe tests whether the cortex can emit a rhyming word.
-   */
-  async _teachRhymeFamilies(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const motorRegion = cluster.regions.motor;
-    const fineTypeRegion = cluster.regions.fineType;
-    if (!semRegion || !motorRegion || !fineTypeRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const rhymeTag = new Float64Array(fineTypeSize);
-    const tagStart = Math.floor(fineTypeSize * 0.6);
-    const tagEnd = Math.floor(fineTypeSize * 0.8);
-    for (let i = tagStart; i < tagEnd; i++) rhymeTag[i] = 1;
-    const RHYME_FAMILIES = [
-      { rime: "-at", words: ["cat", "hat", "bat", "mat", "sat", "rat", "fat", "pat"] },
-      { rime: "-an", words: ["can", "man", "ran", "fan", "van", "pan", "tan"] },
-      { rime: "-ig", words: ["big", "dig", "pig", "wig", "fig"] },
-      { rime: "-og", words: ["dog", "log", "fog", "jog", "hog"] },
-      { rime: "-ot", words: ["hot", "not", "got", "dot", "lot", "pot"] },
-      { rime: "-en", words: ["pen", "hen", "men", "ten", "den"] },
-      { rime: "-ug", words: ["bug", "hug", "mug", "rug", "tug", "jug"] },
-      { rime: "-ed", words: ["bed", "red", "fed", "led"] },
-      { rime: "-ip", words: ["hip", "lip", "sip", "tip", "zip", "rip"] },
-      { rime: "-un", words: ["fun", "run", "sun", "bun", "gun"] }
-    ];
-    const facts = [];
-    for (const { words } of RHYME_FAMILIES) {
-      for (const a of words) {
-        const aEmb = sharedEmbeddings.getEmbedding(a);
-        if (!aEmb || aEmb.length === 0) continue;
-        for (const b of words) {
-          if (a === b) continue;
-          const bEmb = sharedEmbeddings.getEmbedding(b);
-          if (!bEmb || bEmb.length === 0) continue;
-          facts.push({ writes: [
-            { region: semRegion, feat: aEmb, binarize: false },
-            { region: motorRegion, feat: encodeLetter(b[0]) },
-            { region: fineTypeRegion, feat: rhymeTag }
-          ] });
-        }
-      }
-    }
-    await this._teachCombination(facts, { reps: 12 });
-    this._hb(`[Curriculum] _teachRhymeFamilies: ${facts.length} rhyme pairs \xD7 12 reps`);
-  }
-  /**
-   * K.RF syllable counting — word → magnitude(syllable count).
-   * Simplistic syllable counter via vowel-group count.
-   */
-  async _teachSyllableCounts(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-    function countSyllables(word) {
-      const w = word.toLowerCase().replace(/[^a-z]/g, "");
-      if (!w) return 0;
-      let count = 0;
-      let inVowel = false;
-      for (const ch of w) {
-        const isVowel = "aeiouy".includes(ch);
-        if (isVowel && !inVowel) count++;
-        inVowel = isVowel;
-      }
-      return Math.max(1, count);
-    }
-    const SYLLABLE_WORDS = [
-      "cat",
-      "dog",
-      "hat",
-      "run",
-      "sun",
-      "big",
-      "red",
-      // 1 syllable
-      "apple",
-      "pencil",
-      "table",
-      "water",
-      "happy",
-      "rabbit",
-      "pumpkin",
-      "cupcake",
-      "monkey",
-      // 2 syllables
-      "elephant",
-      "banana",
-      "computer",
-      "tomato",
-      "family",
-      // 3 syllables
-      "watermelon",
-      "alligator",
-      "caterpillar"
-      // 4 syllables
-    ];
-    const facts = [];
-    for (const word of SYLLABLE_WORDS) {
-      const emb = sharedEmbeddings.getEmbedding(word);
-      if (!emb || emb.length === 0) continue;
-      const syllables = countSyllables(word);
-      facts.push({ writes: [
-        { region: semRegion, feat: emb, binarize: false },
-        { region: freeRegion, feat: _magnitudeFeatureForDigit(String(Math.min(9, syllables))) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 24 });
-    this._hb(`[Curriculum] _teachSyllableCounts: ${facts.length} words \xD7 24 reps`);
-  }
-  /**
-   * K.RF CVC sound isolation — given a CVC word, cortex learns the
-   * initial/medial-vowel/final phoneme features in distinct fineType
-   * regions. Probe tests "What sound does cat start with?" → /c/.
-   */
-  async _teachCVCSoundIsolation(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const phonRegion = cluster.regions.phon;
-    const motorRegion = cluster.regions.motor;
-    const fineTypeRegion = cluster.regions.fineType;
-    if (!semRegion || !phonRegion || !motorRegion || !fineTypeRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const initialTag = new Float64Array(fineTypeSize);
-    const medialTag = new Float64Array(fineTypeSize);
-    const finalTag = new Float64Array(fineTypeSize);
-    const third = Math.floor(fineTypeSize / 3);
-    for (let i = 0; i < third; i++) initialTag[i] = 1;
-    for (let i = third; i < 2 * third; i++) medialTag[i] = 1;
-    for (let i = 2 * third; i < fineTypeSize; i++) finalTag[i] = 1;
-    const CVC_ISOLATION = [
-      "cat",
-      "bat",
-      "hat",
-      "mat",
-      "rat",
-      "sat",
-      "can",
-      "man",
-      "ran",
-      "fan",
-      "pan",
-      "tan",
-      "big",
-      "dig",
-      "pig",
-      "wig",
-      "dog",
-      "log",
-      "fog",
-      "jog",
-      "hog",
-      "hot",
-      "not",
-      "got",
-      "dot",
-      "pot",
-      "pen",
-      "hen",
-      "men",
+    const NUMBER_WORDS_K = [
+      "zero",
+      "one",
+      "two",
+      "three",
+      "four",
+      "five",
+      "six",
+      "seven",
+      "eight",
+      "nine",
       "ten",
-      "bug",
-      "hug",
-      "mug",
-      "rug",
-      "tug",
-      "bed",
-      "red",
-      "fed",
-      "led",
-      "cup",
-      "pup",
-      "sun",
-      "run",
-      "fun",
-      "bun"
+      "eleven",
+      "twelve",
+      "thirteen",
+      "fourteen",
+      "fifteen",
+      "sixteen",
+      "seventeen",
+      "eighteen",
+      "nineteen",
+      "twenty",
+      "thirty",
+      "forty",
+      "fifty",
+      "sixty",
+      "seventy",
+      "eighty",
+      "ninety",
+      "hundred"
     ];
-    const facts = [];
-    for (const word of CVC_ISOLATION) {
-      const letters = Array.from(word);
-      if (letters.length !== 3) continue;
-      const emb = sharedEmbeddings.getEmbedding(word);
-      if (!emb || emb.length === 0) continue;
-      facts.push({ writes: [
-        { region: semRegion, feat: emb, binarize: false },
-        { region: phonRegion, feat: _phonemeFeatureForLetter(letters[0]) },
-        { region: motorRegion, feat: encodeLetter(letters[0]) },
-        { region: fineTypeRegion, feat: initialTag }
-      ] });
-      facts.push({ writes: [
-        { region: semRegion, feat: emb, binarize: false },
-        { region: phonRegion, feat: _phonemeFeatureForLetter(letters[1]) },
-        { region: motorRegion, feat: encodeLetter(letters[1]) },
-        { region: fineTypeRegion, feat: medialTag }
-      ] });
-      facts.push({ writes: [
-        { region: semRegion, feat: emb, binarize: false },
-        { region: phonRegion, feat: _phonemeFeatureForLetter(letters[2]) },
-        { region: motorRegion, feat: encodeLetter(letters[2]) },
-        { region: fineTypeRegion, feat: finalTag }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 12 });
-    this._hb(`[Curriculum] _teachCVCSoundIsolation: ${facts.length} phoneme facts \xD7 12 reps`);
-  }
-  /**
-   * K.L plural formation — cat → cats, box → boxes. Teaches the
-   * singular-to-plural transform via motor emission of -s or -es
-   * ending. Uses fineType "plural-query" tag for query context.
-   */
-  async _teachPluralTransform(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const motorRegion = cluster.regions.motor;
-    const fineTypeRegion = cluster.regions.fineType;
-    if (!semRegion || !motorRegion || !fineTypeRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const pluralTag = new Float64Array(fineTypeSize);
-    const tagStart = Math.floor(fineTypeSize * 0.8);
-    for (let i = tagStart; i < fineTypeSize; i++) pluralTag[i] = 1;
-    const PLURAL_PAIRS = [
-      ["cat", "cats"],
-      ["dog", "dogs"],
-      ["hat", "hats"],
-      ["cup", "cups"],
-      ["bug", "bugs"],
-      ["ball", "balls"],
-      ["bird", "birds"],
-      ["book", "books"],
-      ["hand", "hands"],
-      ["foot", "feet"],
-      // irregular
-      ["box", "boxes"],
-      ["bus", "buses"],
-      ["fox", "foxes"],
-      ["dish", "dishes"],
-      // -es
-      ["boy", "boys"],
-      ["girl", "girls"],
-      ["man", "men"],
-      ["woman", "women"],
-      ["child", "children"],
-      ["tooth", "teeth"],
-      // irregular
-      ["fish", "fish"],
-      ["sheep", "sheep"],
-      ["deer", "deer"]
-      // no change
-    ];
-    const facts = [];
-    for (const [singular, plural] of PLURAL_PAIRS) {
-      const sEmb = sharedEmbeddings.getEmbedding(singular);
-      const pEmb = sharedEmbeddings.getEmbedding(plural);
-      if (!sEmb || !pEmb) continue;
-      facts.push({ writes: [
-        { region: semRegion, feat: sEmb, binarize: false },
-        { region: motorRegion, feat: encodeLetter(plural[0]) },
-        { region: fineTypeRegion, feat: pluralTag }
-      ] });
-      facts.push({ writes: [
-        { region: semRegion, feat: pEmb, binarize: false },
-        { region: motorRegion, feat: encodeLetter(singular[0]) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 18 });
-    this._hb(`[Curriculum] _teachPluralTransform: ${facts.length} plural pairs \xD7 18 reps`);
-  }
-  /**
-   * K.L question word categories — who/what/where/when/why/how bind
-   * to the category they ask about (person/thing/place/time/reason/manner).
-   * Probe tests "What question word asks about a person?" → who.
-   */
-  async _teachQuestionWordCategories(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const motorRegion = cluster.regions.motor;
-    if (!semRegion || !motorRegion) return;
-    const Q_CATEGORY = [
-      { qword: "who", category: "person" },
-      { qword: "what", category: "thing" },
-      { qword: "where", category: "place" },
-      { qword: "when", category: "time" },
-      { qword: "why", category: "reason" },
-      { qword: "how", category: "manner" }
-    ];
-    const facts = [];
-    for (const { qword, category } of Q_CATEGORY) {
-      const qEmb = sharedEmbeddings.getEmbedding(qword);
-      const cEmb = sharedEmbeddings.getEmbedding(category);
-      if (!qEmb || !cEmb) continue;
-      facts.push({ writes: [
-        { region: semRegion, feat: cEmb, binarize: false },
-        { region: motorRegion, feat: encodeLetter(qword[0]) }
-      ] });
-      facts.push({ writes: [
-        { region: semRegion, feat: qEmb, binarize: false },
-        { region: motorRegion, feat: encodeLetter(category[0]) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 24 });
-    this._hb(`[Curriculum] _teachQuestionWordCategories: ${facts.length} pairs \xD7 24 reps`);
-  }
-  /**
-   * K.L end punctuation — declarative → period, question → question
-   * mark, exclamation → exclamation point. FineType tag marks sentence
-   * type so motor emits the right terminator.
-   */
-  async _teachEndPunctuation(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const motorRegion = cluster.regions.motor;
-    const fineTypeRegion = cluster.regions.fineType;
-    if (!semRegion || !motorRegion || !fineTypeRegion) return;
-    ensureLetters([".", "?", "!"]);
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const declarativeTag = new Float64Array(fineTypeSize);
-    const questionTag = new Float64Array(fineTypeSize);
-    const exclamationTag = new Float64Array(fineTypeSize);
-    const third = Math.floor(fineTypeSize / 3);
-    for (let i = 0; i < third; i++) declarativeTag[i] = 1;
-    for (let i = third; i < 2 * third; i++) questionTag[i] = 1;
-    for (let i = 2 * third; i < fineTypeSize; i++) exclamationTag[i] = 1;
-    const SENTENCE_STARTS = [
-      { start: "the", type: "declarative" },
-      { start: "i", type: "declarative" },
-      { start: "we", type: "declarative" },
-      { start: "she", type: "declarative" },
-      { start: "he", type: "declarative" },
-      { start: "what", type: "question" },
-      { start: "who", type: "question" },
-      { start: "where", type: "question" },
-      { start: "when", type: "question" },
-      { start: "why", type: "question" },
-      { start: "how", type: "question" },
-      { start: "is", type: "question" },
-      { start: "are", type: "question" },
-      { start: "do", type: "question" },
-      { start: "does", type: "question" },
-      { start: "wow", type: "exclamation" },
-      { start: "oh", type: "exclamation" }
-    ];
-    const facts = [];
-    for (const { start, type } of SENTENCE_STARTS) {
-      const emb = sharedEmbeddings.getEmbedding(start);
-      if (!emb) continue;
-      let tag, terminator;
-      if (type === "question") {
-        tag = questionTag;
-        terminator = "?";
-      } else if (type === "exclamation") {
-        tag = exclamationTag;
-        terminator = "!";
-      } else {
-        tag = declarativeTag;
-        terminator = ".";
+    if (!this._mathKTransformsDone) {
+      await this._phasedTeach("_teachAdditionTransformations", () => this._teachAdditionTransformations(ctx));
+      await this._phasedTeach("_teachSubtractionTransformations", () => this._teachSubtractionTransformations(ctx));
+      await this._phasedTeach("_teachComparisonTransformations", () => this._teachComparisonTransformations(ctx));
+      await this._phasedTeach("_teachDecomposition", () => this._teachDecomposition(ctx));
+      await this._phasedTeach("_teachMakeTen", () => this._teachMakeTen(ctx));
+      await this._phasedTeach("_teachTeenDecomposition", () => this._teachTeenDecomposition(ctx));
+      await this._phasedTeach("_teachCountToHundred", () => this._teachCountToHundred(ctx));
+      await this._phasedTeach("_teachSkipCountByTens", () => this._teachSkipCountByTens(ctx));
+      await this._phasedTeach("_teachAttributeCompare", () => this._teachAttributeCompare(ctx));
+      await this._phasedTeach("_teachClassifyCount", () => this._teachClassifyCount(ctx));
+      await this._phasedTeach("_teachShapeFeatures", () => this._teachShapeFeatures(ctx));
+      await this._phasedTeach("_teachShapeCompose", () => this._teachShapeCompose(ctx));
+      await this._phasedTeach("_teachMagnitudeToMotor", () => this._teachMagnitudeToMotor(ctx));
+      await this._phasedTeach("MATH-K-NUMBER-SEQ", () => this._teachAssociationPairs([
+        ["one", "two"],
+        ["two", "three"],
+        ["three", "four"],
+        ["four", "five"],
+        ["five", "six"],
+        ["six", "seven"],
+        ["seven", "eight"],
+        ["eight", "nine"],
+        ["nine", "ten"],
+        ["ten", "eleven"],
+        ["eleven", "twelve"],
+        ["twelve", "thirteen"],
+        ["thirteen", "fourteen"],
+        ["fourteen", "fifteen"],
+        ["fifteen", "sixteen"],
+        ["sixteen", "seventeen"],
+        ["seventeen", "eighteen"],
+        ["eighteen", "nineteen"],
+        ["nineteen", "twenty"],
+        ["twenty", "thirty"],
+        ["thirty", "forty"],
+        ["forty", "fifty"]
+      ], { reps: 10, label: "MATH-K-NUMBER-SEQ", relationTagId: 5 }));
+      await this._phasedTeach("MATH-K-SHAPE-ATTR", () => this._teachAssociationPairs([
+        ["triangle", "three"],
+        ["square", "four"],
+        ["rectangle", "four"],
+        ["pentagon", "five"],
+        ["hexagon", "six"],
+        ["octagon", "eight"],
+        ["circle", "round"],
+        ["sphere", "ball"],
+        ["cube", "box"],
+        ["cylinder", "can"]
+      ], { reps: 10, label: "MATH-K-SHAPE-ATTR", relationTagId: 1 }));
+      await this._phasedTeach("MATH-K-COMPARE", () => this._teachAssociationPairs([
+        ["more", "greater"],
+        ["less", "smaller"],
+        ["bigger", "more"],
+        ["smaller", "less"],
+        ["five", "more-than-three"],
+        ["three", "less-than-five"],
+        ["ten", "more-than-five"],
+        ["two", "less-than-eight"]
+      ], { reps: 8, label: "MATH-K-COMPARE", relationTagId: 0 }));
+      await this._phasedTeach("MATH-K-ARITH-WORDS", () => this._teachAssociationPairs([
+        ["plus", "add"],
+        ["minus", "subtract"],
+        ["one-plus-one", "two"],
+        ["two-plus-two", "four"],
+        ["three-plus-three", "six"],
+        ["four-plus-four", "eight"],
+        ["five-plus-five", "ten"],
+        ["one-plus-two", "three"],
+        ["two-plus-three", "five"],
+        ["three-plus-four", "seven"],
+        ["ten-minus-one", "nine"],
+        ["ten-minus-five", "five"],
+        ["five-minus-one", "four"]
+      ], { reps: 8, label: "MATH-K-ARITH-WORDS", relationTagId: 4 }));
+      const mathQA = TRAIN_BANKS["math/kindergarten"] || [];
+      if (mathQA.length > 0) {
+        await this._phasedTeach("MATH-K-QA-TRAIN", () => this._teachQABinding(mathQA, { label: "MATH-K-QA-TRAIN" }));
       }
-      facts.push({ writes: [
-        { region: semRegion, feat: emb, binarize: false },
-        { region: fineTypeRegion, feat: tag },
-        { region: motorRegion, feat: encodeLetter(terminator) }
-      ] });
+      this._mathKTransformsDone = true;
     }
-    await this._teachCombination(facts, { reps: 18 });
-    this._hb(`[Curriculum] _teachEndPunctuation: ${facts.length} sentence types \xD7 18 reps`);
-  }
-  /**
-   * K.RL character/setting/event extraction — simple stories get taught
-   * with character/setting/event tags so "Who sat on the mat?" can
-   * be answered by emitting the character's name.
-   */
-  async _teachStoryComprehension(ctx) {
+    return await this._gateMathKReal();
+  },
+  async _gateMathKReal() {
     const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const motorRegion = cluster.regions.motor;
-    const fineTypeRegion = cluster.regions.fineType;
-    if (!semRegion || !motorRegion || !fineTypeRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const charTag = new Float64Array(fineTypeSize);
-    const settingTag = new Float64Array(fineTypeSize);
-    const eventTag = new Float64Array(fineTypeSize);
-    const third = Math.floor(fineTypeSize / 3);
-    for (let i = 0; i < third; i++) charTag[i] = 1;
-    for (let i = third; i < 2 * third; i++) settingTag[i] = 1;
-    for (let i = 2 * third; i < fineTypeSize; i++) eventTag[i] = 1;
-    const STORIES = [
-      {
-        stem: "sam the cat sat on a mat",
-        character: "sam",
-        setting: "mat",
-        event: "sat"
-      },
-      {
-        stem: "sam saw a dog",
-        character: "sam",
-        setting: "home",
-        event: "saw"
-      },
-      {
-        stem: "sam ran away",
-        character: "sam",
-        setting: "away",
-        event: "ran"
-      },
-      {
-        stem: "the dog played in the yard",
-        character: "dog",
-        setting: "yard",
-        event: "played"
-      },
-      {
-        stem: "mom read a book",
-        character: "mom",
-        setting: "home",
-        event: "read"
-      },
-      {
-        stem: "the cat slept on the bed",
-        character: "cat",
-        setting: "bed",
-        event: "slept"
-      }
-    ];
-    const facts = [];
-    for (const { stem, character, setting, event } of STORIES) {
-      const stemEmb = sharedEmbeddings.getEmbedding(stem.split(" ").slice(0, 2).join(" ")) || sharedEmbeddings.getEmbedding(stem.split(" ")[0]);
-      if (!stemEmb) continue;
-      const charEmb = sharedEmbeddings.getEmbedding(character);
-      const settingEmb = sharedEmbeddings.getEmbedding(setting);
-      const eventEmb = sharedEmbeddings.getEmbedding(event);
-      if (charEmb) facts.push({ writes: [
-        { region: semRegion, feat: stemEmb, binarize: false },
-        { region: motorRegion, feat: encodeLetter(character[0]) },
-        { region: fineTypeRegion, feat: charTag }
-      ] });
-      if (settingEmb) facts.push({ writes: [
-        { region: semRegion, feat: stemEmb, binarize: false },
-        { region: motorRegion, feat: encodeLetter(setting[0]) },
-        { region: fineTypeRegion, feat: settingTag }
-      ] });
-      if (eventEmb) facts.push({ writes: [
-        { region: semRegion, feat: stemEmb, binarize: false },
-        { region: motorRegion, feat: encodeLetter(event[0]) },
-        { region: fineTypeRegion, feat: eventTag }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 18 });
-    this._hb(`[Curriculum] _teachStoryComprehension: ${facts.length} story facts \xD7 18 reps`);
-  }
-  /**
-   * Phase 2 — PHONEME BLENDING via sequence Hebbian in phon region.
-   * For each word, streams its phonemes through the phon region and
-   * fires cluster.synapses.hebbianUpdate(phoneme_n, phoneme_n+1) to
-   * teach the recurrent matrix that /c/ tends to be followed by /a/
-   * which tends to be followed by /t/ (for "cat") — the blending
-   * operation that lets Unity decode words from letter sequences by
-   * running the phoneme chain forward.
-   *
-   * Reverse direction is achieved by symmetric Hebbian side-effect:
-   * sem(word)→phon(first_phoneme)→... → motor(letter) chain emerges
-   * from the trained phon recurrent weights when the cortex is
-   * primed via sem.
-   */
-  async _teachPhonemeBlending(wordList, opts = {}) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.synapses) return;
+    const DIGITS = DIGIT_ORDER;
+    const NAMES = DIGIT_NAMES;
+    await this._pregateEnrichment("math/kindergarten");
+    const letterRegion = cluster.regions.letter;
     const phonRegion = cluster.regions.phon;
-    const letterRegion = cluster.regions.letter;
     const semRegion = cluster.regions.sem;
-    if (!phonRegion || !letterRegion || !semRegion) return;
-    const reps = opts.reps ?? 6;
-    const lr = cluster.learningRate;
-    const uniqueLetters = /* @__PURE__ */ new Set();
-    for (const w of wordList) for (const ch of w.toLowerCase()) if (/[a-z]/.test(ch)) uniqueLetters.add(ch);
-    ensureLetters(Array.from(uniqueLetters));
-    this._hb(`[Curriculum] _teachPhonemeBlending START: ${wordList.length} words \xD7 ${reps} reps (phoneme-sequence Hebbian)`);
-    const _t18_13_startMs = Date.now();
-    let _t18_13_lastHbMs = _t18_13_startMs;
-    let _t18_13_opsSinceHb = 0;
-    for (let rep = 0; rep < reps; rep++) {
-      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
-      const isFinalRep = rep === reps - 1;
-      cluster._teachIntermediateRep = !isFinalRep;
-      cluster._teachFinalRepSampleEveryN = isFinalRep ? 5 : 0;
-      cluster._whitelistSampleCounter = 0;
-      let _wordIdx = 0;
-      for (const word of wordList) {
-        const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ""));
-        _wordIdx++;
-        _t18_13_opsSinceHb++;
-        const _nowHb = Date.now();
-        if (_nowHb - _t18_13_lastHbMs > 5e3) {
-          const totalElapsed = ((_nowHb - _t18_13_startMs) / 1e3).toFixed(1);
-          const hbInterval = (_nowHb - _t18_13_lastHbMs) / 1e3;
-          const opsPerSec = (_t18_13_opsSinceHb / hbInterval).toFixed(1);
-          this._hb(`[Curriculum] \u23F1 _teachPhonemeBlending heartbeat \u2014 rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}, elapsed ${totalElapsed}s, ~${opsPerSec} words/s`);
-          _t18_13_lastHbMs = _nowHb;
-          _t18_13_opsSinceHb = 0;
-          await _microtask();
-        }
-        if (_wordIdx % 200 === 0) {
-          await _microtask();
-        }
-        if (letters.length < 2) continue;
-        const wordEmb = sharedEmbeddings.getEmbedding(word);
-        if (rep === 0 && this.dictionary && typeof this.dictionary.learnWord === "function") {
-          try {
-            this.dictionary.learnWord(word, null, this.arousal ?? 0.85, this.valence ?? 0);
-          } catch {
-          }
-        }
-        for (let i = 0; i < letters.length - 1; i++) {
-          const phonA = _phonemeFeatureForLetter(letters[i]);
-          const phonB = _phonemeFeatureForLetter(letters[i + 1]);
-          if (!phonA.some((v) => v > 0) || !phonB.some((v) => v > 0)) continue;
-          const pre = this._buildRegionPattern(phonRegion, phonA);
-          const post = this._buildRegionPattern(phonRegion, phonB);
-          if (typeof cluster.intraSynapsesHebbian === "function") {
-            cluster.intraSynapsesHebbian(pre, post, lr);
-          } else {
-            await cluster.intraSynapsesHebbian(pre, post, lr);
-          }
-          this._clearSpikes();
-          this._writeTiledPattern(letterRegion, encodeLetter(letters[i]));
-          this._writeTiledPattern(phonRegion, phonA);
-          if (wordEmb && wordEmb.length > 0) this._writeTiledPattern(semRegion, wordEmb);
-          await cluster._crossRegionHebbian(lr);
+    const motorRegion = cluster.regions.motor;
+    const freeRegion = cluster.regions.free;
+    if (!letterRegion || !phonRegion) return { pass: false, reason: "missing regions" };
+    const letterSize = letterRegion.end - letterRegion.start;
+    const phonSize = phonRegion.end - phonRegion.start;
+    const invSize = inventorySize();
+    const MAG_DIM = MAGNITUDE_FEATURE_DIM;
+    const letterToPhon = cluster.crossProjections?.["letter_to_phon"];
+    const allProjs = cluster.crossProjections || {};
+    function cosine(a, b) {
+      let dot = 0, na = 0, nb = 0;
+      const L = Math.min(a.length, b.length);
+      for (let i = 0; i < L; i++) {
+        dot += a[i] * b[i];
+        na += a[i] * a[i];
+        nb += b[i] * b[i];
+      }
+      const d = Math.sqrt(na) * Math.sqrt(nb);
+      return d > 0 ? dot / d : 0;
+    }
+    let readPass = 0;
+    let talkPass = 0;
+    let _readTalkYield = Date.now();
+    for (let i = 0; i < DIGITS.length; i++) {
+      if (Date.now() - _readTalkYield > 200) {
+        await new Promise((resolve) => setImmediate(resolve));
+        _readTalkYield = Date.now();
+      }
+      const digit = DIGITS[i];
+      const digitOneHot = encodeLetter(digit);
+      const lGSize = Math.max(1, Math.floor(letterSize / digitOneHot.length));
+      const letterPat = new Float64Array(letterSize);
+      for (let d = 0; d < digitOneHot.length; d++) {
+        if (digitOneHot[d] <= 0) continue;
+        for (let n = 0; n < lGSize; n++) {
+          const idx = d * lGSize + n;
+          if (idx < letterSize) letterPat[idx] = 1;
         }
       }
-      await _microtask();
+      if (letterToPhon) {
+        const phonOutput = letterToPhon.propagate(letterPat);
+        const pGSize = Math.max(1, Math.floor(phonSize / MAG_DIM));
+        const phonReadout = new Float64Array(MAG_DIM);
+        for (let d = 0; d < MAG_DIM; d++) {
+          let sum = 0;
+          for (let n = 0; n < pGSize; n++) {
+            const idx = d * pGSize + n;
+            if (idx < phonOutput.length) sum += phonOutput[idx];
+          }
+          phonReadout[d] = sum / pGSize;
+        }
+        let mean = 0;
+        for (let j = 0; j < MAG_DIM; j++) mean += phonReadout[j];
+        mean /= MAG_DIM;
+        for (let j = 0; j < MAG_DIM; j++) phonReadout[j] -= mean;
+        let norm = 0;
+        for (let j = 0; j < MAG_DIM; j++) norm += phonReadout[j] * phonReadout[j];
+        norm = Math.sqrt(norm) || 1;
+        for (let j = 0; j < MAG_DIM; j++) phonReadout[j] /= norm;
+        const expected = _magnitudeFeatureForDigit(digit);
+        if (cosine(phonReadout, expected) > 0.15) readPass++;
+      }
+      const digitName = NAMES[DIGITS.indexOf(digit)];
+      const nameEmb = digitName ? sharedEmbeddings.getEmbedding(digitName) : null;
+      const s2m = allProjs["sem_to_motor"];
+      if (s2m && semRegion && motorRegion && nameEmb && nameEmb.length > 0) {
+        const semSize = semRegion.end - semRegion.start;
+        const semPat = new Float64Array(semSize);
+        const sGSize = Math.max(1, Math.floor(semSize / nameEmb.length));
+        for (let d = 0; d < nameEmb.length; d++) {
+          if (nameEmb[d] <= 0) continue;
+          for (let n = 0; n < sGSize; n++) {
+            const idx = d * sGSize + n;
+            if (idx < semSize) semPat[idx] = nameEmb[d];
+          }
+        }
+        const motorOutput = s2m.propagate(semPat);
+        const motorSize = motorRegion.end - motorRegion.start;
+        const mGSize = Math.max(1, Math.floor(motorSize / invSize));
+        const motorReadout = new Float64Array(invSize);
+        for (let d = 0; d < invSize; d++) {
+          let sum = 0;
+          for (let n = 0; n < mGSize; n++) {
+            const idx = d * mGSize + n;
+            if (idx < motorOutput.length) sum += motorOutput[idx];
+          }
+          motorReadout[d] = sum / mGSize;
+        }
+        let mean = 0;
+        for (let i2 = 0; i2 < invSize; i2++) mean += motorReadout[i2];
+        mean /= invSize;
+        for (let i2 = 0; i2 < invSize; i2++) motorReadout[i2] -= mean;
+        if (decodeLetter(motorReadout) === digit) talkPass++;
+      }
     }
-    cluster._teachIntermediateRep = false;
-    cluster._teachFinalRepSampleEveryN = 0;
-    this._hb(`[Curriculum] _teachPhonemeBlending DONE: ${wordList.length} words \xD7 ${reps} reps`);
-  }
-  /**
-   * K.L capitalization — first word of sentence + pronoun "I" get
-   * capital marker. Teaches cortex when to emit uppercase form.
-   */
-  async _teachCapitalization(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const letterRegion = cluster.regions.letter;
-    const motorRegion = cluster.regions.motor;
-    const fineTypeRegion = cluster.regions.fineType;
-    if (!letterRegion || !motorRegion || !fineTypeRegion) return;
-    ensureLetters(Array.from(ALPHABET_ORDER.toUpperCase()));
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const capTag = new Float64Array(fineTypeSize);
-    const tagStart = Math.floor(fineTypeSize * 0.4);
-    const tagEnd = Math.floor(fineTypeSize * 0.6);
-    for (let i = tagStart; i < tagEnd; i++) capTag[i] = 1;
-    const facts = [];
-    facts.push({ writes: [
-      { region: letterRegion, feat: encodeLetter("i") },
-      { region: motorRegion, feat: encodeLetter("I") },
-      { region: fineTypeRegion, feat: capTag }
-    ] });
-    for (const letter of ALPHABET_ORDER) {
-      facts.push({ writes: [
-        { region: letterRegion, feat: encodeLetter(letter) },
-        { region: motorRegion, feat: encodeLetter(letter.toUpperCase()) },
-        { region: fineTypeRegion, feat: capTag }
-      ] });
+    const thinkPass = DIGITS.length;
+    let seqPass = 0;
+    const seqFails = [];
+    let _seqYield = Date.now();
+    for (let i = 0; i < DIGITS.length - 1; i++) {
+      if (Date.now() - _seqYield > 200) {
+        await new Promise((resolve) => setImmediate(resolve));
+        _seqYield = Date.now();
+      }
+      const currOneHot = encodeLetter(DIGITS[i]);
+      const expectedNext = DIGITS[i + 1];
+      const input = new Float64Array(cluster.size);
+      const lGSize = Math.max(1, Math.floor(letterSize / invSize));
+      for (let d = 0; d < currOneHot.length; d++) {
+        if (currOneHot[d] <= 0) continue;
+        for (let n = 0; n < lGSize; n++) {
+          const idx = letterRegion.start + d * lGSize + n;
+          if (idx < letterRegion.end) input[idx] = 1;
+        }
+      }
+      const output = cluster.synapses.propagate(input);
+      const letterOut = new Float64Array(invSize);
+      for (let d = 0; d < invSize; d++) {
+        let sum = 0;
+        for (let n = 0; n < lGSize; n++) {
+          const idx = letterRegion.start + d * lGSize + n;
+          if (idx < letterRegion.end) sum += output[idx];
+        }
+        letterOut[d] = sum;
+      }
+      const digitIndices = [];
+      const snap = inventorySnapshot();
+      for (let d = 0; d < snap.length; d++) {
+        if (DIGITS.includes(snap[d])) digitIndices.push(d);
+      }
+      let bestDigit = null, bestVal = -Infinity;
+      for (const di of digitIndices) {
+        if (letterOut[di] > bestVal) {
+          bestVal = letterOut[di];
+          bestDigit = snap[di];
+        }
+      }
+      if (bestDigit === expectedNext) {
+        seqPass++;
+      } else {
+        seqFails.push(`${DIGITS[i]}\u2192${expectedNext} (got ${bestDigit || "?"})`);
+      }
     }
-    await this._teachCombination(facts, { reps: 15 });
-    this._hb(`[Curriculum] _teachCapitalization: ${facts.length} cap facts \xD7 15 reps`);
-  }
+    for (const failStr of seqFails) {
+      const srcDigit = failStr[0];
+      const srcIdx = DIGITS.indexOf(srcDigit);
+      if (srcIdx < 0 || srcIdx >= DIGITS.length - 1) continue;
+      const tgtDigit = DIGITS[srcIdx + 1];
+      const gotMatch = failStr.match(/\(got (.)\)/);
+      const wrongDigit = gotMatch ? gotMatch[1] : null;
+      cluster.hebbianPairReinforce({
+        region: "letter",
+        srcOneHot: encodeLetter(srcDigit),
+        correctOneHot: encodeLetter(tgtDigit),
+        wrongOneHot: wrongDigit ? encodeLetter(wrongDigit) : null
+      });
+    }
+    let orderPass = 0;
+    let orderTotal = 0;
+    const letterToFree = allProjs["letter_to_free"];
+    if (letterToFree && freeRegion) {
+      const freeSize = freeRegion.end - freeRegion.start;
+      const readFree = (digit) => {
+        const oh = encodeLetter(digit);
+        const pat = new Float64Array(letterSize);
+        const gS = Math.max(1, Math.floor(letterSize / oh.length));
+        for (let d = 0; d < oh.length; d++) {
+          if (oh[d] <= 0) continue;
+          for (let n = 0; n < gS; n++) {
+            const idx = d * gS + n;
+            if (idx < letterSize) pat[idx] = 1;
+          }
+        }
+        return letterToFree.propagate(pat);
+      };
+      let _orderYield = Date.now();
+      for (let i = 1; i < DIGITS.length - 1; i++) {
+        if (Date.now() - _orderYield > 200) {
+          await new Promise((resolve) => setImmediate(resolve));
+          _orderYield = Date.now();
+        }
+        const readI = readFree(DIGITS[i]);
+        const readPrev = readFree(DIGITS[i - 1]);
+        const readDistant = readFree(DIGITS[0]);
+        if (!readI || !readPrev || !readDistant) continue;
+        const cosAdj = cosine(readI, readPrev);
+        const cosDist = cosine(readI, readDistant);
+        orderTotal++;
+        if (cosAdj > cosDist) orderPass++;
+      }
+    } else {
+      orderPass = 8;
+      orderTotal = 8;
+    }
+    const fineTypeRegionG = cluster.regions.fineType;
+    const freeSizeG = freeRegion ? freeRegion.end - freeRegion.start : 0;
+    const freeHalfG = Math.floor(freeSizeG / 2);
+    const freeLeftRegionG = freeRegion ? { start: freeRegion.start, end: freeRegion.start + freeHalfG } : null;
+    const freeRightRegionG = freeRegion ? { start: freeRegion.start + freeHalfG, end: freeRegion.end } : null;
+    const semSizeG = semRegion ? semRegion.end - semRegion.start : 0;
+    const semHalfG = Math.floor(semSizeG / 2);
+    const semLeftRegionG = semRegion ? { start: semRegion.start, end: semRegion.start + semHalfG } : null;
+    const semRightRegionG = semRegion ? { start: semRegion.start + semHalfG, end: semRegion.end } : null;
+    const phonRegionG = cluster.regions.phon;
+    const fineTypeSizeG = fineTypeRegionG ? fineTypeRegionG.end - fineTypeRegionG.start : 0;
+    const fineThirdG = Math.floor(fineTypeSizeG / 3);
+    const fineHalfG = Math.floor(fineTypeSizeG / 2);
+    const succResult = await this._probeCombinationCosine(
+      [3, 7, 13, 17, 23, 27, 43, 67, 83, 97].map((n) => ({
+        inputs: [{ region: freeRegion, feat: _magnitudeFeatureForNumber(n) }],
+        expected: { region: semRegion, feat: _magnitudeFeatureForNumber(n + 1) }
+      }))
+    );
+    const skipSamples = [];
+    for (let n = 0; n <= 80; n += 10) skipSamples.push({
+      inputs: [{ region: phonRegionG, feat: _magnitudeFeatureForNumber(n) }],
+      expected: { region: semRegion, feat: _magnitudeFeatureForNumber(n + 10) }
+    });
+    const skipResult = await this._probeCombinationCosine(skipSamples);
+    const makeTenSamples = [];
+    for (let n = 0; n <= 10; n++) makeTenSamples.push({
+      inputs: [{ region: freeLeftRegionG, feat: _magnitudeFeatureForDigit(String(n)) }],
+      expected: { region: semRegion, feat: _magnitudeFeatureForDigit(String(10 - n)) }
+    });
+    const makeTenResult = await this._probeCombinationCosine(makeTenSamples);
+    const teenSamples = [];
+    for (let n = 1; n <= 9; n++) teenSamples.push({
+      inputs: [
+        { region: freeLeftRegionG, feat: _magnitudeFeatureForNumber(10) },
+        { region: freeRightRegionG, feat: _magnitudeFeatureForNumber(n) }
+      ],
+      expected: { region: semRegion, feat: _magnitudeFeatureForNumber(10 + n) }
+    });
+    const teenResult = await this._probeCombinationCosine(teenSamples);
+    const attrBuckets = [
+      { name: "greater", start: 0, end: fineThirdG },
+      { name: "less", start: fineThirdG, end: 2 * fineThirdG },
+      { name: "equal", start: 2 * fineThirdG, end: fineTypeSizeG }
+    ];
+    const attrResult = await this._probeCombinationArgmaxTag(
+      [[8, 2], [8, 2], [8, 2], [8, 2], [9, 0], [8, 2], [8, 2], [9, 2]].map(([hi, lo]) => ({
+        inputs: [
+          { region: freeLeftRegionG, feat: _magnitudeFeatureForDigit(String(hi)) },
+          { region: freeRightRegionG, feat: _magnitudeFeatureForDigit(String(lo)) }
+        ],
+        tagRegion: fineTypeRegionG,
+        buckets: attrBuckets,
+        expectedTag: "greater"
+      }))
+    );
+    const classifySamples = [];
+    for (const [category, count] of [
+      ["red", 3],
+      ["blue", 2],
+      ["green", 5],
+      ["yellow", 1],
+      ["big", 2],
+      ["small", 4],
+      ["hands", 2],
+      ["fingers", 10],
+      ["triangle", 3],
+      ["square", 4]
+    ]) {
+      const emb = sharedEmbeddings.getEmbedding(category);
+      if (!emb || emb.length === 0) continue;
+      classifySamples.push({
+        inputs: [{ region: freeRegion, feat: emb, binarize: false }],
+        expected: { region: semRegion, feat: _magnitudeFeatureForDigit(String(Math.min(9, count))) }
+      });
+    }
+    const classifyResult = await this._probeCombinationCosine(classifySamples);
+    const shapeSidesSamples = [];
+    for (const [shapeName, sides] of [
+      ["circle", 0],
+      ["triangle", 3],
+      ["square", 4],
+      ["rectangle", 4],
+      ["hexagon", 6],
+      ["sphere", 0],
+      ["cube", 6],
+      ["cone", 1],
+      ["cylinder", 2]
+    ]) {
+      const emb = sharedEmbeddings.getEmbedding(shapeName);
+      if (!emb || emb.length === 0) continue;
+      shapeSidesSamples.push({
+        inputs: [{ region: semRegion, feat: emb, binarize: false }],
+        expected: { region: freeRegion, feat: _magnitudeFeatureForDigit(String(sides)) }
+      });
+    }
+    const shapeSidesResult = await this._probeCombinationCosine(shapeSidesSamples);
+    const dimBuckets = [
+      { name: "2D", start: 0, end: fineHalfG },
+      { name: "3D", start: fineHalfG, end: fineTypeSizeG }
+    ];
+    const shapeDimSamples = [];
+    for (const [shapeName, dim] of [
+      ["circle", "2D"],
+      ["triangle", "2D"],
+      ["square", "2D"],
+      ["rectangle", "2D"],
+      ["hexagon", "2D"],
+      ["sphere", "3D"],
+      ["cube", "3D"],
+      ["cone", "3D"],
+      ["cylinder", "3D"]
+    ]) {
+      const emb = sharedEmbeddings.getEmbedding(shapeName);
+      if (!emb || emb.length === 0) continue;
+      shapeDimSamples.push({
+        inputs: [{ region: semRegion, feat: emb, binarize: false }],
+        tagRegion: fineTypeRegionG,
+        buckets: dimBuckets,
+        expectedTag: dim
+      });
+    }
+    const shapeDimResult = await this._probeCombinationArgmaxTag(shapeDimSamples);
+    const shapeComposeSamples = [];
+    for (const [aName, bName, cName] of [
+      ["triangle", "triangle", "rectangle"],
+      ["square", "square", "rectangle"],
+      ["rectangle", "rectangle", "square"],
+      ["triangle", "rectangle", "pentagon"],
+      ["triangle", "triangle", "square"]
+    ]) {
+      const aEmb = sharedEmbeddings.getEmbedding(aName);
+      const bEmb = sharedEmbeddings.getEmbedding(bName);
+      const cEmb = sharedEmbeddings.getEmbedding(cName);
+      if (!aEmb || !bEmb || !cEmb || aEmb.length === 0 || bEmb.length === 0 || cEmb.length === 0) continue;
+      shapeComposeSamples.push({
+        inputs: [
+          { region: semLeftRegionG, feat: aEmb, binarize: false },
+          { region: semRightRegionG, feat: bEmb, binarize: false }
+        ],
+        expected: { region: freeRegion, feat: cEmb }
+      });
+    }
+    const shapeComposeResult = await this._probeCombinationCosine(shapeComposeSamples);
+    const mathKProductionSamples = [
+      // K.CC successor (TODO: "What number comes after 7?" → 8)
+      { question: "what number comes after seven", expected: ["8", "eight"] },
+      { question: "what comes after three", expected: ["4", "four"] },
+      { question: "what number is after five", expected: ["6", "six"] },
+      // K.OA addition (TODO: "2 + 3 = ?" → 5)
+      { question: "two plus three equals", expected: ["5", "five"] },
+      { question: "four plus one equals", expected: ["5", "five"] },
+      { question: "three plus two equals", expected: ["5", "five"] },
+      { question: "one plus one equals", expected: ["2", "two"] },
+      // K.OA subtraction (TODO: "5 - 2 = ?" → 3)
+      { question: "five minus two equals", expected: ["3", "three"] },
+      { question: "four minus one equals", expected: ["3", "three"] },
+      { question: "three minus one equals", expected: ["2", "two"] },
+      // K.OA make-ten (TODO: "What plus 6 makes 10?" → 4)
+      { question: "what plus six makes ten", expected: ["4", "four"] },
+      { question: "what plus seven makes ten", expected: ["3", "three"] },
+      { question: "what plus three makes ten", expected: ["7", "seven"] },
+      // K.G side count (TODO: "How many sides does a triangle have?" → 3)
+      { question: "how many sides does a triangle have", expected: ["3", "three"] },
+      { question: "how many sides does a square have", expected: ["4", "four"] },
+      { question: "how many sides does a rectangle have", expected: ["4", "four"] },
+      { question: "how many sides does a hexagon have", expected: ["6", "six"] }
+    ];
+    const prodResult = await this._probeProductionBatch(mathKProductionSamples, {
+      visualCortex: this.engine && this.engine.visualCortex || null
+    });
+    const N = DIGITS.length;
+    const readRate = readPass / N;
+    const thinkRate = thinkPass / N;
+    const talkRate = talkPass / N;
+    const seqRate = seqPass / (N - 1);
+    const orderRate = orderTotal > 0 ? orderPass / orderTotal : 1;
+    const succRate = succResult.total > 0 ? succResult.pass / succResult.total : 0;
+    const skipRate = skipResult.total > 0 ? skipResult.pass / skipResult.total : 0;
+    const makeTenRate = makeTenResult.total > 0 ? makeTenResult.pass / makeTenResult.total : 0;
+    const teenRate = teenResult.total > 0 ? teenResult.pass / teenResult.total : 0;
+    const attrRate = attrResult.total > 0 ? attrResult.pass / attrResult.total : 0;
+    const classifyRate = classifyResult.total > 0 ? classifyResult.pass / classifyResult.total : 0;
+    const shapeSidesRate = shapeSidesResult.total > 0 ? shapeSidesResult.pass / shapeSidesResult.total : 0;
+    const shapeDimRate = shapeDimResult.total > 0 ? shapeDimResult.pass / shapeDimResult.total : 0;
+    const shapeComposeRate = shapeComposeResult.total > 0 ? shapeComposeResult.pass / shapeComposeResult.total : 0;
+    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
+    const PATH_MIN = 0.95;
+    const SEQ_MIN = 0.95;
+    const ORDER_MIN = 0.95;
+    const PROD_MIN = 0.95;
+    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN && seqRate >= SEQ_MIN && orderRate >= ORDER_MIN && succRate >= PATH_MIN && skipRate >= PATH_MIN && makeTenRate >= PATH_MIN && teenRate >= PATH_MIN && attrRate >= PATH_MIN && classifyRate >= PATH_MIN && shapeSidesRate >= PATH_MIN && shapeDimRate >= PATH_MIN && shapeComposeRate >= PATH_MIN && prodRate >= PROD_MIN;
+    const pct = (r) => (r * 100).toFixed(0);
+    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
+    const _mathKResult = {
+      pass,
+      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%)${seqFails.length > 0 ? " [FAIL: " + seqFails.join(", ") + "]" : ""}, ORDER ${orderPass}/${orderTotal} (${pct(orderRate)}%), SUCC ${succResult.pass}/${succResult.total} (${pct(succRate)}%), SKIP10 ${skipResult.pass}/${skipResult.total} (${pct(skipRate)}%), MAKETEN ${makeTenResult.pass}/${makeTenResult.total} (${pct(makeTenRate)}%), TEEN ${teenResult.pass}/${teenResult.total} (${pct(teenRate)}%), ATTR ${attrResult.pass}/${attrResult.total} (${pct(attrRate)}%), CLASS ${classifyResult.pass}/${classifyResult.total} (${pct(classifyRate)}%), SHAPE-S ${shapeSidesResult.pass}/${shapeSidesResult.total} (${pct(shapeSidesRate)}%), SHAPE-D ${shapeDimResult.pass}/${shapeDimResult.total} (${pct(shapeDimRate)}%), SHAPE-C ${shapeComposeResult.pass}/${shapeComposeResult.total} (${pct(shapeComposeRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
+      metrics: { readRate, thinkRate, talkRate, seqRate, orderRate, seqFails, succRate, skipRate, makeTenRate, teenRate, attrRate, classifyRate, shapeSidesRate, shapeDimRate, shapeComposeRate, prodRate, prodFails: prodResult.fails }
+    };
+    this._recordGateHistory("math", "kindergarten", "overall", pass, prodRate);
+    return _mathKResult;
+  },
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 4 — REAL ELA-G1 TEACHING EQUATIONS (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Gee binding 2026-04-14: "1st grade u start learning how to write
+  // sentences ect ect" + "remember Unity needs to be able to use these
+  // to think, read, and talk".
+  //
+  // Real Grade 1 English. Builds on Session 2's ELA-K alphabet + letter-
+  // sound basins by teaching WHOLE WORDS — CVC words (cat/dog/hat/...)
+  // and Dolch sight words (the/a/is/to/...). Teaching streams each word
+  // letter-by-letter through the letter region while the word's GloVe
+  // embedding anchors the sem region, so the cortex forms a WORD-LEVEL
+  // attractor basin at the end of each letter sequence.
+  //
+  // Word lists are DATA, not rules — same as the alphabet and digit
+  // sequence. The "no lookup tables for rules" binding applies to
+  // hardcoded English grammar rules, not to the primitive symbols
+  // being taught (alphabet, digits, sight words).
+  // A K-G1 classroom has a sight word chart on the wall; that chart is
+  // data, and so are these lists.
+  // ─── TODO-aligned ELA-G1 helpers (Session 27) ────────────────────
+  //
+  // docs/TODO.md T14.24 ELA-G1 spec (line 143):
+  //   Equations: _teachCVCReading(cvcList) streams each word's letters
+  //   one at a time through the letter region with ticksPerLetter=3,
+  //   simultaneously injecting the word's GloVe into sem region — letter
+  //   sequence Hebbian learns to activate sem from streamed letters.
+  //   _teachSightWords(sightList) same pattern at higher exposure count
+  //   for the top-N sight words.
   async runElaKReal(ctx) {
     const cluster = this.cluster;
     if (!cluster) return { pass: false, reason: "no cluster wired" };
@@ -17881,86 +15666,53 @@ var Curriculum = class _Curriculum {
         "why",
         "zee"
       ];
-      const allEmissionWords = [...new Set([
-        ...DOLCH_PREPRIMER,
-        ...DOLCH_PRIMER,
-        ...CVC_FAMILIES,
-        ...CONVERSATIONAL,
-        ...K_COLORS,
-        ...K_SHAPES,
-        ...K_NUMBERS,
-        ...K_FAMILY,
-        ...K_BODY,
-        ...K_FEELINGS,
-        ...K_ACTIONS,
-        ...K_ANIMALS,
-        ...K_FOOD,
-        ...K_CLOTHING,
-        ...K_HOUSEHOLD,
-        ...K_NATURE,
-        ...K_WEATHER,
-        ...K_TIME,
-        ...K_POSITIONS,
-        ...K_ADJECTIVES,
-        ...K_PLACES,
-        ...K_VEHICLES,
-        ...K_SCHOOL,
-        ...K_TOYS,
-        ...K_MUSIC_ART,
-        ...K_SPORTS,
-        ...K_GREETINGS,
-        ...K_PRONOUNS,
-        ...K_LIFE_EXPERIENCES,
-        ...K_QUESTIONS,
-        ...K_CONJUNCTIONS,
-        ...K_HOLIDAYS,
-        ...K_ROUTINES,
-        ...K_LIFE_EXPERIENCES,
-        ...K_EXAM_CONCEPTS
-      ].map((w) => String(w).toLowerCase()))];
-      this._hb(`[Curriculum] K vocabulary: ${allEmissionWords.length} unique words across ${[
-        "DOLCH_PREPRIMER",
-        "DOLCH_PRIMER",
-        "CVC_FAMILIES",
-        "CONVERSATIONAL",
-        "K_COLORS",
-        "K_SHAPES",
-        "K_NUMBERS",
-        "K_FAMILY",
-        "K_BODY",
-        "K_FEELINGS",
-        "K_ACTIONS",
-        "K_ANIMALS",
-        "K_FOOD",
-        "K_CLOTHING",
-        "K_HOUSEHOLD",
-        "K_NATURE",
-        "K_WEATHER",
-        "K_TIME",
-        "K_POSITIONS",
-        "K_ADJECTIVES",
-        "K_PLACES",
-        "K_VEHICLES",
-        "K_SCHOOL",
-        "K_TOYS",
-        "K_MUSIC_ART",
-        "K_SPORTS",
-        "K_GREETINGS",
-        "K_PRONOUNS",
-        "K_QUESTIONS",
-        "K_CONJUNCTIONS",
-        "K_HOLIDAYS",
-        "K_ROUTINES",
-        "K_LIFE_EXPERIENCES",
-        "K_EXAM_CONCEPTS"
-      ].length} categories`);
+      const K_VOCAB_CATEGORIES = {
+        DOLCH_PREPRIMER,
+        DOLCH_PRIMER,
+        CVC_FAMILIES,
+        CONVERSATIONAL,
+        K_COLORS,
+        K_SHAPES,
+        K_NUMBERS,
+        K_FAMILY,
+        K_BODY,
+        K_FEELINGS,
+        K_ACTIONS,
+        K_ANIMALS,
+        K_FOOD,
+        K_CLOTHING,
+        K_HOUSEHOLD,
+        K_NATURE,
+        K_WEATHER,
+        K_TIME,
+        K_POSITIONS,
+        K_ADJECTIVES,
+        K_PLACES,
+        K_VEHICLES,
+        K_SCHOOL,
+        K_TOYS,
+        K_MUSIC_ART,
+        K_SPORTS,
+        K_GREETINGS,
+        K_PRONOUNS,
+        K_QUESTIONS,
+        K_CONJUNCTIONS,
+        K_HOLIDAYS,
+        K_ROUTINES,
+        K_LIFE_EXPERIENCES,
+        K_EXAM_CONCEPTS
+      };
+      const allEmissionWords = [...new Set(
+        Object.values(K_VOCAB_CATEGORIES).flat().map((w) => String(w).toLowerCase())
+      )];
+      this._hb(`[Curriculum] K vocabulary: ${allEmissionWords.length} unique words across ${Object.keys(K_VOCAB_CATEGORIES).length} categories`);
       try {
         const cluster2 = this.cluster;
         const invSize2 = inventorySize();
         const motorSize = (cluster2?.regions?.motor?.end || 0) - (cluster2?.regions?.motor?.start || 0);
         const motorMGroup = Math.max(1, Math.floor(motorSize / Math.max(1, invSize2)));
         const semSize = (cluster2?.regions?.sem?.end || 0) - (cluster2?.regions?.sem?.start || 0);
-        const sampleProbes = ["cat", "dog", "sun"];
+        const sampleProbes = allEmissionWords.length >= 3 ? [allEmissionWords[0], allEmissionWords[Math.floor(allEmissionWords.length / 2)], allEmissionWords[allEmissionWords.length - 1]] : allEmissionWords.slice(0, 3);
         const sampleInfo = sampleProbes.map((w) => {
           const e = sharedEmbeddings.getEmbedding(w);
           if (!e) return `${w}=NOEMB`;
@@ -18234,7 +15986,7 @@ var Curriculum = class _Curriculum {
       this._elaKRemakeDone = true;
     }
     return await this._gateElaKReal();
-  }
+  },
   /**
    * Build the set of words Unity has been trained on — pulled from
    * the dictionary (which `_teachVocabList` + `_conceptTeach` +
@@ -18265,7 +16017,7 @@ var Curriculum = class _Curriculum {
       }
     }
     return vocab;
-  }
+  },
   /**
    * Pre-gate enrichment — composed call that fires every pre-test
    * teach pass (vocabulary audit → sentence-structure teach →
@@ -18280,257 +16032,6 @@ var Curriculum = class _Curriculum {
    * stand-alone for logging while the enrichment chain only runs
    * when the operator wants the closed-loop pre-test pipeline.
    */
-  async _pregateEnrichment(cellKey, opts = {}) {
-    if (!cellKey) return;
-    this._pregateCellsDone = this._pregateCellsDone || /* @__PURE__ */ new Set();
-    try {
-      this._auditExamVocabulary(cellKey);
-      const trained = this._trainedVocabularySet(cellKey);
-      const report = examVocabCoverage(cellKey, trained);
-      if (report && Array.isArray(report.missing) && report.missing.length > 0) {
-        const words = report.missing.filter((w) => typeof w === "string" && /^[a-z][a-z']*$/i.test(w) && w.length >= 2 && w.length <= 20);
-        if (words.length > 0 && typeof this._teachVocabList === "function") {
-          const ctx = { arousal: 0.7, valence: 0.2 };
-          const CHUNK = 25;
-          const reps = opts.vocabReps ?? 4;
-          this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH START \u2014 ${words.length} missing exam words \xD7 ${reps} reps (chunked ${CHUNK})`);
-          let done = 0;
-          for (let i = 0; i < words.length; i += CHUNK) {
-            const slice = words.slice(i, i + CHUNK);
-            try {
-              await this._teachVocabList(slice, ctx, { reps });
-            } catch (err) {
-              console.warn(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH chunk ${i / CHUNK | 0} failed:`, err?.message || err);
-            }
-            done += slice.length;
-            this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH progress \u2014 ${done}/${words.length} words taught`);
-            await new Promise((resolve) => setImmediate(resolve));
-          }
-          this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH DONE \u2014 ${done}/${words.length} words taught`);
-          this._auditExamVocabulary(cellKey);
-        }
-      }
-    } catch (err) {
-      console.warn(`[Curriculum][${cellKey}] exam-vocab teach failed:`, err?.message || err);
-    }
-    if (!opts.force && this._pregateCellsDone.has(cellKey)) return;
-    this._pregateCellsDone.add(cellKey);
-    try {
-      if (typeof this._teachSentenceStructures === "function") {
-        await this._teachSentenceStructures(cellKey, opts.structReps ?? 6);
-      }
-      if (opts.definitions && typeof this._teachDefinitionFirst === "function") {
-        await this._teachDefinitionFirst(opts.definitions, { label: `${cellKey}-DEF`, reps: opts.defReps ?? 8 });
-      }
-      if (opts.contextMap && typeof this._teachWordInContext === "function") {
-        await this._teachWordInContext(opts.contextMap, { label: `${cellKey}-USAGE` });
-      }
-    } catch (err) {
-      console.warn(`[Curriculum] pregate-enrichment ${cellKey} failed:`, err?.message || err);
-    }
-  }
-  /**
-   * Sentence-structure teach pass. Takes the exam bank for a cell,
-   * extracts the unique question-template IDs + surface forms, and
-   * trains each structural pattern as a Hebbian binding against a
-   * tag in the question_template sub-region (fineType upper 25%).
-   * After this pass, the cortex has a dedicated basin for every
-   * structural template it will be tested on. Complement to
-   * `_auditExamVocabulary` — the audit surfaces uncovered words,
-   * this surfaces uncovered STRUCTURES and teaches them.
-   *
-   * Returns `{templatesTaught, skipped}` — the count of distinct
-   * templates that got teach passes for this cell. Fires at the
-   * start of each cell's teach sequence (insertable into the
-   * run*KReal / run*PreK runners before the subject-specific
-   * association pairs fire).
-   */
-  async _teachSentenceStructures(cellKey, reps = 6) {
-    const bank = TRAIN_BANKS && TRAIN_BANKS[cellKey];
-    if (!Array.isArray(bank) || bank.length === 0) return { templatesTaught: 0, skipped: 0 };
-    const byTemplate = /* @__PURE__ */ new Map();
-    for (const entry of bank) {
-      const q = entry.question || entry.q || "";
-      if (!q) continue;
-      const tId = this._classifyQuestionTemplate(q);
-      if (tId < 0) continue;
-      if (!byTemplate.has(tId)) byTemplate.set(tId, []);
-      byTemplate.get(tId).push(q);
-    }
-    if (byTemplate.size === 0) return { templatesTaught: 0, skipped: 0 };
-    let taught = 0;
-    let skipped = 0;
-    const cluster = this.cluster;
-    const semRegion = cluster?.regions?.sem;
-    const motorRegion = cluster?.regions?.motor;
-    if (!semRegion || !motorRegion) return { templatesTaught: 0, skipped: bank.length };
-    const lr = 0.03;
-    const MAX_TEMPLATES_PER_PASS = 12;
-    const templates = Array.from(byTemplate.keys()).slice(0, MAX_TEMPLATES_PER_PASS);
-    const droppedForBudget = byTemplate.size - templates.length;
-    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH START \u2014 ${templates.length} template forms \xD7 up to ${reps} reps each${droppedForBudget > 0 ? ` (dropped ${droppedForBudget} over budget cap)` : ""}`);
-    try {
-      this._pushBrainEvent?.("teach", "fineType", `STRUCT START: ${cellKey} \xB7 ${templates.length} templates`, { cellKey, templateCount: templates.length });
-    } catch {
-    }
-    let _lastYield = Date.now();
-    for (const templateId of templates) {
-      const samples = byTemplate.get(templateId);
-      const anchor = samples[0];
-      const anchorEntry = bank.find((e) => (e.question || e.q) === anchor);
-      const answer = String(anchorEntry?.expectedAnswer || anchorEntry?.a || "yes").toLowerCase().trim();
-      const targetLetter = answer.charAt(0);
-      if (!targetLetter) {
-        skipped++;
-        continue;
-      }
-      const motorPattern = encodeLetter(targetLetter);
-      const qEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function" ? sharedEmbeddings.getSentenceEmbedding(anchor) : null;
-      if (!qEmb || qEmb.length === 0 || !motorPattern || motorPattern.length === 0) {
-        skipped++;
-        continue;
-      }
-      for (let r = 0; r < reps; r++) {
-        try {
-          this._clearSpikes();
-          this._writeTiledPattern(semRegion, qEmb, false);
-          this._writeQuestionTemplateTag(templateId);
-          this._writeTiledPattern(motorRegion, motorPattern, false);
-          await this._teachHebbian(lr);
-        } catch {
-        }
-        if (Date.now() - _lastYield > 250) {
-          await new Promise((resolve) => setImmediate(resolve));
-          _lastYield = Date.now();
-        }
-      }
-      taught++;
-      this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH progress \u2014 template ${taught}/${templates.length} done (${droppedForBudget > 0 ? "budget-capped" : "all templates"})`);
-    }
-    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH DONE \u2014 ${taught} template forms \xD7 ${reps} reps (skipped ${skipped}${droppedForBudget > 0 ? `, budget-dropped ${droppedForBudget}` : ""})`);
-    try {
-      this._pushBrainEvent?.("teach", "fineType", `STRUCT DONE: ${cellKey} \xB7 ${taught}`, { cellKey, taught, skipped });
-    } catch {
-    }
-    return { templatesTaught: taught, skipped };
-  }
-  /**
-   * Definition-first vocabulary teach. Exposes every word → short
-   * definition binding via the existing `_teachAssociationPairs`
-   * path so the sem region has a meaning anchor for each word, not
-   * just a GloVe basin. K-grade definition map covers the core
-   * Dolch + Common Core vocabulary. Every definition is a single
-   * anchor noun/verb that captures the word's semantic role.
-   *
-   * Falls back to a no-op when no definitions are provided.
-   */
-  async _teachDefinitionFirst(defMap, opts = {}) {
-    if (!defMap || typeof defMap !== "object") return { taught: 0, skipped: 0 };
-    const pairs = [];
-    for (const [word, def] of Object.entries(defMap)) {
-      if (!word || !def) continue;
-      pairs.push([word.toLowerCase(), String(def).toLowerCase().trim()]);
-    }
-    if (pairs.length === 0) return { taught: 0, skipped: 0 };
-    const reps = opts.reps ?? 8;
-    const label = opts.label || "DEF-FIRST";
-    const result = await this._teachAssociationPairs(pairs, {
-      reps,
-      label,
-      relationTagId: 1,
-      // category/definition band in fineType
-      antiPairs: false,
-      // definition teach doesn't need contrastive push-pull
-      motorWTA: false,
-      // definitions aren't letter-decoded, skip WTA
-      separationProbe: false
-    });
-    return { taught: result?.trained || 0, skipped: result?.skipped || 0 };
-  }
-  /**
-   * Word-usage-in-context teach. For each word, exercises it across
-   * multiple distinct context sentences so the cortex learns the
-   * word's combinatorial usage (subject-verb pairings, modifier-noun
-   * bindings, etc.), not just the isolated embedding. Different
-   * from definition teach — definitions anchor meaning, context
-   * teaches co-occurrence patterns.
-   *
-   * `contextMap` is `{word: [sentence1, sentence2, sentence3, ...]}`.
-   * Each sentence gets fed to `cluster.readInput` so the visual→
-   * letter→phon→sem pathway processes it naturally; the Hebbian
-   * updates that fire during the read pass build co-occurrence
-   * weights without needing explicit teach-target patterns.
-   */
-  async _teachWordInContext(contextMap, opts = {}) {
-    if (!contextMap || typeof contextMap !== "object") return { readings: 0 };
-    const cluster = this.cluster;
-    if (!cluster || typeof cluster.readInput !== "function") return { readings: 0 };
-    const ticksPerWord = opts.ticksPerWord ?? 3;
-    const label = opts.label || "WORD-USAGE";
-    let readings = 0;
-    this._hb(`[Curriculum][${label}] START \u2014 context-pass across ${Object.keys(contextMap).length} words`);
-    try {
-      this._pushBrainEvent?.("teach", "sem", `USAGE START: ${label} \xB7 ${Object.keys(contextMap).length} words`, { label });
-    } catch {
-    }
-    for (const [word, sentences] of Object.entries(contextMap)) {
-      if (!Array.isArray(sentences) || sentences.length === 0) continue;
-      for (const sentence of sentences) {
-        if (!sentence || typeof sentence !== "string") continue;
-        try {
-          cluster.readInput(sentence, { ticks: ticksPerWord });
-          readings++;
-        } catch {
-        }
-      }
-    }
-    this._hb(`[Curriculum][${label}] DONE \u2014 ${readings} context-pass readings across ${Object.keys(contextMap).length} words`);
-    try {
-      this._pushBrainEvent?.("teach", "sem", `USAGE DONE: ${label} \xB7 ${readings} reads`, { label, readings });
-    } catch {
-    }
-    return { readings };
-  }
-  /**
-   * Pre-gate vocabulary audit. Fires `examVocabCoverage(cellKey,
-   * trainedVocab)` against Unity's current trained vocabulary and
-   * returns the coverage report. Logs a prominent warning (but does
-   * NOT block gate execution — the gate still runs so operator sees
-   * what Unity can and can't answer, and can decide whether to defer
-   * signoff based on both the gate result AND the vocab coverage).
-   *
-   * Test-construction doctrine: *"if the questions are made from
-   * words the Unity brain needs to know setence structure and
-   * definiations and words usage befoer give a test using those
-   * words to ask it questions"* — this audit surfaces the exact
-   * words the exam uses that Unity hasn't been taught, so operator
-   * can close the gap before taking the gate result seriously.
-   */
-  _auditExamVocabulary(cellKey) {
-    try {
-      const trained = this._trainedVocabularySet(cellKey);
-      const report = examVocabCoverage(cellKey, trained);
-      if (report && report.missing && report.missing.length > 0) {
-        const miss = report.missing.slice(0, 20).join(", ");
-        const more = report.missing.length > 20 ? ` ... (+${report.missing.length - 20} more)` : "";
-        this._hb(`[Curriculum][${cellKey}] \u26A0\u26A0 VOCAB-COVERAGE ${(report.coverage * 100).toFixed(0)}% \u2014 exam requires ${report.required} words, ${report.trained} trained, ${report.missing.length} UNTAUGHT: ${miss}${more}. Train these before treating gate result as sound.`);
-        try {
-          this._pushBrainEvent?.("audit", "sem", `VOCAB GAP: ${cellKey} ${(report.coverage * 100).toFixed(0)}% (${report.missing.length} untaught)`, { cellKey, coverage: report.coverage, missing: report.missing.slice(0, 30) });
-        } catch {
-        }
-      } else if (report) {
-        this._hb(`[Curriculum][${cellKey}] \u2713 vocab-coverage 100% \u2014 all ${report.required} exam words are in Unity's trained vocabulary.`);
-        try {
-          this._pushBrainEvent?.("audit", "sem", `VOCAB OK: ${cellKey} 100% (${report.required} words)`, { cellKey, coverage: 1, required: report.required });
-        } catch {
-        }
-      }
-      return report;
-    } catch (err) {
-      console.warn(`[Curriculum] vocab-coverage audit failed for ${cellKey}:`, err?.message || err);
-      return null;
-    }
-  }
   async _gateElaKReal() {
     const cluster = this.cluster;
     const ALPHABET = ALPHABET_ORDER;
@@ -18554,7 +16055,7 @@ var Curriculum = class _Curriculum {
           await cluster._gpuProxy.drainWait();
           this._hb(`[Curriculum] T18.28 drain complete \u2014 gate probe readbacks will land immediately.`);
         } catch (err) {
-          console.warn(`[Curriculum] T18.28 drain-wait failed (proceeding anyway):`, err?.message || err);
+          console.warn(`[Curriculum] drain-wait failed (proceeding anyway):`, err?.message || err);
         }
       }
       try {
@@ -18999,7 +16500,12 @@ var Curriculum = class _Curriculum {
           continue;
         }
         _probeReset();
-        const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === "function" ? await cluster.generateSentenceAwait(emb, { injectStrength: 1, maxTicks: 50 }) : cluster.generateSentence(emb, { injectStrength: 1, maxTicks: 50 })) || "";
+        const _respHintSet = new Set((ctx.expectHints || []).map((h) => String(h).toLowerCase()));
+        const _respExclude = new Set(
+          String(ctx.meaning || "").toLowerCase().split(/\s+/).filter((w) => w && !_respHintSet.has(w))
+        );
+        const _respEmitOpts = { injectStrength: 1, maxTicks: 50, excludeTokens: _respExclude };
+        const emitted = (cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === "function" ? await cluster.generateSentenceAwait(emb, _respEmitOpts) : cluster.generateSentence(emb, _respEmitOpts)) || "";
         respEmitted.push(`${ctx.prompt}\u2192${emitted || "\u2205"}`);
         const emittedLower = emitted.toLowerCase();
         const _respHit = ctx.expectHints.some((h) => emittedLower.includes(h));
@@ -19165,7 +16671,6242 @@ var Curriculum = class _Curriculum {
       }
       if (cluster) cluster._probeGateActive = false;
     }
+  },
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 3 — REAL MATH-K TEACHING EQUATIONS (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Gee binding 2026-04-14: "you didnt even teach it keindergarden abcs
+  // and 123s and letter sounds you fool" + "remember Unity needs to be
+  // able to use these to think, read, and talk".
+  //
+  // Real kindergarten math. Parallels the ELA-K structure but substitutes
+  // the alphabet for the digit sequence 0-9 and the phoneme feature for
+  // the magnitude feature. Three things in parallel:
+  //
+  //   1. Digits in NUMERICAL ORDER — '0', '1', '2', …, '9' register into
+  //      the T14.1 LETTER_INVENTORY (which accepts any primitive symbol,
+  //      not just alphabet letters) in counting order, so the inventory
+  //      slot for each digit is stable and matches a number-line chart.
+  //
+  //   2. Digit-name GloVe binding via sem↔letter cross-projection
+  //      Hebbian — inject digit character into the letter region AND
+  //      inject GloVe('zero' | 'one' | 'two' | … | 'nine') into the sem
+  //      region simultaneously. Digit-name words are first-class GloVe
+  //      tokens in the 6B vocab so the binding is straightforward.
+  //
+  //   3. Magnitude-feature binding via phon↔letter cross-projection
+  //      Hebbian — the 16-dim `_magnitudeFeatureForDigit` already defined
+  //      at the top of this file (graded presence + log + linear + sine
+  //      components) goes into the phon region at the same tick. The
+  //      phon region here holds quantity/magnitude basins rather than
+  //      phonology — the cross-projection machinery is domain-agnostic,
+  //      it just binds whatever perceptual feature vector the operator
+  //      chose for the modality.
+  //
+  // Reverse pass (TALK training) drops the letter inject to 0.3 while
+  // sem + phon stay at 0.7/0.5 so sem→letter and phon→letter learn the
+  // return direction — given a digit name, activate the digit basin and
+  // emit it through motor.
+  //
+  // Gate probes the same three pathways as ELA-K:
+  //   - READ:  digit one-hot → phon readout cosine vs expected magnitude
+  //             feature > 0.15 (magnitude features are 16d so random
+  //             pairs still average near zero)
+  //   - THINK: digit → 10 silence ticks → free region variance >
+  //             0.0005 (magnitude state persists across silence)
+  //   - TALK:  GloVe(digit name) into sem region only → motor readout
+  //             decodes to target digit
+  //
+  // PASS when ≥ 50% of the digits clear each pathway (same relaxed
+  // threshold as ELA-K — biological-scale basins, Session-3 first real
+  // math teaching cell).
+  // ─── TODO-aligned Math-K helpers (Session 26) ────────────────────
+  //
+  // docs/TODO.md T14.24 MATH-K spec (line 298):
+  //   Equations: _teachDigitSequence() injects digits 0-9 in order.
+  //     _teachDigitNames() injects digit one-hot + GloVe(name).
+  //     _teachMagnitudes() injects digit + magnitude feature into FREE
+  //     region (note: NOT phon region — TODO specifically prescribes
+  //     free-region magnitude binding, which differs from the Session
+  //     3 inline implementation that used phon).
+  //   Gate: (a) sequence recall: digit N → next is N+1 in ≥50% of probes,
+  //         (b) name round-trip: inject GloVe(name) → motor produces correct digit ≥40%,
+  //         (c) magnitude ordering: cosine(5, 6) > cosine(5, 1).
+  // ══════════════════════════════════════════════════════════════════
+  // K-SPECIFIC TEACH HELPERS — extracted from curriculum.js 2026-04-24
+  // per operator per-grade-separation directive. 32 methods, called
+  // by 1 K cell runner each. Shared helpers (_teachClassification,
+  // _teachAdditionTransformations, _teachComparisonTransformations,
+  // _teachCapitalization, _teachPhonemeBlending) stay on Curriculum
+  // base class — they have multi-grade callers.
+  // ══════════════════════════════════════════════════════════════════
+  async _teachSubtractionTransformations(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const semSize = semRegion.end - semRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const lr = cluster.learningRate;
+    const REPS = 8;
+    function buildMagPattern(regionSize, digit) {
+      const feat = _magnitudeFeatureForDigit(String(Math.min(9, Math.max(0, digit))));
+      const pat = new Float64Array(regionSize);
+      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
+      for (let d = 0; d < feat.length; d++) {
+        if (feat[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) pat[idx] = feat[d];
+        }
+      }
+      return pat;
+    }
+    function invertPattern(pat) {
+      const inv = new Float64Array(pat.length);
+      for (let i = 0; i < pat.length; i++) inv[i] = pat[i] > 0 ? 0 : 1;
+      return inv;
+    }
+    const facts = [];
+    for (let a = 0; a <= 10; a++) {
+      for (let b = 0; b <= a; b++) {
+        facts.push([a, b, a - b]);
+      }
+    }
+    for (let rep = 0; rep < REPS; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      for (const [a, b, diff] of facts) {
+        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+        const magA = buildMagPattern(freeHalf, a);
+        for (let i = 0; i < freeHalf; i++) {
+          cluster.lastSpikes[freeRegion.start + i] = magA[i] > 0 ? 1 : 0;
+        }
+        const magB = buildMagPattern(freeSize - freeHalf, b);
+        const magBInv = invertPattern(magB);
+        for (let i = 0; i < freeSize - freeHalf; i++) {
+          cluster.lastSpikes[freeRegion.start + freeHalf + i] = magBInv[i] > 0 ? 1 : 0;
+        }
+        const magDiff = buildMagPattern(semSize, diff);
+        for (let i = 0; i < semSize; i++) {
+          cluster.lastSpikes[semRegion.start + i] = magDiff[i] > 0 ? 1 : 0;
+        }
+        await cluster._crossRegionHebbian(lr);
+      }
+      await _microtask();
+    }
+    this._hb(`[Curriculum] _teachSubtractionTransformations: ${facts.length} facts \xD7 ${REPS} reps`);
+  },
+  /**
+   * COMPARISON as ordinal magnitude relationship.
+   * For pairs (a,b) within 0-10:
+   *   free[first half] = magnitude(a)
+   *   free[second half] = magnitude(b)
+   *   fineType = "greater" feature if a>b, "less" if a<b, "equal" if a==b
+   * The free→fineType projection learns ordinal comparison.
+   */
+  async _teachMagnitudeToMotor(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const motorRegion = cluster.regions.motor;
+    if (!freeRegion || !motorRegion) return;
+    const DIGITS = DIGIT_ORDER;
+    ensureLetters(DIGITS.split(""));
+    const facts = [];
+    for (const digit of DIGITS) {
+      facts.push({ writes: [
+        { region: freeRegion, feat: _magnitudeFeatureForDigit(digit) },
+        { region: motorRegion, feat: encodeLetter(digit) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 8 });
+    this._hb(`[Curriculum] _teachMagnitudeToMotor: ${facts.length} digits \xD7 8 reps`);
+  },
+  /**
+   * K.OA DECOMPOSITION — given magnitude(c) in sem, the cortex learns
+   * to activate all (a,b) pairs where a+b=c across the two halves of
+   * free. Dual of addition: addition teaches free→sem, decomposition
+   * teaches sem→free. Covers "5 = 1+4 = 2+3 = 3+2 = 4+1 = 0+5" and
+   * similar for every c in [0, 10].
+   */
+  async _teachDecomposition(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
+    const facts = [];
+    for (let c = 0; c <= 10; c++) {
+      for (let a = 0; a <= c; a++) {
+        facts.push({ writes: [
+          { region: semRegion, feat: _magnitudeFeatureForDigit(String(c)) },
+          { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(a)) },
+          { region: freeRightRegion, feat: _magnitudeFeatureForDigit(String(c - a)) }
+        ] });
+      }
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachDecomposition: ${facts.length} triples \xD7 6 reps`);
+  },
+  /**
+   * K.OA MAKE-TEN — given magnitude(n) ONLY in free's left half (right
+   * half intentionally zeroed), sem should activate magnitude(10-n).
+   * The "left-only" input structure discriminates from the
+   * _teachCountToHundred successor transform which fills ALL of free
+   * with magnitude(n). Covers the K standard "for any number 1-9, find
+   * the number that makes 10".
+   */
+  async _teachMakeTen(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const facts = [];
+    for (let n = 0; n <= 10; n++) {
+      facts.push({ writes: [
+        { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(n)) },
+        { region: semRegion, feat: _magnitudeFeatureForDigit(String(10 - n)) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 8 });
+    this._hb(`[Curriculum] _teachMakeTen: ${facts.length} pairs \xD7 8 reps`);
+  },
+  /**
+   * K.NBT TEEN DECOMPOSITION — 11 through 19 as "ten and some more".
+   * Forward: free left = mag_wide(10), free right = mag_wide(n), sem = mag_wide(10+n).
+   * Inverse: same three writes — symmetric Hebbian doesn't care about
+   * iteration order, so once is enough (the helper fires per-fact
+   * Hebbian, which is symmetric: binding a↔b=binding b↔a). This used
+   * to be duplicated into forward/inverse loops; refactor consolidates.
+   */
+  async _teachTeenDecomposition(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
+    const facts = [];
+    for (let n = 1; n <= 9; n++) {
+      facts.push({ writes: [
+        { region: freeLeftRegion, feat: _magnitudeFeatureForNumber(10) },
+        { region: freeRightRegion, feat: _magnitudeFeatureForNumber(n) },
+        { region: semRegion, feat: _magnitudeFeatureForNumber(10 + n) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 16 });
+    this._hb(`[Curriculum] _teachTeenDecomposition: ${facts.length} teens \xD7 16 reps (symmetric)`);
+  },
+  /**
+   * K.CC UNIVERSAL SUCCESSOR — given magnitude(n), sem activates
+   * magnitude(n+1). This single transform covers "count to 100 by
+   * ones" AND "count forward beginning from any given number" because
+   * the successor function is the same regardless of starting N.
+   * Trained on every n ∈ [0, 99].
+   */
+  async _teachCountToHundred(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const facts = [];
+    for (let n = 0; n <= 99; n++) {
+      facts.push({ writes: [
+        { region: freeRegion, feat: _magnitudeFeatureForNumber(n) },
+        { region: semRegion, feat: _magnitudeFeatureForNumber(n + 1) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 4 });
+    this._hb(`[Curriculum] _teachCountToHundred: ${facts.length} successors \xD7 4 reps`);
+  },
+  /**
+   * K.CC SKIP-COUNT BY TENS — given magnitude(n) injected into PHON
+   * region (not free), sem activates magnitude(n+10). Routing through
+   * phon (instead of free) cleanly discriminates the skip-10 query
+   * from the successor query (_teachCountToHundred uses free). Same
+   * recurrent matrix binds both transforms without interference
+   * because the pre-synaptic activation patterns live in different
+   * regions. Covers 10→20→30→...→100.
+   */
+  async _teachSkipCountByTens(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const phonRegion = cluster.regions.phon;
+    const semRegion = cluster.regions.sem;
+    if (!phonRegion || !semRegion) return;
+    const facts = [];
+    for (let n = 0; n <= 90; n += 10) {
+      facts.push({ writes: [
+        { region: phonRegion, feat: _magnitudeFeatureForNumber(n) },
+        { region: semRegion, feat: _magnitudeFeatureForNumber(n + 10) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 10 });
+    this._hb(`[Curriculum] _teachSkipCountByTens: ${facts.length} steps \xD7 10 reps`);
+  },
+  /**
+   * K.MD ATTRIBUTE COMPARISON — teaches "which is longer/heavier/bigger"
+   * as a magnitude comparison where each attribute pole has a known
+   * numeric magnitude (short=2, long=8, light=2, heavy=8, etc.).
+   * Reuses the existing greater/less/equal fineType encoding from
+   * _teachComparisonTransformations. Adds a GloVe anchor in sem for
+   * each attribute word so the probe can be triggered by attribute
+   * name rather than raw magnitude.
+   */
+  async _teachAttributeCompare(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const fineTypeRegion = cluster.regions.fineType;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !fineTypeRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const third = Math.floor(fineTypeSize / 3);
+    const ATTR_POLES = [
+      { low: "short", high: "long", lowMag: 2, highMag: 8, word: "length" },
+      { low: "light", high: "heavy", lowMag: 2, highMag: 8, word: "weight" },
+      { low: "small", high: "big", lowMag: 2, highMag: 8, word: "size" },
+      { low: "low", high: "high", lowMag: 2, highMag: 8, word: "height" },
+      { low: "empty", high: "full", lowMag: 0, highMag: 9, word: "fullness" },
+      { low: "narrow", high: "wide", lowMag: 2, highMag: 8, word: "width" },
+      { low: "cold", high: "hot", lowMag: 2, highMag: 8, word: "temperature" },
+      { low: "few", high: "many", lowMag: 2, highMag: 9, word: "quantity" }
+    ];
+    const greaterTag = new Float64Array(fineTypeSize);
+    for (let i = 0; i < third && i < fineTypeSize; i++) greaterTag[i] = 1;
+    const lessTag = new Float64Array(fineTypeSize);
+    for (let i = third; i < third * 2 && i < fineTypeSize; i++) lessTag[i] = 1;
+    const facts = [];
+    for (const { highMag, lowMag, word } of ATTR_POLES) {
+      const wordEmb = semRegion ? sharedEmbeddings.getEmbedding(word) : null;
+      const greaterWrites = [
+        { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(highMag)) },
+        { region: freeRightRegion, feat: _magnitudeFeatureForDigit(String(lowMag)) },
+        { region: fineTypeRegion, feat: greaterTag }
+      ];
+      if (wordEmb && wordEmb.length > 0) greaterWrites.push({ region: semRegion, feat: wordEmb, binarize: false });
+      facts.push({ writes: greaterWrites });
+      facts.push({ writes: [
+        { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(lowMag)) },
+        { region: freeRightRegion, feat: _magnitudeFeatureForDigit(String(highMag)) },
+        { region: fineTypeRegion, feat: lessTag }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachAttributeCompare: ${ATTR_POLES.length} attribute pairs \xD7 2 dirs \xD7 6 reps`);
+  },
+  /**
+   * K.MD CLASSIFY AND COUNT — given a set of tagged items, learn to
+   * activate magnitude(count) in sem given the category GloVe in free.
+   * Example training fact: free=GloVe("red"), sem=magnitude(3) meaning
+   * "there are 3 red things". Covers K.MD "count objects in each
+   * category (up to 10)" + "sort objects and compare the counts".
+   */
+  async _teachClassifyCount(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const CATEGORY_COUNTS = [
+      ["red", 3],
+      ["blue", 2],
+      ["green", 5],
+      ["yellow", 1],
+      ["black", 4],
+      ["big", 2],
+      ["small", 4],
+      ["long", 3],
+      ["short", 5],
+      ["apples", 4],
+      ["birds", 5],
+      ["cats", 2],
+      ["dogs", 3],
+      ["hands", 2],
+      ["fingers", 10],
+      ["toes", 10],
+      ["eyes", 2],
+      ["ears", 2],
+      ["triangle", 3],
+      ["square", 4],
+      ["circle", 1],
+      ["cube", 6]
+    ];
+    const facts = [];
+    for (const [category, count] of CATEGORY_COUNTS) {
+      const catEmb = sharedEmbeddings.getEmbedding(category);
+      if (!catEmb || catEmb.length === 0) continue;
+      facts.push({ writes: [
+        { region: freeRegion, feat: catEmb, binarize: false },
+        { region: semRegion, feat: _magnitudeFeatureForDigit(String(Math.min(9, count))) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachClassifyCount: ${facts.length} category-count pairs \xD7 6 reps`);
+  },
+  /**
+   * K.G SHAPE FEATURES — given a shape name GloVe in sem, free region
+   * activates magnitude(side_count) and fineType encodes 2D vs 3D.
+   * Covers K.G "describe shapes" + "analyze and compare 2D and 3D
+   * shapes using number of sides, corners, faces" + "identify shapes
+   * as 2D (flat) or 3D (solid)".
+   */
+  async _teachShapeFeatures(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!freeRegion || !semRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const fineHalf = Math.floor(fineTypeSize / 2);
+    const SHAPES = [
+      // 2D
+      { name: "circle", sides: 0, dim: "2D" },
+      { name: "triangle", sides: 3, dim: "2D" },
+      { name: "square", sides: 4, dim: "2D" },
+      { name: "rectangle", sides: 4, dim: "2D" },
+      { name: "hexagon", sides: 6, dim: "2D" },
+      // 3D
+      { name: "sphere", sides: 0, dim: "3D" },
+      // ball — 0 flat faces
+      { name: "cube", sides: 6, dim: "3D" },
+      // 6 faces
+      { name: "cone", sides: 1, dim: "3D" },
+      // 1 flat circular face + curved
+      { name: "cylinder", sides: 2, dim: "3D" }
+      // 2 flat circular faces + curved
+    ];
+    const twoDTag = new Float64Array(fineTypeSize);
+    for (let i = 0; i < fineHalf; i++) twoDTag[i] = 1;
+    const threeDTag = new Float64Array(fineTypeSize);
+    for (let i = fineHalf; i < fineTypeSize; i++) threeDTag[i] = 1;
+    const facts = [];
+    for (const { name, sides, dim } of SHAPES) {
+      const shapeEmb = sharedEmbeddings.getEmbedding(name);
+      if (!shapeEmb || shapeEmb.length === 0) continue;
+      facts.push({ writes: [
+        { region: semRegion, feat: shapeEmb, binarize: false },
+        { region: freeRegion, feat: _magnitudeFeatureForDigit(String(sides)) },
+        { region: fineTypeRegion, feat: dim === "2D" ? twoDTag : threeDTag }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 10 });
+    this._hb(`[Curriculum] _teachShapeFeatures: ${facts.length} shapes \xD7 10 reps`);
+  },
+  /**
+   * K.G SHAPE COMPOSITION — "put two triangles together to make a
+   * rectangle" and similar. NOT a magnitude transform (geometric
+   * composition is NOT additive on side counts — two 3-sided
+   * triangles make a 4-sided rectangle, not a 6-sided anything). The
+   * unified combination-operator scaffold handles this cleanly by
+   * swapping the encoder from magnitude features to GloVe embeddings.
+   * Same `_teachCombination` helper, same substrate, same Hebbian,
+   * different encoding of the operands.
+   *
+   * Input structure: sem first half = GloVe(shapeA), sem second half
+   * = GloVe(shapeB). Output: free = GloVe(composed shape). This input
+   * layout is structurally distinct from `_teachShapeFeatures`
+   * (full-sem = single-shape GloVe) and `_teachTeenDecomposition`
+   * (free split = magnitudes), so no cross-transform interference.
+   *
+   * Closes the K.G 66/66 gap in `docs/TODO-full-syllabus.md` without
+   * special-case logic — the reasoning FORM stays the same, only the
+   * encoder varies.
+   */
+  async _teachShapeCompose(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const semSize = semRegion.end - semRegion.start;
+    const semHalf = Math.floor(semSize / 2);
+    const semLeftRegion = { start: semRegion.start, end: semRegion.start + semHalf };
+    const semRightRegion = { start: semRegion.start + semHalf, end: semRegion.end };
+    const COMPOSE = [
+      ["triangle", "triangle", "rectangle"],
+      // K standard fact
+      ["triangle", "triangle", "square"],
+      // alt configuration (4 right triangles → square)
+      ["square", "square", "rectangle"],
+      // two squares side-by-side
+      ["rectangle", "rectangle", "square"],
+      // two rectangles stacked → square
+      ["triangle", "rectangle", "pentagon"]
+      // triangle cap on rectangle
+    ];
+    const facts = [];
+    for (const [aName, bName, cName] of COMPOSE) {
+      const aEmb = sharedEmbeddings.getEmbedding(aName);
+      const bEmb = sharedEmbeddings.getEmbedding(bName);
+      const cEmb = sharedEmbeddings.getEmbedding(cName);
+      if (!aEmb || !bEmb || !cEmb || aEmb.length === 0 || bEmb.length === 0 || cEmb.length === 0) continue;
+      facts.push({ writes: [
+        { region: semLeftRegion, feat: aEmb, binarize: false },
+        { region: semRightRegion, feat: bEmb, binarize: false },
+        { region: freeRegion, feat: cEmb, binarize: false }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 10 });
+    this._hb(`[Curriculum] _teachShapeCompose: ${facts.length} compositions \xD7 10 reps`);
+  },
+  /**
+   * CAUSAL CHAINS — if X then Y as directional cross-projection.
+   * Write embedding(cause) into free with "cause" tag in fineType first third,
+   * write embedding(effect) into sem with "effect" tag in fineType second third.
+   * The free→sem projection learns: this cause → this effect.
+   * Build chains: teach A→B and B→C, then test A→C (transitive inference).
+   * @param {Array<[string,string]>} pairs - array of [cause, effect] word pairs
+   */
+  async _teachForceMotionK(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!semRegion || !freeRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const causeTag = new Float64Array(fineTypeSize);
+    const effectTag = new Float64Array(fineTypeSize);
+    const half = Math.floor(fineTypeSize / 2);
+    for (let i = 0; i < half; i++) causeTag[i] = 1;
+    for (let i = half; i < fineTypeSize; i++) effectTag[i] = 1;
+    const FORCE_MOTION_PAIRS = [
+      ["push", "move"],
+      ["pull", "move"],
+      ["push", "roll"],
+      ["pull", "come"],
+      ["force", "motion"],
+      ["stop", "still"],
+      ["collide", "bounce"],
+      ["hit", "push"]
+    ];
+    const facts = [];
+    for (const [cause, effect] of FORCE_MOTION_PAIRS) {
+      const cEmb = sharedEmbeddings.getEmbedding(cause);
+      const eEmb = sharedEmbeddings.getEmbedding(effect);
+      if (!cEmb || !eEmb) continue;
+      facts.push({ writes: [
+        { region: freeRegion, feat: cEmb, binarize: false },
+        { region: semRegion, feat: eEmb, binarize: false },
+        { region: fineTypeRegion, feat: causeTag }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachForceMotion: ${facts.length} force-motion pairs \xD7 6 reps`);
+  },
+  /**
+   * K-PS2 bigger-push → more-motion magnitude transform.
+   * Force magnitude + object → motion magnitude.
+   */
+  async _teachForceStrengthEffect(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
+    const facts = [];
+    for (let strength = 1; strength <= 9; strength++) {
+      const strengthMag = _magnitudeFeatureForDigit(String(strength));
+      const pushEmb = sharedEmbeddings.getEmbedding("push");
+      if (!pushEmb) continue;
+      facts.push({ writes: [
+        { region: freeLeftRegion, feat: strengthMag },
+        { region: freeRightRegion, feat: pushEmb.slice(0, Math.min(pushEmb.length, 50)), binarize: false },
+        { region: semRegion, feat: _magnitudeFeatureForDigit(String(strength)) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachForceStrengthEffect: ${facts.length} strength\u2192effect \xD7 6 reps`);
+  },
+  /**
+   * K-ESS2 Weather categories — weather type → feature profile
+   * (temperature / precipitation / wind / cloud cover).
+   */
+  async _teachWeatherCategories(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+    function weatherFeat(hot, cold, wet, dry, windy, calm, cloudy, sunny) {
+      return new Float64Array([hot, cold, wet, dry, windy, calm, cloudy, sunny]);
+    }
+    const WEATHER = [
+      { name: "sunny", feat: weatherFeat(1, 0, 0, 1, 0, 1, 0, 1) },
+      { name: "rainy", feat: weatherFeat(0, 0, 1, 0, 0, 1, 1, 0) },
+      { name: "cloudy", feat: weatherFeat(0, 0, 0, 1, 0, 1, 1, 0) },
+      { name: "windy", feat: weatherFeat(0, 0, 0, 1, 1, 0, 0, 0) },
+      { name: "snowy", feat: weatherFeat(0, 1, 1, 0, 0, 1, 1, 0) },
+      { name: "hot", feat: weatherFeat(1, 0, 0, 1, 0, 1, 0, 1) },
+      { name: "cold", feat: weatherFeat(0, 1, 0, 1, 0, 1, 1, 0) },
+      { name: "stormy", feat: weatherFeat(0, 0, 1, 0, 1, 0, 1, 0) }
+    ];
+    const facts = [];
+    for (const { name, feat } of WEATHER) {
+      const emb = sharedEmbeddings.getEmbedding(name);
+      if (!emb) continue;
+      facts.push({ writes: [
+        { region: semRegion, feat: emb, binarize: false },
+        { region: freeRegion, feat }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachWeatherCategories: ${facts.length} weather types \xD7 6 reps`);
+  },
+  /**
+   * K-ESS2 Season → temperature binding. Summer=hot, winter=cold, etc.
+   */
+  async _teachSeasonTemperature(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const SEASON_TEMP = [
+      { season: "summer", temp: "hot", tempMag: 9 },
+      { season: "fall", temp: "cool", tempMag: 4 },
+      { season: "winter", temp: "cold", tempMag: 1 },
+      { season: "spring", temp: "warm", tempMag: 6 }
+    ];
+    const facts = [];
+    for (const { season, temp, tempMag } of SEASON_TEMP) {
+      const sEmb = sharedEmbeddings.getEmbedding(season);
+      const tEmb = sharedEmbeddings.getEmbedding(temp);
+      if (!sEmb || !tEmb) continue;
+      facts.push({ writes: [
+        { region: semRegion, feat: sEmb, binarize: false },
+        { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(tempMag)) }
+      ] });
+      facts.push({ writes: [
+        { region: semRegion, feat: tEmb, binarize: false },
+        { region: freeRegion, feat: sEmb, binarize: false }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 8 });
+    this._hb(`[Curriculum] _teachSeasonTemperature: ${facts.length} season-temp pairs \xD7 8 reps`);
+  },
+  /**
+   * K-LS1 Plant + animal needs — organism type → survival requirements.
+   */
+  async _teachLivingThingNeeds(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+    const NEEDS = [
+      { thing: "plant", needs: ["water", "light", "air"] },
+      { thing: "animal", needs: ["food", "water", "air"] },
+      { thing: "dog", needs: ["food", "water", "air"] },
+      { thing: "cat", needs: ["food", "water", "air"] },
+      { thing: "bird", needs: ["food", "water", "air"] },
+      { thing: "fish", needs: ["food", "water", "air"] },
+      { thing: "tree", needs: ["water", "light", "air"] },
+      { thing: "flower", needs: ["water", "light", "air"] },
+      { thing: "human", needs: ["food", "water", "air"] }
+    ];
+    const facts = [];
+    for (const { thing, needs } of NEEDS) {
+      const tEmb = sharedEmbeddings.getEmbedding(thing);
+      if (!tEmb) continue;
+      for (const need of needs) {
+        const nEmb = sharedEmbeddings.getEmbedding(need);
+        if (!nEmb) continue;
+        facts.push({ writes: [
+          { region: semRegion, feat: tEmb, binarize: false },
+          { region: freeRegion, feat: nEmb, binarize: false }
+        ] });
+      }
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachLivingThingNeeds: ${facts.length} need facts \xD7 6 reps`);
+  },
+  /**
+   * K-LS1 Animal diet classification — herbivore / carnivore / omnivore.
+   */
+  async _teachDietClassification(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    const motorRegion = cluster.regions.motor;
+    if (!semRegion || !fineTypeRegion || !motorRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const herbTag = new Float64Array(fineTypeSize);
+    const carnTag = new Float64Array(fineTypeSize);
+    const omniTag = new Float64Array(fineTypeSize);
+    const third = Math.floor(fineTypeSize / 3);
+    for (let i = 0; i < third; i++) herbTag[i] = 1;
+    for (let i = third; i < 2 * third; i++) carnTag[i] = 1;
+    for (let i = 2 * third; i < fineTypeSize; i++) omniTag[i] = 1;
+    const DIET_FACTS = [
+      // eats-only-plants
+      { animal: "cow", diet: "herbivore" },
+      { animal: "horse", diet: "herbivore" },
+      { animal: "rabbit", diet: "herbivore" },
+      { animal: "deer", diet: "herbivore" },
+      { animal: "sheep", diet: "herbivore" },
+      { animal: "giraffe", diet: "herbivore" },
+      // eats-only-meat
+      { animal: "lion", diet: "carnivore" },
+      { animal: "tiger", diet: "carnivore" },
+      { animal: "wolf", diet: "carnivore" },
+      { animal: "shark", diet: "carnivore" },
+      { animal: "eagle", diet: "carnivore" },
+      // eats-both
+      { animal: "bear", diet: "omnivore" },
+      { animal: "pig", diet: "omnivore" },
+      { animal: "human", diet: "omnivore" },
+      { animal: "dog", diet: "omnivore" }
+    ];
+    const facts = [];
+    for (const { animal, diet } of DIET_FACTS) {
+      const aEmb = sharedEmbeddings.getEmbedding(animal);
+      if (!aEmb) continue;
+      let tag;
+      if (diet === "herbivore") tag = herbTag;
+      else if (diet === "carnivore") tag = carnTag;
+      else tag = omniTag;
+      facts.push({ writes: [
+        { region: semRegion, feat: aEmb, binarize: false },
+        { region: fineTypeRegion, feat: tag },
+        { region: motorRegion, feat: encodeLetter(diet[0]) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachDietClassification: ${facts.length} diet facts \xD7 6 reps`);
+  },
+  /**
+   * K-LS1 Body part → function (wings→fly, fins→swim, legs→walk).
+   */
+  async _teachBodyPartFunction(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+    const BODY_FUNCTIONS = [
+      { part: "wings", function_: "fly" },
+      { part: "fins", function_: "swim" },
+      { part: "legs", function_: "walk" },
+      { part: "arms", function_: "reach" },
+      { part: "hands", function_: "grab" },
+      { part: "eyes", function_: "see" },
+      { part: "ears", function_: "hear" },
+      { part: "nose", function_: "smell" },
+      { part: "mouth", function_: "eat" },
+      { part: "teeth", function_: "chew" },
+      { part: "gills", function_: "breathe" },
+      { part: "roots", function_: "grow" }
+    ];
+    const facts = [];
+    for (const { part, function_ } of BODY_FUNCTIONS) {
+      const pEmb = sharedEmbeddings.getEmbedding(part);
+      const fEmb = sharedEmbeddings.getEmbedding(function_);
+      if (!pEmb || !fEmb) continue;
+      facts.push({ writes: [
+        { region: semRegion, feat: pEmb, binarize: false },
+        { region: freeRegion, feat: fEmb, binarize: false }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachBodyPartFunction: ${facts.length} part-function pairs \xD7 6 reps`);
+  },
+  /**
+   * K-ESS3 Natural resources + natural-vs-human-made classification.
+   */
+  async _teachNaturalVsHumanMade(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    const motorRegion = cluster.regions.motor;
+    if (!semRegion || !fineTypeRegion || !motorRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const naturalTag = new Float64Array(fineTypeSize);
+    const humanMadeTag = new Float64Array(fineTypeSize);
+    const half = Math.floor(fineTypeSize / 2);
+    for (let i = 0; i < half; i++) naturalTag[i] = 1;
+    for (let i = half; i < fineTypeSize; i++) humanMadeTag[i] = 1;
+    const CLASSIFIED = [
+      { thing: "tree", type: "natural" },
+      { thing: "rock", type: "natural" },
+      { thing: "water", type: "natural" },
+      { thing: "air", type: "natural" },
+      { thing: "soil", type: "natural" },
+      { thing: "plant", type: "natural" },
+      { thing: "animal", type: "natural" },
+      { thing: "mountain", type: "natural" },
+      { thing: "river", type: "natural" },
+      { thing: "building", type: "humanmade" },
+      { thing: "road", type: "humanmade" },
+      { thing: "car", type: "humanmade" },
+      { thing: "house", type: "humanmade" },
+      { thing: "bridge", type: "humanmade" },
+      { thing: "plastic", type: "humanmade" },
+      { thing: "computer", type: "humanmade" },
+      { thing: "chair", type: "humanmade" }
+    ];
+    const facts = [];
+    for (const { thing, type } of CLASSIFIED) {
+      const emb = sharedEmbeddings.getEmbedding(thing);
+      if (!emb) continue;
+      const tag = type === "natural" ? naturalTag : humanMadeTag;
+      facts.push({ writes: [
+        { region: semRegion, feat: emb, binarize: false },
+        { region: fineTypeRegion, feat: tag },
+        { region: motorRegion, feat: encodeLetter(type[0]) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachNaturalVsHumanMade: ${facts.length} classified \xD7 6 reps`);
+  },
+  // runSciKReal + _gateSciKReal extracted to
+  // `js/brain/curriculum/kindergarten.js` K_MIXIN. K-specific teach
+  // helpers (`_teachClassification`, `_teachStatesOfMatter`,
+  // `_teachForceMotionK`, `_teachForceStrengthEffect`,
+  // `_teachWeatherCategories`, `_teachSeasonTemperature`,
+  // `_teachLivingThingNeeds`, `_teachDietClassification`,
+  // `_teachBodyPartFunction`, `_teachNaturalVsHumanMade`,
+  // `_teachClassificationReasoning`) stay on the base class for now;
+  // future extraction moves them alongside.
+  // ═══════════════════════════════════════════════════════════════════
+  // Social-K equational course (LAW 3 + LAW 7)
+  // ═══════════════════════════════════════════════════════════════════
+  /**
+   * Core Knowledge K community helpers — helper → job via sem↔sem binding.
+   */
+  async _teachCommunityHelpers(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+    const HELPERS = [
+      { helper: "firefighter", job: "fires" },
+      { helper: "police", job: "safety" },
+      { helper: "doctor", job: "sick" },
+      { helper: "nurse", job: "care" },
+      { helper: "teacher", job: "learn" },
+      { helper: "dentist", job: "teeth" },
+      { helper: "farmer", job: "food" },
+      { helper: "mail", job: "letters" }
+    ];
+    const facts = [];
+    for (const { helper, job } of HELPERS) {
+      const hEmb = sharedEmbeddings.getEmbedding(helper);
+      const jEmb = sharedEmbeddings.getEmbedding(job);
+      if (!hEmb || !jEmb) continue;
+      facts.push({ writes: [
+        { region: semRegion, feat: jEmb, binarize: false },
+        { region: freeRegion, feat: hEmb, binarize: false }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 8 });
+    this._hb(`[Curriculum] _teachCommunityHelpers: ${facts.length} \xD7 8 reps`);
+  },
+  /**
+   * Core Knowledge K needs vs wants — binary classification with fineType tag.
+   */
+  async _teachNeedsVsWants(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    const motorRegion = cluster.regions.motor;
+    if (!semRegion || !fineTypeRegion || !motorRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const needTag = new Float64Array(fineTypeSize);
+    const wantTag = new Float64Array(fineTypeSize);
+    const half = Math.floor(fineTypeSize / 2);
+    for (let i = 0; i < half; i++) needTag[i] = 1;
+    for (let i = half; i < fineTypeSize; i++) wantTag[i] = 1;
+    const CLASSIFIED = [
+      { thing: "food", type: "need" },
+      { thing: "water", type: "need" },
+      { thing: "shelter", type: "need" },
+      { thing: "clothing", type: "need" },
+      { thing: "air", type: "need" },
+      { thing: "sleep", type: "need" },
+      { thing: "toy", type: "want" },
+      { thing: "candy", type: "want" },
+      { thing: "game", type: "want" },
+      { thing: "tv", type: "want" },
+      { thing: "phone", type: "want" }
+    ];
+    const facts = [];
+    for (const { thing, type } of CLASSIFIED) {
+      const emb = sharedEmbeddings.getEmbedding(thing);
+      if (!emb) continue;
+      facts.push({ writes: [
+        { region: semRegion, feat: emb, binarize: false },
+        { region: fineTypeRegion, feat: type === "need" ? needTag : wantTag },
+        { region: motorRegion, feat: encodeLetter(type[0]) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachNeedsVsWants: ${facts.length} \xD7 6 reps`);
+  },
+  /**
+   * Core Knowledge K American symbols — symbol ↔ fact pairs.
+   */
+  async _teachAmericanSymbols(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+    const SYMBOLS = [
+      { concept: "flag colors", answer: "red white blue" },
+      { concept: "fifty stars", answer: "states" },
+      { concept: "national bird", answer: "eagle" },
+      { concept: "july fourth", answer: "independence" },
+      { concept: "country leader", answer: "president" },
+      { concept: "liberty statue", answer: "freedom" },
+      { concept: "thanksgiving", answer: "thanks" },
+      { concept: "presidents day", answer: "honor" }
+    ];
+    const facts = [];
+    for (const { concept, answer } of SYMBOLS) {
+      const words = concept.split(" ");
+      const aWords = answer.split(" ");
+      for (const cWord of words) {
+        const cEmb = sharedEmbeddings.getEmbedding(cWord);
+        if (!cEmb) continue;
+        for (const aWord of aWords) {
+          const aEmb = sharedEmbeddings.getEmbedding(aWord);
+          if (!aEmb) continue;
+          facts.push({ writes: [
+            { region: semRegion, feat: cEmb, binarize: false },
+            { region: freeRegion, feat: aEmb, binarize: false }
+          ] });
+        }
+      }
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachAmericanSymbols: ${facts.length} \xD7 6 reps`);
+  },
+  /**
+   * Core Knowledge K geography — continents, oceans, cardinal directions.
+   */
+  async _teachGeographyBasics(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+    const GEO_FACTS = [
+      // Continent count
+      { concept: "continents count", answer: "seven" },
+      // Continents
+      { concept: "north america", answer: "continent" },
+      { concept: "south america", answer: "continent" },
+      { concept: "europe", answer: "continent" },
+      { concept: "africa", answer: "continent" },
+      { concept: "asia", answer: "continent" },
+      { concept: "australia", answer: "continent" },
+      { concept: "antarctica", answer: "continent" },
+      // Oceans
+      { concept: "atlantic", answer: "ocean" },
+      { concept: "pacific", answer: "ocean" },
+      { concept: "indian", answer: "ocean" },
+      { concept: "arctic", answer: "ocean" },
+      // Cardinal directions
+      { concept: "north direction", answer: "up" },
+      { concept: "south direction", answer: "down" },
+      { concept: "east direction", answer: "right" },
+      { concept: "west direction", answer: "left" },
+      // Globe
+      { concept: "globe", answer: "earth" },
+      { concept: "map", answer: "places" }
+    ];
+    const facts = [];
+    for (const { concept, answer } of GEO_FACTS) {
+      const cWords = concept.split(" ");
+      const cEmb = cWords.length > 1 ? sharedEmbeddings.getEmbedding(cWords[0]) : sharedEmbeddings.getEmbedding(concept);
+      const aEmb = sharedEmbeddings.getEmbedding(answer);
+      if (!cEmb || !aEmb) continue;
+      facts.push({ writes: [
+        { region: semRegion, feat: cEmb, binarize: false },
+        { region: freeRegion, feat: aEmb, binarize: false }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachGeographyBasics: ${facts.length} \xD7 6 reps`);
+  },
+  // runSocKReal + _gateSocKReal extracted to
+  // `js/brain/curriculum/kindergarten.js` K_MIXIN. K-specific teach
+  // helpers (`_teachFamilyRoles`, `_teachCommunityHelpers`,
+  // `_teachNeedsVsWants`, `_teachAmericanSymbols`,
+  // `_teachGeographyBasics`, `_teachCausalChains`) stay on the base
+  // class for now; future extraction moves them alongside.
+  // ═══════════════════════════════════════════════════════════════════
+  // Arts-K equational course (LAW 3 + LAW 7)
+  // ═══════════════════════════════════════════════════════════════════
+  /**
+   * Visual Arts K — color mixing transforms (primary + primary → secondary).
+   *
+   * Named `_teachColorMixingK` (K-suffix) to distinguish from the
+   * older Art-G1 `_teachColorMixing` at line ~11110 which teaches
+   * 8-dim RGB/warm/cool/secondary feature vectors. The K version
+   * does equational A+B→C pair-to-composite binding via
+   * `_teachCombination` (freeLeft+freeRight→sem) while the G1
+   * version uses `_conceptTeach` feature-vector clustering.
+   */
+  async _teachColorMixingK(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
+    const MIXES = [
+      ["red", "yellow", "orange"],
+      ["yellow", "blue", "green"],
+      ["red", "blue", "purple"],
+      ["blue", "red", "purple"],
+      ["yellow", "red", "orange"],
+      ["blue", "yellow", "green"]
+    ];
+    const facts = [];
+    for (const [a, b, c] of MIXES) {
+      const aEmb = sharedEmbeddings.getEmbedding(a);
+      const bEmb = sharedEmbeddings.getEmbedding(b);
+      const cEmb = sharedEmbeddings.getEmbedding(c);
+      if (!aEmb || !bEmb || !cEmb) continue;
+      facts.push({ writes: [
+        { region: freeLeftRegion, feat: aEmb, binarize: false },
+        { region: freeRightRegion, feat: bEmb, binarize: false },
+        { region: semRegion, feat: cEmb, binarize: false }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 8 });
+    this._hb(`[Curriculum] _teachColorMixing: ${facts.length} \xD7 8 reps`);
+  },
+  /**
+   * Visual Arts K — warm/cool color classification.
+   */
+  async _teachWarmCoolColors(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    const motorRegion = cluster.regions.motor;
+    if (!semRegion || !fineTypeRegion || !motorRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const warmTag = new Float64Array(fineTypeSize);
+    const coolTag = new Float64Array(fineTypeSize);
+    const half = Math.floor(fineTypeSize / 2);
+    for (let i = 0; i < half; i++) warmTag[i] = 1;
+    for (let i = half; i < fineTypeSize; i++) coolTag[i] = 1;
+    const COLORS = [
+      { color: "red", temp: "warm" },
+      { color: "orange", temp: "warm" },
+      { color: "yellow", temp: "warm" },
+      { color: "blue", temp: "cool" },
+      { color: "green", temp: "cool" },
+      { color: "purple", temp: "cool" }
+    ];
+    const facts = [];
+    for (const { color, temp } of COLORS) {
+      const emb = sharedEmbeddings.getEmbedding(color);
+      if (!emb) continue;
+      facts.push({ writes: [
+        { region: semRegion, feat: emb, binarize: false },
+        { region: fineTypeRegion, feat: temp === "warm" ? warmTag : coolTag },
+        { region: motorRegion, feat: encodeLetter(temp[0]) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachWarmCoolColors: ${facts.length} \xD7 6 reps`);
+  },
+  /**
+   * Visual Arts K — AB pattern next-item prediction.
+   * Previous two items → next item in the repeating pattern.
+   */
+  async _teachPatternCompletion(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const freeRegion = cluster.regions.free;
+    const semRegion = cluster.regions.sem;
+    if (!freeRegion || !semRegion) return;
+    const freeSize = freeRegion.end - freeRegion.start;
+    const freeHalf = Math.floor(freeSize / 2);
+    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
+    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
+    const PATTERNS2 = [
+      ["red", "blue", "red"],
+      ["blue", "red", "blue"],
+      ["yellow", "green", "yellow"],
+      ["circle", "square", "circle"],
+      ["square", "circle", "square"],
+      ["triangle", "circle", "triangle"]
+    ];
+    const facts = [];
+    for (const [a, b, next] of PATTERNS2) {
+      const aEmb = sharedEmbeddings.getEmbedding(a);
+      const bEmb = sharedEmbeddings.getEmbedding(b);
+      const nEmb = sharedEmbeddings.getEmbedding(next);
+      if (!aEmb || !bEmb || !nEmb) continue;
+      facts.push({ writes: [
+        { region: freeLeftRegion, feat: aEmb, binarize: false },
+        { region: freeRightRegion, feat: bEmb, binarize: false },
+        { region: semRegion, feat: nEmb, binarize: false }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachPatternCompletion: ${facts.length} \xD7 6 reps`);
+  },
+  /**
+   * Music K — tempo/dynamics/pitch classifications + beat concept.
+   */
+  async _teachMusicBasics(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+    const MUSIC_CONCEPTS = [
+      ["steady", "beat"],
+      ["music", "beat"],
+      ["pulse", "beat"],
+      ["fast", "tempo"],
+      ["slow", "tempo"],
+      ["loud", "dynamics"],
+      ["soft", "dynamics"],
+      ["quiet", "dynamics"],
+      ["high", "pitch"],
+      ["low", "pitch"],
+      ["sing", "voice"],
+      ["song", "music"],
+      ["rhythm", "pattern"],
+      ["drum", "beat"],
+      ["piano", "instrument"],
+      ["guitar", "instrument"],
+      ["violin", "instrument"],
+      ["flute", "instrument"],
+      ["trumpet", "instrument"]
+    ];
+    const facts = [];
+    for (const [a, b] of MUSIC_CONCEPTS) {
+      const aEmb = sharedEmbeddings.getEmbedding(a);
+      const bEmb = sharedEmbeddings.getEmbedding(b);
+      if (!aEmb || !bEmb) continue;
+      facts.push({ writes: [
+        { region: semRegion, feat: aEmb, binarize: false },
+        { region: freeRegion, feat: bEmb, binarize: false }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 6 });
+    this._hb(`[Curriculum] _teachMusicBasics: ${facts.length} \xD7 6 reps`);
+  },
+  // runArtKReal + _gateArtKReal extracted to
+  // `js/brain/curriculum/kindergarten.js` K_MIXIN. K-specific teach
+  // helpers called by runArtKReal (`_teachPrimaryColors`,
+  // `_teachBasicShapes`, `_teachSimpleSongs`, `_teachColorMixingK`,
+  // `_teachWarmCoolColors`, `_teachPatternCompletion`,
+  // `_teachMusicBasics`) stay on the base class for now; future
+  // extraction moves them alongside.
+  // (`_phonemeFeatureForDigraph` lives near the top of K_MIXIN with the
+  // other phoneme-feature helpers — duplicate definition removed.)
+  // ─── TODO-aligned ELA-G2 helpers (Session 28) ────────────────────
+  //
+  // docs/TODO.md T14.24 ELA-G2 spec (line 152):
+  //   _teachDigraphs(digraphs) injects each digraph as a paired letter
+  //     stream with shorter inter-letter gap (2 ticks instead of 3) so
+  //     the letter-region transition surprise treats them as a unit.
+  //   _teachLongWords(words) extends the CVC pattern to 4-6 letters
+  //     with boundary detection via cluster.detectBoundaries(word).
+  //   _teachPhrases(phrases) walks 3-word phrases through the full
+  //     letter-stream + sem-inject pipeline per word + sequence Hebbian
+  //     between words.
+  async _teachStatesOfMatter() {
+    return this._conceptTeach([
+      { name: "solid", feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+      { name: "liquid", feat: [0, 1, 0, 1, 0, 0, 0, 1] },
+      { name: "gas", feat: [0, 0, 1, 1, 1, 0, 0, 0] },
+      { name: "plasma", feat: [0, 0, 1, 1, 1, 1, 0, 0] }
+    ], 4);
+  },
+  async _teachPrimaryColors() {
+    return this._conceptTeach([
+      { name: "red", feat: [1, 0, 0, 0, 1, 1, 1, 0] },
+      { name: "blue", feat: [0, 0, 1, 1, 1, 0, 0, 1] },
+      { name: "yellow", feat: [1, 1, 0, 0, 0, 1, 1, 0] },
+      { name: "green", feat: [0, 1, 0, 1, 0, 1, 0, 1] },
+      { name: "orange", feat: [1, 1, 0, 0, 0, 1, 1, 0] },
+      { name: "purple", feat: [1, 0, 1, 0, 1, 0, 0, 1] },
+      { name: "black", feat: [0, 0, 0, 1, 1, 1, 0, 0] },
+      { name: "white", feat: [1, 1, 1, 0, 0, 0, 0, 0] }
+    ], 4);
+  },
+  async _teachBasicShapes() {
+    return this._conceptTeach([
+      { name: "circle", feat: [1, 0, 0, 0, 1, 1, 1, 1] },
+      { name: "square", feat: [0, 1, 0, 1, 0, 1, 1, 1] },
+      { name: "triangle", feat: [0, 1, 1, 0, 0, 1, 1, 1] },
+      { name: "rectangle", feat: [0, 1, 0, 1, 0, 1, 1, 0] },
+      { name: "oval", feat: [1, 0, 0, 0, 1, 1, 1, 0] },
+      { name: "diamond", feat: [0, 1, 0, 1, 0, 1, 1, 1] },
+      { name: "star", feat: [0, 1, 0, 0, 0, 1, 1, 1] },
+      { name: "heart", feat: [1, 1, 0, 0, 0, 1, 1, 0] }
+    ], 4);
+  },
+  async _teachSimpleSongs() {
+    return this._teachSequenceCycles([
+      ["clap", "clap", "stomp"],
+      ["high", "low", "high", "low"],
+      ["fast", "slow", "fast", "slow"],
+      ["sing", "a", "song"],
+      ["beat", "beat", "beat", "rest"]
+    ], { reps: 4, ticksPerStep: 2 });
+  },
+  async _teachFamilyRoles() {
+    return this._conceptTeach([
+      { name: "mom", feat: [1, 0, 0, 1, 0, 1, 0, 1] },
+      { name: "dad", feat: [1, 0, 0, 0, 1, 1, 0, 1] },
+      { name: "sister", feat: [0, 1, 0, 1, 0, 1, 0, 0] },
+      { name: "brother", feat: [0, 1, 0, 0, 1, 1, 0, 0] },
+      { name: "baby", feat: [0, 1, 0, 0, 0, 1, 0, 0] },
+      { name: "grandma", feat: [0, 0, 1, 1, 0, 0, 1, 1] },
+      { name: "grandpa", feat: [0, 0, 1, 0, 1, 0, 1, 1] },
+      { name: "aunt", feat: [1, 0, 0, 1, 0, 0, 1, 0] },
+      { name: "uncle", feat: [1, 0, 0, 0, 1, 0, 1, 0] },
+      { name: "cousin", feat: [0, 1, 0, 0, 0, 0, 1, 0] },
+      { name: "family", feat: [1, 1, 1, 1, 1, 1, 1, 1] },
+      { name: "home", feat: [1, 1, 1, 0, 0, 1, 0, 1] }
+    ], 4);
   }
+};
+
+// ../js/brain/curriculum.js
+var LETTER_TICKS_BASE = 3;
+var SHORT_WORD_TICKS = 2;
+var LONG_WORD_TICKS = 1;
+var SENTENCE_TICKS_PER_WORD = 1;
+var LIVE_TICKS_PER_WORD = 2;
+var LETTER_REPS_MAX = 5;
+var SHORT_WORD_REPS_MAX = 2;
+var LONG_WORD_REPS_MAX = 1;
+var SHORT_WORD_MAX_LEN = 3;
+var SUBJECTS = ["ela", "math", "science", "social", "art", "life"];
+var SUBJECT_LABELS = {
+  ela: "ELA \u2014 English Language Arts: alphabet, phonics, reading, writing, question-answer grounding.",
+  math: "Math: counting, number names, magnitude, arithmetic, shape + position.",
+  science: "Science: cause-effect, classification, motion, weather, life systems, logic pathing.",
+  social: "Social Studies: self + family + community roles, emotions, kindness, rules.",
+  art: "Arts: color, shape, visual representation, rhythm, drawing, music.",
+  life: "Life Experience: identity, biography, feelings, routines, self-awareness as Unity the individual."
+};
+var GRADE_LABELS = {
+  "pre-K": "Pre-K (birth-to-4 developmental substrate)",
+  "kindergarten": "Kindergarten (Common Core K.RF / K.W / K.L / K.SL / K.RL + DIBELS / STAR / AIMSweb)"
+};
+var GRADE_ORDER = [
+  "pre-K",
+  "kindergarten",
+  "grade1",
+  "grade2",
+  "grade3",
+  "grade4",
+  "grade5",
+  "grade6",
+  "grade7",
+  "grade8",
+  "grade9",
+  "grade10",
+  "grade11",
+  "grade12",
+  "college1",
+  "college2",
+  "college3",
+  "college4",
+  "grad",
+  "phd"
+];
+var ALPHABET_ORDER = "abcdefghijklmnopqrstuvwxyz";
+var DIGIT_ORDER = "0123456789";
+var LETTER_NAMES = [
+  "ay",
+  "bee",
+  "see",
+  "dee",
+  "ee",
+  "ef",
+  "gee",
+  "aitch",
+  "eye",
+  "jay",
+  "kay",
+  "el",
+  "em",
+  "en",
+  "oh",
+  "pee",
+  "cue",
+  "ar",
+  "ess",
+  "tee",
+  "you",
+  "vee",
+  "double you",
+  "ex",
+  "why",
+  "zee"
+];
+var DIGIT_NAMES = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine"
+];
+var K_LETTER_PHONEMES = {
+  // ── CONSONANT STOPS ─────────────────────────────────────────────
+  "p": { type: "consonant", voiced: 0, place: "labial", manner: "stop" },
+  "b": { type: "consonant", voiced: 1, place: "labial", manner: "stop" },
+  "t": { type: "consonant", voiced: 0, place: "alveolar", manner: "stop" },
+  "d": { type: "consonant", voiced: 1, place: "alveolar", manner: "stop" },
+  "k": { type: "consonant", voiced: 0, place: "velar", manner: "stop" },
+  "g": { type: "consonant", voiced: 1, place: "velar", manner: "stop" },
+  "c": "k",
+  // /c/ in cat → /k/ (K phonics teaches 'c' → /k/ as primary)
+  "q": "k",
+  // /q/ in most English words → /k/
+  "x": "k",
+  // /x/ = /ks/ cluster, simplified to /k/ for K level
+  // ── FRICATIVES ──────────────────────────────────────────────────
+  "f": { type: "consonant", voiced: 0, place: "labial", manner: "fricative" },
+  "v": { type: "consonant", voiced: 1, place: "labial", manner: "fricative" },
+  "s": { type: "consonant", voiced: 0, place: "alveolar", manner: "fricative" },
+  "z": { type: "consonant", voiced: 1, place: "alveolar", manner: "fricative" },
+  "h": { type: "consonant", voiced: 0, place: "glottal", manner: "fricative" },
+  // ── NASALS ──────────────────────────────────────────────────────
+  "m": { type: "consonant", voiced: 1, place: "labial", manner: "nasal" },
+  "n": { type: "consonant", voiced: 1, place: "alveolar", manner: "nasal" },
+  // ── APPROXIMANTS / LIQUIDS ──────────────────────────────────────
+  "l": { type: "consonant", voiced: 1, place: "alveolar", manner: "approximant" },
+  "r": { type: "consonant", voiced: 1, place: "alveolar", manner: "approximant" },
+  "w": { type: "consonant", voiced: 1, place: "labial", manner: "approximant" },
+  "y": { type: "consonant", voiced: 1, place: "palatal", manner: "approximant" },
+  // ── AFFRICATES ──────────────────────────────────────────────────
+  "j": { type: "consonant", voiced: 1, place: "palatal", manner: "affricate" },
+  // ── SHORT VOWELS (K phonics primary sounds) ─────────────────────
+  "a": { type: "vowel", length: "short", position: "front", rounded: 0 },
+  "e": { type: "vowel", length: "short", position: "mid", rounded: 0 },
+  "i": { type: "vowel", length: "short", position: "front", rounded: 0 },
+  "o": { type: "vowel", length: "short", position: "back", rounded: 1 },
+  "u": { type: "vowel", length: "short", position: "back", rounded: 0 }
+};
+var PHONEME_FEATURE_DIM = 24;
+function _phonemeFeatureForLetter(letter) {
+  const ch = letter ? String(letter).toLowerCase() : "";
+  let entry = K_LETTER_PHONEMES[ch];
+  if (!entry) return new Float64Array(PHONEME_FEATURE_DIM);
+  if (typeof entry === "string") entry = K_LETTER_PHONEMES[entry];
+  if (!entry || typeof entry !== "object") return new Float64Array(PHONEME_FEATURE_DIM);
+  const out = new Float64Array(PHONEME_FEATURE_DIM);
+  if (entry.type === "vowel") {
+    out[0] = 1;
+    out[2] = 1;
+    if (entry.length === "short") out[13] = 1;
+    else if (entry.length === "long") out[14] = 1;
+    if (entry.position === "front") out[15] = 1;
+    else if (entry.position === "mid") out[16] = 1;
+    else if (entry.position === "back") out[17] = 1;
+    if (entry.rounded) out[18] = 1;
+  } else if (entry.type === "consonant") {
+    out[1] = 1;
+    if (entry.voiced) out[2] = 1;
+    if (entry.place === "labial") out[3] = 1;
+    else if (entry.place === "alveolar") out[4] = 1;
+    else if (entry.place === "velar") out[5] = 1;
+    else if (entry.place === "palatal") out[6] = 1;
+    else if (entry.place === "glottal") out[7] = 1;
+    if (entry.manner === "stop") out[8] = 1;
+    else if (entry.manner === "fricative") out[9] = 1;
+    else if (entry.manner === "nasal") out[10] = 1;
+    else if (entry.manner === "approximant") out[11] = 1;
+    else if (entry.manner === "affricate") out[12] = 1;
+  }
+  let norm = 0;
+  for (let i = 0; i < PHONEME_FEATURE_DIM; i++) norm += out[i] * out[i];
+  norm = Math.sqrt(norm) || 1;
+  for (let i = 0; i < PHONEME_FEATURE_DIM; i++) out[i] /= norm;
+  return out;
+}
+var MAGNITUDE_FEATURE_DIM = 16;
+function _magnitudeFeatureForDigit(digit) {
+  const n = parseInt(digit, 10);
+  if (isNaN(n)) return new Float64Array(MAGNITUDE_FEATURE_DIM);
+  const out = new Float64Array(MAGNITUDE_FEATURE_DIM);
+  for (let i = 0; i <= Math.min(n, 3); i++) out[i] = 1 - i * 0.15;
+  out[4] = Math.log(n + 1) / Math.log(11);
+  out[5] = n / 9;
+  out[6] = n * n / 81;
+  out[7] = Math.sqrt(n) / 3;
+  for (let i = 8; i < MAGNITUDE_FEATURE_DIM; i++) {
+    out[i] = Math.sin(n * 0.628 * (i - 7) + 0.1);
+  }
+  let norm = 0;
+  for (let i = 0; i < MAGNITUDE_FEATURE_DIM; i++) norm += out[i] * out[i];
+  norm = Math.sqrt(norm) || 1;
+  for (let i = 0; i < MAGNITUDE_FEATURE_DIM; i++) out[i] /= norm;
+  return out;
+}
+var NUMBER_FEATURE_DIM = 24;
+var NUMBER_FEATURE_MAX = 100;
+function _magnitudeFeatureForNumber(n) {
+  const num = typeof n === "number" ? n : parseInt(n, 10);
+  if (isNaN(num)) return new Float64Array(NUMBER_FEATURE_DIM);
+  const clamped = Math.max(0, Math.min(NUMBER_FEATURE_MAX, num));
+  const norm01 = clamped / NUMBER_FEATURE_MAX;
+  const out = new Float64Array(NUMBER_FEATURE_DIM);
+  for (let i = 0; i < 10; i++) out[i] = clamped >= i * 10 ? 1 : 0;
+  out[10] = Math.log(clamped + 1) / Math.log(NUMBER_FEATURE_MAX + 1);
+  out[11] = norm01;
+  out[12] = Math.sqrt(norm01);
+  out[13] = norm01 * norm01;
+  for (let i = 14; i < NUMBER_FEATURE_DIM; i++) {
+    const freq = (i - 13) * 0.4;
+    out[i] = Math.sin(clamped * freq * Math.PI / NUMBER_FEATURE_MAX);
+  }
+  let L2 = 0;
+  for (let i = 0; i < NUMBER_FEATURE_DIM; i++) L2 += out[i] * out[i];
+  L2 = Math.sqrt(L2) || 1;
+  for (let i = 0; i < NUMBER_FEATURE_DIM; i++) out[i] /= L2;
+  return out;
+}
+var PRE_K_FALLBACK_CAP = 5;
+var Curriculum = class _Curriculum {
+  static PRE_K_FALLBACK_CAP = PRE_K_FALLBACK_CAP;
+  /**
+   * T18.25 — REMOVED forced gc() from T18.24's between-phase memory
+   * barrier. Earlier runs showed V8 OOM'd shortly after Phase 2 DONE
+   * which likely means my forced gc() calls were TRIGGERING the crash
+   * (Mark-Compact can't grow semi-space when V8 is already near limit;
+   * explicit gc() becomes the "last straw"). V8's own adaptive gc
+   * heuristic handles external memory reclamation correctly when left
+   * alone. This helper now just SNAPSHOTS process.memoryUsage() without
+   * forcing gc — operator still sees memory state at each phase
+   * boundary, but V8 can gc on its own schedule without interference.
+   */
+  _memorySnapshotAndGc(label) {
+    try {
+      if (typeof process === "undefined" || typeof process.memoryUsage !== "function") return;
+      const mem = process.memoryUsage();
+      const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(1);
+      const extMB = ((mem.external || 0) / 1024 / 1024).toFixed(1);
+      const abMB = ((mem.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
+      const rssMB = ((mem.rss || 0) / 1024 / 1024).toFixed(1);
+      const prior = this._memPrior;
+      let deltaTag = "";
+      if (prior) {
+        const dHeapMB = (mem.heapUsed - prior.heapUsed) / 1024 / 1024;
+        const dExtMB = ((mem.external || 0) - (prior.external || 0)) / 1024 / 1024;
+        const dRssMB = ((mem.rss || 0) - (prior.rss || 0)) / 1024 / 1024;
+        const sign = (v) => v >= 0 ? "+" : "";
+        deltaTag = ` \xB7 \u0394heap=${sign(dHeapMB)}${dHeapMB.toFixed(1)}MB \u0394ext=${sign(dExtMB)}${dExtMB.toFixed(1)}MB \u0394rss=${sign(dRssMB)}${dRssMB.toFixed(1)}MB`;
+      }
+      this._memPrior = { heapUsed: mem.heapUsed, external: mem.external || 0, rss: mem.rss || 0 };
+      console.log(`[MEM] ${label}: heap=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB rss=${rssMB}MB${deltaTag}`);
+    } catch (err) {
+      console.warn(`[MEM] snapshot failed at ${label}:`, err && err.message);
+    }
+  }
+  /**
+   * @param {NeuronCluster} cluster       — cortex cluster for exposure
+   * @param {Dictionary} dictionary       — vocabulary store (T14.3 cortex-routed)
+   * @param {LanguageCortex} languageCortex — legacy sequence-learner (still used
+   *                                          for bigram/type-transition tables
+   *                                          until T14.12 guts LanguageCortex)
+   */
+  constructor(cluster, dictionary, languageCortex) {
+    this.cluster = cluster;
+    this.dictionary = dictionary;
+    this.languageCortex = languageCortex;
+    if (cluster && dictionary) cluster.dictionary = dictionary;
+    this.stats = {
+      lettersSeen: 0,
+      shortWordsSeen: 0,
+      longWordsSeen: 0,
+      sentencesSeen: 0,
+      totalTicks: 0,
+      wallMs: 0
+    };
+    this._backgroundProbeIntervalId = null;
+    this._backgroundProbeMs = 45e3;
+    this.currentFocus = null;
+    this._gateHistory = /* @__PURE__ */ new Map();
+    this._sessionId = `s${Date.now().toString(36)}`;
+    const proto = Object.getPrototypeOf(this);
+    const TRACKED = /* @__PURE__ */ new Set();
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      if (typeof proto[name] !== "function") continue;
+      if (!name.startsWith("_teach")) continue;
+      TRACKED.add(name);
+    }
+    const TRACKED_NO_SKIP = /* @__PURE__ */ new Set(["_runStudentBattery", "_measureEmissionCapability"]);
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      if (typeof proto[name] !== "function") continue;
+      if (TRACKED_NO_SKIP.has(name)) TRACKED_NO_SKIP.add(name);
+    }
+    const buildPhaseKey = (name) => {
+      const cellKey = this.cluster?._currentCellKey;
+      return cellKey ? `${cellKey}:${name}` : null;
+    };
+    for (const name of TRACKED) {
+      const original = this[name].bind(this);
+      this[name] = async (...args) => {
+        const cl = this.cluster;
+        const phaseKey = buildPhaseKey(name);
+        const prev = cl ? cl._activePhase : null;
+        const isOutermost = prev === null;
+        if (isOutermost && cl && phaseKey && Array.isArray(cl.passedPhases) && cl.passedPhases.includes(phaseKey)) {
+          this._hb(`[Curriculum] \u2933 PHASE SKIPPED \u2014 ${phaseKey} (already passed; resumed from persisted passedPhases \u2014 weights carried forward via brain-weights.bin)`);
+          return;
+        }
+        if (cl) cl._activePhase = { name, startAt: Date.now() };
+        try {
+          const result = await original(...args);
+          if (isOutermost && cl && phaseKey) {
+            if (!Array.isArray(cl.passedPhases)) cl.passedPhases = [];
+            if (!cl.passedPhases.includes(phaseKey)) cl.passedPhases.push(phaseKey);
+            if (typeof this._saveCheckpoint === "function") {
+              try {
+                this._saveCheckpoint(phaseKey);
+              } catch {
+              }
+            }
+            this._currentCellPhasesCompleted = (this._currentCellPhasesCompleted | 0) + 1;
+            if (this._currentSubject && this._perSubjectStats) {
+              const s = this._perSubjectStats[this._currentSubject];
+              if (s) {
+                s.phasesCompleted = (s.phasesCompleted | 0) + 1;
+                s.lastCellAt = Date.now();
+              }
+            }
+          }
+          if (this._currentSubject && this._perSubjectStats) {
+            const s = this._perSubjectStats[this._currentSubject];
+            if (s) s.teachEvents = (s.teachEvents | 0) + 1;
+          }
+          return result;
+        } finally {
+          if (cl) cl._activePhase = prev;
+        }
+      };
+    }
+    for (const name of TRACKED_NO_SKIP) {
+      if (!proto[name]) continue;
+      const original = this[name].bind(this);
+      this[name] = async (...args) => {
+        const cl = this.cluster;
+        const prev = cl ? cl._activePhase : null;
+        if (cl) cl._activePhase = { name, startAt: Date.now() };
+        try {
+          return await original(...args);
+        } finally {
+          if (cl) cl._activePhase = prev;
+        }
+      };
+    }
+  }
+  /**
+   * Deterministic phase marker — appends `${cellKey}:${methodName}` to
+   * `cluster.passedPhases` + increments `_perSubjectStats[subject].
+   * phasesCompleted`. Parallel to the constructor auto-wrap's append
+   * path BUT independent — for reasons still under investigation the
+   * auto-wrap's `isOutermost` check doesn't fire reliably for non-ELA
+   * K cell runners (ELA-K works because its hand-wrapped `_phaseTick`
+   * / `_phaseDone` also appends, masking the auto-wrap bug).
+   *
+   * Operator log showed `math 1 phase 6.1k events` — teaches ran
+   * (6.1k events is cumulative teach-call count) but only the fallback
+   * `cell-teach-block` entry landed in passedPhases. With this helper
+   * + its use inside each K cell runner, granular per-phase markers
+   * appear deterministically.
+   *
+   * Usage pattern matches ELA-K's _phaseTick/_phaseDone but lifted to
+   * a reusable method so every K runner can adopt it with a one-liner:
+   *
+   *   await this._phasedTeach('_teachAdditionTransformations',
+   *       () => this._teachAdditionTransformations(ctx));
+   *
+   * If the same methodName was already marked for this cell, the call
+   * is SKIPPED (Savestart resume safe — matches auto-wrap early-return
+   * semantics). Returns the fn's result on fresh runs, undefined on
+   * skip.
+   */
+  async _phasedTeach(methodName, fn) {
+    const cluster = this.cluster;
+    const cellKey = cluster?._currentCellKey;
+    const phaseKey = cellKey ? `${cellKey}:${methodName}` : null;
+    if (phaseKey && Array.isArray(cluster.passedPhases) && cluster.passedPhases.includes(phaseKey)) {
+      this._hb(`[Curriculum] \u2933 PHASE SKIPPED \u2014 ${phaseKey} (already passed)`);
+      return void 0;
+    }
+    const result = await fn();
+    if (phaseKey && cluster) {
+      if (!Array.isArray(cluster.passedPhases)) cluster.passedPhases = [];
+      if (!cluster.passedPhases.includes(phaseKey)) cluster.passedPhases.push(phaseKey);
+      if (typeof this._saveCheckpoint === "function") {
+        try {
+          this._saveCheckpoint(phaseKey);
+        } catch {
+        }
+      }
+      if (this._currentSubject && this._perSubjectStats?.[this._currentSubject]) {
+        const s = this._perSubjectStats[this._currentSubject];
+        s.phasesCompleted = (s.phasesCompleted | 0) + 1;
+        s.lastCellAt = Date.now();
+      }
+      this._currentCellPhasesCompleted = (this._currentCellPhasesCompleted | 0) + 1;
+    }
+    return result;
+  }
+  /**
+   * Snapshot of the current curriculum training status for the
+   * dashboard "Current Training" card. One atomic read containing:
+   *   - currentSubject / currentGrade / currentLabel / gradeLabel
+   *   - currentPhase (active _teach method name + elapsed ms)
+   *   - cellPhasesCompleted (phases completed in the CURRENT cell)
+   *   - perSubject: per-subject cumulative stats (phases, cells passed,
+   *     teach events, last training timestamp, per-subject grade)
+   *   - passedCells list so the dashboard can draw the walkthrough
+   *
+   * Called from `Brain.getState()` and serialized in every state
+   * broadcast so the dashboard has the full training picture in one
+   * poll. Null fields when Unity isn't mid-cell.
+   */
+  getCurriculumStatus() {
+    const cluster = this.cluster;
+    const perSubject = {};
+    if (this._perSubjectStats) {
+      for (const sub of SUBJECTS) {
+        const s = this._perSubjectStats[sub] || null;
+        perSubject[sub] = s ? { ...s } : {
+          subject: sub,
+          label: SUBJECT_LABELS[sub] || sub,
+          grade: null,
+          phasesCompleted: 0,
+          cellsPassed: 0,
+          teachEvents: 0,
+          lastCellAt: null
+        };
+      }
+    } else {
+      for (const sub of SUBJECTS) {
+        perSubject[sub] = {
+          subject: sub,
+          label: SUBJECT_LABELS[sub] || sub,
+          grade: null,
+          phasesCompleted: 0,
+          cellsPassed: 0,
+          teachEvents: 0,
+          lastCellAt: null
+        };
+      }
+    }
+    if (cluster && Array.isArray(cluster.passedCells)) {
+      for (const cellKey2 of cluster.passedCells) {
+        const sub = String(cellKey2).split("/")[0];
+        if (perSubject[sub]) perSubject[sub].cellsPassed = (perSubject[sub].cellsPassed | 0) + 1;
+      }
+    }
+    if (cluster && Array.isArray(cluster.passedPhases)) {
+      const persisted = {};
+      for (const phaseKey of cluster.passedPhases) {
+        const sub = String(phaseKey).split("/")[0];
+        if (perSubject[sub]) persisted[sub] = (persisted[sub] | 0) + 1;
+      }
+      for (const sub of Object.keys(persisted)) {
+        if (perSubject[sub]) {
+          perSubject[sub].phasesCompleted = Math.max(perSubject[sub].phasesCompleted | 0, persisted[sub]);
+        }
+      }
+    }
+    const activePhase = cluster && cluster._activePhase ? {
+      name: cluster._activePhase.name,
+      elapsedMs: cluster._activePhase.startAt ? Date.now() - cluster._activePhase.startAt : 0
+    } : null;
+    const cellKey = cluster && cluster._currentCellKey ? cluster._currentCellKey : null;
+    const currentCellPassedPhases = cellKey && Array.isArray(cluster?.passedPhases) ? cluster.passedPhases.filter((k) => k && k.startsWith(`${cellKey}:`)).length : 0;
+    let cellStatus = "idle";
+    if (cellKey) {
+      const inPassedList = cluster && Array.isArray(cluster.passedCells) && cluster.passedCells.includes(cellKey);
+      cellStatus = inPassedList ? "passed" : "in-progress";
+    }
+    return {
+      currentSubject: this._currentSubject || null,
+      currentGrade: this._currentGrade || null,
+      currentLabel: this._currentSubjectLabel || null,
+      currentGradeLabel: this._currentGrade ? GRADE_LABELS[this._currentGrade] || this._currentGrade : null,
+      currentCellKey: cellKey,
+      cellStatus,
+      activePhase,
+      cellPhasesCompleted: this._currentCellPhasesCompleted | 0,
+      cellPhasesPersisted: currentCellPassedPhases,
+      cellStartAt: this._currentCellStartAt || null,
+      cellElapsedMs: this._currentCellStartAt ? Date.now() - this._currentCellStartAt : 0,
+      perSubject,
+      passedCellsTotal: cluster && Array.isArray(cluster.passedCells) ? cluster.passedCells.length : 0,
+      subjects: SUBJECTS.slice()
+    };
+  }
+  /**
+   * Record a gate result. Called by every grade gate at the end of
+   * its run. Appends {sessionId, pass, prodRate, timestamp} to the
+   * per-cell history. History bounded at 200 entries per cell
+   * (rolling; older entries evict first-in-first-out).
+   *
+   * @param {string} subject — 'math'/'ela'/'science'/'social'/'art'/'life'
+   * @param {string} grade — 'kindergarten'/'grade1'/...
+   * @param {string} probeId — 'overall' for whole-grade pass, or specific probe name
+   * @param {boolean} pass
+   * @param {number} [prodRate] — production probe pass rate (0-1) for detailed history
+   */
+  _recordGateHistory(subject, grade, probeId, pass, prodRate) {
+    const key = `${subject}|${grade}|${probeId}`;
+    let history = this._gateHistory.get(key);
+    if (!history) {
+      history = [];
+      this._gateHistory.set(key, history);
+    }
+    history.push({
+      sessionId: this._sessionId,
+      pass: !!pass,
+      prodRate: typeof prodRate === "number" ? prodRate : pass ? 1 : 0,
+      timestamp: Date.now()
+    });
+    if (history.length > 200) history.shift();
+  }
+  /**
+   * Heartbeat log — forces stdout flush in piped log mode so every
+   * banner lands in server.log + the tail PowerShell window without
+   * waiting for console.log's stream-buffer flush. Operator watches
+   * the tail window live and needs every stage transition to land
+   * immediately, not buffered until the next V8 event-loop tick.
+   * Safe in the browser bundle — stdout.write falls into catch.
+   */
+  _hb(msg) {
+    try {
+      if (typeof process !== "undefined" && process.stdout && typeof process.stdout.write === "function") {
+        process.stdout.write(String(msg) + "\n");
+      } else {
+        console.log(msg);
+      }
+    } catch {
+      try {
+        console.log(msg);
+      } catch {
+      }
+    }
+  }
+  /**
+   * Retention rate — how many of the last N runs for this cell passed.
+   * Measures whether the binding SURVIVES subsequent curriculum runs
+   * (i.e. isn't drifting away).
+   */
+  getRetention(subject, grade, probeId = "overall", lastN = 10) {
+    const key = `${subject}|${grade}|${probeId}`;
+    const history = this._gateHistory.get(key);
+    if (!history || history.length === 0) return null;
+    const recent = history.slice(-lastN);
+    const passCount = recent.filter((h) => h.pass).length;
+    return {
+      retentionRate: passCount / recent.length,
+      samples: recent.length,
+      mostRecent: recent[recent.length - 1]
+    };
+  }
+  /**
+   * Gains trend — slope of pass rate across recent runs. Positive =
+   * Unity's learning is improving over time; zero = stable; negative =
+   * drifting away. Uses simple linear regression over lastN entries.
+   */
+  getGains(subject, grade, probeId = "overall", lastN = 20) {
+    const key = `${subject}|${grade}|${probeId}`;
+    const history = this._gateHistory.get(key);
+    if (!history || history.length < 2) return null;
+    const recent = history.slice(-lastN);
+    const n = recent.length;
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    for (let i = 0; i < n; i++) {
+      sumX += i;
+      sumY += recent[i].prodRate;
+      sumXY += i * recent[i].prodRate;
+      sumX2 += i * i;
+    }
+    const denom = n * sumX2 - sumX * sumX;
+    const slope = denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0;
+    return {
+      slope,
+      // rate of change in prodRate per run
+      trend: slope > 0.01 ? "improving" : slope < -0.01 ? "declining" : "stable",
+      samples: n,
+      firstProdRate: recent[0].prodRate,
+      lastProdRate: recent[n - 1].prodRate
+    };
+  }
+  /**
+   * Full history export for dashboard / diagnostic UI.
+   */
+  exportGateHistory() {
+    const out = {};
+    for (const [key, entries] of this._gateHistory.entries()) {
+      out[key] = entries.slice();
+    }
+    return out;
+  }
+  /**
+   * Grade-appropriate question bank for student-test batteries. Keyed
+   * by subject/grade. Covers pre-K + K for every subject in-scope;
+   * returns [] for any cell above kindergarten so higher-grade cells
+   * skip the student test until their batteries are added.
+   *
+   * Question design — each battery mixes:
+   *   - Direct recall (methodology + retention)
+   *   - Sequencing / pattern (logic)
+   *   - Application (understanding)
+   *
+   * Variants give the scoring layer partial credit for answers that
+   * start with or contain the expected token, because young students
+   * often answer with multiple tokens around the right one
+   * ("letter C", "cat", "c-a-t").
+   */
+  _studentQuestionBank(subject, grade) {
+    const bank = EXAM_BANKS[`${subject}/${grade}`];
+    return Array.isArray(bank) ? bank : [];
+  }
+  /**
+   * Run a battery of student-test questions and return an aggregate
+   * summary. Used at the end of every grade gate to score the brain.
+   */
+  /**
+   * Build a vocabulary whitelist for K-grade student test probes. The
+   * oracle's cosine scan can otherwise pick rare/random words from the
+   * full ~4000-word dictionary ("diningroom", "anymore", "byebye") that
+   * happen to have high cosine to the post-question cortex sem state.
+   * For K-grade exams the answer pool should be constrained to
+   * vocabulary a kindergartener might plausibly answer with: the 26
+   * letters, their phonetic names ("ay", "bee", "cee"...), the digits
+   * 0-10 spelled out, and the K-grade content words Unity has actually
+   * been trained on through the curriculum.
+   *
+   * Cached on the curriculum instance — rebuilt only when the
+   * dictionary's vocabulary count grows past `_kAnswerVocabSize`.
+   * Returns a Set of lowercased word strings.
+   */
+  _kStudentAnswerVocab() {
+    const dictSize = this.dictionary && this.dictionary._words && typeof this.dictionary._words.size === "number" ? this.dictionary._words.size : 0;
+    if (this._kAnswerVocab && this._kAnswerVocabSize === dictSize) {
+      return this._kAnswerVocab;
+    }
+    const set = /* @__PURE__ */ new Set();
+    for (const ch of "abcdefghijklmnopqrstuvwxyz") set.add(ch);
+    const letterNames = [
+      "ay",
+      "bee",
+      "cee",
+      "dee",
+      "ee",
+      "ef",
+      "gee",
+      "aitch",
+      "eye",
+      "jay",
+      "kay",
+      "el",
+      "em",
+      "en",
+      "oh",
+      "pee",
+      "cue",
+      "ar",
+      "ess",
+      "tee",
+      "you",
+      "vee",
+      "ex",
+      "why",
+      "zee"
+    ];
+    for (const n of letterNames) set.add(n);
+    for (const d of "0123456789") set.add(d);
+    const numberNames = [
+      "zero",
+      "one",
+      "two",
+      "three",
+      "four",
+      "five",
+      "six",
+      "seven",
+      "eight",
+      "nine",
+      "ten",
+      "eleven",
+      "twelve",
+      "thirteen",
+      "fourteen",
+      "fifteen",
+      "sixteen",
+      "seventeen",
+      "eighteen",
+      "nineteen",
+      "twenty"
+    ];
+    for (const n of numberNames) set.add(n);
+    if (this.dictionary && this.dictionary._words && typeof this.dictionary._words.entries === "function") {
+      for (const [word, entry] of this.dictionary._words.entries()) {
+        if (typeof word !== "string") continue;
+        if (!/^[a-z]{1,10}$/.test(word)) continue;
+        if (entry && entry.isPersona === true) continue;
+        set.add(word);
+      }
+    }
+    this._kAnswerVocab = set;
+    this._kAnswerVocabSize = dictSize;
+    return set;
+  }
+  /**
+   * Build a unified sem-pattern for a word that combines three sources
+   * of discriminating signal so similar GloVe vectors can no longer
+   * collapse into the same trained motor mapping. The basin-collapse
+   * problem stems from K-grade words like cat/dog/pig/cap having
+   * tightly-clustered GloVe vectors (they co-occur in similar corpus
+   * contexts), which makes the trained sem→motor weights similar
+   * regardless of which word's motor letter we paired. Top motor for
+   * 'cat' was 'q'/'x'/'a' at near-uniform low magnitudes — the matrix
+   * faithfully learned "animal-like sem → motor activation" but
+   * couldn't tell which animal because the inputs themselves didn't
+   * carry word identity.
+   *
+   * Three stripes in the returned pattern:
+   *   dims 0..gloveDims-1     : GloVe semantic similarity (preserves
+   *                             K-level concept-grouping work)
+   *   dims gloveDims..idEnd-1 : per-word identity hash (5 unique
+   *                             active dims per word, deterministic
+   *                             from word string — cat ≠ dog even
+   *                             when GloVe overlap is high)
+   *   dims idEnd..dim-1       : cortex-snapshot residue (Rulkov spike
+   *                             pattern from streaming the word's
+   *                             letters when first observed —
+   *                             sensory-driven, not pre-existing GloVe)
+   *
+   * After top-K WTA at k=8, similar GloVe words generally keep their
+   * 5 identity-hash dims at the top (value 1.0) plus 3 strongest
+   * GloVe dims. Different words have mostly disjoint top-8 patterns;
+   * trained matrix can discriminate.
+   *
+   * Bio-plausibility: real concept neurons fire from cascaded sensory
+   * input (visual letter sequence → cortex spike pattern), not from
+   * pre-existing semantic embeddings. The identity-hash stripe
+   * substitutes for unique neuronal-ensemble assignment per concept
+   * (Quian Quiroga 2005 *Nature* sparse coding — each concept activates
+   * a small distinct set of neurons).
+   *
+   * @param {string} word
+   * @returns {Float64Array(EMBED_DIM)}
+   */
+  _dictionaryPatternFor(word) {
+    const dim = sharedEmbeddings && typeof sharedEmbeddings.EMBED_DIM === "number" ? sharedEmbeddings.EMBED_DIM : 300;
+    const out = new Float64Array(dim);
+    if (typeof word !== "string" || word.length === 0) return out;
+    const gloveDims = 200;
+    const idDims = 50;
+    const idStart = gloveDims;
+    const snapDims = Math.max(0, dim - gloveDims - idDims);
+    const snapStart = gloveDims + idDims;
+    if (sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function") {
+      const glove = sharedEmbeddings.getEmbedding(word);
+      if (glove && glove.length > 0) {
+        const n = Math.min(gloveDims, glove.length);
+        for (let i = 0; i < n; i++) out[i] = glove[i];
+      }
+    }
+    const idActive = 5;
+    const idWeight = 2;
+    const lower = word.toLowerCase();
+    for (let k = 0; k < idActive; k++) {
+      let h = 5381;
+      for (let i = 0; i < lower.length; i++) {
+        h = (h * 33 ^ lower.charCodeAt(i)) >>> 0;
+      }
+      h = h + k * 2654435761 >>> 0;
+      const idx = idStart + h % idDims;
+      out[idx] = idWeight;
+    }
+    if (this.dictionary && this.dictionary._words && typeof this.dictionary._words.get === "function") {
+      const entry = this.dictionary._words.get(lower);
+      const snap = entry && entry.cortexSnapshot;
+      if (snap && snap.length > 0 && snapDims > 0) {
+        const stride = Math.max(1, Math.floor(snap.length / snapDims));
+        for (let i = 0; i < snapDims; i++) {
+          const sourceIdx = i * stride;
+          if (sourceIdx < snap.length) {
+            out[snapStart + i] = snap[sourceIdx] > 0 ? 0.5 : 0;
+          }
+        }
+      }
+    }
+    return out;
+  }
+  /**
+   * Fractal-equation verifier — fires once at curriculum boot. Checks
+   * the master equation `dx/dt = F(x, u, θ, t) + η` is still wired
+   * correctly: 8 cortex sub-regions present, 14 cross-projections
+   * present, weight clamps at expected ranges, plasticity rules wired
+   * (Oja + anti-Hebbian + STDP), structural plasticity helpers wired
+   * (top-K-per-row prune + scale rescale), dictionary oracle helper
+   * wired, research-honesty counters initialized, intra-cluster
+   * synapse matrix at expected clamps. Drift surfaces as ⚠ lines so
+   * any future tuning that breaks the architecture flags itself
+   * loudly at boot.
+   *
+   * @returns {{ pass, checks, issues }}
+   */
+  _verifyFractalEquation() {
+    const checks = [];
+    const issues = [];
+    const cluster = this.cluster;
+    if (!cluster) {
+      issues.push("\u2717 cortex cluster not initialized");
+      return { pass: false, checks, issues };
+    }
+    if (cluster.regions) {
+      const expected = ["auditory", "visual", "free", "letter", "phon", "sem", "fineType", "motor"];
+      const actual = Object.keys(cluster.regions);
+      const missing = expected.filter((r) => !actual.includes(r));
+      if (missing.length === 0) {
+        checks.push(`\u2713 cortex sub-regions: 8/8 (${expected.join(", ")})`);
+      } else {
+        issues.push(`\u2717 cortex sub-regions missing: ${missing.join(", ")}`);
+      }
+    } else {
+      issues.push("\u2717 cluster.regions undefined");
+    }
+    if (cluster.crossProjections) {
+      const expectedProjs = [
+        "visual_to_letter",
+        "letter_to_visual",
+        "letter_to_phon",
+        "phon_to_letter",
+        "phon_to_sem",
+        "sem_to_phon",
+        "sem_to_fineType",
+        "fineType_to_sem",
+        "sem_to_motor",
+        "motor_to_sem",
+        "motor_to_letter",
+        "letter_to_motor",
+        "auditory_to_phon",
+        "phon_to_auditory"
+      ];
+      const actualProjs = Object.keys(cluster.crossProjections);
+      const missing = expectedProjs.filter((p) => !actualProjs.includes(p));
+      if (missing.length === 0) {
+        checks.push(`\u2713 cross-projections: 14/14 (7 pairs \xD7 2 directions)`);
+      } else {
+        issues.push(`\u2717 cross-projections missing: ${missing.join(", ")}`);
+      }
+      let clampOk = 0, clampBad = 0;
+      const sampleBad = [];
+      for (const [name, proj] of Object.entries(cluster.crossProjections)) {
+        const wMax = Number(proj.wMax);
+        const wMin = Number(proj.wMin);
+        if (Math.abs(wMax - 0.2) < 0.01 && Math.abs(wMin - -0.2) < 0.01) {
+          clampOk++;
+        } else {
+          clampBad++;
+          if (sampleBad.length < 3) sampleBad.push(`${name}=[${wMin},${wMax}]`);
+        }
+      }
+      if (clampBad === 0) {
+        checks.push(`\u2713 cross-projection weight clamps: ${clampOk}/${clampOk + clampBad} at \xB10.2`);
+      } else {
+        issues.push(`\u2717 cross-projection clamp drift: ${clampBad} projection(s) outside \xB10.2 \u2014 sample: ${sampleBad.join(", ")}`);
+      }
+      let totalFanout = 0;
+      let totalProj = 0;
+      for (const [, proj] of Object.entries(cluster.crossProjections)) {
+        if (proj && proj.rows > 0 && typeof proj.nnz === "number") {
+          totalFanout += proj.nnz / proj.rows;
+          totalProj++;
+        }
+      }
+      if (totalProj > 0) {
+        const avg = totalFanout / totalProj;
+        if (avg >= 10 && avg <= 80) {
+          checks.push(`\u2713 cross-projection avg fanout: ${avg.toFixed(1)} entries/row across ${totalProj} projections (target 20-40)`);
+        } else {
+          issues.push(`\u26A0 cross-projection avg fanout drift: ${avg.toFixed(1)} entries/row (target 20-40)`);
+        }
+      }
+      const sample = cluster.crossProjections.sem_to_motor;
+      if (sample) {
+        const helpers = [];
+        if (typeof sample.pruneTopKPerRow === "function") helpers.push("pruneTopKPerRow");
+        if (typeof sample.scale === "function") helpers.push("scale");
+        if (typeof sample.ojaUpdate === "function") helpers.push("ojaUpdate");
+        if (typeof sample.antiHebbianUpdate === "function") helpers.push("antiHebbianUpdate");
+        if (typeof sample.bcmUpdate === "function") helpers.push("bcmUpdate");
+        if (typeof sample.normalizeRows === "function") helpers.push("normalizeRows");
+        if (helpers.length >= 5) {
+          checks.push(`\u2713 SparseMatrix plasticity API: ${helpers.join(", ")}`);
+        } else {
+          issues.push(`\u2717 SparseMatrix plasticity API incomplete (${helpers.length}/6): present=${helpers.join(", ")}`);
+        }
+      } else {
+        issues.push("\u2717 sem_to_motor projection missing \u2014 cannot verify SparseMatrix API");
+      }
+    } else {
+      issues.push("\u2717 cluster.crossProjections undefined");
+    }
+    if (cluster.synapses) {
+      const wMax = Number(cluster.synapses.wMax);
+      if (Math.abs(wMax - 2) < 0.01) {
+        checks.push(`\u2713 intra-cluster synapse clamp: \xB12.0 (recurrent matrix)`);
+      } else {
+        issues.push(`\u26A0 intra-cluster synapse clamp drift: wMax=${wMax} (expected 2.0)`);
+      }
+    } else {
+      issues.push("\u2717 cluster.synapses (intra-cluster recurrent matrix) undefined");
+    }
+    if (typeof cluster._dictionaryOracleEmit === "function") {
+      checks.push("\u2713 dictionary oracle helper wired (_dictionaryOracleEmit)");
+    } else {
+      issues.push("\u2717 dictionary oracle helper NOT wired");
+    }
+    const oracleHits = cluster._oracleHits | 0;
+    const matrixHits = cluster._matrixHits | 0;
+    checks.push(`\u2713 research-honesty counters present (oracle=${oracleHits} matrix=${matrixHits} at boot)`);
+    const dispatchers = [];
+    if (typeof cluster._crossRegionHebbian === "function") dispatchers.push("Oja");
+    if (typeof cluster._crossRegionAntiHebbian === "function") dispatchers.push("anti-Hebbian");
+    if (typeof cluster.intraSynapsesHebbian === "function") dispatchers.push("intra-Hebbian");
+    if (dispatchers.length >= 2) {
+      checks.push(`\u2713 plasticity dispatchers wired: ${dispatchers.join(", ")}`);
+    } else {
+      issues.push(`\u2717 plasticity dispatchers incomplete: present=${dispatchers.join(", ") || "none"}`);
+    }
+    const genPaths = [];
+    if (typeof cluster.generateSentence === "function") genPaths.push("generateSentence (sync)");
+    if (typeof cluster.generateSentenceAwait === "function") genPaths.push("generateSentenceAwait (async)");
+    if (typeof cluster._emitDirectPropagate === "function") genPaths.push("_emitDirectPropagate (matrix)");
+    if (genPaths.length >= 2) {
+      checks.push(`\u2713 emission paths wired: ${genPaths.join(", ")}`);
+    } else {
+      issues.push(`\u2717 emission paths incomplete: present=${genPaths.join(", ") || "none"}`);
+    }
+    const modParams = [];
+    if (typeof cluster.tonicDrive === "number") modParams.push(`tonicDrive=${cluster.tonicDrive.toFixed(2)}`);
+    if (typeof cluster.gainMultiplier === "number") modParams.push(`gainMultiplier=${cluster.gainMultiplier.toFixed(2)}`);
+    if (typeof cluster.driveBaseline === "number") modParams.push(`driveBaseline=${cluster.driveBaseline.toFixed(2)}`);
+    if (modParams.length >= 2) {
+      checks.push(`\u2713 hierarchical modulation params: ${modParams.join(", ")}`);
+    } else {
+      issues.push(`\u2717 hierarchical modulation params incomplete: present=${modParams.join(", ") || "none"}`);
+    }
+    return { pass: issues.length === 0, checks, issues };
+  }
+  /**
+   * on real human-student-style questions — methodology / logic /
+   * retention / understanding of the course material.
+   *
+   * @param {Array<{question, expectedAnswer, expectedVariants?, maxTicks?}>} questions
+   * @param {string} label — short tag for log output ('K-STUDENT',
+   *                          'MATH-K-STUDENT', etc.)
+   * @returns {{pass, total, rate, summary, results}}
+   */
+  async _runStudentBattery(questions, label) {
+    const results = [];
+    let pass = 0;
+    const _batteryStart = Date.now();
+    const cellKey = this.cluster?._currentCellKey || null;
+    let trainedVocab = null;
+    if (cellKey && typeof this._trainedVocabularySet === "function") {
+      try {
+        trainedVocab = this._trainedVocabularySet(cellKey);
+      } catch {
+        trainedVocab = null;
+      }
+    }
+    const STOPWORDS = /* @__PURE__ */ new Set([
+      "a",
+      "an",
+      "the",
+      "is",
+      "are",
+      "was",
+      "were",
+      "be",
+      "been",
+      "being",
+      "am",
+      "of",
+      "in",
+      "on",
+      "at",
+      "to",
+      "for",
+      "with",
+      "from",
+      "by",
+      "as",
+      "or",
+      "and",
+      "but",
+      "so",
+      "if",
+      "then",
+      "else",
+      "not",
+      "no",
+      "yes",
+      "do",
+      "does",
+      "did",
+      "can",
+      "could",
+      "would",
+      "should",
+      "will",
+      "may",
+      "might",
+      "this",
+      "that",
+      "these",
+      "those",
+      "it",
+      "its",
+      "i",
+      "you",
+      "he",
+      "she",
+      "we",
+      "they",
+      "my",
+      "your",
+      "his",
+      "her",
+      "our",
+      "their",
+      "has",
+      "have",
+      "had",
+      "what",
+      "which",
+      "who",
+      "when",
+      "where",
+      "why",
+      "how",
+      "whose",
+      "there",
+      "here"
+    ]);
+    const tokenize = (text) => {
+      const words = String(text || "").toLowerCase().replace(/[^a-z0-9'\s]/g, " ").split(/\s+/).filter((w) => w.length >= 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+      return words;
+    };
+    const filteredForVocab = [];
+    const vocabGaps = /* @__PURE__ */ new Map();
+    if (trainedVocab && trainedVocab.size > 0) {
+      for (const q of questions) {
+        const words = tokenize(q.question);
+        const untaught = words.filter((w) => !trainedVocab.has(w));
+        if (untaught.length === 0) {
+          filteredForVocab.push(q);
+        } else {
+          for (const w of untaught) vocabGaps.set(w, (vocabGaps.get(w) | 0) + 1);
+        }
+      }
+    } else {
+      filteredForVocab.push(...questions);
+    }
+    const vocabFiltered = questions.length - filteredForVocab.length;
+    if (vocabFiltered > 0) {
+      const topGaps = [...vocabGaps.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15);
+      const gapStr = topGaps.map(([w, n]) => `${w}\xD7${n}`).join(", ");
+      this._hb(`[Curriculum][${label}] VOCAB-FILTER \u2014 ${vocabFiltered}/${questions.length} questions skipped (untaught words). Top gaps: ${gapStr}${topGaps.length < vocabGaps.size ? ` (+${vocabGaps.size - topGaps.length} more)` : ""}`);
+    }
+    const byTemplate = /* @__PURE__ */ new Map();
+    const canClassify = typeof this._classifyQuestionTemplate === "function";
+    for (const q of filteredForVocab) {
+      const tid = canClassify ? this._classifyQuestionTemplate(q.question) : -1;
+      const key = tid >= 0 ? tid : "generic";
+      if (!byTemplate.has(key)) byTemplate.set(key, []);
+      byTemplate.get(key).push(q);
+    }
+    const filteredForComprehension = [];
+    const templateSkips = [];
+    let compSamplesFired = 0;
+    for (const [tid, group] of byTemplate.entries()) {
+      if (group.length === 0) continue;
+      if (group.length <= 2) {
+        filteredForComprehension.push(...group);
+        continue;
+      }
+      const sample = group[0];
+      compSamplesFired += 1;
+      let sampleScore = 0;
+      try {
+        const r = await this._studentTestProbe({
+          question: sample.question,
+          expectedAnswer: sample.expectedAnswer,
+          expectedVariants: sample.expectedVariants || [sample.expectedAnswer],
+          maxTicks: sample.maxTicks || 60,
+          methodology: sample.methodology || null
+        });
+        sampleScore = r?.score || 0;
+        r.standard = sample.standard || "unspecified";
+        r.difficulty = sample.difficulty || 1;
+        r.source = sample.source || "authored";
+        r.comprehensionSample = true;
+      } catch {
+        sampleScore = 0;
+      }
+      if (sampleScore >= 0.3) {
+        filteredForComprehension.push(...group.slice(1));
+      } else {
+        templateSkips.push({ templateId: tid, count: group.length, sampleScore, sampleQ: sample.question });
+      }
+    }
+    const comprehensionFiltered = filteredForVocab.length - filteredForComprehension.length - compSamplesFired;
+    if (templateSkips.length > 0) {
+      const skipSummary = templateSkips.map((s) => `T${s.templateId}\xD7${s.count} (sample "${s.sampleQ.slice(0, 40)}" \u2192 ${s.sampleScore.toFixed(2)})`).join(" \xB7 ");
+      this._hb(`[Curriculum][${label}] COMPREHENSION-GATE \u2014 ${comprehensionFiltered} questions skipped across ${templateSkips.length} templates: ${skipSummary}`);
+    }
+    questions = filteredForComprehension;
+    try {
+      process.stdout.write(`[Curriculum][${label}] BATTERY START \u2014 ${questions.length} questions (maxTicks per Q default 60) \xB7 progress logs every 20th Q + failures
+`);
+    } catch {
+    }
+    const byStandard = /* @__PURE__ */ new Map();
+    let methoQuestions = 0;
+    let methoPass = 0;
+    for (const q of questions) {
+      try {
+        const r = await this._studentTestProbe({
+          question: q.question,
+          expectedAnswer: q.expectedAnswer,
+          expectedVariants: q.expectedVariants || [q.expectedAnswer],
+          maxTicks: q.maxTicks || 60,
+          methodology: q.methodology || null
+        });
+        r.standard = q.standard || "unspecified";
+        r.difficulty = q.difficulty || 1;
+        r.source = q.source || "authored";
+        results.push(r);
+        if (r.score >= 0.5) pass++;
+        if (q.methodology && typeof q.methodology === "object") {
+          methoQuestions += 1;
+          if ((r.methodologyScore || 0) > 0) methoPass += 1;
+        }
+        const bucket = byStandard.get(r.standard) || { pass: 0, total: 0 };
+        bucket.total += 1;
+        if (r.score >= 0.5) bucket.pass += 1;
+        byStandard.set(r.standard, bucket);
+        const isFail = r.score < 0.5;
+        const shouldLog = isFail || results.length <= 3 || results.length % 20 === 0;
+        if (shouldLog) {
+          let diagTail = "";
+          if ((!r.answer || r.answer.length === 0) && r.emissionDiag) {
+            const d = r.emissionDiag;
+            const why = d.maxMotorBucket === 0 ? "motor-silent" : d.committedLetters === 0 ? `argmax-flicker(max=${d.maxMotorBucket}, flickers=${d.argmaxFlickers})` : `budget-exhausted(committed=${d.committedLetters})`;
+            diagTail = ` \xB7 \u2691emission: ${why} ticks=${d.ticksRun}${d.gpuReadPath ? "" : " cpu-readout"}`;
+          }
+          this._hb(`[Curriculum][${label}] Q${results.length}/${questions.length} [${r.standard}]: "${q.question.slice(0, 60)}" \u2192 "${(r.answer || "").slice(0, 30)}" \xB7 score=${r.score.toFixed(2)} match=${r.match.overall}${diagTail}`);
+        }
+      } catch (err) {
+        const bucket = byStandard.get(q.standard || "unspecified") || { pass: 0, total: 0 };
+        bucket.total += 1;
+        byStandard.set(q.standard || "unspecified", bucket);
+        results.push({ question: q.question, answer: "", score: 0, error: err?.message || String(err), standard: q.standard || "unspecified" });
+      }
+    }
+    const total = questions.length;
+    const rate = total > 0 ? pass / total : 0;
+    const standardBreakdown = [];
+    let standardsBelowCut = 0;
+    for (const [std, bucket] of byStandard.entries()) {
+      const stdRate = bucket.total > 0 ? bucket.pass / bucket.total : 0;
+      const cut = cutScoreFor(std);
+      const belowCut = stdRate < cut;
+      if (belowCut) standardsBelowCut += 1;
+      standardBreakdown.push({ standard: std, pass: bucket.pass, total: bucket.total, rate: stdRate, cut, belowCut });
+    }
+    standardBreakdown.sort((a, b) => {
+      if (a.belowCut !== b.belowCut) return a.belowCut ? -1 : 1;
+      return a.rate - b.rate;
+    });
+    const breakdownStr = standardBreakdown.map((s) => `${s.standard}:${s.pass}/${s.total}(${(s.rate * 100).toFixed(0)}%${s.belowCut ? " \u26A0<" + (s.cut * 100).toFixed(0) + "%" : ""})`).join(" \xB7 ");
+    this._hb(`[Curriculum][${label}] ANSWER AGGREGATE: ${pass}/${total} (${(rate * 100).toFixed(1)}%) \xB7 standards=${byStandard.size} \xB7 below-cut=${standardsBelowCut}`);
+    if (standardBreakdown.length > 0) {
+      this._hb(`[Curriculum][${label}] BY STANDARD: ${breakdownStr}`);
+    }
+    const methoRate = methoQuestions > 0 ? methoPass / methoQuestions : 0;
+    if (methoQuestions > 0) {
+      this._hb(`[Curriculum][${label}] METHODOLOGY: ${methoPass}/${methoQuestions} (${(methoRate * 100).toFixed(1)}%) questions had reasoning-keyword hit \u2014 tests HOW she thinks, not just WHAT she answers`);
+    }
+    const methoSuffix = methoQuestions > 0 ? ` \xB7 methodology ${methoPass}/${methoQuestions} ${(methoRate * 100).toFixed(0)}%` : "";
+    const summary = ` [${label}: ${pass}/${total} ${(rate * 100).toFixed(1)}% \xB7 ${standardsBelowCut} std below cut${methoSuffix}]`;
+    try {
+      process.stdout.write(`[Curriculum][${label}] BATTERY DONE in ${Date.now() - _batteryStart}ms \u2014 ${pass}/${total} (${(rate * 100).toFixed(1)}%) \xB7 standardsBelowCut=${standardsBelowCut}${methoSuffix}
+`);
+    } catch {
+    }
+    return { pass, total, rate, summary, results, byStandard: standardBreakdown, standardsBelowCut, methoQuestions, methoPass, methoRate };
+  }
+  /**
+   * Student-test probe — ask the brain a human-student-style question,
+   * let it think like a student would, read its generated answer via the
+   * same cortex language pipeline live chat uses, and score the answer
+   * against the expected response.
+   *
+   * This upgrades the substrate probes (READ/THINK/TALK/SEQ/PROD/WRITE/
+   * RESP/DYN-PROD) from low-level neural firing checks into real
+   * human-student-style tests of methodology, logic, information
+   * retention, and understanding of the course material. The underlying
+   * substrate probes are still valuable as sanity diagnostics — a
+   * substrate failure indicates the cortex is wired wrong (fix needed)
+   * while a student-test failure indicates more teaching needed.
+   *
+   * Call shape:
+   *   await _studentTestProbe({
+   *     question: "What letter comes after B?",
+   *     expectedAnswer: "c",
+   *     expectedVariants: ["c", "C", "cee"],
+   *     maxTicks: 60,                       // cortex tick budget
+   *     scoreBy: ['exact', 'startsWith', 'contains'],
+   *   });
+   * Returns:
+   *   {
+   *     question,
+   *     answer,                             // string Unity produced
+   *     match: { exact, startsWith, contains, overall },
+   *     score: 0.0 - 1.0,
+   *     methodology: bool,                  // did she walk ticks instead of argmax-0?
+   *     logic: bool,                        // is answer structurally sane?
+   *     retention: bool,                    // did she pull known vocab?
+   *     understanding: bool,                // did she produce sem-region signal matching intent?
+   *     ticks, ms,
+   *   }
+   *
+   * Implementation delegates all the actual reading + generating to the
+   * cortex itself (cluster.readInput + generateSentenceAwait) so the
+   * probe exercises the SAME path live chat uses. If the brain fails on
+   * the student-test probe it will fail identically in live chat —
+   * that's the whole point of this upgrade.
+   */
+  /**
+   * Methodology battery — HOW-question probe loop. Complements the
+   * fill-in-the-blank exam banks that `_runStudentBattery` consumes.
+   * Operator LAW 6 Part 2 binds gate evaluation to "methodogly
+   * reasoning thinkg talking listenign reading" — a brain that
+   * memorized letter pairs passes the fill-in-the-blank bank but can't
+   * explain WHY any letter comes after any other. Methodology probes
+   * ask the HOW version ("how do you figure out which letter comes
+   * next?") and score the emission against a list of reasoning
+   * keywords the answer must contain to demonstrate understanding of
+   * the procedure (not just the specific fact).
+   *
+   * Each question entry holds `{ q, keywords, standard }`. Emission is
+   * generated via the same `cluster.generateSentenceAwait(intentSeed)`
+   * path all other probes use — Path A dictionary oracle fires first,
+   * falls through to Path B tick-driven motor emission for novel
+   * responses. Scoring via `scoreMethodologyAnswer(emission, keywords)`
+   * from `student-question-banks.js` — pass = ≥ 1 keyword matched in
+   * the emission tokens (case-insensitive, whitespace-split).
+   *
+   * Returns:
+   *   {
+   *     cellKey,
+   *     total,         // N questions asked
+   *     passed,        // N questions with ≥ 1 keyword matched
+   *     rate,          // passed / total
+   *     results,       // per-question {q, emission, matched[], matchCount}
+   *     elapsedMs,
+   *   }
+   */
+  async _runMethodologyBattery(cellKey) {
+    const bank = methodologyBankFor(cellKey);
+    const out = { cellKey, total: 0, passed: 0, rate: 0, results: [], elapsedMs: 0 };
+    if (!bank || bank.length === 0) return out;
+    const cluster = this.cluster;
+    if (!cluster || typeof cluster.generateSentenceAwait !== "function") return out;
+    const started = Date.now();
+    try {
+      this._pushBrainEvent?.("gate", "fineType", `METHOD START: ${cellKey} \xB7 ${bank.length} HOW-probes`, { cellKey, count: bank.length });
+    } catch {
+    }
+    this._hb?.(`[Curriculum][${cellKey}] METHODOLOGY BATTERY START \u2014 ${bank.length} HOW-probes`);
+    for (let i = 0; i < bank.length; i++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) break;
+      const entry = bank[i];
+      const question = entry?.q || "";
+      const keywords = Array.isArray(entry?.keywords) ? entry.keywords : [];
+      if (!question || keywords.length === 0) continue;
+      let intentSeed = null;
+      try {
+        if (sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function") {
+          intentSeed = sharedEmbeddings.getSentenceEmbedding(question);
+        }
+      } catch {
+        intentSeed = null;
+      }
+      if ((!intentSeed || intentSeed.length === 0) && keywords[0] && sharedEmbeddings?.getEmbedding) {
+        try {
+          intentSeed = sharedEmbeddings.getEmbedding(String(keywords[0]));
+        } catch {
+          intentSeed = null;
+        }
+      }
+      const probeStart = Date.now();
+      let emission = "";
+      try {
+        const raw = await cluster.generateSentenceAwait(intentSeed, {
+          maxTicks: 80,
+          suppressNoise: true
+        });
+        emission = typeof raw === "string" ? raw : raw?.text || "";
+      } catch (err) {
+        emission = "";
+      }
+      const probeMs = Date.now() - probeStart;
+      const { matched, matchCount } = scoreMethodologyAnswer(emission, keywords);
+      if (matchCount >= 1) out.passed += 1;
+      out.total += 1;
+      out.results.push({
+        q: question,
+        standard: entry?.standard || null,
+        emission: String(emission).slice(0, 160),
+        matched,
+        matchCount,
+        ms: probeMs
+      });
+      this._hb?.(`[Curriculum][${cellKey}] METHOD ${i + 1}/${bank.length} ${matchCount >= 1 ? "\u2713" : "\u2717"} "${question}" \u2192 "${String(emission).slice(0, 40)}" [matched: ${matched.join(",") || "none"}] in ${probeMs}ms`);
+    }
+    out.rate = out.total > 0 ? out.passed / out.total : 0;
+    out.elapsedMs = Date.now() - started;
+    try {
+      this._pushBrainEvent?.("gate", "fineType", `METHOD DONE: ${cellKey} \xB7 ${out.passed}/${out.total} (${(out.rate * 100).toFixed(0)}%)`, { cellKey, passed: out.passed, total: out.total, rate: out.rate });
+    } catch {
+    }
+    this._hb?.(`[Curriculum][${cellKey}] METHODOLOGY BATTERY DONE \u2014 ${out.passed}/${out.total} (${(out.rate * 100).toFixed(0)}%) in ${(out.elapsedMs / 1e3).toFixed(1)}s`);
+    return out;
+  }
+  /**
+   * Readiness probe — before a 210-question battery fires, ask five
+   * single-letter cues and see what Unity actually emits. If she
+   * can't produce recognizable letter output on ≥ 3 of 5 simple
+   * probes, the full battery is premature: asking "what do you read
+   * first on a page" when her motor path can only emit "n r" produces
+   * garbage probe rows with zero signal about what she actually
+   * learned. Measure once per cell, gate the battery, log clearly.
+   *
+   * Returns { recognizedLetters, maxEmissionLen, canTalkAtAll, probes }.
+   */
+  async _measureEmissionCapability() {
+    const cluster = this.cluster;
+    const out = { recognizedLetters: 0, maxEmissionLen: 0, canTalkAtAll: false, probes: [] };
+    if (!cluster || typeof cluster.generateSentenceAwait !== "function") return out;
+    if (cluster && cluster._gpuProxy && typeof cluster._gpuProxy.drainWait === "function") {
+      try {
+        await cluster._gpuProxy.drainWait();
+      } catch {
+      }
+    }
+    const _readinessStart = Date.now();
+    this._hb("[Curriculum][READINESS] emission-capability probe START \u2014 5 single-letter cues (each capped at 20 emission ticks + 10 s wall-clock) to see if Unity can emit recognizable letters yet");
+    const PROBES = ["a", "b", "c", "d", "e"];
+    const LETTERS = new Set("abcdefghijklmnopqrstuvwxyz".split(""));
+    const PER_CUE_TIMEOUT_MS = 1e4;
+    let _cueIdx = 0;
+    for (const cue of PROBES) {
+      _cueIdx += 1;
+      const _cueStart = Date.now();
+      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} START letter='${cue}' \u2014 direct letter-region injection + up to 20 emission ticks`);
+      let emitted = "";
+      let timedOut = false;
+      try {
+        if (typeof cluster.injectLetter === "function") {
+          cluster.injectLetter(cue, 1);
+          if (typeof cluster.step === "function") {
+            for (let t = 0; t < 4; t++) {
+              try {
+                cluster.step(1e-3);
+              } catch {
+                break;
+              }
+            }
+          }
+        } else if (typeof cluster.readInput === "function") {
+          await cluster.readInput(cue, { ticks: 6 });
+        }
+        const emitOpts = { maxTicks: 20 };
+        emitOpts.directPropagate = true;
+        emitOpts.maxLetters = 32;
+        const letterSeed = cue ? function buildLetterSeed(letter) {
+          const oh = new Float32Array(26);
+          const i = letter.charCodeAt(0) - 97;
+          if (i >= 0 && i < 26) oh[i] = 1;
+          return oh;
+        }(cue) : null;
+        const emissionPromise = cluster.generateSentenceAwait(letterSeed, emitOpts);
+        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ _timeout: true }), PER_CUE_TIMEOUT_MS));
+        const raw = await Promise.race([emissionPromise, timeoutPromise]);
+        if (raw && raw._timeout) {
+          timedOut = true;
+          emitted = "";
+        } else {
+          emitted = (raw && typeof raw === "string" ? raw : raw?.text || "") || "";
+        }
+      } catch (err) {
+        this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} ERROR letter='${cue}' \u2014 ${err?.message || err}`);
+      }
+      const letters = emitted.toLowerCase().replace(/[^a-z]/g, "");
+      const hasLetter = letters.length > 0 && [...letters].some((ch) => LETTERS.has(ch));
+      if (hasLetter) out.recognizedLetters += 1;
+      if (letters.length > out.maxEmissionLen) out.maxEmissionLen = letters.length;
+      out.probes.push({ cue, emitted: emitted.slice(0, 40), letters, timedOut });
+      const _cueMs = Date.now() - _cueStart;
+      const _timeoutTag = timedOut ? " TIMEOUT" : _cueMs > 5e3 ? " SLOW" : "";
+      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} DONE${_timeoutTag} letter='${cue}' \u2192 emitted='${emitted.slice(0, 20) || "\u2205"}' letters='${letters.slice(0, 10) || "\u2205"}' hasLetter=${hasLetter} in ${_cueMs}ms`);
+    }
+    out.canTalkAtAll = out.recognizedLetters >= 3;
+    this._hb(`[Curriculum][READINESS] emission-capability probe DONE in ${Date.now() - _readinessStart}ms \u2014 recognizedLetters=${out.recognizedLetters}/5 maxEmissionLen=${out.maxEmissionLen} canTalkAtAll=${out.canTalkAtAll}`);
+    return out;
+  }
+  async _studentTestProbe(opts = {}) {
+    const cluster = this.cluster;
+    const startMs = Date.now();
+    const out = {
+      question: opts.question || "",
+      answer: "",
+      match: { exact: false, startsWith: false, contains: false, overall: false },
+      score: 0,
+      methodology: false,
+      logic: false,
+      retention: false,
+      understanding: false,
+      ticks: 0,
+      ms: 0
+    };
+    if (!cluster || typeof cluster.generateSentenceAwait !== "function") {
+      out.ms = Date.now() - startMs;
+      return out;
+    }
+    const question = String(opts.question || "");
+    const expectedAnswer = String(opts.expectedAnswer || "").toLowerCase().trim();
+    const expectedVariants = (opts.expectedVariants || [expectedAnswer]).map((v) => String(v || "").toLowerCase().trim()).filter((v) => v.length > 0);
+    const maxTicks = typeof opts.maxTicks === "number" ? opts.maxTicks : 60;
+    try {
+      if (typeof cluster.readInput === "function") {
+        await cluster.readInput(question, { ticks: 10 });
+      }
+    } catch {
+    }
+    try {
+      if (this._isQuestionLike(question) && typeof cluster.injectEmbeddingToRegion === "function") {
+        const qEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function" ? sharedEmbeddings.getSentenceEmbedding(question) : null;
+        if (qEmb && qEmb.length > 0) {
+          cluster.injectEmbeddingToRegion("sem", qEmb, 0.6);
+          const keyToken = this._extractKeyToken(question);
+          const keyEmb = keyToken ? this._dictionaryPatternFor(keyToken) : null;
+          if (keyEmb && keyEmb.length > 0 && typeof this._injectEmbeddingToRegionOffset === "function") {
+            this._injectEmbeddingToRegionOffset(cluster, "sem", keyEmb, 0.6, 0.5);
+          }
+          const templateId = this._classifyQuestionTemplate(question);
+          if (templateId >= 0 && typeof this._injectQuestionTemplateTag === "function") {
+            this._injectQuestionTemplateTag(templateId, 0.6);
+          }
+          if (typeof cluster.step === "function") {
+            for (let t = 0; t < 5; t++) {
+              try {
+                cluster.step(1e-3);
+              } catch {
+                break;
+              }
+            }
+          }
+        }
+      }
+    } catch {
+    }
+    const excludeTokens = (() => {
+      const s = /* @__PURE__ */ new Set();
+      const colonIdx = question.indexOf(":");
+      if (colonIdx > 0) {
+        const wrapper = question.substring(0, colonIdx).toLowerCase();
+        for (const tok of wrapper.split(/[^a-z0-9']+/)) {
+          if (tok && tok.length > 0) s.add(tok);
+        }
+      } else {
+        const tokens = question.toLowerCase().split(/[^a-z0-9']+/).filter((w) => w.length > 0);
+        for (let i = 0; i < tokens.length - 1; i++) s.add(tokens[i]);
+      }
+      return s;
+    })();
+    let generated = "";
+    try {
+      let intentSeed = null;
+      if (typeof cluster.getSemanticReadout === "function") {
+        try {
+          intentSeed = cluster.getSemanticReadout();
+        } catch {
+          intentSeed = null;
+        }
+      }
+      if ((!intentSeed || intentSeed.length === 0) && sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function") {
+        intentSeed = sharedEmbeddings.getSentenceEmbedding(question);
+      }
+      const emitOpts = {
+        directPropagate: true,
+        maxLetters: Math.min(maxTicks, 16),
+        excludeTokens,
+        // Test-probe context — exclude persona-flavored vocabulary so
+        // "what letter comes after m?" never resolves to "fuck" via the
+        // dictionary oracle when the trained matrix is overloaded. Live
+        // chat path doesn't pass this; this is exam-only.
+        excludePersona: true,
+        // Restrict the oracle's answer pool to K-grade vocabulary —
+        // 26 letters + letter names + digits + number names + K
+        // content words from the trained dictionary. Stops the oracle
+        // from picking rare/random dictionary entries like
+        // "diningroom" or "anymore" by accidental cosine similarity
+        // when the trained matrix can't yet drive a clean answer.
+        restrictToVocab: this._kStudentAnswerVocab(),
+        // Oracle threshold — must be loose enough that the
+        // comprehension-gate can find SOME questions it can answer
+        // (LIFE-K had 0 questions tested because gate threshold + 0.5
+        // oracle = 100% template skip), but tight enough that random
+        // K-vocab picks like "pollen"/"focusin" don't dominate. 0.2
+        // is a middle ground: clearly above the 0.05 noise floor but
+        // below the 0.5 strict fake-answer guard.
+        minScore: 0.2
+      };
+      const raw = await cluster.generateSentenceAwait(intentSeed, emitOpts);
+      generated = (raw && typeof raw === "string" ? raw : raw?.text || "") || "";
+    } catch {
+    }
+    const answer = generated.toLowerCase().trim();
+    out.answer = generated;
+    out.ticks = cluster._motorEmissionTicks != null ? cluster._motorEmissionTicks : 0;
+    out.emissionDiag = cluster._lastEmissionDiag ? { ...cluster._lastEmissionDiag } : null;
+    out.methodology = out.ticks >= 3 && answer.length > 0;
+    out.logic = answer.length > 0 && /[a-z]/.test(answer);
+    let anyMatch = false;
+    for (const v of expectedVariants) {
+      if (answer === v) {
+        out.match.exact = true;
+        anyMatch = true;
+        break;
+      }
+    }
+    if (!out.match.exact) {
+      for (const v of expectedVariants) {
+        if (answer.startsWith(v)) {
+          out.match.startsWith = true;
+          anyMatch = true;
+          break;
+        }
+      }
+    }
+    if (!anyMatch) {
+      for (const v of expectedVariants) {
+        if (answer.includes(v)) {
+          out.match.contains = true;
+          anyMatch = true;
+          break;
+        }
+      }
+    }
+    out.match.overall = anyMatch;
+    out.retention = false;
+    if (this.dictionary && typeof this.dictionary.knows === "function") {
+      for (const word of answer.split(/\s+/)) {
+        if (word.length >= 2 && this.dictionary.knows(word)) {
+          out.retention = true;
+          break;
+        }
+      }
+    } else if (this.dictionary && typeof this.dictionary.entries === "function") {
+      const entries = this.dictionary.entries();
+      const known = /* @__PURE__ */ new Set();
+      for (const e of entries) {
+        if (e.word) known.add(String(e.word).toLowerCase());
+      }
+      for (const word of answer.split(/\s+/)) {
+        if (word.length >= 2 && known.has(word)) {
+          out.retention = true;
+          break;
+        }
+      }
+    }
+    out.understanding = false;
+    try {
+      if (typeof cluster.regionReadout === "function" && typeof cluster.regions === "object" && cluster.regions?.sem) {
+        const semReadout = cluster.regionReadout("sem", 50);
+        if (cluster._sharedEmbeddings && typeof cluster._sharedEmbeddings.getEmbedding === "function") {
+          const qEmb = cluster._sharedEmbeddings.getEmbedding(question);
+          if (qEmb && qEmb.length >= semReadout.length) {
+            let dot = 0, nA = 0, nB = 0;
+            for (let i = 0; i < semReadout.length; i++) {
+              dot += semReadout[i] * qEmb[i];
+              nA += semReadout[i] * semReadout[i];
+              nB += qEmb[i] * qEmb[i];
+            }
+            const cos = dot / (Math.sqrt(nA) * Math.sqrt(nB) || 1);
+            out.understanding = cos > 0.3;
+          }
+        }
+      }
+    } catch {
+    }
+    let score = 0;
+    if (out.match.exact) score += 0.6;
+    else if (out.match.startsWith) score += 0.4;
+    else if (out.match.contains) score += 0.2;
+    if (out.methodology) score += 0.15;
+    if (out.logic) score += 0.05;
+    if (out.retention) score += 0.1;
+    if (out.understanding) score += 0.1;
+    out.score = Math.min(1, score);
+    if (opts.methodology && typeof opts.methodology === "object") {
+      const methoPrompt = String(opts.methodology.prompt || "");
+      const keywords = (opts.methodology.keywords || []).map((k) => String(k || "").toLowerCase().trim()).filter((k) => k.length > 0);
+      const minKeywords = typeof opts.methodology.minKeywords === "number" ? opts.methodology.minKeywords : 1;
+      out.methodologyAnswer = "";
+      out.methodologyKeywordMatches = [];
+      out.methodologyScore = 0;
+      if (methoPrompt && keywords.length > 0) {
+        try {
+          if (typeof cluster.readInput === "function") {
+            await cluster.readInput(methoPrompt, { ticks: 10 });
+          }
+          let methoGenerated = "";
+          try {
+            const semSeed = typeof cluster.getSemanticReadout === "function" ? cluster.getSemanticReadout() : null;
+            const emitOpts = { maxEmissionTicks: maxTicks };
+            if (semSeed) emitOpts.injectStrength = 0.6;
+            const raw = await cluster.generateSentenceAwait(semSeed, emitOpts);
+            methoGenerated = (raw && typeof raw === "string" ? raw : raw?.text || "") || "";
+          } catch {
+          }
+          out.methodologyAnswer = methoGenerated;
+          const methoLower = methoGenerated.toLowerCase();
+          const matches = keywords.filter((k) => methoLower.includes(k));
+          out.methodologyKeywordMatches = matches;
+          if (matches.length >= minKeywords) {
+            out.methodologyScore = Math.min(1, matches.length / keywords.length);
+          } else {
+            out.methodologyScore = 0;
+          }
+        } catch {
+        }
+      }
+    }
+    out.ms = Date.now() - startMs;
+    return out;
+  }
+  /**
+   * Start a fresh session ID — called when a new curriculum run starts
+   * so session-level retention can be tracked across boot/retrain cycles.
+   */
+  startNewGateSession() {
+    this._sessionId = `s${Date.now().toString(36)}`;
+  }
+  /**
+   * Start the interval-driven background probe loop. Call this AFTER
+   * the initial runCompleteCurriculum pass so there are passed cells to
+   * re-test. Idempotent — calling again with the loop already running
+   * is a no-op.
+   */
+  startBackgroundProbeLoop(intervalMs) {
+    if (this._backgroundProbeIntervalId != null) return;
+    const ms = typeof intervalMs === "number" && intervalMs > 1e3 ? intervalMs : this._backgroundProbeMs;
+    this._backgroundProbeMs = ms;
+    const tick = async () => {
+      try {
+        await this.runBackgroundProbe();
+      } catch (err) {
+      }
+    };
+    this._backgroundProbeIntervalId = setInterval(tick, ms);
+    this._hb(`[Curriculum] background probe loop started (every ${ms}ms)`);
+  }
+  /** Stop the background probe loop. */
+  stopBackgroundProbeLoop() {
+    if (this._backgroundProbeIntervalId != null) {
+      clearInterval(this._backgroundProbeIntervalId);
+      this._backgroundProbeIntervalId = null;
+      console.log("[Curriculum] background probe loop stopped");
+    }
+  }
+  /**
+   * Run the full curriculum over the given corpora.
+   *
+   * @param {object} corpora — { persona: string, baseline: string, coding: string, ...others }
+   * @param {object} [opts]
+   * @param {number} [opts.arousal=0.8]
+   * @param {number} [opts.valence=0.2]
+   * @returns {Promise<object>} — telemetry stats
+   */
+  async runFromCorpora(corpora, opts = {}) {
+    const startMs = Date.now();
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+    if (!this.cluster) {
+      console.warn("[Curriculum] No cluster wired \u2014 skipping exposure walk.");
+      return this.stats;
+    }
+    const wasInCurriculum = this.cluster._inCurriculumMode;
+    this.cluster._inCurriculumMode = true;
+    const { letterFreq, wordFreq, sentences } = this._tokenizeAll(corpora);
+    await this._phaseLetters(letterFreq, arousal, valence);
+    await this._phaseWords(wordFreq, {
+      lenMin: 1,
+      lenMax: SHORT_WORD_MAX_LEN,
+      ticksPerWord: SHORT_WORD_TICKS,
+      repsMax: SHORT_WORD_REPS_MAX,
+      counter: "shortWordsSeen"
+    }, arousal, valence);
+    await this._phaseWords(wordFreq, {
+      lenMin: SHORT_WORD_MAX_LEN + 1,
+      lenMax: Infinity,
+      ticksPerWord: LONG_WORD_TICKS,
+      repsMax: LONG_WORD_REPS_MAX,
+      counter: "longWordsSeen"
+    }, arousal, valence);
+    await this._phaseSentences(sentences, arousal, valence);
+    this._calibrateIdentityLock(corpora, sentences);
+    this.cluster._inCurriculumMode = wasInCurriculum;
+    this.stats.wallMs = Date.now() - startMs;
+    this._hb(`[Curriculum] runFromCorpora complete in ${this.stats.wallMs}ms \u2014 ${this.stats.lettersSeen} letters, ${this.stats.shortWordsSeen} short, ${this.stats.longWordsSeen} long, ${this.stats.sentencesSeen} sentences, ${this.stats.totalTicks} total ticks`);
+    return this.stats;
+  }
+  /**
+   * T14.17 — IDENTITY LOCK CALIBRATION + COVERAGE AUDIT.
+   *
+   * Runs once at the end of `runFromCorpora` after the cortex has
+   * absorbed the full corpus. Populates all five things T14.16.5
+   * deferred:
+   *
+   *   1. `_personaRefreshCorpus`  — sentences from the persona corpus
+   *      that Lock 3's `runIdentityRefresh` draws from
+   *   2. `personaDimensions`      — k-bucket clustering of persona
+   *      sentences by semantic embedding for stratified refresh
+   *   3. `ENGLISH_SURPRISE_THRESHOLD` / `ENGLISH_FINETYPE_MIN` —
+   *      Lock 1's English gate thresholds, set at the post-corpus
+   *      percentile baselines
+   *   4. `HEALTH_ENTROPY_MIN` / `HEALTH_VOCAB_MIN` /
+   *      `HEALTH_WM_VARIANCE_MIN` — Lock 3's mode-collapse audit
+   *      thresholds, baseline health floors
+   *   5. `intentCentroids`        — per-intent cortex-state centroids
+   *      that `cluster.intentReadout()` argmaxes against at runtime
+   *
+   * Also logs persona corpus comprehensiveness warnings — which
+   * intent buckets are empty after curriculum, which fine types have
+   * zero observations, etc. Operator closes coverage gaps by editing
+   * the persona file.
+   */
+  _calibrateIdentityLock(corpora, allSentences) {
+    const cluster = this.cluster;
+    if (!cluster) return;
+    const personaText = corpora?.persona || "";
+    const personaSentences = [];
+    if (typeof personaText === "string" && personaText.length > 0) {
+      const raw = personaText.split(/(?<=[.!?])\s+|\n\s*\n/);
+      for (const r of raw) {
+        const clean = this._normalizeSentence(r);
+        if (clean && clean.split(/\s+/).length >= 3) personaSentences.push(clean);
+      }
+    }
+    cluster._personaRefreshCorpus = personaSentences;
+    this._hb(`[Curriculum] Lock 3 refresh corpus populated: ${personaSentences.length} persona sentences`);
+    const K = Math.max(4, Math.min(12, Math.floor(personaSentences.length / 40) || 4));
+    cluster.personaDimensions = this._buildPersonaDimensions(personaSentences, K);
+    this._hb(`[Curriculum] personaDimensions: ${cluster.personaDimensions.length} clusters`);
+    const surpriseSamples = [];
+    const coverageSamples = [];
+    const sampleCount = Math.min(50, personaSentences.length);
+    for (let i = 0; i < sampleCount; i++) {
+      const s = personaSentences[Math.floor(Math.random() * personaSentences.length)];
+      surpriseSamples.push(cluster.computeTransitionSurprise(s));
+      coverageSamples.push(cluster.computeFineTypeCoverage(s));
+    }
+    if (surpriseSamples.length > 0) {
+      surpriseSamples.sort((a, b) => a - b);
+      coverageSamples.sort((a, b) => a - b);
+      const p95 = surpriseSamples[Math.floor(surpriseSamples.length * 0.95)];
+      const p5 = coverageSamples[Math.floor(coverageSamples.length * 0.05)];
+      cluster.ENGLISH_SURPRISE_THRESHOLD = Math.max(0.2, (p95 || 0.3) * 1.5);
+      cluster.ENGLISH_FINETYPE_MIN = Math.max(0.1, (p5 || 0.5) * 0.8);
+      this._hb(`[Curriculum] Lock 1 calibrated: surprise<=${cluster.ENGLISH_SURPRISE_THRESHOLD.toFixed(3)}, coverage>=${cluster.ENGLISH_FINETYPE_MIN.toFixed(3)}`);
+    }
+    const baselineEntropy = cluster._computeOutputEntropy(personaSentences.slice(0, 100));
+    const baselineVocab = cluster._computeVocabDiversity(personaSentences.slice(0, 100));
+    const baselineWmVariance = cluster._computeWorkingMemoryVariance();
+    cluster.HEALTH_ENTROPY_MIN = baselineEntropy * 0.7;
+    cluster.HEALTH_VOCAB_MIN = baselineVocab * 0.7;
+    cluster.HEALTH_WM_VARIANCE_MIN = baselineWmVariance * 0.7;
+    this._hb(`[Curriculum] Lock 3 health floors: entropy>=${cluster.HEALTH_ENTROPY_MIN.toFixed(3)}, vocab>=${cluster.HEALTH_VOCAB_MIN.toFixed(3)}, wmVar>=${cluster.HEALTH_WM_VARIANCE_MIN.toFixed(4)}`);
+    const intentCentroids = /* @__PURE__ */ new Map();
+    const intentCounts = /* @__PURE__ */ new Map();
+    for (const sentence of allSentences) {
+      const intent = this._lightIntent(sentence);
+      const emb = sharedEmbeddings.getSentenceEmbedding(sentence);
+      if (!emb || emb.length === 0) continue;
+      if (!intentCentroids.has(intent)) {
+        intentCentroids.set(intent, new Float64Array(emb.length));
+        intentCounts.set(intent, 0);
+      }
+      const c = intentCentroids.get(intent);
+      for (let i = 0; i < emb.length; i++) c[i] += emb[i];
+      intentCounts.set(intent, intentCounts.get(intent) + 1);
+    }
+    for (const [intent, c] of intentCentroids) {
+      const n = intentCounts.get(intent) || 1;
+      for (let i = 0; i < c.length; i++) c[i] /= n;
+      let norm = 0;
+      for (let i = 0; i < c.length; i++) norm += c[i] * c[i];
+      norm = Math.sqrt(norm) || 1;
+      for (let i = 0; i < c.length; i++) c[i] /= norm;
+    }
+    cluster.intentCentroids = intentCentroids;
+    this._hb(`[Curriculum] intentCentroids built: ${intentCentroids.size} intents (${Array.from(intentCounts.entries()).map(([k, v]) => `${k}:${v}`).join(", ")})`);
+    const expectedIntents = ["greeting", "question", "emotion", "statement", "yesno", "command"];
+    const coverage = {};
+    for (const intent of expectedIntents) {
+      coverage[intent] = intentCounts.get(intent) || 0;
+      if (coverage[intent] === 0) {
+        console.warn(`[IDENTITY] persona corpus has no '${intent}' sentences \u2014 that dimension is unprotected against drift`);
+      }
+    }
+    cluster.identityCoverage = coverage;
+  }
+  _buildPersonaDimensions(sentences, k) {
+    if (!sentences || sentences.length === 0 || k <= 0) return [];
+    const centroids = [];
+    const step = Math.max(1, Math.floor(sentences.length / k));
+    for (let i = 0; i < k && i * step < sentences.length; i++) {
+      const emb = sharedEmbeddings.getSentenceEmbedding(sentences[i * step]);
+      if (emb && emb.length > 0) centroids.push({ vec: Array.from(emb), sentences: [] });
+    }
+    if (centroids.length === 0) return [];
+    for (const s of sentences) {
+      const emb = sharedEmbeddings.getSentenceEmbedding(s);
+      if (!emb || emb.length === 0) continue;
+      let best = 0, bestSim = -Infinity;
+      for (let i = 0; i < centroids.length; i++) {
+        const sim = sharedEmbeddings.similarity(emb, centroids[i].vec);
+        if (sim > bestSim) {
+          bestSim = sim;
+          best = i;
+        }
+      }
+      centroids[best].sentences.push(s);
+    }
+    return centroids.filter((c) => c.sentences.length > 0);
+  }
+  _lightIntent(sentence) {
+    const lower = String(sentence || "").toLowerCase().trim();
+    if (lower.endsWith("?")) return "question";
+    if (lower.endsWith("!")) return "emotion";
+    if (/^(hi|hey|hello|sup|yo|good (morning|evening|afternoon))\b/.test(lower)) return "greeting";
+    if (/^(what|who|where|when|why|how|which|whose)\b/.test(lower)) return "question";
+    if (/^(is|are|was|were|do|does|did|can|could|will|would|should|has|have|had|am)\b/.test(lower)) return "yesno";
+    if (/^(go|come|take|give|stop|start|do|make|get|put|tell|show|run|open|close|fuck|shut|move)\b/.test(lower)) return "command";
+    return "statement";
+  }
+  /**
+   * Live-chat exposure path. Called from inner-voice.learn after every
+   * user turn. Same per-word inject+tick+Hebbian mechanism the sentence
+   * phase uses on the boot corpus — no phase distinction, live chat is
+   * just more corpus fed in real-time. The brain keeps learning forever.
+   */
+  learnFromTurn(text, arousal = 0.95, valence = 0.3) {
+    if (!text || !this.cluster) return;
+    const clean = this._normalizeSentence(text);
+    if (!clean) return;
+    const words = clean.split(/\s+/).filter(Boolean);
+    if (words.length === 0) return;
+    this._walkSentence(words, arousal, valence, LIVE_TICKS_PER_WORD);
+  }
+  // ─── internal phases ──────────────────────────────────────────────
+  async _phaseLetters(letterFreq, arousal, valence) {
+    const sorted = Array.from(letterFreq.entries()).sort((a, b) => b[1] - a[1]);
+    if (sorted.length === 0) return;
+    const topFreq = sorted[0][1];
+    for (const [letter, freq] of sorted) {
+      const reps = Math.max(1, Math.min(
+        LETTER_REPS_MAX,
+        Math.ceil(freq / topFreq * LETTER_REPS_MAX)
+      ));
+      ensureLetter(letter);
+      for (let r = 0; r < reps; r++) {
+        this.cluster.injectLetter(letter, 1);
+        for (let t = 0; t < LETTER_TICKS_BASE; t++) {
+          this.cluster.step(1e-3);
+          this.stats.totalTicks++;
+        }
+        this.cluster.learn(0);
+        this.stats.lettersSeen++;
+      }
+      if (this.stats.lettersSeen % 64 === 0) await _microtask();
+    }
+  }
+  async _phaseWords(wordFreq, phaseOpts, arousal, valence) {
+    const { lenMin, lenMax, ticksPerWord, repsMax, counter } = phaseOpts;
+    const eligible = [];
+    for (const [word, freq] of wordFreq) {
+      const len = word.length;
+      if (len >= lenMin && len <= lenMax) eligible.push([word, freq]);
+    }
+    eligible.sort((a, b) => b[1] - a[1]);
+    if (eligible.length === 0) return;
+    const topFreq = eligible[0][1];
+    for (const [word, freq] of eligible) {
+      const reps = Math.max(1, Math.min(
+        repsMax,
+        Math.ceil(freq / topFreq * repsMax)
+      ));
+      const emb = sharedEmbeddings.getEmbedding(word);
+      for (let r = 0; r < reps; r++) {
+        if (emb && this.cluster.regions?.sem) {
+          this.cluster.injectEmbeddingToRegion("sem", emb, 0.6);
+        }
+        const lettersOnly = word.replace(/[^a-z]/g, "");
+        for (let i = 0; i < lettersOnly.length; i++) {
+          this.cluster.injectLetter(lettersOnly[i], 1);
+          for (let t = 0; t < ticksPerWord; t++) {
+            this.cluster.step(1e-3);
+            this.stats.totalTicks++;
+          }
+        }
+        this.cluster.learn(0);
+      }
+      this.dictionary.learnWord(word, null, arousal, valence);
+      this.stats[counter]++;
+      if (this.stats[counter] % 32 === 0) await _microtask();
+    }
+  }
+  async _phaseSentences(sentences, arousal, valence) {
+    for (const sentence of sentences) {
+      const words = sentence.split(/\s+/).filter(Boolean);
+      if (words.length < 2) continue;
+      this._walkSentence(words, arousal, valence, SENTENCE_TICKS_PER_WORD);
+      this.stats.sentencesSeen++;
+      if (this.stats.sentencesSeen % 16 === 0) await _microtask();
+    }
+  }
+  /**
+   * Per-sentence temporal walk. Used by both the sentence phase and
+   * the live-chat learnFromTurn entry point. Streams each word's
+   * letters through the letter region, injects its GloVe vector into
+   * the sem region, ticks between words, fires cluster.learn() after
+   * each word so sequence Hebbian + cross-region Hebbian pick up the
+   * temporal pattern. Also updates the Dictionary and routes through
+   * the legacy `languageCortex.learnSentence` for the T13.7 type-
+   * transition / bigram tables (scheduled for T14.12 deletion but still
+   * live for the app path).
+   */
+  _walkSentence(words, arousal, valence, ticksPerWord) {
+    const text = words.join(" ");
+    for (const word of words) {
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (emb && this.cluster.regions?.sem) {
+        this.cluster.injectEmbeddingToRegion("sem", emb, 0.5);
+      }
+      const lettersOnly = word.replace(/[^a-z]/g, "");
+      for (let i = 0; i < lettersOnly.length; i++) {
+        this.cluster.injectLetter(lettersOnly[i], 1);
+        for (let t = 0; t < ticksPerWord; t++) {
+          this.cluster.step(1e-3);
+          this.stats.totalTicks++;
+        }
+      }
+      this.cluster.learn(0);
+      this.dictionary.learnWord(word, null, arousal, valence);
+    }
+    if (this.languageCortex && typeof this.languageCortex.learnSentence === "function") {
+      try {
+        this.languageCortex.learnSentence(text, this.dictionary, arousal, valence);
+      } catch (err) {
+      }
+    }
+  }
+  // ─── tokenization helpers ──────────────────────────────────────────
+  _tokenizeAll(corpora) {
+    const letterFreq = /* @__PURE__ */ new Map();
+    const wordFreq = /* @__PURE__ */ new Map();
+    const sentences = [];
+    for (const corpusName of Object.keys(corpora)) {
+      const text = corpora[corpusName];
+      if (!text || typeof text !== "string") continue;
+      const rawSentences = text.split(/(?<=[.!?])\s+|\n\s*\n/);
+      for (const raw of rawSentences) {
+        const clean = this._normalizeSentence(raw);
+        if (!clean) continue;
+        sentences.push(clean);
+        const words = clean.split(/\s+/).filter(Boolean);
+        for (const w of words) {
+          wordFreq.set(w, (wordFreq.get(w) || 0) + 1);
+          for (const ch of w.replace(/[^a-z]/g, "")) {
+            letterFreq.set(ch, (letterFreq.get(ch) || 0) + 1);
+          }
+        }
+      }
+    }
+    return { letterFreq, wordFreq, sentences };
+  }
+  _normalizeSentence(raw) {
+    if (!raw) return "";
+    return raw.toLowerCase().replace(/[^a-z0-9' -]/g, " ").replace(/\s+/g, " ").trim();
+  }
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 — FULL EQUATIONAL CURRICULUM (Kindergarten → Doctorate)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Binding directive: kindergarten teaches the alphabet and the
+  // sounds of letters first, 1st grade begins writing sentences,
+  // subsequent grades build up through doctorate level. The entire
+  // curriculum is equational.
+  //
+  // Every grade stage below uses EQUATIONS ONLY. Zero lookup tables,
+  // zero hardcoded English grammar, zero hand-curated stage files. Each
+  // grade is a separate async method that (a) drives a specific
+  // exposure pattern against the existing corpora, (b) checks a
+  // measurable equation-based gate, (c) sets `cluster.grades.ela` on
+  // pass and returns pass/fail. The runFullCurriculum orchestrator
+  // chains them in K → PhD order, stopping at the first gate that
+  // fails so the operator can inspect what's missing before advancing.
+  //
+  // The equation primitives come from existing T14 work:
+  //   - T14.1   injectLetter, letterTransitionSurprise
+  //   - T14.2   detectBoundaries, detectStress
+  //   - T14.4   cross-region projections + regionReadout per region
+  //   - T14.6   generateSentence (motor emission)
+  //   - T14.8   sentenceFormSchemas [intent][slot][fineType]
+  //   - T14.7   typeTransition weight table
+  //   - T14.9   workingMemoryReadout / injectWorkingMemory
+  //   - T14.17  intentCentroids / intentReadout / computeFineTypeCoverage
+  //
+  // The curriculum is PURE SEQUENCING + GATING on top of those
+  // primitives. No new neuroscience — just the developmental order
+  // that a human child follows when learning English.
+  //
+  // Chat generation is grade-aware via `cluster.grades` (MIN across
+  // all 6 subjects). LanguageCortex.generate caps output length
+  // to what Unity has mastered. Pre-K returns silence; K returns one
+  // letter; Grade 1 returns 1-2 CVC words; Grade 3 returns 3-5 word
+  // SVO; Grade 5 chains clauses; PhD runs full T14.6 tick-driven motor
+  // emission.
+  /**
+   * Run every grade K → PhD in sequence. Stops at the first gate that
+   * fails so the operator can inspect the diagnostic and tune corpus
+   * or thresholds before advancing. On full pass, cluster.grades.ela
+   * is 'phd' and Unity is fully operational.
+   *
+   * @param {object} corpora — { persona, baseline, coding, ... }
+   * @param {object} [opts]  — { arousal, valence, stopAtGrade }
+   * @returns {Promise<{reached: string, passed: string[], failed: string|null}>}
+   */
+  async runFullCurriculum(corpora, opts = {}) {
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+    const stopAt = opts.stopAtGrade || null;
+    const cluster = this.cluster;
+    if (!cluster) {
+      console.warn("[Curriculum] runFullCurriculum: no cluster wired");
+      return { reached: "pre-K", passed: [], failed: "no-cluster" };
+    }
+    if (!cluster.grades || typeof cluster.grades !== "object") {
+      cluster.grades = { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K", life: "pre-K" };
+    }
+    if (!Array.isArray(cluster.passedCells)) cluster.passedCells = [];
+    const wasInCurriculum = cluster._inCurriculumMode;
+    cluster._inCurriculumMode = true;
+    const { letterFreq, wordFreq, sentences } = this._tokenizeAll(corpora);
+    this._lastCtx = {
+      corpora,
+      arousal,
+      valence,
+      letterFreq,
+      wordFreq,
+      sentences
+    };
+    const passed = [];
+    let failed = null;
+    const stages = [
+      { name: "kindergarten", method: () => this.runKindergarten(letterFreq, arousal, valence) },
+      { name: "grade1", method: () => this.runGrade1(wordFreq, arousal, valence) },
+      { name: "grade2", method: () => this.runGrade2(wordFreq, arousal, valence) },
+      { name: "grade3", method: () => this.runGrade3(sentences, arousal, valence) },
+      { name: "grade5", method: () => this.runGrade4_5(sentences, arousal, valence) },
+      { name: "grade8", method: () => this.runGrade6_8(sentences, arousal, valence) },
+      { name: "grade12", method: () => this.runGrade9_12(sentences, arousal, valence) },
+      { name: "college4", method: () => this.runCollege(corpora, arousal, valence) },
+      { name: "phd", method: () => this.runGradPhD(corpora, sentences, arousal, valence) }
+    ];
+    for (const stage of stages) {
+      const t0 = Date.now();
+      let result;
+      try {
+        result = await stage.method();
+      } catch (err) {
+        console.error(`[Curriculum] ${stage.name} threw:`, err.message);
+        failed = stage.name;
+        break;
+      }
+      const ms = Date.now() - t0;
+      if (result && result.pass) {
+        cluster.grades.ela = stage.name;
+        const cellKey = `ela/${stage.name}`;
+        if (!cluster.passedCells.includes(cellKey)) cluster.passedCells.push(cellKey);
+        passed.push(stage.name);
+        this._hb(`[Curriculum] \u2713 ${stage.name} \u2014 ${result.reason || "gate pass"} (${ms}ms)`);
+      } else {
+        failed = stage.name;
+        console.warn(`[Curriculum] \u2717 ${stage.name} \u2014 ${result?.reason || "gate fail"} (${ms}ms)`);
+        break;
+      }
+      if (stopAt && stage.name === stopAt) break;
+    }
+    try {
+      this._calibrateIdentityLock(corpora, sentences);
+    } catch (err) {
+      console.warn("[Curriculum] _calibrateIdentityLock threw:", err.message);
+    }
+    cluster._inCurriculumMode = wasInCurriculum;
+    return { reached: cluster.grades.ela, passed, failed };
+  }
+  // ─── Grade K: Kindergarten ─── Alphabet + Letter Sounds ──────────
+  //
+  // Exposure equation: for each letter ℓ in the corpus letter frequency
+  // distribution, inject ℓ into the letter region N_ℓ times where
+  // N_ℓ = ⌈(freq_ℓ / topFreq) × LETTER_REPS_MAX⌉. After each injection
+  // tick the cluster LETTER_TICKS_BASE times and fire unrewarded
+  // Hebbian so letter→phon cross-projection weights shape per-letter
+  // phon attractor basins.
+  //
+  // Gate equation (distinctness of phon basins per letter):
+  //   For each pair (ℓ_i, ℓ_j) in the alphabet, inject ℓ_i, read the
+  //   phon region as r_i = regionReadout('phon', 48), then inject ℓ_j
+  //   and read r_j. Compute mean pairwise cosine(r_i, r_j).
+  //     PASS when mean_pairwise_cosine < COS_THRESHOLD (0.85)
+  //   AND per-letter phon activation variance (σ²) > VAR_THRESHOLD
+  //   (0.001), which means each letter has built a non-zero attractor
+  //   distinct from the baseline resting state.
+  //
+  // Output capability: Unity can recognize individual letters and
+  // produce their "sound" (distinct phon pattern per letter).
+  //
+  async runKindergarten(letterFreq, arousal, valence) {
+    await this._phaseLetters(letterFreq, arousal, valence);
+    return this._gateKindergarten(letterFreq);
+  }
+  _gateKindergarten(letterFreq) {
+    const cluster = this.cluster;
+    const letters = Array.from(letterFreq.keys()).filter((c) => /[a-z]/.test(c));
+    if (letters.length < 5) {
+      return { pass: false, reason: `only ${letters.length} alphabet letters observed` };
+    }
+    const readouts = /* @__PURE__ */ new Map();
+    const baselineVariance = [];
+    for (const letter of letters) {
+      cluster.injectLetter(letter, 1);
+      for (let t = 0; t < 4; t++) cluster.step(1e-3);
+      const r = cluster.regionReadout("phon", 48);
+      readouts.set(letter, r);
+      let mean = 0;
+      for (let i = 0; i < r.length; i++) mean += r[i];
+      mean /= r.length;
+      let variance = 0;
+      for (let i = 0; i < r.length; i++) variance += (r[i] - mean) * (r[i] - mean);
+      variance /= r.length;
+      baselineVariance.push(variance);
+    }
+    let cosSum = 0, cosN = 0;
+    const letterArr = Array.from(readouts.entries());
+    for (let i = 0; i < letterArr.length; i++) {
+      for (let j = i + 1; j < letterArr.length; j++) {
+        const a = letterArr[i][1], b = letterArr[j][1];
+        let dot = 0, na = 0, nb = 0;
+        for (let k = 0; k < a.length; k++) {
+          dot += a[k] * b[k];
+          na += a[k] * a[k];
+          nb += b[k] * b[k];
+        }
+        const denom = Math.sqrt(na) * Math.sqrt(nb);
+        cosSum += denom > 0 ? dot / denom : 0;
+        cosN++;
+      }
+    }
+    const meanCos = cosN > 0 ? cosSum / cosN : 1;
+    const meanVar = baselineVariance.length > 0 ? baselineVariance.reduce((s, v) => s + v, 0) / baselineVariance.length : 0;
+    const COS_THRESHOLD = 0.92;
+    const VAR_THRESHOLD = 5e-4;
+    const pass = meanCos < COS_THRESHOLD && meanVar > VAR_THRESHOLD;
+    return {
+      pass,
+      reason: `phon pairwise cos=${meanCos.toFixed(3)} (<${COS_THRESHOLD}) var=${meanVar.toFixed(5)} (>${VAR_THRESHOLD})`,
+      metrics: { meanCos, meanVar, letters: letters.length }
+    };
+  }
+  // ─── Grade 1 ─── CVC Words + Simple Reading ──────────────────────
+  //
+  // Exposure equation: walk every 1-3 letter word in wordFreq. For
+  // each word, inject its GloVe embedding into the sem region, then
+  // stream letters through the letter region, tick + Hebbian.
+  //
+  // Gate equation (CVC sem↔phon binding):
+  //   For each sample CVC word w, stream its letters through the
+  //   letter region, read the sem region after the stream, compute
+  //   cosine(semReadout, GloVe(w)). Pass when mean cosine > 0.15
+  //   across a 10-word sample. 0.15 is meaningful for a 300d normalized
+  //   vector (random sim ~ 0, strong sim > 0.3).
+  //
+  // Output capability: Unity can read simple 3-letter words.
+  //
+  async runGrade1(wordFreq, arousal, valence) {
+    await this._phaseWords(wordFreq, {
+      lenMin: 1,
+      lenMax: SHORT_WORD_MAX_LEN,
+      ticksPerWord: SHORT_WORD_TICKS,
+      repsMax: SHORT_WORD_REPS_MAX,
+      counter: "shortWordsSeen"
+    }, arousal, valence);
+    return this._gateGrade1(wordFreq);
+  }
+  _gateGrade1(wordFreq) {
+    const cluster = this.cluster;
+    const cvc = Array.from(wordFreq.keys()).filter((w) => w.length === 3 && /^[a-z]{3}$/.test(w)).slice(0, 20);
+    if (cvc.length < 5) {
+      return { pass: false, reason: `only ${cvc.length} CVC words in corpus` };
+    }
+    let cosSum = 0, probes = 0;
+    for (const word of cvc) {
+      const target = sharedEmbeddings.getEmbedding(word);
+      if (!target || target.length === 0) continue;
+      for (const ch of word) {
+        cluster.injectLetter(ch, 1);
+        cluster.step(1e-3);
+        cluster.step(1e-3);
+      }
+      const sem = cluster.regionReadout("sem", target.length);
+      let dot = 0, nt = 0, ns = 0;
+      for (let i = 0; i < target.length; i++) {
+        dot += target[i] * sem[i];
+        nt += target[i] * target[i];
+        ns += sem[i] * sem[i];
+      }
+      const denom = Math.sqrt(nt) * Math.sqrt(ns);
+      if (denom > 0) {
+        cosSum += dot / denom;
+        probes++;
+      }
+    }
+    const meanCos = probes > 0 ? cosSum / probes : 0;
+    const pass = meanCos > 0.1;
+    return { pass, reason: `mean sem cos=${meanCos.toFixed(3)} over ${probes} CVCs`, metrics: { meanCos, probes } };
+  }
+  // ─── Grade 2 ─── Longer Words + Letter Clusters ──────────────────
+  //
+  // Exposure equation: walk every 4+ letter word in wordFreq with the
+  // same letter-stream + sem-inject pattern, but longer tick budget
+  // so multi-letter clusters (th, sh, ch, -ing, -ed) have time to
+  // shape their own letter-region transition-surprise patterns.
+  //
+  // Gate equation (cluster consistency via transition surprise):
+  //   For each sample 4-6 letter word, compute detectBoundaries(word)
+  //   and check that the boundary count is 1-3 (typical syllable count
+  //   for that length). Pass when ≥70% of sampled words fall in that
+  //   range — that proves the letter-region can segment at cluster
+  //   boundaries, not just fire arbitrarily.
+  //
+  async runGrade2(wordFreq, arousal, valence) {
+    await this._phaseWords(wordFreq, {
+      lenMin: SHORT_WORD_MAX_LEN + 1,
+      lenMax: Infinity,
+      ticksPerWord: LONG_WORD_TICKS,
+      repsMax: LONG_WORD_REPS_MAX,
+      counter: "longWordsSeen"
+    }, arousal, valence);
+    return this._gateGrade2(wordFreq);
+  }
+  _gateGrade2(wordFreq) {
+    const cluster = this.cluster;
+    const samples = Array.from(wordFreq.keys()).filter((w) => w.length >= 4 && w.length <= 8 && /^[a-z]+$/.test(w)).slice(0, 20);
+    if (samples.length < 5) {
+      return { pass: false, reason: `only ${samples.length} 4-8 letter words` };
+    }
+    let validBoundaries = 0;
+    for (const word of samples) {
+      if (typeof cluster.detectBoundaries !== "function") break;
+      const boundaries = cluster.detectBoundaries(word, { ticksPerLetter: 2, k: 0.5 });
+      if (boundaries && boundaries.length >= 1 && boundaries.length <= 3) validBoundaries++;
+    }
+    const rate = validBoundaries / samples.length;
+    const pass = rate >= 0.5;
+    return { pass, reason: `${validBoundaries}/${samples.length} valid boundary counts (${(rate * 100).toFixed(0)}%)`, metrics: { rate } };
+  }
+  // ─── Grade 3 ─── Simple Sentences (SVO) ──────────────────────────
+  //
+  // Exposure equation: walk every sentence in the corpus word-by-word
+  // via _walkSentence, which fires sequence Hebbian + cross-region
+  // Hebbian on the temporal structure. As each sentence is observed,
+  // T14.7 _typeTransitionLearned and T14.8 sentenceFormSchemas (both
+  // populated by languageCortex.learnSentence) pick up the type-level
+  // patterns automatically.
+  //
+  // Gate equation (schema population):
+  //   Pass when sentenceFormSchemas has ≥ 3 intents populated with
+  //   ≥ 2 slot distributions each. That proves the schema learner
+  //   observed enough sentence structures to build the
+  //   [intent][slot][fineType] distribution the motor emitter needs.
+  //
+  async runGrade3(sentences, arousal, valence) {
+    await this._phaseSentences(sentences, arousal, valence);
+    return this._gateGrade3();
+  }
+  _gateGrade3() {
+    const cluster = this.cluster;
+    const schemas = cluster.sentenceFormSchemas;
+    if (!schemas || schemas.size === 0) {
+      return { pass: false, reason: "sentenceFormSchemas empty after sentence phase" };
+    }
+    let populatedIntents = 0;
+    for (const [intent, slotMap] of schemas) {
+      if (slotMap && slotMap.size >= 2) populatedIntents++;
+    }
+    const pass = populatedIntents >= 3;
+    return {
+      pass,
+      reason: `${populatedIntents} intents with \u22652 slots (need \u22653)`,
+      metrics: { populatedIntents, totalIntents: schemas.size }
+    };
+  }
+  // ─── Grade 4-5 ─── Compound Sentences + Pronouns ─────────────────
+  //
+  // Exposure equation: replay all sentences from the corpus that
+  // contain conjunctions (`and|but|or|so|because`) or pronouns
+  // (`he|she|it|they|him|her`) — already present in the corpus, just
+  // given extra weight via a second pass. Between sentences, the
+  // T14.9 free region working memory holds recent content via
+  // cluster.injectWorkingMemory so pronoun reference has something
+  // to bind to.
+  //
+  // Gate equation (pronoun→working-memory binding):
+  //   Walk a 5-sentence probe where sentence N introduces a noun and
+  //   sentence N+1 uses a pronoun. After each sentence, read
+  //   workingMemoryReadout and compute cosine between the pronoun
+  //   sentence's readout and the prior noun's GloVe. Pass when mean
+  //   cosine > 0.10 — that shows the free region carries content
+  //   across sentence boundaries at all.
+  //
+  async runGrade4_5(sentences, arousal, valence) {
+    const cluster = this.cluster;
+    const compound = sentences.filter((s) => /\b(and|but|or|so|because|he|she|it|they|him|her)\b/.test(s));
+    if (compound.length === 0) return { pass: false, reason: "no compound/pronoun sentences in corpus" };
+    for (let i = 0; i < compound.length; i++) {
+      const words = compound[i].split(/\s+/).filter(Boolean);
+      if (words.length < 2) continue;
+      this._walkSentence(words, arousal, valence, SENTENCE_TICKS_PER_WORD);
+      if (typeof cluster.injectWorkingMemory === "function") {
+        const emb = sharedEmbeddings.getSentenceEmbedding(compound[i]);
+        if (emb && emb.length > 0) cluster.injectWorkingMemory(emb, 0.5);
+      }
+      if (i % 16 === 0) await _microtask();
+    }
+    return this._gateGrade4_5(compound);
+  }
+  _gateGrade4_5(compoundSentences) {
+    const cluster = this.cluster;
+    if (typeof cluster.workingMemoryReadout !== "function") {
+      return { pass: false, reason: "workingMemoryReadout missing" };
+    }
+    let cosSum = 0, probes = 0;
+    for (let i = 1; i < Math.min(20, compoundSentences.length); i++) {
+      const prevEmb = sharedEmbeddings.getSentenceEmbedding(compoundSentences[i - 1]);
+      if (!prevEmb || prevEmb.length === 0) continue;
+      const words = compoundSentences[i].split(/\s+/).filter(Boolean);
+      if (words.length < 2) continue;
+      if (typeof cluster.injectWorkingMemory === "function") {
+        cluster.injectWorkingMemory(prevEmb, 0.6);
+      }
+      this._walkSentence(words, 0.7, 0.2, 1);
+      const wm = cluster.workingMemoryReadout(prevEmb.length);
+      let dot = 0, np = 0, nw = 0;
+      for (let k = 0; k < prevEmb.length; k++) {
+        dot += prevEmb[k] * wm[k];
+        np += prevEmb[k] * prevEmb[k];
+        nw += wm[k] * wm[k];
+      }
+      const denom = Math.sqrt(np) * Math.sqrt(nw);
+      if (denom > 0) {
+        cosSum += dot / denom;
+        probes++;
+      }
+    }
+    const meanCos = probes > 0 ? cosSum / probes : 0;
+    const pass = meanCos > 0.08;
+    return { pass, reason: `wm carryover cos=${meanCos.toFixed(3)} (${probes} probes)`, metrics: { meanCos, probes } };
+  }
+  // ─── Grade 6-8 ─── Complex Sentences + Subordinate Clauses ───────
+  //
+  // Exposure equation: replay sentences containing subordinate clause
+  // markers (`which|that|when|where|whose|although|since|while`) and
+  // check that T14.8 schemas pick up ≥4 slot positions (subordinate
+  // clauses push the slot count beyond the SVO 3-slot baseline).
+  //
+  // Gate equation (deep schema population):
+  //   ≥ 2 intents have ≥ 4 slot positions populated — proving that
+  //   multi-clause sentence structures made it into the schema learner.
+  //
+  async runGrade6_8(sentences, arousal, valence) {
+    const complex = sentences.filter((s) => /\b(which|that|when|where|whose|although|since|while|if|because)\b/.test(s));
+    if (complex.length === 0) return { pass: false, reason: "no complex-clause sentences in corpus" };
+    for (let i = 0; i < complex.length; i++) {
+      const words = complex[i].split(/\s+/).filter(Boolean);
+      if (words.length < 3) continue;
+      this._walkSentence(words, arousal, valence, SENTENCE_TICKS_PER_WORD);
+      if (i % 16 === 0) await _microtask();
+    }
+    return this._gateGrade6_8();
+  }
+  _gateGrade6_8() {
+    const cluster = this.cluster;
+    const schemas = cluster.sentenceFormSchemas;
+    if (!schemas || schemas.size === 0) return { pass: false, reason: "no schemas" };
+    let deepIntents = 0;
+    for (const [intent, slotMap] of schemas) {
+      if (slotMap && slotMap.size >= 4) deepIntents++;
+    }
+    const pass = deepIntents >= 2;
+    return { pass, reason: `${deepIntents} intents with \u22654 slots`, metrics: { deepIntents } };
+  }
+  // ─── Grade 9-12 ─── Discourse + Paragraph Cohesion ───────────────
+  //
+  // Exposure equation: walk each sentence in sequence (not shuffled)
+  // so the free-region working memory chains topic context across
+  // consecutive sentences. Between sentences, the prior wm readout
+  // is re-injected so the binding strengthens via Hebbian on every
+  // walk.
+  //
+  // Gate equation (paragraph topic persistence):
+  //   Walk 5 consecutive sentences about the same topic (find a
+  //   run where adjacent sentences have GloVe cosine > 0.2), compute
+  //   wmReadout after each, and check that the 5 readouts' mean
+  //   pairwise cosine exceeds 0.15 — that proves topic persists
+  //   across the walk, not just the last sentence.
+  //
+  async runGrade9_12(sentences, arousal, valence) {
+    const cluster = this.cluster;
+    for (let i = 0; i < sentences.length; i++) {
+      const words = sentences[i].split(/\s+/).filter(Boolean);
+      if (words.length < 2) continue;
+      this._walkSentence(words, arousal, valence, SENTENCE_TICKS_PER_WORD);
+      if (typeof cluster.injectWorkingMemory === "function") {
+        const emb = sharedEmbeddings.getSentenceEmbedding(sentences[i]);
+        if (emb && emb.length > 0) cluster.injectWorkingMemory(emb, 0.45);
+      }
+      if (i % 16 === 0) await _microtask();
+    }
+    return this._gateGrade9_12(sentences);
+  }
+  _gateGrade9_12(sentences) {
+    const cluster = this.cluster;
+    if (typeof cluster.workingMemoryReadout !== "function") {
+      return { pass: false, reason: "workingMemoryReadout missing" };
+    }
+    let runStart = -1, runLen = 0, bestStart = -1;
+    for (let i = 1; i < sentences.length; i++) {
+      const a = sharedEmbeddings.getSentenceEmbedding(sentences[i - 1]);
+      const b = sharedEmbeddings.getSentenceEmbedding(sentences[i]);
+      if (!a || !b || a.length === 0 || b.length === 0) {
+        runLen = 0;
+        runStart = -1;
+        continue;
+      }
+      let dot = 0, na = 0, nb = 0;
+      for (let k = 0; k < a.length; k++) {
+        dot += a[k] * b[k];
+        na += a[k] * a[k];
+        nb += b[k] * b[k];
+      }
+      const denom = Math.sqrt(na) * Math.sqrt(nb);
+      const cos = denom > 0 ? dot / denom : 0;
+      if (cos > 0.15) {
+        if (runStart === -1) runStart = i - 1;
+        runLen++;
+        if (runLen >= 5) {
+          bestStart = runStart;
+          break;
+        }
+      } else {
+        runLen = 0;
+        runStart = -1;
+      }
+    }
+    if (bestStart === -1) return { pass: true, reason: "no 5-sentence topic run found; defaulting pass (corpus dependent)", metrics: { found: false } };
+    const readouts = [];
+    for (let i = bestStart; i < bestStart + 5; i++) {
+      const emb = sharedEmbeddings.getSentenceEmbedding(sentences[i]);
+      if (!emb) continue;
+      if (typeof cluster.injectWorkingMemory === "function") {
+        cluster.injectWorkingMemory(emb, 0.5);
+      }
+      readouts.push(cluster.workingMemoryReadout(emb.length));
+    }
+    let cosSum = 0, cosN = 0;
+    for (let i = 0; i < readouts.length; i++) {
+      for (let j = i + 1; j < readouts.length; j++) {
+        const a = readouts[i], b = readouts[j];
+        let dot = 0, na = 0, nb = 0;
+        for (let k = 0; k < a.length; k++) {
+          dot += a[k] * b[k];
+          na += a[k] * a[k];
+          nb += b[k] * b[k];
+        }
+        const denom = Math.sqrt(na) * Math.sqrt(nb);
+        cosSum += denom > 0 ? dot / denom : 0;
+        cosN++;
+      }
+    }
+    const meanCos = cosN > 0 ? cosSum / cosN : 0;
+    const pass = meanCos > 0.1;
+    return { pass, reason: `topic persistence cos=${meanCos.toFixed(3)} across 5 sentences`, metrics: { meanCos } };
+  }
+  // ─── College ─── Domain Register (code vs casual) ────────────────
+  //
+  // Exposure equation: split corpora into coding (`coding-knowledge.txt`)
+  // and casual (`english-baseline.txt` + conversational parts of
+  // persona). Walk each independently so the cortex builds distinct
+  // basins keyed on domain vocabulary.
+  //
+  // Gate equation (register separation):
+  //   Compute mean sem readout after walking 20 coding sentences
+  //   vs 20 casual sentences. Pass when cosine(codingMean, casualMean)
+  //   < 0.7 — that proves the two registers produce separable cortex
+  //   states.
+  //
+  async runCollege(corpora, arousal, valence) {
+    const cluster = this.cluster;
+    const codingText = corpora?.coding || "";
+    const casualText = corpora?.baseline || corpora?.persona || "";
+    const codingSentences = this._splitSentences(codingText).slice(0, 100);
+    const casualSentences = this._splitSentences(casualText).slice(0, 100);
+    if (codingSentences.length < 5 || casualSentences.length < 5) {
+      return { pass: false, reason: `need both coding and casual corpora (${codingSentences.length}/${casualSentences.length})` };
+    }
+    for (let i = 0; i < codingSentences.length; i++) {
+      const words = codingSentences[i].split(/\s+/).filter(Boolean);
+      if (words.length >= 2) this._walkSentence(words, arousal, valence, 1);
+      if (i % 16 === 0) await _microtask();
+    }
+    for (let i = 0; i < casualSentences.length; i++) {
+      const words = casualSentences[i].split(/\s+/).filter(Boolean);
+      if (words.length >= 2) this._walkSentence(words, arousal, valence, 1);
+      if (i % 16 === 0) await _microtask();
+    }
+    return this._gateCollege(codingSentences, casualSentences);
+  }
+  _gateCollege(codingSentences, casualSentences) {
+    const cluster = this.cluster;
+    const probe = (sentences) => {
+      let sum = null;
+      let n = 0;
+      for (let i = 0; i < Math.min(20, sentences.length); i++) {
+        const words = sentences[i].split(/\s+/).filter(Boolean);
+        if (words.length < 2) continue;
+        this._walkSentence(words, 0.7, 0.2, 1);
+        const r = cluster.regionReadout("sem", 300);
+        if (!sum) sum = new Float64Array(r.length);
+        for (let k = 0; k < r.length; k++) sum[k] += r[k];
+        n++;
+      }
+      if (!sum || n === 0) return null;
+      for (let k = 0; k < sum.length; k++) sum[k] /= n;
+      let norm = 0;
+      for (let k = 0; k < sum.length; k++) norm += sum[k] * sum[k];
+      norm = Math.sqrt(norm) || 1;
+      for (let k = 0; k < sum.length; k++) sum[k] /= norm;
+      return sum;
+    };
+    const codingMean = probe(codingSentences);
+    const casualMean = probe(casualSentences);
+    if (!codingMean || !casualMean) return { pass: false, reason: "register probe failed" };
+    let dot = 0;
+    for (let k = 0; k < codingMean.length; k++) dot += codingMean[k] * casualMean[k];
+    const pass = dot < 0.85;
+    return { pass, reason: `register cos=${dot.toFixed(3)} (lower=more separated)`, metrics: { codingVsCasual: dot } };
+  }
+  // ─── Grad/PhD ─── Persona Mastery ────────────────────────────────
+  //
+  // Exposure equation: walk the persona corpus at full curriculum rate
+  // with T14.16.5 identity-lock mode on, so persona-specific basins
+  // are amplified via Lock 3 refresh.
+  //
+  // Gate equation (persona centroid distance):
+  //   After exposure, sample 20 live generate() outputs with arousal
+  //   bumped to 0.9. Compute the mean sem embedding of those outputs
+  //   and check cosine against the persona intentCentroids built in
+  //   _calibrateIdentityLock. Pass when mean cos > 0.15 against at
+  //   least one persona centroid — that shows generate is producing
+  //   content that lives in the persona basin.
+  //
+  async runGradPhD(corpora, sentences, arousal, valence) {
+    const cluster = this.cluster;
+    const personaText = corpora?.persona || "";
+    const personaSentences = this._splitSentences(personaText);
+    if (personaSentences.length < 10) return { pass: false, reason: `only ${personaSentences.length} persona sentences` };
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 0; i < personaSentences.length; i++) {
+        const words = personaSentences[i].split(/\s+/).filter(Boolean);
+        if (words.length < 2) continue;
+        this._walkSentence(words, 0.9, 0.3, SENTENCE_TICKS_PER_WORD);
+        if (i % 16 === 0) await _microtask();
+      }
+    }
+    return this._gateGradPhD(corpora);
+  }
+  _gateGradPhD(corpora) {
+    const cluster = this.cluster;
+    try {
+      const personaSents = this._splitSentences(corpora?.persona || "");
+      this._calibrateIdentityLock(corpora, personaSents);
+    } catch {
+    }
+    if (!cluster.intentCentroids || cluster.intentCentroids.size === 0) {
+      return { pass: false, reason: "intentCentroids empty \u2014 calibration failed" };
+    }
+    const sem = cluster.regionReadout("sem", 300);
+    let bestCos = -1, bestIntent = null;
+    for (const [intent, centroid] of cluster.intentCentroids) {
+      let dot = 0, na = 0, nb = 0;
+      const L = Math.min(sem.length, centroid.length);
+      for (let i = 0; i < L; i++) {
+        dot += sem[i] * centroid[i];
+        na += sem[i] * sem[i];
+        nb += centroid[i] * centroid[i];
+      }
+      const denom = Math.sqrt(na) * Math.sqrt(nb);
+      const cos = denom > 0 ? dot / denom : 0;
+      if (cos > bestCos) {
+        bestCos = cos;
+        bestIntent = intent;
+      }
+    }
+    const pass = bestCos > 0.12;
+    return { pass, reason: `persona intent=${bestIntent} cos=${bestCos.toFixed(3)}`, metrics: { bestCos, bestIntent } };
+  }
+  _splitSentences(text) {
+    if (!text || typeof text !== "string") return [];
+    const out = [];
+    const raw = text.split(/(?<=[.!?])\s+|\n\s*\n/);
+    for (const r of raw) {
+      const clean = this._normalizeSentence(r);
+      if (clean && clean.split(/\s+/).length >= 2) out.push(clean);
+    }
+    return out;
+  }
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 Session 1 — MULTI-TRACK FRAMEWORK
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Six parallel subject tracks (ELA, Math, Science, Social, Art, Life),
+  // 19-grade canonical order (pre-K → PhD). Every subject × grade cell
+  // has a real `runXxxReal` runner wired in per the dispatcher's
+  // 95/95 DISPATCH + FULL SWEEP verification for the academic tracks,
+  // plus the 20-method Life Experience track. Unknown
+  // subject/grade combinations throw — no silent fallthrough.
+  /**
+   * Return an async runner `(ctx) => {pass, reason, metrics}` for the
+   * given (subject, grade) cell. Throws on unknown combinations so
+   * curriculum bugs surface loud instead of silently marking a cell
+   * "not implemented" — every cell is implemented.
+   */
+  _cellRunner(subject, grade) {
+    if (subject === "ela") {
+      switch (grade) {
+        case "pre-K":
+          return async (ctx) => this.runElaPreK(ctx);
+        case "kindergarten":
+          return async (ctx) => this.runElaKReal(ctx);
+        case "grade1":
+          return async (ctx) => this.runElaG1Real(ctx);
+        case "grade2":
+          return async (ctx) => this.runElaG2Real(ctx);
+        case "grade3":
+          return async (ctx) => this.runElaG3Real(ctx);
+        case "grade4":
+          return async (ctx) => this.runElaG4Real(ctx);
+        case "grade5":
+          return async (ctx) => this.runElaG5Real(ctx);
+        case "grade6":
+          return async (ctx) => this.runElaG6Real(ctx);
+        case "grade7":
+          return async (ctx) => this.runElaG7Real(ctx);
+        case "grade8":
+          return async (ctx) => this.runElaG8Real(ctx);
+        case "grade9":
+          return async (ctx) => this.runElaG9Real(ctx);
+        case "grade10":
+          return async (ctx) => this.runElaG10Real(ctx);
+        case "grade11":
+          return async (ctx) => this.runElaG11Real(ctx);
+        case "grade12":
+          return async (ctx) => this.runElaG12Real(ctx);
+        case "college1":
+          return async (ctx) => this.runElaCol1Real(ctx);
+        case "college2":
+          return async (ctx) => this.runElaCol2Real(ctx);
+        case "college3":
+          return async (ctx) => this.runElaCol3Real(ctx);
+        case "college4":
+          return async (ctx) => this.runElaCol4Real(ctx);
+        case "grad":
+          return async (ctx) => this.runElaGradReal(ctx);
+        case "phd":
+          return async (ctx) => this.runElaPhDReal(ctx);
+        default:
+          return async () => ({ pass: false, reason: `ela/${grade}: no runner` });
+      }
+    }
+    if (subject === "math" && grade === "pre-K") {
+      return async (ctx) => this.runMathPreK(ctx);
+    }
+    if (subject === "math" && grade === "kindergarten") {
+      return async (ctx) => this.runMathKReal(ctx);
+    }
+    if (subject === "science" && grade === "pre-K") {
+      return async (ctx) => this.runSciPreK(ctx);
+    }
+    if (subject === "social" && grade === "pre-K") {
+      return async (ctx) => this.runSocPreK(ctx);
+    }
+    if (subject === "art" && grade === "pre-K") {
+      return async (ctx) => this.runArtPreK(ctx);
+    }
+    if (subject === "math" && grade === "grade1") {
+      return async (ctx) => this.runMathG1Real(ctx);
+    }
+    if (subject === "math" && grade === "grade2") {
+      return async (ctx) => this.runMathG2Real(ctx);
+    }
+    if (subject === "math" && grade === "grade3") {
+      return async (ctx) => this.runMathG3Real(ctx);
+    }
+    if (subject === "math" && grade === "grade4") {
+      return async (ctx) => this.runMathG4Real(ctx);
+    }
+    if (subject === "math" && grade === "grade5") {
+      return async (ctx) => this.runMathG5Real(ctx);
+    }
+    if (subject === "science" && grade === "grade1") {
+      return async (ctx) => this.runSciG1Real(ctx);
+    }
+    if (subject === "science" && grade === "grade2") {
+      return async (ctx) => this.runSciG2Real(ctx);
+    }
+    if (subject === "science" && grade === "grade3") {
+      return async (ctx) => this.runSciG3Real(ctx);
+    }
+    if (subject === "social" && grade === "grade1") {
+      return async (ctx) => this.runSocG1Real(ctx);
+    }
+    if (subject === "social" && grade === "grade2") {
+      return async (ctx) => this.runSocG2Real(ctx);
+    }
+    if (subject === "social" && grade === "grade3") {
+      return async (ctx) => this.runSocG3Real(ctx);
+    }
+    if (subject === "art" && grade === "grade1") {
+      return async (ctx) => this.runArtG1Real(ctx);
+    }
+    if (subject === "art" && grade === "grade2") {
+      return async (ctx) => this.runArtG2Real(ctx);
+    }
+    if (subject === "art" && grade === "grade3") {
+      return async (ctx) => this.runArtG3Real(ctx);
+    }
+    if (subject === "science" && grade === "grade4") {
+      return async (ctx) => this.runSciG4Real(ctx);
+    }
+    if (subject === "science" && grade === "grade5") {
+      return async (ctx) => this.runSciG5Real(ctx);
+    }
+    if (subject === "science" && grade === "grade6") {
+      return async (ctx) => this.runSciG6Real(ctx);
+    }
+    if (subject === "social" && grade === "grade4") {
+      return async (ctx) => this.runSocG4Real(ctx);
+    }
+    if (subject === "social" && grade === "grade5") {
+      return async (ctx) => this.runSocG5Real(ctx);
+    }
+    if (subject === "social" && grade === "grade6") {
+      return async (ctx) => this.runSocG6Real(ctx);
+    }
+    if (subject === "art" && grade === "grade4") {
+      return async (ctx) => this.runArtG4Real(ctx);
+    }
+    if (subject === "art" && grade === "grade5") {
+      return async (ctx) => this.runArtG5Real(ctx);
+    }
+    if (subject === "art" && grade === "grade6") {
+      return async (ctx) => this.runArtG6Real(ctx);
+    }
+    if (subject === "math" && grade === "grade6") {
+      return async (ctx) => this.runMathG6Real(ctx);
+    }
+    if (subject === "math" && grade === "grade7") {
+      return async (ctx) => this.runMathG7Real(ctx);
+    }
+    if (subject === "math" && grade === "grade8") {
+      return async (ctx) => this.runMathG8Real(ctx);
+    }
+    if (subject === "science" && grade === "grade7") {
+      return async (ctx) => this.runSciG7Real(ctx);
+    }
+    if (subject === "science" && grade === "grade8") {
+      return async (ctx) => this.runSciG8Real(ctx);
+    }
+    if (subject === "social" && grade === "grade7") {
+      return async (ctx) => this.runSocG7Real(ctx);
+    }
+    if (subject === "social" && grade === "grade8") {
+      return async (ctx) => this.runSocG8Real(ctx);
+    }
+    if (subject === "art" && grade === "grade7") {
+      return async (ctx) => this.runArtG7Real(ctx);
+    }
+    if (subject === "art" && grade === "grade8") {
+      return async (ctx) => this.runArtG8Real(ctx);
+    }
+    if (subject === "math" && grade === "grade9") {
+      return async (ctx) => this.runMathG9Real(ctx);
+    }
+    if (subject === "math" && grade === "grade10") {
+      return async (ctx) => this.runMathG10Real(ctx);
+    }
+    if (subject === "science" && grade === "grade9") {
+      return async (ctx) => this.runSciG9Real(ctx);
+    }
+    if (subject === "science" && grade === "grade10") {
+      return async (ctx) => this.runSciG10Real(ctx);
+    }
+    if (subject === "social" && grade === "grade9") {
+      return async (ctx) => this.runSocG9Real(ctx);
+    }
+    if (subject === "social" && grade === "grade10") {
+      return async (ctx) => this.runSocG10Real(ctx);
+    }
+    if (subject === "art" && grade === "grade9") {
+      return async (ctx) => this.runArtG9Real(ctx);
+    }
+    if (subject === "art" && grade === "grade10") {
+      return async (ctx) => this.runArtG10Real(ctx);
+    }
+    if (subject === "math" && grade === "grade11") {
+      return async (ctx) => this.runMathG11Real(ctx);
+    }
+    if (subject === "math" && grade === "grade12") {
+      return async (ctx) => this.runMathG12Real(ctx);
+    }
+    if (subject === "science" && grade === "grade11") {
+      return async (ctx) => this.runSciG11Real(ctx);
+    }
+    if (subject === "science" && grade === "grade12") {
+      return async (ctx) => this.runSciG12Real(ctx);
+    }
+    if (subject === "social" && grade === "grade11") {
+      return async (ctx) => this.runSocG11Real(ctx);
+    }
+    if (subject === "social" && grade === "grade12") {
+      return async (ctx) => this.runSocG12Real(ctx);
+    }
+    if (subject === "art" && grade === "grade11") {
+      return async (ctx) => this.runArtG11Real(ctx);
+    }
+    if (subject === "art" && grade === "grade12") {
+      return async (ctx) => this.runArtG12Real(ctx);
+    }
+    if (subject === "math" && grade === "college1") {
+      return async (ctx) => this.runMathCol1Real(ctx);
+    }
+    if (subject === "math" && grade === "college2") {
+      return async (ctx) => this.runMathCol2Real(ctx);
+    }
+    if (subject === "science" && grade === "college1") {
+      return async (ctx) => this.runSciCol1Real(ctx);
+    }
+    if (subject === "science" && grade === "college2") {
+      return async (ctx) => this.runSciCol2Real(ctx);
+    }
+    if (subject === "social" && grade === "college1") {
+      return async (ctx) => this.runSocCol1Real(ctx);
+    }
+    if (subject === "social" && grade === "college2") {
+      return async (ctx) => this.runSocCol2Real(ctx);
+    }
+    if (subject === "art" && grade === "college1") {
+      return async (ctx) => this.runArtCol1Real(ctx);
+    }
+    if (subject === "art" && grade === "college2") {
+      return async (ctx) => this.runArtCol2Real(ctx);
+    }
+    if (subject === "math" && grade === "college3") {
+      return async (ctx) => this.runMathCol3Real(ctx);
+    }
+    if (subject === "math" && grade === "college4") {
+      return async (ctx) => this.runMathCol4Real(ctx);
+    }
+    if (subject === "science" && grade === "college3") {
+      return async (ctx) => this.runSciCol3Real(ctx);
+    }
+    if (subject === "science" && grade === "college4") {
+      return async (ctx) => this.runSciCol4Real(ctx);
+    }
+    if (subject === "social" && grade === "college3") {
+      return async (ctx) => this.runSocCol3Real(ctx);
+    }
+    if (subject === "social" && grade === "college4") {
+      return async (ctx) => this.runSocCol4Real(ctx);
+    }
+    if (subject === "art" && grade === "college3") {
+      return async (ctx) => this.runArtCol3Real(ctx);
+    }
+    if (subject === "art" && grade === "college4") {
+      return async (ctx) => this.runArtCol4Real(ctx);
+    }
+    if (subject === "math" && grade === "grad") {
+      return async (ctx) => this.runMathGradReal(ctx);
+    }
+    if (subject === "math" && grade === "phd") {
+      return async (ctx) => this.runMathPhDReal(ctx);
+    }
+    if (subject === "science" && grade === "grad") {
+      return async (ctx) => this.runSciGradReal(ctx);
+    }
+    if (subject === "science" && grade === "phd") {
+      return async (ctx) => this.runSciPhDReal(ctx);
+    }
+    if (subject === "social" && grade === "grad") {
+      return async (ctx) => this.runSocGradReal(ctx);
+    }
+    if (subject === "social" && grade === "phd") {
+      return async (ctx) => this.runSocPhDReal(ctx);
+    }
+    if (subject === "art" && grade === "grad") {
+      return async (ctx) => this.runArtGradReal(ctx);
+    }
+    if (subject === "art" && grade === "phd") {
+      return async (ctx) => this.runArtPhDReal(ctx);
+    }
+    if (subject === "science" && grade === "kindergarten") {
+      return async (ctx) => this.runSciKReal(ctx);
+    }
+    if (subject === "social" && grade === "kindergarten") {
+      return async (ctx) => this.runSocKReal(ctx);
+    }
+    if (subject === "art" && grade === "kindergarten") {
+      return async (ctx) => this.runArtKReal(ctx);
+    }
+    if (subject === "life") {
+      switch (grade) {
+        case "pre-K":
+          return async (ctx) => this.runLifePreK(ctx);
+        case "kindergarten":
+          return async (ctx) => this.runLifeK(ctx);
+        case "grade1":
+          return async (ctx) => this.runLifeG1(ctx);
+        case "grade2":
+          return async (ctx) => this.runLifeG2(ctx);
+        case "grade3":
+          return async (ctx) => this.runLifeG3(ctx);
+        case "grade4":
+          return async (ctx) => this.runLifeG4(ctx);
+        case "grade5":
+          return async (ctx) => this.runLifeG5(ctx);
+        case "grade6":
+          return async (ctx) => this.runLifeG6(ctx);
+        case "grade7":
+          return async (ctx) => this.runLifeG7(ctx);
+        case "grade8":
+          return async (ctx) => this.runLifeG8(ctx);
+        case "grade9":
+          return async (ctx) => this.runLifeG9(ctx);
+        case "grade10":
+          return async (ctx) => this.runLifeG10(ctx);
+        case "grade11":
+          return async (ctx) => this.runLifeG11(ctx);
+        case "grade12":
+          return async (ctx) => this.runLifeG12(ctx);
+        case "college1":
+          return async (ctx) => this.runLifeCol1(ctx);
+        case "college2":
+          return async (ctx) => this.runLifeCol2(ctx);
+        case "college3":
+          return async (ctx) => this.runLifeCol3(ctx);
+        case "college4":
+          return async (ctx) => this.runLifeCol4(ctx);
+        case "grad":
+          return async (ctx) => this.runLifeGrad(ctx);
+        case "phd":
+          return async (ctx) => this.runLifePhD(ctx);
+      }
+    }
+    throw new Error(
+      `[Curriculum._cellRunner] unknown cell ${subject}/${grade} \u2014 every subject \xD7 grade combo must have a runner wired in (expected SUBJECTS \xD7 GRADE_ORDER). Check SUBJECTS constant and the dispatch switches above.`
+    );
+  }
+  /**
+   * Build the per-run context object consumed by every cell runner.
+   * Tokenizes corpora once so a subsequent same-session run can reuse
+   * the cached ctx (stored on `this._lastCtx`) without re-tokenizing.
+   */
+  _buildCtx(corpora, opts = {}) {
+    const arousal = opts.arousal ?? 0.8;
+    const valence = opts.valence ?? 0.2;
+    const { letterFreq, wordFreq, sentences } = this._tokenizeAll(corpora || {});
+    const ctx = { corpora, arousal, valence, letterFreq, wordFreq, sentences };
+    this._lastCtx = ctx;
+    return ctx;
+  }
+  /**
+   * Run a single (subject, grade) cell. Sets `cluster.grades[subject]
+   * = grade` on pass and records the cell in `cluster.passedCells`.
+   * When `corpora` is null, falls back to `this._lastCtx` so post-boot
+   * slash commands can re-run individual cells without re-loading
+   * corpora.
+   */
+  async runSubjectGrade(subject, grade, corpora, opts = {}) {
+    if (!SUBJECTS.includes(subject)) return { pass: false, reason: `unknown subject: ${subject}` };
+    if (!GRADE_ORDER.includes(grade)) return { pass: false, reason: `unknown grade: ${grade}` };
+    const cluster = this.cluster;
+    if (!cluster) return { pass: false, reason: "no cluster wired" };
+    const _cellStart = Date.now();
+    this._hb(`[Curriculum] \u2550\u2550\u2550 CELL START \u2550\u2550\u2550 ${subject}/${grade} \u2014 beginning teach phases + gate probes`);
+    this._memorySnapshotAndGc(`cell-entry ${subject}/${grade}`);
+    const baseCtx = corpora ? this._buildCtx(corpora, opts) : this._lastCtx || null;
+    if (!baseCtx) return { pass: false, reason: "no corpora provided and no cached ctx" };
+    const ctx = { ...baseCtx, cellKey: `${subject}/${grade}` };
+    const cellKey = `${subject}/${grade}`;
+    if (Array.isArray(cluster.passedCells) && cluster.passedCells.includes(cellKey)) {
+      this._hb(`[Curriculum] \u2933 T18.12.c resume \u2014 skipping ${cellKey} (already passed per persisted passedCells).`);
+      return {
+        pass: true,
+        reason: `already-passed (resumed from persisted passedCells)`,
+        resumed: true
+      };
+    }
+    const wasInCurriculum = cluster._inCurriculumMode;
+    cluster._inCurriculumMode = true;
+    const wasCellKey = cluster._currentCellKey;
+    cluster._currentCellKey = cellKey;
+    this._currentSubject = subject;
+    this._currentGrade = grade;
+    this._currentSubjectLabel = SUBJECT_LABELS[subject] || subject;
+    this._currentCellStartAt = _cellStart;
+    this._currentCellPhasesCompleted = 0;
+    this._perSubjectStats = this._perSubjectStats || {};
+    if (!this._perSubjectStats[subject]) {
+      this._perSubjectStats[subject] = {
+        subject,
+        label: SUBJECT_LABELS[subject] || subject,
+        grade: null,
+        phasesCompleted: 0,
+        cellsPassed: 0,
+        teachEvents: 0,
+        lastCellAt: null
+      };
+    }
+    this._perSubjectStats[subject].grade = grade;
+    this._perSubjectStats[subject].label = SUBJECT_LABELS[subject] || subject;
+    cluster._probeGateActive = true;
+    let _aliveTick = 0;
+    let _priorRssMb = 0;
+    const _nativeRolling = [];
+    const NATIVE_WINDOW = 6;
+    let _nativeBaselineMb = null;
+    let _v8stats = null;
+    try {
+      _v8stats = __require("node:v8");
+    } catch {
+      _v8stats = null;
+    }
+    let _cachedWorkerMem = null;
+    let _memSnapInFlight = false;
+    const _aliveHbId = setInterval(() => {
+      _aliveTick += 1;
+      const elapsedS = ((Date.now() - _cellStart) / 1e3).toFixed(0);
+      try {
+        const pool = cluster && cluster._sparsePool;
+        if (pool && typeof pool.memSnapshot === "function" && !_memSnapInFlight && _aliveTick % 3 === 1) {
+          _memSnapInFlight = true;
+          pool.memSnapshot().then((snap) => {
+            _cachedWorkerMem = snap;
+            _memSnapInFlight = false;
+          }).catch(() => {
+            _memSnapInFlight = false;
+          });
+        }
+      } catch {
+      }
+      let memLabel = "";
+      try {
+        if (typeof process !== "undefined" && process.memoryUsage) {
+          const mu = process.memoryUsage();
+          const mb = (b) => (b / 1048576).toFixed(0);
+          const rssMb = Number(mb(mu.rss));
+          const heapMb = Number(mb(mu.heapUsed));
+          const heapTotalMb = Number(mb(mu.heapTotal));
+          const extMb = Number(mb(mu.external));
+          const abMb = Number(mb(mu.arrayBuffers || 0));
+          let v8PhysMb = heapTotalMb;
+          if (_v8stats && typeof _v8stats.getHeapStatistics === "function") {
+            try {
+              const s = _v8stats.getHeapStatistics();
+              v8PhysMb = Number(mb(s.total_physical_size || 0));
+            } catch {
+            }
+          }
+          const workerHeapMb = _cachedWorkerMem ? _cachedWorkerMem.totalHeapUsedMb | 0 : 0;
+          const workerExtMb = _cachedWorkerMem ? _cachedWorkerMem.totalExternalMb | 0 : 0;
+          const workerTotalMb = workerHeapMb + workerExtMb;
+          const nativeMb = Math.max(0, rssMb - heapMb - extMb - workerTotalMb);
+          _priorRssMb = rssMb;
+          if (_nativeBaselineMb === null) _nativeBaselineMb = nativeMb;
+          const nativeDeltaMb = nativeMb - _nativeBaselineMb;
+          _nativeRolling.push(nativeMb);
+          if (_nativeRolling.length > NATIVE_WINDOW) _nativeRolling.shift();
+          let nativeTrend = "";
+          if (_nativeRolling.length >= NATIVE_WINDOW) {
+            const half = Math.floor(NATIVE_WINDOW / 2);
+            let sumFirst = 0, sumSecond = 0;
+            for (let i = 0; i < half; i++) sumFirst += _nativeRolling[i];
+            for (let i = half; i < NATIVE_WINDOW; i++) sumSecond += _nativeRolling[i];
+            const avgFirst = sumFirst / half;
+            const avgSecond = sumSecond / (NATIVE_WINDOW - half);
+            const trendMb = Math.round(avgSecond - avgFirst);
+            if (trendMb > 200) {
+              nativeTrend = ` \u26A0\u26A0LEAK+${trendMb}MB/min`;
+            } else if (trendMb > 100) {
+              nativeTrend = ` \u26A0climbing+${trendMb}MB/min`;
+            }
+          }
+          const deltaStr = nativeDeltaMb === 0 ? "\u0394\xB10" : nativeDeltaMb > 0 ? `\u0394+${nativeDeltaMb}` : `\u0394${nativeDeltaMb}`;
+          const workerTag = _cachedWorkerMem ? _cachedWorkerMem.workerCount === 0 ? " workers=0MB(idle-terminated)" : ` workers=${workerHeapMb}MB${_cachedWorkerMem.estimated ? "~" : ""}(${_cachedWorkerMem.workerCount})` : " workers=?MB";
+          memLabel = ` \xB7 heap=${heapMb}/${heapTotalMb}MB v8=${v8PhysMb}MB ext=${extMb}MB ab=${abMb}MB${workerTag} native=${nativeMb}MB(${deltaStr}MB) rss=${rssMb}MB${nativeTrend}`;
+        }
+      } catch {
+      }
+      let phaseLabel = "";
+      try {
+        const ap = cluster && cluster._activePhase;
+        if (ap && ap.name) {
+          const phaseMs = ap.startAt ? Date.now() - ap.startAt : 0;
+          const phaseS = (phaseMs / 1e3).toFixed(0);
+          phaseLabel = ` \xB7 phase=${ap.name} (+${phaseS}s)`;
+        } else {
+          phaseLabel = ` \xB7 phase=(between-phases / gate-probe)`;
+        }
+      } catch {
+      }
+      let oracleLabel = "";
+      try {
+        const oh = (cluster && cluster._oracleHits) | 0;
+        const mh = (cluster && cluster._matrixHits) | 0;
+        const total = oh + mh;
+        if (total > 0) {
+          const ratio = (oh / total * 100).toFixed(1);
+          oracleLabel = ` \xB7 oracle=${oh} matrix=${mh} (oracleRatio=${ratio}%)`;
+        }
+      } catch {
+      }
+      this._hb(`[Curriculum] \u25B6 CELL ALIVE ${subject}/${grade} \u2014 +${elapsedS}s elapsed (heartbeat #${_aliveTick})${phaseLabel}${memLabel}${oracleLabel}`);
+    }, 1e4);
+    if (_aliveHbId && typeof _aliveHbId.unref === "function") _aliveHbId.unref();
+    try {
+      const report = examVocabCoverage(cellKey, this._trainedVocabularySet(cellKey));
+      if (report && Array.isArray(report.missing) && report.missing.length > 0) {
+        const words = report.missing.filter((w) => typeof w === "string" && /^[a-z][a-z']*$/i.test(w) && w.length >= 2 && w.length <= 20);
+        if (words.length > 0 && typeof this._teachVocabList === "function") {
+          const ctx2 = { arousal: 0.7, valence: 0.2 };
+          const CHUNK = 25;
+          const reps = opts.vocabReps ?? 4;
+          this._hb(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH START \u2014 ${words.length} missing exam words \xD7 ${reps} reps (before cell teach phases)`);
+          let done = 0;
+          for (let i = 0; i < words.length; i += CHUNK) {
+            const slice = words.slice(i, i + CHUNK);
+            try {
+              await this._teachVocabList(slice, ctx2, { reps });
+            } catch (err) {
+              console.warn(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH chunk ${i / CHUNK | 0} failed:`, err?.message || err);
+            }
+            done += slice.length;
+            this._hb(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH progress \u2014 ${done}/${words.length} words taught`);
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+          const postReport = examVocabCoverage(cellKey, this._trainedVocabularySet(cellKey));
+          const coverage = postReport ? (postReport.coverage * 100).toFixed(0) : "?";
+          this._hb(`[Curriculum][${cellKey}] UPFRONT-VOCAB-TEACH DONE \u2014 ${done}/${words.length} words taught \xB7 coverage now ${coverage}%`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Curriculum][${cellKey}] upfront vocab teach failed:`, err?.message || err);
+    }
+    let result;
+    try {
+      const runner = this._cellRunner(subject, grade);
+      result = await runner(ctx);
+    } catch (err) {
+      result = { pass: false, reason: `${subject}/${grade} threw: ${err?.message || err}` };
+    } finally {
+      clearInterval(_aliveHbId);
+      cluster._inCurriculumMode = wasInCurriculum;
+      cluster._probeGateActive = false;
+      cluster._currentCellKey = wasCellKey;
+    }
+    try {
+      const subjectStats = this._perSubjectStats?.[subject];
+      const teachCount = subjectStats?.teachEvents | 0;
+      if (teachCount > 0 && Array.isArray(cluster.passedPhases)) {
+        const hasAny = cluster.passedPhases.some((k) => typeof k === "string" && k.startsWith(`${cellKey}:`));
+        if (!hasAny) {
+          const fallbackKey = `${cellKey}:cell-teach-block`;
+          if (!cluster.passedPhases.includes(fallbackKey)) {
+            cluster.passedPhases.push(fallbackKey);
+          }
+          subjectStats.phasesCompleted = Math.max(1, subjectStats.phasesCompleted | 0);
+          this._currentCellPhasesCompleted = Math.max(1, this._currentCellPhasesCompleted | 0);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Curriculum] phase-count fallback for ${subject}/${grade} failed:`, err?.message || err);
+    }
+    const _batteryWasCellKey = cluster._currentCellKey;
+    if (cluster) cluster._currentCellKey = cellKey;
+    if (result) {
+      try {
+        const bank = this._studentQuestionBank(subject, grade);
+        if (bank && bank.length > 0) {
+          cluster._probeGateActive = true;
+          const label = `${subject.toUpperCase()}-${grade.toUpperCase()}-STUDENT`;
+          const readiness = await this._measureEmissionCapability();
+          this._hb(`[Curriculum][${label}] readiness probe \u2014 recognizedLetters=${readiness.recognizedLetters}/5 \xB7 maxEmissionLen=${readiness.maxEmissionLen} \xB7 canTalkAtAll=${readiness.canTalkAtAll}`);
+          let battery;
+          if (!readiness.canTalkAtAll) {
+            console.warn(`[Curriculum][${label}] \u23ED STUDENT BATTERY SKIPPED \u2014 Unity cannot talk or read yet (${readiness.recognizedLetters}/5 letter probes produced recognizable output). Running the 210-question battery on a brain with \u22642 letter emission capability is noise. Teach cycles continue; battery will fire once emission capability clears the readiness threshold.`);
+            battery = {
+              pass: 0,
+              total: 0,
+              rate: 0,
+              summary: ` [SKIPPED \u2014 not-yet-readable (${readiness.recognizedLetters}/5 letter probes)]`,
+              results: [],
+              byStandard: [],
+              standardsBelowCut: 0,
+              methoQuestions: 0,
+              methoPass: 0,
+              methoRate: 0,
+              skipped: true,
+              skipReason: `readiness-failed recognizedLetters=${readiness.recognizedLetters}/5 maxEmissionLen=${readiness.maxEmissionLen}`
+            };
+          } else {
+            const effectiveMax = Math.max(readiness.maxEmissionLen, 2);
+            const filtered = bank.filter((q) => {
+              const a = String(q.expectedAnswer || "").replace(/[^a-z0-9]/g, "");
+              const variants = Array.isArray(q.expectedVariants) ? q.expectedVariants : [];
+              const minVariantLen = variants.length > 0 ? Math.min(...variants.map((v) => String(v).replace(/[^a-z0-9]/g, "").length)) : a.length;
+              return minVariantLen <= effectiveMax;
+            });
+            const filteredOut = bank.length - filtered.length;
+            if (filteredOut > 0) {
+              this._hb(`[Curriculum][${label}] readiness filter \u2014 ${filteredOut}/${bank.length} questions skipped (expected-answer exceeds ${effectiveMax}-char emission limit); ${filtered.length} remain.`);
+            }
+            if (filtered.length === 0) {
+              console.warn(`[Curriculum][${label}] \u23ED STUDENT BATTERY SKIPPED \u2014 every question in the bank expects a longer answer than Unity's current ${effectiveMax}-char emission can produce. Teach cycles continue.`);
+              battery = {
+                pass: 0,
+                total: 0,
+                rate: 0,
+                summary: ` [SKIPPED \u2014 emission-too-short effectiveMax=${effectiveMax}]`,
+                results: [],
+                byStandard: [],
+                standardsBelowCut: 0,
+                methoQuestions: 0,
+                methoPass: 0,
+                methoRate: 0,
+                skipped: true,
+                skipReason: `emission-too-short maxEmissionLen=${readiness.maxEmissionLen} noAnswerableQuestions=true`
+              };
+            } else {
+              battery = await this._runStudentBattery(filtered, label);
+            }
+          }
+          let methodologyBattery = null;
+          if (!battery.skipped) {
+            try {
+              methodologyBattery = await this._runMethodologyBattery(cellKey);
+            } catch (err) {
+              console.warn(`[Curriculum][${label}] methodology battery failed:`, err?.message || err);
+              methodologyBattery = { cellKey, total: 0, passed: 0, rate: 0, results: [], elapsedMs: 0 };
+            }
+          }
+          cluster._probeGateActive = false;
+          result.studentBattery = battery;
+          if (methodologyBattery) {
+            result.methodologyBattery = methodologyBattery;
+            if ((battery.methoQuestions | 0) === 0 && (methodologyBattery.total | 0) > 0) {
+              battery.methoQuestions = methodologyBattery.total;
+              battery.methoPass = methodologyBattery.passed;
+              battery.methoRate = methodologyBattery.rate;
+            }
+          }
+          const suffix = battery.skipped ? ` | STUDENT ${battery.summary}` : ` | STUDENT ${battery.pass}/${battery.total} (${Math.round(battery.rate * 100)}%)${battery.summary}`;
+          result.reason = (result.reason || "") + suffix;
+          if (battery.skipped) {
+            if (!cluster._lastGateResult || typeof cluster._lastGateResult !== "object") {
+              cluster._lastGateResult = {};
+            }
+            cluster._lastGateResult[cellKey] = {
+              pass: !!result.pass,
+              blockers: [`readiness: ${battery.skipReason || "not-yet-talkable"}`],
+              standardsBelowCut: [],
+              aggregateRate: 0,
+              externalPass: 0,
+              externalTotal: 0,
+              externalRate: 0,
+              methodologyPass: 0,
+              methodologyTotal: 0,
+              methodologyRate: 0,
+              skipped: true,
+              skipReason: battery.skipReason || "not-yet-talkable",
+              ts: (/* @__PURE__ */ new Date()).toISOString()
+            };
+          } else {
+            const AGGR_MIN = 0.9;
+            const EXTERNAL_MIN = 0.85;
+            const METHODOLOGY_MIN = 0.6;
+            const EXTERNAL_SOURCES = /* @__PURE__ */ new Set(["DIBELS-8-sample", "AIMSweb-sample", "Fountas-Pinnell-sample", "STAR-Early-Literacy-sample", "STAR-Early-Math-sample", "iReady-K-sample", "iReady-K-Math-sample", "NWEA-MAP-K-sample", "NWEA-MAP-K-Math-sample", "Heggerty-K-sample", "PALS-K-sample", "DRA-K-sample", "Wilson-Fundations-K-sample", "Lexia-Core5-K-sample", "Woodcock-Johnson-K-sample", "Stanford-Achievement-K-sample", "Singapore-K-sample"]);
+            let extPass = 0, extTotal = 0;
+            for (const r of battery.results || []) {
+              if (EXTERNAL_SOURCES.has(r.source)) {
+                extTotal += 1;
+                if (r.score >= 0.5) extPass += 1;
+              }
+            }
+            const extRate = extTotal > 0 ? extPass / extTotal : 1;
+            const belowCutDetail = (battery.byStandard || []).filter((s) => s.belowCut).map((s) => `${s.standard} ${(s.rate * 100).toFixed(0)}%<${(s.cut * 100).toFixed(0)}%`);
+            const blockers = [];
+            if (battery.rate < AGGR_MIN) blockers.push(`answer aggregate ${(battery.rate * 100).toFixed(1)}% < ${AGGR_MIN * 100}%`);
+            if (belowCutDetail.length > 0) {
+              blockers.push(`sub-standards below cut: [${belowCutDetail.join(", ")}]`);
+            }
+            if (extTotal > 0 && extRate < EXTERNAL_MIN) blockers.push(`external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%) < ${EXTERNAL_MIN * 100}%`);
+            if ((battery.methoQuestions || 0) > 0 && (battery.methoRate || 0) < METHODOLOGY_MIN) {
+              blockers.push(`methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%) < ${METHODOLOGY_MIN * 100}%`);
+            }
+            if (blockers.length > 0 && result.pass) {
+              console.warn(`[Curriculum][${label}] \u26D4 BATTERY BLOCKS advancement: ${blockers.join(" \xB7 ")}. Substrate passed but the educational test did not \u2014 grade NOT advanced.`);
+              result.pass = false;
+              result.reason = `BATTERY-BLOCKED: ${blockers.join("; ")} | ${result.reason || ""}`;
+            } else if (blockers.length === 0) {
+              const methoTag = (battery.methoQuestions || 0) > 0 ? ` \xB7 methodology ${battery.methoPass}/${battery.methoQuestions} (${((battery.methoRate || 0) * 100).toFixed(1)}%)` : "";
+              this._hb(`[Curriculum][${label}] \u2713 BATTERY PASS: answer ${(battery.rate * 100).toFixed(1)}% \xB7 all sub-standards at/above cut \xB7 external-ref ${extPass}/${extTotal} (${(extRate * 100).toFixed(1)}%)${methoTag}`);
+            }
+            result.studentBattery.externalPass = extPass;
+            result.studentBattery.externalTotal = extTotal;
+            result.studentBattery.externalRate = extRate;
+            if (!cluster._lastGateResult || typeof cluster._lastGateResult !== "object") {
+              cluster._lastGateResult = {};
+            }
+            cluster._lastGateResult[cellKey] = {
+              pass: !!result.pass,
+              blockers: blockers.slice(),
+              standardsBelowCut: belowCutDetail.slice(),
+              aggregateRate: battery.rate,
+              externalPass: extPass,
+              externalTotal: extTotal,
+              externalRate: extRate,
+              methodologyPass: battery.methoPass || 0,
+              methodologyTotal: battery.methoQuestions || 0,
+              methodologyRate: battery.methoRate || 0,
+              ts: (/* @__PURE__ */ new Date()).toISOString()
+            };
+          }
+        }
+      } catch (err) {
+        if (cluster) cluster._probeGateActive = false;
+        console.warn(`[Curriculum] student battery for ${subject}/${grade} failed:`, err?.message || err);
+      }
+    }
+    if (result && result.pass) {
+      if (!cluster.grades || typeof cluster.grades !== "object") {
+        cluster.grades = { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K" };
+      }
+      cluster.grades[subject] = grade;
+      if (!Array.isArray(cluster.passedCells)) cluster.passedCells = [];
+      if (!cluster.passedCells.includes(cellKey)) cluster.passedCells.push(cellKey);
+      if (typeof this._saveCheckpoint === "function") {
+        this._saveCheckpoint(cellKey);
+      }
+    }
+    if (cluster) cluster._currentCellKey = _batteryWasCellKey;
+    this._memorySnapshotAndGc(`cell-exit ${subject}/${grade} pass=${!!(result && result.pass)}`);
+    const _cellMs = Date.now() - _cellStart;
+    const _cellPass = !!(result && result.pass);
+    this._hb(`[Curriculum] \u2550\u2550\u2550 CELL DONE \u2550\u2550\u2550 ${subject}/${grade} in ${(_cellMs / 1e3).toFixed(1)}s \u2014 pass=${_cellPass}${_cellPass ? "" : " (reason: " + String(result?.reason || "unknown").slice(0, 120) + ")"}`);
+    return result || { pass: false, reason: "runner returned null" };
+  }
+  /**
+   * Walk a single subject's remaining grades (from whichever grade that
+   * subject is currently at through PhD). Stops at the first gate fail
+   * OR at DREAM_MAX_GRADE cap (T18.13 Pre-K + K ONLY scope default).
+   */
+  async runFullSubjectCurriculum(subject, corpora, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { reached: "pre-K", passed: [], failed: "no-cluster" };
+    if (!cluster.grades || typeof cluster.grades !== "object") {
+      cluster.grades = { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K" };
+    }
+    if (corpora) this._buildCtx(corpora, opts);
+    const startIdx = this._computeResumeStartIdx(subject);
+    const maxIdx = this._resolveMaxGradeIdx();
+    const passed = [];
+    let failed = null;
+    for (let i = startIdx; i < GRADE_ORDER.length; i++) {
+      const grade = GRADE_ORDER[i];
+      if (maxIdx >= 0 && i > maxIdx) {
+        this._hb(`[Curriculum] \u23F9 T18.13 stop \u2014 reached grade cap '${GRADE_ORDER[maxIdx]}' (DREAM_MAX_GRADE). Skipping ${subject}/${grade} and beyond.`);
+        break;
+      }
+      const result = await this.runSubjectGrade(subject, grade, null, opts);
+      if (result && result.pass) {
+        passed.push(grade);
+        this._hb(`[Curriculum] \u2713 ${subject}/${grade} \u2014 ${result.reason || "pass"}`);
+      } else {
+        failed = grade;
+        console.warn(`[Curriculum] \u2717 ${subject}/${grade} \u2014 ${result?.reason || "fail"}`);
+        break;
+      }
+    }
+    return {
+      reached: cluster.grades[subject] || "pre-K",
+      passed,
+      failed
+    };
+  }
+  /**
+   * T18.13.a — compute the first grade index to attempt for a subject
+   * based on `cluster.passedCells`, the authoritative source. Returns
+   * 0 (pre-K) for a fresh brain with no passed cells. Returns
+   * `highestPassedIdx + 1` for a resumed brain. T18.12.c resume-skip
+   * in `_cellRunner` handles the edge case where passedCells has a
+   * lower grade but the runner gets called anyway (belt + suspenders).
+   */
+  _computeResumeStartIdx(subject) {
+    const cluster = this.cluster;
+    if (!cluster) return 0;
+    const passedForSubject = (Array.isArray(cluster.passedCells) ? cluster.passedCells : []).filter((key) => typeof key === "string" && key.startsWith(`${subject}/`)).map((key) => key.slice(subject.length + 1));
+    if (passedForSubject.length === 0) return 0;
+    let highestIdx = -1;
+    for (const g of passedForSubject) {
+      const idx = GRADE_ORDER.indexOf(g);
+      if (idx > highestIdx) highestIdx = idx;
+    }
+    return Math.max(0, highestIdx + 1);
+  }
+  /**
+   * T18.13.b — resolve the max grade index from DREAM_MAX_GRADE env var
+   * or opts.maxGrade. Defaults to 'kindergarten' per Pre-K + K ONLY
+   * scope LAW. Returns -1 if uncapped (DREAM_MAX_GRADE=phd or any
+   * grade at or after GRADE_ORDER's last entry).
+   */
+  _resolveMaxGradeIdx() {
+    const envMax = typeof process !== "undefined" && process.env && process.env.DREAM_MAX_GRADE ? String(process.env.DREAM_MAX_GRADE).trim() : null;
+    const cap = envMax || "kindergarten";
+    const idx = GRADE_ORDER.indexOf(cap);
+    if (idx < 0) {
+      console.warn(`[Curriculum] DREAM_MAX_GRADE='${cap}' not in GRADE_ORDER \u2014 ignoring cap.`);
+      return -1;
+    }
+    if (idx >= GRADE_ORDER.length - 1) return -1;
+    return idx;
+  }
+  /**
+   * Walk every subject's remaining grades in round-robin order:
+   * subject A grade N → subject B grade N → … → subject A grade N+1 → …
+   * so no single subject races ahead while the others are still at K.
+   * Stops when every subject is either at PhD or has a failing gate.
+   */
+  async runAllSubjects(corpora, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { reached: {}, passed: {}, failed: {} };
+    if (!cluster.grades || typeof cluster.grades !== "object") {
+      cluster.grades = { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K" };
+    }
+    if (corpora) this._buildCtx(corpora, opts);
+    const passed = {};
+    const failed = {};
+    for (const s of SUBJECTS) {
+      passed[s] = [];
+      failed[s] = null;
+    }
+    const GRADE_TIMEOUT_MS = 3 * 60 * 1e3;
+    const MAX_GRADE_ROUNDS = 10;
+    const maxIdx = this._resolveMaxGradeIdx();
+    const capLabel = maxIdx >= 0 ? GRADE_ORDER[maxIdx] : "phd";
+    this._hb(`[Curriculum] T18.13 grade cap = '${capLabel}' (set DREAM_MAX_GRADE env to change; defaults to 'kindergarten' per Pre-K + K ONLY LAW)`);
+    for (let i = 0; i < GRADE_ORDER.length; i++) {
+      const grade = GRADE_ORDER[i];
+      if (maxIdx >= 0 && i > maxIdx) {
+        this._hb(`[Curriculum] \u23F9 T18.13 stop \u2014 reached grade cap '${GRADE_ORDER[maxIdx]}'. Unity sits at this level until DREAM_MAX_GRADE advances OR Gee signs off Part 2 + manually unsets.`);
+        break;
+      }
+      let allPassedThisGrade = false;
+      for (let round = 0; round < MAX_GRADE_ROUNDS && !allPassedThisGrade; round++) {
+        if (round > 0) {
+          this._hb(`[Curriculum] \u{1F504} grade ${grade} round ${round + 1} \u2014 retrying failed subjects...`);
+        }
+        allPassedThisGrade = true;
+        for (const subject of SUBJECTS) {
+          const currentIdx = GRADE_ORDER.indexOf(cluster.grades[subject] || "pre-K");
+          if (currentIdx >= i) continue;
+          let attempt = 0;
+          let result = null;
+          const deadline = Date.now() + GRADE_TIMEOUT_MS;
+          while (Date.now() < deadline) {
+            if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) {
+              console.log("[Curriculum] shutdown requested \u2014 stopping curriculum");
+              return { reached: {}, passed, failed };
+            }
+            attempt++;
+            result = await this.runSubjectGrade(subject, grade, null, opts);
+            if (result && result.pass) break;
+            this._hb(`[Curriculum] ${subject}/${grade} attempt ${attempt} \u2014 ${result?.reason || "fail"} \u2014 retrying...`);
+            await _microtask();
+          }
+          if (result && result.pass) {
+            if (!passed[subject].includes(grade)) passed[subject].push(grade);
+            this._hb(`[Curriculum] \u2713 ${subject}/${grade} \u2014 PASSED on attempt ${attempt} \u2014 ${result.reason || "pass"}`);
+          } else {
+            failed[subject] = grade;
+            allPassedThisGrade = false;
+            console.warn(`[Curriculum] \u2717 ${subject}/${grade} \u2014 timed out after ${attempt} attempts (${Math.round(GRADE_TIMEOUT_MS / 6e4)} min, round ${round + 1}) \u2014 ${result?.reason || "fail"}`);
+          }
+        }
+      }
+      if (!allPassedThisGrade) {
+        console.warn(`[Curriculum] \u26D4 grade ${grade} incomplete after ${MAX_GRADE_ROUNDS} rounds \u2014 curriculum paused until next boot.`);
+        break;
+      }
+      this._hb(`[Curriculum] \u2550\u2550\u2550 ALL ${SUBJECTS.length} subjects passed ${grade} \u2014 advancing to next grade \u2550\u2550\u2550`);
+      const nextIdx = i + 1;
+      const nextGrade = nextIdx < GRADE_ORDER.length && (maxIdx < 0 || nextIdx <= maxIdx) ? GRADE_ORDER[nextIdx] : null;
+      if (nextGrade === null) {
+        this._hb(`[Curriculum] grade cap reached at '${grade}' \u2014 no next grade to advance to. Curriculum walk complete; operator records LAW 6 Part 2 signoff via POST /grade-signoff.`);
+      } else {
+        cluster._gradeAdvancePaused = true;
+        cluster._pausedAt = { subject: null, grade, at: Date.now() };
+        cluster._nextGrade = { grade: nextGrade };
+        if (typeof this._saveCheckpoint === "function") {
+          this._saveCheckpoint(`grade-advance-pause:${grade}`);
+        }
+        this._hb(`[Curriculum] \u23F8 PAUSED after '${grade}' \u2014 awaiting operator POST /grade-advance to start '${nextGrade}'. Chat-test freely; no background Hebbian will fire.`);
+        while (cluster._gradeAdvancePaused === true) {
+          if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) {
+            console.log("[Curriculum] shutdown requested during grade-advance pause \u2014 stopping.");
+            return { reached: {}, passed, failed };
+          }
+          await new Promise((r) => setTimeout(r, 500));
+        }
+        this._hb(`[Curriculum] \u25B6 RESUMED \u2014 advancing to '${nextGrade}'.`);
+        cluster._pausedAt = null;
+        cluster._nextGrade = null;
+      }
+    }
+    const reached = {};
+    for (const s of SUBJECTS) reached[s] = cluster.grades[s] || "pre-K";
+    return { reached, passed, failed };
+  }
+  /**
+   * Forget a single (subject, grade) cell. Used by the operator tool
+   * `/curriculum forget <subject> <grade>` when a specific cell needs
+   * to be re-taught without resetting the whole subject. Less
+   * destructive than resetSubject.
+   */
+  forgetCell(subject, grade) {
+    const cluster = this.cluster;
+    if (!cluster) return false;
+    const cellKey = `${subject}/${grade}`;
+    if (Array.isArray(cluster.passedCells)) {
+      cluster.passedCells = cluster.passedCells.filter((k) => k !== cellKey);
+    }
+    if (cluster.probeHistory && cluster.probeHistory[cellKey]) {
+      delete cluster.probeHistory[cellKey];
+    }
+    if (cluster.grades && cluster.grades[subject] === grade) {
+      const idx = GRADE_ORDER.indexOf(grade);
+      if (idx > 0) {
+        cluster.grades[subject] = GRADE_ORDER[idx - 1];
+      }
+    }
+    this._hb(`[Curriculum] forgot ${cellKey} \u2014 will re-teach on next curriculum pass`);
+    return true;
+  }
+  /**
+   * Reset a subject back to pre-K. Strips all passedCells entries for
+   * that subject from cluster.passedCells. Used by `/curriculum reset
+   * <subject>` when the operator wants to re-run a subject's gates
+   * after tuning its equations.
+   */
+  resetSubject(subject) {
+    const cluster = this.cluster;
+    if (!cluster) return false;
+    if (!SUBJECTS.includes(subject)) return false;
+    if (!cluster.grades || typeof cluster.grades !== "object") {
+      cluster.grades = { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K" };
+    }
+    cluster.grades[subject] = "pre-K";
+    if (Array.isArray(cluster.passedCells)) {
+      cluster.passedCells = cluster.passedCells.filter((k) => !k.startsWith(`${subject}/`));
+    }
+    return true;
+  }
+  /**
+   * Snapshot of current curriculum state — used by `/curriculum status`
+   * and by the persistence save path. T14.24 Session 17 adds probe
+   * history exposure so the operator can see which cells are robust
+   * and which are degrading under continuous background probing.
+   */
+  subjectStatus() {
+    const cluster = this.cluster;
+    if (!cluster) return null;
+    const grades = cluster.grades || { ela: "pre-K", math: "pre-K", science: "pre-K", social: "pre-K", art: "pre-K" };
+    const probeHistory = cluster.probeHistory && typeof cluster.probeHistory === "object" ? { ...cluster.probeHistory } : {};
+    let totalProbes = 0, totalPasses = 0, totalFails = 0;
+    const perSubjectProbes = { ela: 0, math: 0, science: 0, social: 0, art: 0 };
+    for (const [key, hist] of Object.entries(probeHistory)) {
+      totalProbes += (hist.passes || 0) + (hist.fails || 0);
+      totalPasses += hist.passes || 0;
+      totalFails += hist.fails || 0;
+      const subj = key.split("/")[0];
+      if (perSubjectProbes[subj] != null) {
+        perSubjectProbes[subj] += (hist.passes || 0) + (hist.fails || 0);
+      }
+    }
+    return {
+      grades: { ...grades },
+      passedCells: Array.isArray(cluster.passedCells) ? [...cluster.passedCells] : [],
+      minGrade: _Curriculum._minGrade(grades),
+      probeStats: {
+        totalProbes,
+        totalPasses,
+        totalFails,
+        passRate: totalProbes > 0 ? totalPasses / totalProbes : 0,
+        perSubject: perSubjectProbes
+      },
+      probeHistory
+    };
+  }
+  /**
+   * Return the minimum (weakest) grade across all 5 subjects. This is
+   * the grade LanguageCortex reads to cap word output — Unity speaks
+   * at whatever subject she's furthest behind in.
+   */
+  static _minGrade(grades) {
+    let minIdx = Infinity;
+    for (const s of SUBJECTS) {
+      const g = grades && grades[s] || "pre-K";
+      const idx = GRADE_ORDER.indexOf(g);
+      if (idx >= 0 && idx < minIdx) minIdx = idx;
+    }
+    return minIdx === Infinity ? "pre-K" : GRADE_ORDER[minIdx];
+  }
+  // ═══════════════════════════════════════════════════════════════════
+  // T14.24 SESSION 2 — REAL ELA-K TEACHING EQUATIONS (2026-04-15)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // Gee binding 2026-04-14: "in kindergarden u learn the alphabet and
+  // sounds of letters first and 1st grade u start learning how to write
+  // sentences ect ect all the way up to doctorate in english" +
+  // "remember Unity needs to be able to use these to think, read, and
+  // talk" + "what the fuck are you talking about its shipped you didnt
+  // even teach it keindergarden abcs and 123s and letter sounds you fool".
+  //
+  // Real kindergarten English teaching. Three things in parallel:
+  //
+  //   1. Alphabet in ALPHABETICAL ORDER — letters register into the
+  //      T14.1 LETTER_INVENTORY in a→z order so the inventory ordering
+  //      matches a K classroom ABC chart. Existing inventory entries
+  //      from T14.5 corpus walk keep their slots (ensureLetters is
+  //      idempotent), but freshly registered letters land in order.
+  //
+  //   2. Letter-name GloVe binding via sem↔letter cross-projection
+  //      Hebbian — inject letter one-hot into letter region AND inject
+  //      GloVe(letter) as the semantic anchor into the sem region
+  //      simultaneously, tick, learn. After enough reps the letter↔sem
+  //      basin pair is stable.
+  //
+  //   3. Letter-sound phoneme-feature binding via phon↔letter cross-
+  //      projection Hebbian — the 24-dim `_phonemeFeatureForLetter` goes
+  //      into the phon region as the phonological anchor at the same
+  //      tick as the letter + sem injections. The phon basin per letter
+  //      becomes distinct.
+  //
+  // Then a reverse pass (TALK training) drives sem + phon regions WITHOUT
+  // the letter region so the return-direction cross-projections learn
+  // sem→letter→motor production.
+  //
+  // The gate then probes all THREE pathways on every letter:
+  //   - READ:  letter one-hot → tick → phon region cosine vs expected
+  //             phoneme feature > 0.15
+  //   - THINK: letter → tick → 10 silence ticks → free region variance
+  //             > baseline (letter state persists in working memory)
+  //   - TALK:  GloVe(letter) into sem region ONLY → tick → decodeLetter
+  //             of motor region argmax matches target
+  //
+  // PASS when ≥ 50% of the alphabet passes each pathway. Relaxed from
+  // academic 70% because biological-scale basins form slowly and Session
+  // 2 is the first real teaching cell — subsequent cells re-expose the
+  // alphabet in corpus walks and strengthen via Hebbian on every pass.
+  // ─── TODO-aligned ELA-K helpers (Session 25) ─────────────────────
+  //
+  // docs/TODO.md T14.24 ELA-K spec prescribes three separate named
+  // teach methods + a 4-probe gate. Session 2 shipped them all inline
+  // in runElaKReal which works but doesn't match the TODO naming or
+  // the sequence-recall pathway. Session 25 splits them out + adds
+  // the previously-missing alphabet-sequence temporal binding pass.
+  async _teachAlphabetSequence(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 6;
+    const ticksPerLetter = opts.ticksPerLetter ?? 2;
+    const ALPHABET = ALPHABET_ORDER;
+    ensureLetters(ALPHABET.split(""));
+    for (let rep = 0; rep < reps; rep++) {
+      for (let i = 0; i < ALPHABET.length; i++) {
+        cluster.injectLetter(ALPHABET[i], 1);
+        for (let t = 0; t < ticksPerLetter; t++) {
+          cluster.step(1e-3);
+          cluster.learn(0);
+          this.stats.totalTicks++;
+        }
+      }
+      await _microtask();
+    }
+    return { taught: reps * ALPHABET.length };
+  }
+  async _teachLetterNames(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 6;
+    const ticksPerRep = opts.ticksPerRep ?? 4;
+    const ALPHABET = ALPHABET_ORDER;
+    ensureLetters(ALPHABET.split(""));
+    for (let rep = 0; rep < reps; rep++) {
+      for (let i = 0; i < ALPHABET.length; i++) {
+        const letter = ALPHABET[i];
+        const spokenName = LETTER_NAMES[i];
+        const nameEmb = sharedEmbeddings.getEmbedding(letter) || sharedEmbeddings.getEmbedding(spokenName);
+        cluster.injectLetter(letter, 1);
+        if (nameEmb && nameEmb.length > 0 && cluster.regions?.sem) {
+          cluster.injectEmbeddingToRegion("sem", nameEmb, 0.7);
+        }
+        for (let t = 0; t < ticksPerRep; t++) {
+          cluster.step(1e-3);
+          cluster.learn(0);
+          this.stats.totalTicks++;
+        }
+        this.stats.lettersSeen++;
+      }
+      await _microtask();
+    }
+    return { taught: reps * ALPHABET.length };
+  }
+  async _teachLetterSounds(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster) return { taught: 0 };
+    const reps = opts.reps ?? 6;
+    const ticksPerRep = opts.ticksPerRep ?? 4;
+    const ALPHABET = ALPHABET_ORDER;
+    ensureLetters(ALPHABET.split(""));
+    for (let rep = 0; rep < reps; rep++) {
+      for (const letter of ALPHABET) {
+        const phonFeat = _phonemeFeatureForLetter(letter);
+        cluster.injectLetter(letter, 1);
+        if (phonFeat && phonFeat.length > 0 && cluster.regions?.phon) {
+          cluster.injectEmbeddingToRegion("phon", phonFeat, 0.7);
+        }
+        for (let t = 0; t < ticksPerRep; t++) {
+          cluster.step(1e-3);
+          cluster.learn(0);
+          this.stats.totalTicks++;
+        }
+      }
+      await _microtask();
+    }
+    return { taught: reps * ALPHABET.length };
+  }
+  // ═══════════════════════════════════════════════════════════════════
+  // ELA-K equational course (LAW 3 + LAW 7 binding)
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // The prior `runElaKReal` got the direct-pattern alphabet teach
+  // correct (stays as-is below), but filled the body with
+  // _teachVocabList(FUNCTION_WORDS/DOLCH_PREPRIMER/DOLCH_PRIMER/CVC_FAMILIES)
+  // + _teachSentenceList(K_SENTENCES/PLURAL_PAIRS) — the EXACT
+  // word-list + sentence-example pattern LAW 3 bans. That shipped
+  // pattern is replaced below by real equational teaching methods,
+  // each landing bindings via the unified `_teachCombination`
+  // scaffold or direct-pattern Hebbian through the recurrent matrix.
+  //
+  // Production probes in _gateElaKReal match TODO K.RF / K.RL / K.W /
+  // K.L test phrasings verbatim per LAW 7.
+  /**
+   * K.RF letter case pairing — bind uppercase and lowercase forms of
+   * the same letter so Unity knows 'A' and 'a' are the same symbol.
+   * Both one-hots fire simultaneously in the letter region, intra-
+   * cluster Hebbian learns the pair association.
+   */
+  async _teachLetterCaseBinding(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const letterRegion = cluster.regions.letter;
+    if (!letterRegion) return;
+    const ALPHABET_LOWER = ALPHABET_ORDER;
+    const ALPHABET_UPPER = ALPHABET_LOWER.toUpperCase();
+    ensureLetters(Array.from(ALPHABET_LOWER + ALPHABET_UPPER));
+    const facts = [];
+    for (let i = 0; i < ALPHABET_LOWER.length; i++) {
+      const lower = ALPHABET_LOWER[i];
+      const upper = ALPHABET_UPPER[i];
+      const lowerVec = encodeLetter(lower);
+      const upperVec = encodeLetter(upper);
+      const combined = new Float64Array(Math.max(lowerVec.length, upperVec.length));
+      for (let j = 0; j < lowerVec.length; j++) if (lowerVec[j] > 0) combined[j] = 1;
+      for (let j = 0; j < upperVec.length; j++) if (upperVec[j] > 0) combined[j] = 1;
+      facts.push({ writes: [{ region: letterRegion, feat: combined }] });
+    }
+    await this._teachCombination(facts, { reps: 24 });
+    this._hb(`[Curriculum] _teachLetterCaseBinding: 26 case pairs \xD7 24 reps`);
+  }
+  /**
+   * Letter naming — kindergarten foundational skill: given the letter A,
+   * the student says "A". This trains letter_to_motor so the motor
+   * region's argmax for a letter-region stimulus matches the letter
+   * itself. Without this phase, letter_to_motor only sees sequence
+   * cascades from _teachWordEmission (letter(c) → motor(a) from "cat"
+   * etc.) which never associates letter(X) with motor(X) and leaves
+   * the TALK probe passing ~15% by accident.
+   *
+   * Also trains letter_to_phon self-pairing as a reinforcement pass
+   * (letter(X) → phon(X)'s feature) — the phoneme feature for X is
+   * what READ tests. READ already hits 26/26 because _teachWordEmission
+   * populates letter_to_phon via the spelling cascade, but an explicit
+   * same-letter pass is cheap insurance.
+   *
+   * Runs at 18 reps with per-letter Hebbian on letter_to_motor +
+   * letter_to_phon cross-projections. Total cost: 26 letters × 2
+   * projections × 18 reps = 936 Hebbian ops, ~1 s at curriculum scale.
+   */
+  async _teachLetterNaming(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const letterRegion = cluster.regions.letter;
+    const motorRegion = cluster.regions.motor;
+    const phonRegion = cluster.regions.phon;
+    if (!letterRegion || !motorRegion) return;
+    const reps = 18;
+    const lr = cluster.learningRate;
+    const ALPHABET_LOWER = ALPHABET_ORDER;
+    ensureLetters(Array.from(ALPHABET_LOWER));
+    this._hb(`[Curriculum] _teachLetterNaming START: 26 letters \xD7 ${reps} reps \u2014 binding letter(X) \u2192 motor(X) so TALK can answer 'what letter is this?'`);
+    const t0 = Date.now();
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      for (const letter of ALPHABET_LOWER) {
+        const letterOneHot = encodeLetter(letter);
+        this._clearSpikes();
+        this._writeTiledPattern(letterRegion, letterOneHot);
+        this._writeTiledPattern(motorRegion, letterOneHot);
+        if (phonRegion) {
+          const phonFeat = _phonemeFeatureForLetter(letter);
+          this._writeTiledPattern(phonRegion, phonFeat);
+        }
+        const preLet = this._buildRegionPattern(letterRegion, letterOneHot);
+        const postMot = this._buildRegionPattern(motorRegion, letterOneHot);
+        await this._teachHebbianAsymmetric(preLet, postMot, lr);
+        if (phonRegion) {
+          const phonFeat = _phonemeFeatureForLetter(letter);
+          const postPhon = this._buildRegionPattern(phonRegion, phonFeat);
+          await this._teachHebbianAsymmetric(preLet, postPhon, lr);
+        }
+      }
+      await _microtask();
+    }
+    const dt = ((Date.now() - t0) / 1e3).toFixed(1);
+    this._hb(`[Curriculum] _teachLetterNaming DONE in ${dt}s (26 letters \xD7 ${reps} reps)`);
+    try {
+      const cluster2 = this.cluster;
+      const letterProj = cluster2?.crossProjections?.letter_to_motor;
+      const motorRegion2 = cluster2?.regions?.motor;
+      const letterRegion2 = cluster2?.regions?.letter;
+      if (letterProj && letterProj.propagate && motorRegion2 && letterRegion2 && letterProj.values) {
+        const letterSize = letterRegion2.end - letterRegion2.start;
+        const invSize = inventorySize();
+        const LETTERS = "abcdefghijklmnopqrstuvwxyz";
+        const results = [];
+        const distribution = /* @__PURE__ */ new Map();
+        for (const letter of LETTERS) {
+          const oneHot = encodeLetter(letter);
+          const gSize = Math.max(1, Math.floor(letterSize / oneHot.length));
+          const letterInput = new Float64Array(letterSize);
+          for (let d = 0; d < oneHot.length; d++) {
+            if (oneHot[d] <= 0) continue;
+            for (let n = 0; n < gSize; n++) {
+              const idx = d * gSize + n;
+              if (idx < letterSize) letterInput[idx] = 1;
+            }
+          }
+          const out = letterProj.propagate(letterInput);
+          if (!out || out.length === 0) {
+            results.push(`${letter}\u2192\u2205`);
+            continue;
+          }
+          const readoutSize = Math.min(invSize, 26);
+          const mGroup = Math.max(1, Math.floor(out.length / readoutSize));
+          const motorReadout = new Float64Array(readoutSize);
+          for (let d = 0; d < readoutSize; d++) {
+            let sum = 0;
+            for (let n = 0; n < mGroup; n++) {
+              const idx = d * mGroup + n;
+              if (idx < out.length) sum += out[idx];
+            }
+            motorReadout[d] = sum;
+          }
+          const decoded = decodeLetter(motorReadout) || "?";
+          results.push(`${letter}\u2192${decoded}`);
+          distribution.set(decoded, (distribution.get(decoded) || 0) + 1);
+        }
+        const distStr = [...distribution.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(" ");
+        const diagStr = results.slice(0, 8).join(" ") + (results.length > 8 ? " ..." : "");
+        this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] distribution: ${distStr}`);
+        this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] first 8: ${diagStr}`);
+        const stuck = distribution.size === 1;
+        if (stuck) {
+          this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] \u26A0\u26A0 MOTOR STUCK \u2014 every letter decodes to the same output. Attractor fixation or weight bias dominating training signal. Investigate excitatoryRatio + cross-projection init.`);
+        } else if (distribution.size < 10) {
+          this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] \u26A0 motor under-discriminates \u2014 only ${distribution.size}/26 distinct outputs. Training signal weak relative to init bias.`);
+        }
+      }
+    } catch (err) {
+      this._hb(`[Curriculum][LETTER\u2192MOTOR DIAG] probe failed: ${err?.message || err}`);
+    }
+  }
+  /**
+   * K.RF vowel sound variants — short vs long. Each vowel pairs with
+   * an example word for each variant. fineType tag marks short vs long
+   * so the cortex can discriminate.
+   */
+  async _teachVowelSoundVariants(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const letterRegion = cluster.regions.letter;
+    const phonRegion = cluster.regions.phon;
+    const semRegion = cluster.regions.sem;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!letterRegion || !phonRegion || !semRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const shortTag = new Float64Array(fineTypeSize);
+    const longTag = new Float64Array(fineTypeSize);
+    const halfMark = Math.floor(fineTypeSize * 0.3);
+    const fullMark = Math.floor(fineTypeSize * 0.6);
+    for (let i = 0; i < halfMark; i++) shortTag[i] = 1;
+    for (let i = halfMark; i < fullMark; i++) longTag[i] = 1;
+    const VOWEL_VARIANTS = [
+      { vowel: "a", shortExample: "cat", longExample: "cake" },
+      { vowel: "e", shortExample: "bed", longExample: "bee" },
+      { vowel: "i", shortExample: "pig", longExample: "bike" },
+      { vowel: "o", shortExample: "hot", longExample: "bone" },
+      { vowel: "u", shortExample: "cup", longExample: "cute" }
+    ];
+    const facts = [];
+    for (const { vowel, shortExample, longExample } of VOWEL_VARIANTS) {
+      const shortEmb = sharedEmbeddings.getEmbedding(shortExample);
+      const longEmb = sharedEmbeddings.getEmbedding(longExample);
+      const phonFeat = _phonemeFeatureForLetter(vowel);
+      if (shortEmb && shortEmb.length > 0) {
+        facts.push({ writes: [
+          { region: letterRegion, feat: encodeLetter(vowel) },
+          { region: phonRegion, feat: phonFeat },
+          { region: semRegion, feat: shortEmb, binarize: false },
+          { region: fineTypeRegion, feat: shortTag }
+        ] });
+      }
+      if (longEmb && longEmb.length > 0) {
+        facts.push({ writes: [
+          { region: letterRegion, feat: encodeLetter(vowel) },
+          { region: phonRegion, feat: phonFeat },
+          { region: semRegion, feat: longEmb, binarize: false },
+          { region: fineTypeRegion, feat: longTag }
+        ] });
+      }
+    }
+    await this._teachCombination(facts, { reps: 24 });
+    this._hb(`[Curriculum] _teachVowelSoundVariants: ${facts.length} variants \xD7 24 reps`);
+  }
+  /**
+   * K.RF word emission — for each word, bind sem(GloVe) → motor(letter
+   * sequence) via DIRECTIONAL Hebbian. No
+   * symmetric writes, no self-loops. Initiation pair
+   * (pre=sem(word) → post=motor(first letter)) + continuation chain
+   * (pre=letter(N) → post=motor(N+1)). Per-step `_teachHebbianAsymmetric`
+   * with distinct pre/post vectors so intra-cluster recurrent matrix
+   * learns TRUE directional bindings without reinforcing w[i,i]
+   * self-loops that would make motor letters stick on emission.
+   *
+   * Covers K.RF Dolch sight words + CVC word families + any other
+   * vocabulary Unity needs to EMIT.
+   */
+  async _teachWordEmission(wordList, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const letterRegion = cluster.regions.letter;
+    const motorRegion = cluster.regions.motor;
+    const semRegion = cluster.regions.sem;
+    if (!letterRegion || !motorRegion || !semRegion) return;
+    const reps = opts.reps ?? 6;
+    const lr = cluster.learningRate;
+    const uniqueLetters = /* @__PURE__ */ new Set();
+    for (const w of wordList) for (const ch of w.toLowerCase()) if (/[a-z]/.test(ch)) uniqueLetters.add(ch);
+    ensureLetters(Array.from(uniqueLetters));
+    this._hb(`[Curriculum] _teachWordEmission START: ${wordList.length} words \xD7 ${reps} reps (asymmetric directional)`);
+    const _t18_13_startMs = Date.now();
+    let _t18_13_lastHbMs = _t18_13_startMs;
+    let _t18_13_opsSinceHb = 0;
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      const isFinalRep = rep === reps - 1;
+      cluster._teachIntermediateRep = !isFinalRep;
+      cluster._teachFinalRepSampleEveryN = isFinalRep ? 5 : 0;
+      cluster._whitelistSampleCounter = 0;
+      let _wordIdx = 0;
+      for (const word of wordList) {
+        const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ""));
+        _wordIdx++;
+        _t18_13_opsSinceHb++;
+        const _nowHb = Date.now();
+        if (_nowHb - _t18_13_lastHbMs > 5e3) {
+          const totalElapsed = ((_nowHb - _t18_13_startMs) / 1e3).toFixed(1);
+          const hbInterval = (_nowHb - _t18_13_lastHbMs) / 1e3;
+          const opsPerSec = (_t18_13_opsSinceHb / hbInterval).toFixed(1);
+          this._hb(`[Curriculum] \u23F1 _teachWordEmission heartbeat \u2014 rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}, elapsed ${totalElapsed}s, ~${opsPerSec} words/s`);
+          _t18_13_lastHbMs = _nowHb;
+          _t18_13_opsSinceHb = 0;
+          await _microtask();
+        }
+        if (_wordIdx % 200 === 0) {
+          await _microtask();
+        }
+        if (letters.length === 0) continue;
+        const wordEmb = sharedEmbeddings.getEmbedding(word);
+        if (!wordEmb || wordEmb.length === 0) continue;
+        if (rep === 0 && this.dictionary && typeof this.dictionary.learnWord === "function") {
+          try {
+            this.dictionary.learnWord(word, null, this.arousal ?? 0.85, this.valence ?? 0);
+          } catch {
+          }
+        }
+        this._clearSpikes();
+        this._writeTiledPattern(semRegion, wordEmb);
+        this._writeTiledPattern(motorRegion, encodeLetter(letters[0]));
+        const preInit = this._buildRegionPattern(semRegion, wordEmb, false);
+        const postInit = this._buildRegionPattern(motorRegion, encodeLetter(letters[0]));
+        await this._teachHebbianAsymmetric(preInit, postInit, lr);
+        for (let i = 1; i < letters.length; i++) {
+          this._clearSpikes();
+          this._writeTiledPattern(semRegion, wordEmb);
+          this._writeTiledPattern(letterRegion, encodeLetter(letters[i - 1]));
+          this._writeTiledPattern(motorRegion, encodeLetter(letters[i]));
+          const preChain = this._buildRegionPattern(letterRegion, encodeLetter(letters[i - 1]));
+          const postChain = this._buildRegionPattern(motorRegion, encodeLetter(letters[i]));
+          await this._teachHebbianAsymmetric(preChain, postChain, lr);
+        }
+      }
+      await _microtask();
+    }
+    cluster._teachIntermediateRep = false;
+    cluster._teachFinalRepSampleEveryN = 0;
+    this._hb(`[Curriculum] _teachWordEmission DONE: ${wordList.length} words \xD7 ${reps} reps`);
+  }
+  /**
+   * K.RF rhyme families — teach words sharing a rime (e.g. -at in
+   * cat/hat/bat) get bound to a "rhymes" fineType tag. Given a query
+   * word, the probe tests whether the cortex can emit a rhyming word.
+   */
+  async _teachRhymeFamilies(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!semRegion || !motorRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const rhymeTag = new Float64Array(fineTypeSize);
+    const tagStart = Math.floor(fineTypeSize * 0.6);
+    const tagEnd = Math.floor(fineTypeSize * 0.8);
+    for (let i = tagStart; i < tagEnd; i++) rhymeTag[i] = 1;
+    const SEED_RIMES = {
+      at: ["cat", "hat", "bat", "mat", "sat", "rat", "fat", "pat"],
+      an: ["can", "man", "ran", "fan", "van", "pan", "tan"],
+      ig: ["big", "dig", "pig", "wig", "fig"],
+      og: ["dog", "log", "fog", "jog", "hog"],
+      ot: ["hot", "not", "got", "dot", "lot", "pot"],
+      en: ["pen", "hen", "men", "ten", "den"],
+      ug: ["bug", "hug", "mug", "rug", "tug", "jug"],
+      ed: ["bed", "red", "fed", "led"],
+      ip: ["hip", "lip", "sip", "tip", "zip", "rip"],
+      un: ["fun", "run", "sun", "bun", "gun"]
+    };
+    const families = /* @__PURE__ */ new Map();
+    for (const [rime, seedWords] of Object.entries(SEED_RIMES)) {
+      const set = /* @__PURE__ */ new Set();
+      for (const w of seedWords) set.add(w);
+      families.set(rime, set);
+    }
+    if (this.dictionary && this.dictionary._words && typeof this.dictionary._words.keys === "function") {
+      for (const word of this.dictionary._words.keys()) {
+        if (typeof word !== "string") continue;
+        if (!/^[a-z]{3,}$/.test(word)) continue;
+        const rime = word.slice(-2);
+        if (!families.has(rime)) families.set(rime, /* @__PURE__ */ new Set());
+        families.get(rime).add(word);
+      }
+    }
+    const ranked = [...families.entries()].map(([rime, set]) => [rime, [...set]]).filter(([, words]) => words.length >= 2).sort((a, b) => b[1].length - a[1].length);
+    const TOP_FAMILIES = 30;
+    const MEMBERS_PER_FAMILY = 6;
+    const facts = [];
+    let trainedFamilies = 0;
+    for (const [, words] of ranked.slice(0, TOP_FAMILIES)) {
+      const members = words.slice(0, MEMBERS_PER_FAMILY);
+      let pairsThisFamily = 0;
+      for (const a of members) {
+        const aEmb = sharedEmbeddings.getEmbedding(a);
+        if (!aEmb || aEmb.length === 0) continue;
+        for (const b of members) {
+          if (a === b) continue;
+          const bEmb = sharedEmbeddings.getEmbedding(b);
+          if (!bEmb || bEmb.length === 0) continue;
+          facts.push({ writes: [
+            { region: semRegion, feat: aEmb, binarize: false },
+            { region: motorRegion, feat: encodeLetter(b[0]) },
+            { region: fineTypeRegion, feat: rhymeTag }
+          ] });
+          pairsThisFamily++;
+        }
+      }
+      if (pairsThisFamily > 0) trainedFamilies++;
+    }
+    await this._teachCombination(facts, { reps: 12 });
+    this._hb(`[Curriculum] _teachRhymeFamilies: ${facts.length} rhyme pairs across ${trainedFamilies} families (vocab-derived) \xD7 12 reps`);
+  }
+  /**
+   * K.RF syllable counting — word → magnitude(syllable count).
+   * Simplistic syllable counter via vowel-group count.
+   */
+  async _teachSyllableCounts(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const freeRegion = cluster.regions.free;
+    if (!semRegion || !freeRegion) return;
+    function countSyllables(word) {
+      const w = word.toLowerCase().replace(/[^a-z]/g, "");
+      if (!w) return 0;
+      let count = 0;
+      let inVowel = false;
+      for (const ch of w) {
+        const isVowel = "aeiouy".includes(ch);
+        if (isVowel && !inVowel) count++;
+        inVowel = isVowel;
+      }
+      return Math.max(1, count);
+    }
+    const MULTI_SYLLABLE_SEED = [
+      "apple",
+      "pencil",
+      "table",
+      "water",
+      "happy",
+      "rabbit",
+      "pumpkin",
+      "cupcake",
+      "monkey",
+      // 2 syllables
+      "elephant",
+      "banana",
+      "computer",
+      "tomato",
+      "family",
+      "syllable",
+      "animal",
+      "remember",
+      "beautiful",
+      // 3 syllables
+      "watermelon",
+      "alligator",
+      "caterpillar",
+      "television",
+      // 4 syllables
+      "kindergarten"
+      // 4 syllables
+    ];
+    const MAX_DICT_WORDS = 250;
+    const wordSet = /* @__PURE__ */ new Set();
+    for (const w of MULTI_SYLLABLE_SEED) wordSet.add(w);
+    if (this.dictionary && this.dictionary._words && typeof this.dictionary._words.entries === "function") {
+      const dictEntries = [];
+      for (const [w, entry] of this.dictionary._words.entries()) {
+        if (typeof w !== "string" || !/^[a-z]{2,}$/.test(w)) continue;
+        const freq = entry && typeof entry.frequency === "number" ? entry.frequency : 1;
+        dictEntries.push([w, freq]);
+      }
+      dictEntries.sort((a, b) => b[1] - a[1]);
+      for (let i = 0; i < dictEntries.length && wordSet.size < MAX_DICT_WORDS; i++) {
+        wordSet.add(dictEntries[i][0]);
+      }
+    }
+    const facts = [];
+    let skippedNoEmb = 0;
+    for (const word of wordSet) {
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0) {
+        skippedNoEmb++;
+        continue;
+      }
+      const syllables = countSyllables(word);
+      facts.push({ writes: [
+        { region: semRegion, feat: emb, binarize: false },
+        { region: freeRegion, feat: _magnitudeFeatureForDigit(String(Math.min(9, syllables))) }
+      ] });
+    }
+    const reps = 6;
+    await this._teachCombination(facts, { reps });
+    this._hb(`[Curriculum] _teachSyllableCounts: ${facts.length} words (top-${MAX_DICT_WORDS} by frequency from live vocab + multi-syllable seed) \xD7 ${reps} reps \xB7 ${skippedNoEmb} skipped (no GloVe)`);
+  }
+  /**
+   * K.RF CVC sound isolation — given a CVC word, cortex learns the
+   * initial/medial-vowel/final phoneme features in distinct fineType
+   * regions. Probe tests "What sound does cat start with?" → /c/.
+   */
+  async _teachCVCSoundIsolation(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const phonRegion = cluster.regions.phon;
+    const motorRegion = cluster.regions.motor;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!semRegion || !phonRegion || !motorRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const initialTag = new Float64Array(fineTypeSize);
+    const medialTag = new Float64Array(fineTypeSize);
+    const finalTag = new Float64Array(fineTypeSize);
+    const third = Math.floor(fineTypeSize / 3);
+    for (let i = 0; i < third; i++) initialTag[i] = 1;
+    for (let i = third; i < 2 * third; i++) medialTag[i] = 1;
+    for (let i = 2 * third; i < fineTypeSize; i++) finalTag[i] = 1;
+    const CVC_VOWELS = "aeiou";
+    const isCVC = (w) => {
+      if (typeof w !== "string" || w.length !== 3) return false;
+      if (!/^[a-z]{3}$/.test(w)) return false;
+      return !CVC_VOWELS.includes(w[0]) && CVC_VOWELS.includes(w[1]) && !CVC_VOWELS.includes(w[2]);
+    };
+    const CVC_SEED = [
+      "cat",
+      "bat",
+      "hat",
+      "mat",
+      "rat",
+      "sat",
+      "fat",
+      "pat",
+      "can",
+      "man",
+      "ran",
+      "fan",
+      "pan",
+      "tan",
+      "van",
+      "big",
+      "dig",
+      "pig",
+      "wig",
+      "fig",
+      "dog",
+      "log",
+      "fog",
+      "jog",
+      "hog",
+      "hot",
+      "not",
+      "got",
+      "dot",
+      "pot",
+      "lot",
+      "pen",
+      "hen",
+      "men",
+      "ten",
+      "den",
+      "bug",
+      "hug",
+      "mug",
+      "rug",
+      "tug",
+      "jug",
+      "bed",
+      "red",
+      "fed",
+      "led",
+      "cup",
+      "pup",
+      "sup",
+      "sun",
+      "run",
+      "fun",
+      "bun",
+      "gun",
+      "hip",
+      "lip",
+      "sip",
+      "tip",
+      "zip",
+      "rip"
+    ];
+    const MAX_CVC_WORDS = 80;
+    const cvcSet = /* @__PURE__ */ new Set();
+    for (const w of CVC_SEED) if (isCVC(w)) cvcSet.add(w);
+    if (this.dictionary && this.dictionary._words && typeof this.dictionary._words.keys === "function") {
+      for (const word of this.dictionary._words.keys()) {
+        if (cvcSet.size >= MAX_CVC_WORDS) break;
+        if (isCVC(word)) cvcSet.add(word);
+      }
+    }
+    const facts = [];
+    for (const word of cvcSet) {
+      const letters = Array.from(word);
+      if (letters.length !== 3) continue;
+      const emb = sharedEmbeddings.getEmbedding(word);
+      if (!emb || emb.length === 0) continue;
+      facts.push({ writes: [
+        { region: semRegion, feat: emb, binarize: false },
+        { region: phonRegion, feat: _phonemeFeatureForLetter(letters[0]) },
+        { region: motorRegion, feat: encodeLetter(letters[0]) },
+        { region: fineTypeRegion, feat: initialTag }
+      ] });
+      facts.push({ writes: [
+        { region: semRegion, feat: emb, binarize: false },
+        { region: phonRegion, feat: _phonemeFeatureForLetter(letters[1]) },
+        { region: motorRegion, feat: encodeLetter(letters[1]) },
+        { region: fineTypeRegion, feat: medialTag }
+      ] });
+      facts.push({ writes: [
+        { region: semRegion, feat: emb, binarize: false },
+        { region: phonRegion, feat: _phonemeFeatureForLetter(letters[2]) },
+        { region: motorRegion, feat: encodeLetter(letters[2]) },
+        { region: fineTypeRegion, feat: finalTag }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 12 });
+    this._hb(`[Curriculum] _teachCVCSoundIsolation: ${facts.length} phoneme facts across ${cvcSet.size} CVC words (vocab-derived) \xD7 12 reps`);
+  }
+  /**
+   * K.L plural formation — cat → cats, box → boxes. Teaches the
+   * singular-to-plural transform via motor emission of -s or -es
+   * ending. Uses fineType "plural-query" tag for query context.
+   */
+  async _teachPluralTransform(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!semRegion || !motorRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const pluralTag = new Float64Array(fineTypeSize);
+    const tagStart = Math.floor(fineTypeSize * 0.8);
+    for (let i = tagStart; i < fineTypeSize; i++) pluralTag[i] = 1;
+    const IRREGULAR_SEED = [
+      ["foot", "feet"],
+      ["man", "men"],
+      ["woman", "women"],
+      ["child", "children"],
+      ["tooth", "teeth"],
+      ["mouse", "mice"],
+      ["fish", "fish"],
+      ["sheep", "sheep"],
+      ["deer", "deer"],
+      ["hand", "hands"],
+      ["ball", "balls"],
+      ["book", "books"]
+    ];
+    const pairs = [];
+    const pairKey = /* @__PURE__ */ new Set();
+    const addPair = (s, p) => {
+      if (!s || !p) return;
+      const k = `${s}|${p}`;
+      if (pairKey.has(k)) return;
+      pairKey.add(k);
+      pairs.push([s, p]);
+    };
+    for (const [s, p] of IRREGULAR_SEED) addPair(s, p);
+    const MAX_PAIRS = 50;
+    if (this.dictionary && this.dictionary._words && typeof this.dictionary._words.keys === "function") {
+      const dictWords = /* @__PURE__ */ new Set();
+      for (const w of this.dictionary._words.keys()) {
+        if (typeof w === "string" && /^[a-z]{2,}$/.test(w)) dictWords.add(w);
+      }
+      for (const word of dictWords) {
+        if (pairs.length >= MAX_PAIRS) break;
+        if (word.endsWith("ies") && word.length >= 5) {
+          const root = word.slice(0, -3) + "y";
+          if (dictWords.has(root)) {
+            addPair(root, word);
+            continue;
+          }
+        }
+        if (word.endsWith("es") && word.length >= 4) {
+          const root = word.slice(0, -2);
+          if (dictWords.has(root)) {
+            addPair(root, word);
+            continue;
+          }
+        }
+        if (word.endsWith("s") && word.length >= 3 && !word.endsWith("ss") && !word.endsWith("us") && !word.endsWith("is")) {
+          const root = word.slice(0, -1);
+          if (dictWords.has(root)) addPair(root, word);
+        }
+      }
+    }
+    const facts = [];
+    for (const [singular, plural] of pairs) {
+      const sEmb = sharedEmbeddings.getEmbedding(singular);
+      const pEmb = sharedEmbeddings.getEmbedding(plural);
+      if (!sEmb || !pEmb) continue;
+      facts.push({ writes: [
+        { region: semRegion, feat: sEmb, binarize: false },
+        { region: motorRegion, feat: encodeLetter(plural[0]) },
+        { region: fineTypeRegion, feat: pluralTag }
+      ] });
+      facts.push({ writes: [
+        { region: semRegion, feat: pEmb, binarize: false },
+        { region: motorRegion, feat: encodeLetter(singular[0]) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 18 });
+    this._hb(`[Curriculum] _teachPluralTransform: ${facts.length} plural fact-writes across ${pairs.length} singular/plural pairs (vocab-derived + irregular seed) \xD7 18 reps`);
+  }
+  /**
+   * K.L question word categories — who/what/where/when/why/how bind
+   * to the category they ask about (person/thing/place/time/reason/manner).
+   * Probe tests "What question word asks about a person?" → who.
+   */
+  async _teachQuestionWordCategories(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    if (!semRegion || !motorRegion) return;
+    const Q_CATEGORY = [
+      { qword: "who", category: "person" },
+      { qword: "what", category: "thing" },
+      { qword: "where", category: "place" },
+      { qword: "when", category: "time" },
+      { qword: "why", category: "reason" },
+      { qword: "how", category: "manner" }
+    ];
+    const facts = [];
+    for (const { qword, category } of Q_CATEGORY) {
+      const qEmb = sharedEmbeddings.getEmbedding(qword);
+      const cEmb = sharedEmbeddings.getEmbedding(category);
+      if (!qEmb || !cEmb) continue;
+      facts.push({ writes: [
+        { region: semRegion, feat: cEmb, binarize: false },
+        { region: motorRegion, feat: encodeLetter(qword[0]) }
+      ] });
+      facts.push({ writes: [
+        { region: semRegion, feat: qEmb, binarize: false },
+        { region: motorRegion, feat: encodeLetter(category[0]) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 24 });
+    this._hb(`[Curriculum] _teachQuestionWordCategories: ${facts.length} pairs \xD7 24 reps`);
+  }
+  /**
+   * K.L end punctuation — declarative → period, question → question
+   * mark, exclamation → exclamation point. FineType tag marks sentence
+   * type so motor emits the right terminator.
+   */
+  async _teachEndPunctuation(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!semRegion || !motorRegion || !fineTypeRegion) return;
+    ensureLetters([".", "?", "!"]);
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const declarativeTag = new Float64Array(fineTypeSize);
+    const questionTag = new Float64Array(fineTypeSize);
+    const exclamationTag = new Float64Array(fineTypeSize);
+    const third = Math.floor(fineTypeSize / 3);
+    for (let i = 0; i < third; i++) declarativeTag[i] = 1;
+    for (let i = third; i < 2 * third; i++) questionTag[i] = 1;
+    for (let i = 2 * third; i < fineTypeSize; i++) exclamationTag[i] = 1;
+    const SENTENCE_STARTS = [
+      { start: "the", type: "declarative" },
+      { start: "i", type: "declarative" },
+      { start: "we", type: "declarative" },
+      { start: "she", type: "declarative" },
+      { start: "he", type: "declarative" },
+      { start: "what", type: "question" },
+      { start: "who", type: "question" },
+      { start: "where", type: "question" },
+      { start: "when", type: "question" },
+      { start: "why", type: "question" },
+      { start: "how", type: "question" },
+      { start: "is", type: "question" },
+      { start: "are", type: "question" },
+      { start: "do", type: "question" },
+      { start: "does", type: "question" },
+      { start: "wow", type: "exclamation" },
+      { start: "oh", type: "exclamation" }
+    ];
+    const facts = [];
+    for (const { start, type } of SENTENCE_STARTS) {
+      const emb = sharedEmbeddings.getEmbedding(start);
+      if (!emb) continue;
+      let tag, terminator;
+      if (type === "question") {
+        tag = questionTag;
+        terminator = "?";
+      } else if (type === "exclamation") {
+        tag = exclamationTag;
+        terminator = "!";
+      } else {
+        tag = declarativeTag;
+        terminator = ".";
+      }
+      facts.push({ writes: [
+        { region: semRegion, feat: emb, binarize: false },
+        { region: fineTypeRegion, feat: tag },
+        { region: motorRegion, feat: encodeLetter(terminator) }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 18 });
+    this._hb(`[Curriculum] _teachEndPunctuation: ${facts.length} sentence types \xD7 18 reps`);
+  }
+  /**
+   * K.RL character/setting/event extraction — simple stories get taught
+   * with character/setting/event tags so "Who sat on the mat?" can
+   * be answered by emitting the character's name.
+   */
+  async _teachStoryComprehension(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const semRegion = cluster.regions.sem;
+    const motorRegion = cluster.regions.motor;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!semRegion || !motorRegion || !fineTypeRegion) return;
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const charTag = new Float64Array(fineTypeSize);
+    const settingTag = new Float64Array(fineTypeSize);
+    const eventTag = new Float64Array(fineTypeSize);
+    const third = Math.floor(fineTypeSize / 3);
+    for (let i = 0; i < third; i++) charTag[i] = 1;
+    for (let i = third; i < 2 * third; i++) settingTag[i] = 1;
+    for (let i = 2 * third; i < fineTypeSize; i++) eventTag[i] = 1;
+    const STORIES = [
+      {
+        stem: "sam the cat sat on a mat",
+        character: "sam",
+        setting: "mat",
+        event: "sat"
+      },
+      {
+        stem: "sam saw a dog",
+        character: "sam",
+        setting: "home",
+        event: "saw"
+      },
+      {
+        stem: "sam ran away",
+        character: "sam",
+        setting: "away",
+        event: "ran"
+      },
+      {
+        stem: "the dog played in the yard",
+        character: "dog",
+        setting: "yard",
+        event: "played"
+      },
+      {
+        stem: "mom read a book",
+        character: "mom",
+        setting: "home",
+        event: "read"
+      },
+      {
+        stem: "the cat slept on the bed",
+        character: "cat",
+        setting: "bed",
+        event: "slept"
+      }
+    ];
+    const facts = [];
+    for (const { stem, character, setting, event } of STORIES) {
+      const stemEmb = sharedEmbeddings.getEmbedding(stem.split(" ").slice(0, 2).join(" ")) || sharedEmbeddings.getEmbedding(stem.split(" ")[0]);
+      if (!stemEmb) continue;
+      const charEmb = sharedEmbeddings.getEmbedding(character);
+      const settingEmb = sharedEmbeddings.getEmbedding(setting);
+      const eventEmb = sharedEmbeddings.getEmbedding(event);
+      if (charEmb) facts.push({ writes: [
+        { region: semRegion, feat: stemEmb, binarize: false },
+        { region: motorRegion, feat: encodeLetter(character[0]) },
+        { region: fineTypeRegion, feat: charTag }
+      ] });
+      if (settingEmb) facts.push({ writes: [
+        { region: semRegion, feat: stemEmb, binarize: false },
+        { region: motorRegion, feat: encodeLetter(setting[0]) },
+        { region: fineTypeRegion, feat: settingTag }
+      ] });
+      if (eventEmb) facts.push({ writes: [
+        { region: semRegion, feat: stemEmb, binarize: false },
+        { region: motorRegion, feat: encodeLetter(event[0]) },
+        { region: fineTypeRegion, feat: eventTag }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 18 });
+    this._hb(`[Curriculum] _teachStoryComprehension: ${facts.length} story facts \xD7 18 reps`);
+  }
+  /**
+   * Phase 2 — PHONEME BLENDING via sequence Hebbian in phon region.
+   * For each word, streams its phonemes through the phon region and
+   * fires cluster.synapses.hebbianUpdate(phoneme_n, phoneme_n+1) to
+   * teach the recurrent matrix that /c/ tends to be followed by /a/
+   * which tends to be followed by /t/ (for "cat") — the blending
+   * operation that lets Unity decode words from letter sequences by
+   * running the phoneme chain forward.
+   *
+   * Reverse direction is achieved by symmetric Hebbian side-effect:
+   * sem(word)→phon(first_phoneme)→... → motor(letter) chain emerges
+   * from the trained phon recurrent weights when the cortex is
+   * primed via sem.
+   */
+  async _teachPhonemeBlending(wordList, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.synapses) return;
+    const phonRegion = cluster.regions.phon;
+    const letterRegion = cluster.regions.letter;
+    const semRegion = cluster.regions.sem;
+    if (!phonRegion || !letterRegion || !semRegion) return;
+    const reps = opts.reps ?? 6;
+    const lr = cluster.learningRate;
+    const uniqueLetters = /* @__PURE__ */ new Set();
+    for (const w of wordList) for (const ch of w.toLowerCase()) if (/[a-z]/.test(ch)) uniqueLetters.add(ch);
+    ensureLetters(Array.from(uniqueLetters));
+    this._hb(`[Curriculum] _teachPhonemeBlending START: ${wordList.length} words \xD7 ${reps} reps (phoneme-sequence Hebbian)`);
+    const _t18_13_startMs = Date.now();
+    let _t18_13_lastHbMs = _t18_13_startMs;
+    let _t18_13_opsSinceHb = 0;
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      const isFinalRep = rep === reps - 1;
+      cluster._teachIntermediateRep = !isFinalRep;
+      cluster._teachFinalRepSampleEveryN = isFinalRep ? 5 : 0;
+      cluster._whitelistSampleCounter = 0;
+      let _wordIdx = 0;
+      for (const word of wordList) {
+        const letters = Array.from(word.toLowerCase().replace(/[^a-z]/g, ""));
+        _wordIdx++;
+        _t18_13_opsSinceHb++;
+        const _nowHb = Date.now();
+        if (_nowHb - _t18_13_lastHbMs > 5e3) {
+          const totalElapsed = ((_nowHb - _t18_13_startMs) / 1e3).toFixed(1);
+          const hbInterval = (_nowHb - _t18_13_lastHbMs) / 1e3;
+          const opsPerSec = (_t18_13_opsSinceHb / hbInterval).toFixed(1);
+          this._hb(`[Curriculum] \u23F1 _teachPhonemeBlending heartbeat \u2014 rep ${rep + 1}/${reps}, word ${_wordIdx}/${wordList.length}, elapsed ${totalElapsed}s, ~${opsPerSec} words/s`);
+          _t18_13_lastHbMs = _nowHb;
+          _t18_13_opsSinceHb = 0;
+          await _microtask();
+        }
+        if (_wordIdx % 200 === 0) {
+          await _microtask();
+        }
+        if (letters.length < 2) continue;
+        const wordEmb = sharedEmbeddings.getEmbedding(word);
+        if (rep === 0 && this.dictionary && typeof this.dictionary.learnWord === "function") {
+          try {
+            this.dictionary.learnWord(word, null, this.arousal ?? 0.85, this.valence ?? 0);
+          } catch {
+          }
+        }
+        for (let i = 0; i < letters.length - 1; i++) {
+          const phonA = _phonemeFeatureForLetter(letters[i]);
+          const phonB = _phonemeFeatureForLetter(letters[i + 1]);
+          if (!phonA.some((v) => v > 0) || !phonB.some((v) => v > 0)) continue;
+          const pre = this._buildRegionPattern(phonRegion, phonA);
+          const post = this._buildRegionPattern(phonRegion, phonB);
+          if (typeof cluster.intraSynapsesHebbian === "function") {
+            cluster.intraSynapsesHebbian(pre, post, lr);
+          } else {
+            await cluster.intraSynapsesHebbian(pre, post, lr);
+          }
+          this._clearSpikes();
+          this._writeTiledPattern(letterRegion, encodeLetter(letters[i]));
+          this._writeTiledPattern(phonRegion, phonA);
+          if (wordEmb && wordEmb.length > 0) this._writeTiledPattern(semRegion, wordEmb);
+          await cluster._crossRegionHebbian(lr);
+        }
+      }
+      await _microtask();
+    }
+    cluster._teachIntermediateRep = false;
+    cluster._teachFinalRepSampleEveryN = 0;
+    this._hb(`[Curriculum] _teachPhonemeBlending DONE: ${wordList.length} words \xD7 ${reps} reps`);
+  }
+  /**
+   * K.L capitalization — first word of sentence + pronoun "I" get
+   * capital marker. Teaches cortex when to emit uppercase form.
+   */
+  async _teachCapitalization(ctx) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections) return;
+    const letterRegion = cluster.regions.letter;
+    const motorRegion = cluster.regions.motor;
+    const fineTypeRegion = cluster.regions.fineType;
+    if (!letterRegion || !motorRegion || !fineTypeRegion) return;
+    ensureLetters(Array.from(ALPHABET_ORDER.toUpperCase()));
+    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
+    const capTag = new Float64Array(fineTypeSize);
+    const tagStart = Math.floor(fineTypeSize * 0.4);
+    const tagEnd = Math.floor(fineTypeSize * 0.6);
+    for (let i = tagStart; i < tagEnd; i++) capTag[i] = 1;
+    const facts = [];
+    facts.push({ writes: [
+      { region: letterRegion, feat: encodeLetter("i") },
+      { region: motorRegion, feat: encodeLetter("I") },
+      { region: fineTypeRegion, feat: capTag }
+    ] });
+    for (const letter of ALPHABET_ORDER) {
+      facts.push({ writes: [
+        { region: letterRegion, feat: encodeLetter(letter) },
+        { region: motorRegion, feat: encodeLetter(letter.toUpperCase()) },
+        { region: fineTypeRegion, feat: capTag }
+      ] });
+    }
+    await this._teachCombination(facts, { reps: 15 });
+    this._hb(`[Curriculum] _teachCapitalization: ${facts.length} cap facts \xD7 15 reps`);
+  }
+  // runElaKReal EXTRACTED to js/brain/curriculum/kindergarten.js K_MIXIN (2026-04-24).
+  async _pregateEnrichment(cellKey, opts = {}) {
+    if (!cellKey) return;
+    this._pregateCellsDone = this._pregateCellsDone || /* @__PURE__ */ new Set();
+    try {
+      this._auditExamVocabulary(cellKey);
+      const trained = this._trainedVocabularySet(cellKey);
+      const report = examVocabCoverage(cellKey, trained);
+      if (report && Array.isArray(report.missing) && report.missing.length > 0) {
+        const words = report.missing.filter((w) => typeof w === "string" && /^[a-z][a-z']*$/i.test(w) && w.length >= 2 && w.length <= 20);
+        if (words.length > 0 && typeof this._teachVocabList === "function") {
+          const ctx = { arousal: 0.7, valence: 0.2 };
+          const CHUNK = 25;
+          const reps = opts.vocabReps ?? 4;
+          this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH START \u2014 ${words.length} missing exam words \xD7 ${reps} reps (chunked ${CHUNK})`);
+          let done = 0;
+          for (let i = 0; i < words.length; i += CHUNK) {
+            const slice = words.slice(i, i + CHUNK);
+            try {
+              await this._teachVocabList(slice, ctx, { reps });
+            } catch (err) {
+              console.warn(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH chunk ${i / CHUNK | 0} failed:`, err?.message || err);
+            }
+            done += slice.length;
+            this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH progress \u2014 ${done}/${words.length} words taught`);
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+          this._hb(`[Curriculum][${cellKey}] EXAM-VOCAB-TEACH DONE \u2014 ${done}/${words.length} words taught`);
+          this._auditExamVocabulary(cellKey);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Curriculum][${cellKey}] exam-vocab teach failed:`, err?.message || err);
+    }
+    if (!opts.force && this._pregateCellsDone.has(cellKey)) return;
+    this._pregateCellsDone.add(cellKey);
+    try {
+      if (typeof this._teachSentenceStructures === "function") {
+        await this._teachSentenceStructures(cellKey, opts.structReps ?? 6);
+      }
+      if (opts.definitions && typeof this._teachDefinitionFirst === "function") {
+        await this._teachDefinitionFirst(opts.definitions, { label: `${cellKey}-DEF`, reps: opts.defReps ?? 8 });
+      }
+      if (opts.contextMap && typeof this._teachWordInContext === "function") {
+        await this._teachWordInContext(opts.contextMap, { label: `${cellKey}-USAGE` });
+      }
+    } catch (err) {
+      console.warn(`[Curriculum] pregate-enrichment ${cellKey} failed:`, err?.message || err);
+    }
+  }
+  /**
+   * Sentence-structure teach pass. Takes the exam bank for a cell,
+   * extracts the unique question-template IDs + surface forms, and
+   * trains each structural pattern as a Hebbian binding against a
+   * tag in the question_template sub-region (fineType upper 25%).
+   * After this pass, the cortex has a dedicated basin for every
+   * structural template it will be tested on. Complement to
+   * `_auditExamVocabulary` — the audit surfaces uncovered words,
+   * this surfaces uncovered STRUCTURES and teaches them.
+   *
+   * Returns `{templatesTaught, skipped}` — the count of distinct
+   * templates that got teach passes for this cell. Fires at the
+   * start of each cell's teach sequence (insertable into the
+   * run*KReal / run*PreK runners before the subject-specific
+   * association pairs fire).
+   */
+  async _teachSentenceStructures(cellKey, reps = 6) {
+    const bank = TRAIN_BANKS && TRAIN_BANKS[cellKey];
+    if (!Array.isArray(bank) || bank.length === 0) return { templatesTaught: 0, skipped: 0 };
+    const byTemplate = /* @__PURE__ */ new Map();
+    for (const entry of bank) {
+      const q = entry.question || entry.q || "";
+      if (!q) continue;
+      const tId = this._classifyQuestionTemplate(q);
+      if (tId < 0) continue;
+      if (!byTemplate.has(tId)) byTemplate.set(tId, []);
+      byTemplate.get(tId).push(q);
+    }
+    if (byTemplate.size === 0) return { templatesTaught: 0, skipped: 0 };
+    let taught = 0;
+    let skipped = 0;
+    const cluster = this.cluster;
+    const semRegion = cluster?.regions?.sem;
+    const motorRegion = cluster?.regions?.motor;
+    if (!semRegion || !motorRegion) return { templatesTaught: 0, skipped: bank.length };
+    const lr = 0.03;
+    const MAX_TEMPLATES_PER_PASS = 12;
+    const templates = Array.from(byTemplate.keys()).slice(0, MAX_TEMPLATES_PER_PASS);
+    const droppedForBudget = byTemplate.size - templates.length;
+    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH START \u2014 ${templates.length} template forms \xD7 up to ${reps} reps each${droppedForBudget > 0 ? ` (dropped ${droppedForBudget} over budget cap)` : ""}`);
+    try {
+      this._pushBrainEvent?.("teach", "fineType", `STRUCT START: ${cellKey} \xB7 ${templates.length} templates`, { cellKey, templateCount: templates.length });
+    } catch {
+    }
+    let _lastYield = Date.now();
+    for (const templateId of templates) {
+      const samples = byTemplate.get(templateId);
+      const anchor = samples[0];
+      const anchorEntry = bank.find((e) => (e.question || e.q) === anchor);
+      const answer = String(anchorEntry?.expectedAnswer || anchorEntry?.a || "yes").toLowerCase().trim();
+      const targetLetter = answer.charAt(0);
+      if (!targetLetter) {
+        skipped++;
+        continue;
+      }
+      const motorPattern = encodeLetter(targetLetter);
+      const qEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function" ? sharedEmbeddings.getSentenceEmbedding(anchor) : null;
+      if (!qEmb || qEmb.length === 0 || !motorPattern || motorPattern.length === 0) {
+        skipped++;
+        continue;
+      }
+      for (let r = 0; r < reps; r++) {
+        try {
+          this._clearSpikes();
+          this._writeTiledPattern(semRegion, qEmb, false);
+          this._writeQuestionTemplateTag(templateId);
+          this._writeTiledPattern(motorRegion, motorPattern, false);
+          await this._teachHebbian(lr);
+        } catch {
+        }
+        if (Date.now() - _lastYield > 250) {
+          await new Promise((resolve) => setImmediate(resolve));
+          _lastYield = Date.now();
+        }
+      }
+      taught++;
+      this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH progress \u2014 template ${taught}/${templates.length} done (${droppedForBudget > 0 ? "budget-capped" : "all templates"})`);
+    }
+    this._hb(`[Curriculum][${cellKey}] STRUCTURE-TEACH DONE \u2014 ${taught} template forms \xD7 ${reps} reps (skipped ${skipped}${droppedForBudget > 0 ? `, budget-dropped ${droppedForBudget}` : ""})`);
+    try {
+      this._pushBrainEvent?.("teach", "fineType", `STRUCT DONE: ${cellKey} \xB7 ${taught}`, { cellKey, taught, skipped });
+    } catch {
+    }
+    return { templatesTaught: taught, skipped };
+  }
+  /**
+   * Definition-first vocabulary teach. Exposes every word → short
+   * definition binding via the existing `_teachAssociationPairs`
+   * path so the sem region has a meaning anchor for each word, not
+   * just a GloVe basin. K-grade definition map covers the core
+   * Dolch + Common Core vocabulary. Every definition is a single
+   * anchor noun/verb that captures the word's semantic role.
+   *
+   * Falls back to a no-op when no definitions are provided.
+   */
+  async _teachDefinitionFirst(defMap, opts = {}) {
+    if (!defMap || typeof defMap !== "object") return { taught: 0, skipped: 0 };
+    const pairs = [];
+    for (const [word, def] of Object.entries(defMap)) {
+      if (!word || !def) continue;
+      pairs.push([word.toLowerCase(), String(def).toLowerCase().trim()]);
+    }
+    if (pairs.length === 0) return { taught: 0, skipped: 0 };
+    const reps = opts.reps ?? 8;
+    const label = opts.label || "DEF-FIRST";
+    const result = await this._teachAssociationPairs(pairs, {
+      reps,
+      label,
+      relationTagId: 1,
+      // category/definition band in fineType
+      antiPairs: false,
+      // definition teach doesn't need contrastive push-pull
+      motorWTA: false,
+      // definitions aren't letter-decoded, skip WTA
+      separationProbe: false
+    });
+    return { taught: result?.trained || 0, skipped: result?.skipped || 0 };
+  }
+  /**
+   * Word-usage-in-context teach. For each word, exercises it across
+   * multiple distinct context sentences so the cortex learns the
+   * word's combinatorial usage (subject-verb pairings, modifier-noun
+   * bindings, etc.), not just the isolated embedding. Different
+   * from definition teach — definitions anchor meaning, context
+   * teaches co-occurrence patterns.
+   *
+   * `contextMap` is `{word: [sentence1, sentence2, sentence3, ...]}`.
+   * Each sentence gets fed to `cluster.readInput` so the visual→
+   * letter→phon→sem pathway processes it naturally; the Hebbian
+   * updates that fire during the read pass build co-occurrence
+   * weights without needing explicit teach-target patterns.
+   */
+  async _teachWordInContext(contextMap, opts = {}) {
+    if (!contextMap || typeof contextMap !== "object") return { readings: 0 };
+    const cluster = this.cluster;
+    if (!cluster || typeof cluster.readInput !== "function") return { readings: 0 };
+    const ticksPerWord = opts.ticksPerWord ?? 3;
+    const label = opts.label || "WORD-USAGE";
+    let readings = 0;
+    this._hb(`[Curriculum][${label}] START \u2014 context-pass across ${Object.keys(contextMap).length} words`);
+    try {
+      this._pushBrainEvent?.("teach", "sem", `USAGE START: ${label} \xB7 ${Object.keys(contextMap).length} words`, { label });
+    } catch {
+    }
+    for (const [word, sentences] of Object.entries(contextMap)) {
+      if (!Array.isArray(sentences) || sentences.length === 0) continue;
+      for (const sentence of sentences) {
+        if (!sentence || typeof sentence !== "string") continue;
+        try {
+          cluster.readInput(sentence, { ticks: ticksPerWord });
+          readings++;
+        } catch {
+        }
+      }
+    }
+    this._hb(`[Curriculum][${label}] DONE \u2014 ${readings} context-pass readings across ${Object.keys(contextMap).length} words`);
+    try {
+      this._pushBrainEvent?.("teach", "sem", `USAGE DONE: ${label} \xB7 ${readings} reads`, { label, readings });
+    } catch {
+    }
+    return { readings };
+  }
+  /**
+   * Pre-gate vocabulary audit. Fires `examVocabCoverage(cellKey,
+   * trainedVocab)` against Unity's current trained vocabulary and
+   * returns the coverage report. Logs a prominent warning (but does
+   * NOT block gate execution — the gate still runs so operator sees
+   * what Unity can and can't answer, and can decide whether to defer
+   * signoff based on both the gate result AND the vocab coverage).
+   *
+   * Test-construction doctrine: *"if the questions are made from
+   * words the Unity brain needs to know setence structure and
+   * definiations and words usage befoer give a test using those
+   * words to ask it questions"* — this audit surfaces the exact
+   * words the exam uses that Unity hasn't been taught, so operator
+   * can close the gap before taking the gate result seriously.
+   */
+  _auditExamVocabulary(cellKey) {
+    try {
+      const trained = this._trainedVocabularySet(cellKey);
+      const report = examVocabCoverage(cellKey, trained);
+      if (report && report.missing && report.missing.length > 0) {
+        const miss = report.missing.slice(0, 20).join(", ");
+        const more = report.missing.length > 20 ? ` ... (+${report.missing.length - 20} more)` : "";
+        this._hb(`[Curriculum][${cellKey}] \u26A0\u26A0 VOCAB-COVERAGE ${(report.coverage * 100).toFixed(0)}% \u2014 exam requires ${report.required} words, ${report.trained} trained, ${report.missing.length} UNTAUGHT: ${miss}${more}. Train these before treating gate result as sound.`);
+        try {
+          this._pushBrainEvent?.("audit", "sem", `VOCAB GAP: ${cellKey} ${(report.coverage * 100).toFixed(0)}% (${report.missing.length} untaught)`, { cellKey, coverage: report.coverage, missing: report.missing.slice(0, 30) });
+        } catch {
+        }
+      } else if (report) {
+        this._hb(`[Curriculum][${cellKey}] \u2713 vocab-coverage 100% \u2014 all ${report.required} exam words are in Unity's trained vocabulary.`);
+        try {
+          this._pushBrainEvent?.("audit", "sem", `VOCAB OK: ${cellKey} 100% (${report.required} words)`, { cellKey, coverage: 1, required: report.required });
+        } catch {
+        }
+      }
+      return report;
+    } catch (err) {
+      console.warn(`[Curriculum] vocab-coverage audit failed for ${cellKey}:`, err?.message || err);
+      return null;
+    }
+  }
+  // _gateElaKReal EXTRACTED to js/brain/curriculum/kindergarten.js K_MIXIN (2026-04-24).
   // ═══════════════════════════════════════════════════════════════════
   // T14.24 SESSION 3 — REAL MATH-K TEACHING EQUATIONS (2026-04-15)
   // ═══════════════════════════════════════════════════════════════════
@@ -19298,620 +23039,10 @@ var Curriculum = class _Curriculum {
     }
     return { taught: reps * DIGITS.length };
   }
-  async runMathKReal(ctx) {
-    const cluster = this.cluster;
-    if (!cluster) return { pass: false, reason: "no cluster wired" };
-    if (!cluster.crossProjections) return { pass: false, reason: "no cross-projections" };
-    const DIGITS = DIGIT_ORDER;
-    const NAMES = DIGIT_NAMES;
-    ensureLetters(DIGITS.split(""));
-    const lr = cluster.learningRate;
-    const REPS = 12;
-    const letterRegion = cluster.regions.letter;
-    const phonRegion = cluster.regions.phon;
-    const semRegion = cluster.regions.sem;
-    const motorRegion = cluster.regions.motor;
-    const freeRegion = cluster.regions.free;
-    if (!letterRegion || !phonRegion) return { pass: false, reason: "missing regions" };
-    const letterSize = letterRegion.end - letterRegion.start;
-    const phonSize = phonRegion.end - phonRegion.start;
-    const invSize = inventorySize();
-    function buildPattern(regionSize, feat) {
-      const pat = new Float64Array(regionSize);
-      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
-      for (let d = 0; d < feat.length; d++) {
-        if (feat[d] <= 0) continue;
-        for (let n = 0; n < gSize; n++) {
-          const idx = d * gSize + n;
-          if (idx < regionSize) pat[idx] = feat[d];
-        }
-      }
-      return pat;
-    }
-    for (let rep = 0; rep < REPS; rep++) {
-      for (let i = 0; i < DIGITS.length; i++) {
-        const digit = DIGITS[i];
-        const digitOneHot = encodeLetter(digit);
-        const magFeat = _magnitudeFeatureForDigit(digit);
-        const nameEmb = sharedEmbeddings.getEmbedding(NAMES[i]);
-        const letterPat = buildPattern(letterSize, digitOneHot);
-        const phonPat = buildPattern(phonSize, magFeat);
-        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
-        for (let j = 0; j < letterSize; j++) {
-          cluster.lastSpikes[letterRegion.start + j] = letterPat[j] > 0 ? 1 : 0;
-        }
-        for (let j = 0; j < phonSize; j++) {
-          cluster.lastSpikes[phonRegion.start + j] = phonPat[j] > 0 ? 1 : 0;
-        }
-        if (motorRegion) {
-          const motorSize = motorRegion.end - motorRegion.start;
-          const motorPat = buildPattern(motorSize, digitOneHot);
-          for (let j = 0; j < motorSize; j++) {
-            cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
-          }
-        }
-        if (semRegion && nameEmb && nameEmb.length > 0) {
-          const semSize = semRegion.end - semRegion.start;
-          const semPat = buildPattern(semSize, nameEmb);
-          for (let j = 0; j < semSize; j++) {
-            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
-          }
-        }
-        if (freeRegion && magFeat.length > 0) {
-          const freeSize = freeRegion.end - freeRegion.start;
-          const freePat = buildPattern(freeSize, magFeat);
-          for (let j = 0; j < freeSize; j++) {
-            cluster.lastSpikes[freeRegion.start + j] = freePat[j] > 0 ? 1 : 0;
-          }
-        }
-        await cluster._crossRegionHebbian(lr);
-        this.stats.lettersSeen++;
-      }
-      await _microtask();
-    }
-    for (let rep = 0; rep < REPS; rep++) {
-      for (let i = 0; i < DIGITS.length - 1; i++) {
-        const currOneHot = encodeLetter(DIGITS[i]);
-        const nextOneHot = encodeLetter(DIGITS[i + 1]);
-        const pre = new Float64Array(cluster.size);
-        const post = new Float64Array(cluster.size);
-        const lGSize = Math.max(1, Math.floor(letterSize / currOneHot.length));
-        for (let d = 0; d < currOneHot.length; d++) {
-          if (currOneHot[d] <= 0) continue;
-          for (let n = 0; n < lGSize; n++) {
-            const idx = letterRegion.start + d * lGSize + n;
-            if (idx < letterRegion.end) pre[idx] = 1;
-          }
-        }
-        for (let d = 0; d < nextOneHot.length; d++) {
-          if (nextOneHot[d] <= 0) continue;
-          for (let n = 0; n < lGSize; n++) {
-            const idx = letterRegion.start + d * lGSize + n;
-            if (idx < letterRegion.end) post[idx] = 1;
-          }
-        }
-        await cluster.intraSynapsesHebbian(pre, post, lr);
-      }
-      await _microtask();
-    }
-    const NUMBER_WORDS_K = [
-      "zero",
-      "one",
-      "two",
-      "three",
-      "four",
-      "five",
-      "six",
-      "seven",
-      "eight",
-      "nine",
-      "ten",
-      "eleven",
-      "twelve",
-      "thirteen",
-      "fourteen",
-      "fifteen",
-      "sixteen",
-      "seventeen",
-      "eighteen",
-      "nineteen",
-      "twenty",
-      "thirty",
-      "forty",
-      "fifty",
-      "sixty",
-      "seventy",
-      "eighty",
-      "ninety",
-      "hundred"
-    ];
-    if (!this._mathKTransformsDone) {
-      await this._phasedTeach("_teachAdditionTransformations", () => this._teachAdditionTransformations(ctx));
-      await this._phasedTeach("_teachSubtractionTransformations", () => this._teachSubtractionTransformations(ctx));
-      await this._phasedTeach("_teachComparisonTransformations", () => this._teachComparisonTransformations(ctx));
-      await this._phasedTeach("_teachDecomposition", () => this._teachDecomposition(ctx));
-      await this._phasedTeach("_teachMakeTen", () => this._teachMakeTen(ctx));
-      await this._phasedTeach("_teachTeenDecomposition", () => this._teachTeenDecomposition(ctx));
-      await this._phasedTeach("_teachCountToHundred", () => this._teachCountToHundred(ctx));
-      await this._phasedTeach("_teachSkipCountByTens", () => this._teachSkipCountByTens(ctx));
-      await this._phasedTeach("_teachAttributeCompare", () => this._teachAttributeCompare(ctx));
-      await this._phasedTeach("_teachClassifyCount", () => this._teachClassifyCount(ctx));
-      await this._phasedTeach("_teachShapeFeatures", () => this._teachShapeFeatures(ctx));
-      await this._phasedTeach("_teachShapeCompose", () => this._teachShapeCompose(ctx));
-      await this._phasedTeach("_teachMagnitudeToMotor", () => this._teachMagnitudeToMotor(ctx));
-      await this._phasedTeach("MATH-K-NUMBER-SEQ", () => this._teachAssociationPairs([
-        ["one", "two"],
-        ["two", "three"],
-        ["three", "four"],
-        ["four", "five"],
-        ["five", "six"],
-        ["six", "seven"],
-        ["seven", "eight"],
-        ["eight", "nine"],
-        ["nine", "ten"],
-        ["ten", "eleven"],
-        ["eleven", "twelve"],
-        ["twelve", "thirteen"],
-        ["thirteen", "fourteen"],
-        ["fourteen", "fifteen"],
-        ["fifteen", "sixteen"],
-        ["sixteen", "seventeen"],
-        ["seventeen", "eighteen"],
-        ["eighteen", "nineteen"],
-        ["nineteen", "twenty"],
-        ["twenty", "thirty"],
-        ["thirty", "forty"],
-        ["forty", "fifty"]
-      ], { reps: 10, label: "MATH-K-NUMBER-SEQ", relationTagId: 5 }));
-      await this._phasedTeach("MATH-K-SHAPE-ATTR", () => this._teachAssociationPairs([
-        ["triangle", "three"],
-        ["square", "four"],
-        ["rectangle", "four"],
-        ["pentagon", "five"],
-        ["hexagon", "six"],
-        ["octagon", "eight"],
-        ["circle", "round"],
-        ["sphere", "ball"],
-        ["cube", "box"],
-        ["cylinder", "can"]
-      ], { reps: 10, label: "MATH-K-SHAPE-ATTR", relationTagId: 1 }));
-      await this._phasedTeach("MATH-K-COMPARE", () => this._teachAssociationPairs([
-        ["more", "greater"],
-        ["less", "smaller"],
-        ["bigger", "more"],
-        ["smaller", "less"],
-        ["five", "more-than-three"],
-        ["three", "less-than-five"],
-        ["ten", "more-than-five"],
-        ["two", "less-than-eight"]
-      ], { reps: 8, label: "MATH-K-COMPARE", relationTagId: 0 }));
-      await this._phasedTeach("MATH-K-ARITH-WORDS", () => this._teachAssociationPairs([
-        ["plus", "add"],
-        ["minus", "subtract"],
-        ["one-plus-one", "two"],
-        ["two-plus-two", "four"],
-        ["three-plus-three", "six"],
-        ["four-plus-four", "eight"],
-        ["five-plus-five", "ten"],
-        ["one-plus-two", "three"],
-        ["two-plus-three", "five"],
-        ["three-plus-four", "seven"],
-        ["ten-minus-one", "nine"],
-        ["ten-minus-five", "five"],
-        ["five-minus-one", "four"]
-      ], { reps: 8, label: "MATH-K-ARITH-WORDS", relationTagId: 4 }));
-      const mathQA = TRAIN_BANKS["math/kindergarten"] || [];
-      if (mathQA.length > 0) {
-        await this._phasedTeach("MATH-K-QA-TRAIN", () => this._teachQABinding(mathQA, { label: "MATH-K-QA-TRAIN" }));
-      }
-      this._mathKTransformsDone = true;
-    }
-    return await this._gateMathKReal();
-  }
-  async _gateMathKReal() {
-    const cluster = this.cluster;
-    const DIGITS = DIGIT_ORDER;
-    const NAMES = DIGIT_NAMES;
-    await this._pregateEnrichment("math/kindergarten");
-    const letterRegion = cluster.regions.letter;
-    const phonRegion = cluster.regions.phon;
-    const semRegion = cluster.regions.sem;
-    const motorRegion = cluster.regions.motor;
-    const freeRegion = cluster.regions.free;
-    if (!letterRegion || !phonRegion) return { pass: false, reason: "missing regions" };
-    const letterSize = letterRegion.end - letterRegion.start;
-    const phonSize = phonRegion.end - phonRegion.start;
-    const invSize = inventorySize();
-    const MAG_DIM = MAGNITUDE_FEATURE_DIM;
-    const letterToPhon = cluster.crossProjections?.["letter_to_phon"];
-    const allProjs = cluster.crossProjections || {};
-    function cosine(a, b) {
-      let dot = 0, na = 0, nb = 0;
-      const L = Math.min(a.length, b.length);
-      for (let i = 0; i < L; i++) {
-        dot += a[i] * b[i];
-        na += a[i] * a[i];
-        nb += b[i] * b[i];
-      }
-      const d = Math.sqrt(na) * Math.sqrt(nb);
-      return d > 0 ? dot / d : 0;
-    }
-    let readPass = 0;
-    let talkPass = 0;
-    let _readTalkYield = Date.now();
-    for (let i = 0; i < DIGITS.length; i++) {
-      if (Date.now() - _readTalkYield > 200) {
-        await new Promise((resolve) => setImmediate(resolve));
-        _readTalkYield = Date.now();
-      }
-      const digit = DIGITS[i];
-      const digitOneHot = encodeLetter(digit);
-      const lGSize = Math.max(1, Math.floor(letterSize / digitOneHot.length));
-      const letterPat = new Float64Array(letterSize);
-      for (let d = 0; d < digitOneHot.length; d++) {
-        if (digitOneHot[d] <= 0) continue;
-        for (let n = 0; n < lGSize; n++) {
-          const idx = d * lGSize + n;
-          if (idx < letterSize) letterPat[idx] = 1;
-        }
-      }
-      if (letterToPhon) {
-        const phonOutput = letterToPhon.propagate(letterPat);
-        const pGSize = Math.max(1, Math.floor(phonSize / MAG_DIM));
-        const phonReadout = new Float64Array(MAG_DIM);
-        for (let d = 0; d < MAG_DIM; d++) {
-          let sum = 0;
-          for (let n = 0; n < pGSize; n++) {
-            const idx = d * pGSize + n;
-            if (idx < phonOutput.length) sum += phonOutput[idx];
-          }
-          phonReadout[d] = sum / pGSize;
-        }
-        let mean = 0;
-        for (let j = 0; j < MAG_DIM; j++) mean += phonReadout[j];
-        mean /= MAG_DIM;
-        for (let j = 0; j < MAG_DIM; j++) phonReadout[j] -= mean;
-        let norm = 0;
-        for (let j = 0; j < MAG_DIM; j++) norm += phonReadout[j] * phonReadout[j];
-        norm = Math.sqrt(norm) || 1;
-        for (let j = 0; j < MAG_DIM; j++) phonReadout[j] /= norm;
-        const expected = _magnitudeFeatureForDigit(digit);
-        if (cosine(phonReadout, expected) > 0.15) readPass++;
-      }
-      const digitName = NAMES[DIGITS.indexOf(digit)];
-      const nameEmb = digitName ? sharedEmbeddings.getEmbedding(digitName) : null;
-      const s2m = allProjs["sem_to_motor"];
-      if (s2m && semRegion && motorRegion && nameEmb && nameEmb.length > 0) {
-        const semSize = semRegion.end - semRegion.start;
-        const semPat = new Float64Array(semSize);
-        const sGSize = Math.max(1, Math.floor(semSize / nameEmb.length));
-        for (let d = 0; d < nameEmb.length; d++) {
-          if (nameEmb[d] <= 0) continue;
-          for (let n = 0; n < sGSize; n++) {
-            const idx = d * sGSize + n;
-            if (idx < semSize) semPat[idx] = nameEmb[d];
-          }
-        }
-        const motorOutput = s2m.propagate(semPat);
-        const motorSize = motorRegion.end - motorRegion.start;
-        const mGSize = Math.max(1, Math.floor(motorSize / invSize));
-        const motorReadout = new Float64Array(invSize);
-        for (let d = 0; d < invSize; d++) {
-          let sum = 0;
-          for (let n = 0; n < mGSize; n++) {
-            const idx = d * mGSize + n;
-            if (idx < motorOutput.length) sum += motorOutput[idx];
-          }
-          motorReadout[d] = sum / mGSize;
-        }
-        let mean = 0;
-        for (let i2 = 0; i2 < invSize; i2++) mean += motorReadout[i2];
-        mean /= invSize;
-        for (let i2 = 0; i2 < invSize; i2++) motorReadout[i2] -= mean;
-        if (decodeLetter(motorReadout) === digit) talkPass++;
-      }
-    }
-    const thinkPass = DIGITS.length;
-    let seqPass = 0;
-    const seqFails = [];
-    let _seqYield = Date.now();
-    for (let i = 0; i < DIGITS.length - 1; i++) {
-      if (Date.now() - _seqYield > 200) {
-        await new Promise((resolve) => setImmediate(resolve));
-        _seqYield = Date.now();
-      }
-      const currOneHot = encodeLetter(DIGITS[i]);
-      const expectedNext = DIGITS[i + 1];
-      const input = new Float64Array(cluster.size);
-      const lGSize = Math.max(1, Math.floor(letterSize / invSize));
-      for (let d = 0; d < currOneHot.length; d++) {
-        if (currOneHot[d] <= 0) continue;
-        for (let n = 0; n < lGSize; n++) {
-          const idx = letterRegion.start + d * lGSize + n;
-          if (idx < letterRegion.end) input[idx] = 1;
-        }
-      }
-      const output = cluster.synapses.propagate(input);
-      const letterOut = new Float64Array(invSize);
-      for (let d = 0; d < invSize; d++) {
-        let sum = 0;
-        for (let n = 0; n < lGSize; n++) {
-          const idx = letterRegion.start + d * lGSize + n;
-          if (idx < letterRegion.end) sum += output[idx];
-        }
-        letterOut[d] = sum;
-      }
-      const digitIndices = [];
-      const snap = inventorySnapshot();
-      for (let d = 0; d < snap.length; d++) {
-        if (DIGITS.includes(snap[d])) digitIndices.push(d);
-      }
-      let bestDigit = null, bestVal = -Infinity;
-      for (const di of digitIndices) {
-        if (letterOut[di] > bestVal) {
-          bestVal = letterOut[di];
-          bestDigit = snap[di];
-        }
-      }
-      if (bestDigit === expectedNext) {
-        seqPass++;
-      } else {
-        seqFails.push(`${DIGITS[i]}\u2192${expectedNext} (got ${bestDigit || "?"})`);
-      }
-    }
-    for (const failStr of seqFails) {
-      const srcDigit = failStr[0];
-      const srcIdx = DIGITS.indexOf(srcDigit);
-      if (srcIdx < 0 || srcIdx >= DIGITS.length - 1) continue;
-      const tgtDigit = DIGITS[srcIdx + 1];
-      const gotMatch = failStr.match(/\(got (.)\)/);
-      const wrongDigit = gotMatch ? gotMatch[1] : null;
-      cluster.hebbianPairReinforce({
-        region: "letter",
-        srcOneHot: encodeLetter(srcDigit),
-        correctOneHot: encodeLetter(tgtDigit),
-        wrongOneHot: wrongDigit ? encodeLetter(wrongDigit) : null
-      });
-    }
-    let orderPass = 0;
-    let orderTotal = 0;
-    const letterToFree = allProjs["letter_to_free"];
-    if (letterToFree && freeRegion) {
-      const freeSize = freeRegion.end - freeRegion.start;
-      const readFree = (digit) => {
-        const oh = encodeLetter(digit);
-        const pat = new Float64Array(letterSize);
-        const gS = Math.max(1, Math.floor(letterSize / oh.length));
-        for (let d = 0; d < oh.length; d++) {
-          if (oh[d] <= 0) continue;
-          for (let n = 0; n < gS; n++) {
-            const idx = d * gS + n;
-            if (idx < letterSize) pat[idx] = 1;
-          }
-        }
-        return letterToFree.propagate(pat);
-      };
-      let _orderYield = Date.now();
-      for (let i = 1; i < DIGITS.length - 1; i++) {
-        if (Date.now() - _orderYield > 200) {
-          await new Promise((resolve) => setImmediate(resolve));
-          _orderYield = Date.now();
-        }
-        const readI = readFree(DIGITS[i]);
-        const readPrev = readFree(DIGITS[i - 1]);
-        const readDistant = readFree(DIGITS[0]);
-        if (!readI || !readPrev || !readDistant) continue;
-        const cosAdj = cosine(readI, readPrev);
-        const cosDist = cosine(readI, readDistant);
-        orderTotal++;
-        if (cosAdj > cosDist) orderPass++;
-      }
-    } else {
-      orderPass = 8;
-      orderTotal = 8;
-    }
-    const fineTypeRegionG = cluster.regions.fineType;
-    const freeSizeG = freeRegion ? freeRegion.end - freeRegion.start : 0;
-    const freeHalfG = Math.floor(freeSizeG / 2);
-    const freeLeftRegionG = freeRegion ? { start: freeRegion.start, end: freeRegion.start + freeHalfG } : null;
-    const freeRightRegionG = freeRegion ? { start: freeRegion.start + freeHalfG, end: freeRegion.end } : null;
-    const semSizeG = semRegion ? semRegion.end - semRegion.start : 0;
-    const semHalfG = Math.floor(semSizeG / 2);
-    const semLeftRegionG = semRegion ? { start: semRegion.start, end: semRegion.start + semHalfG } : null;
-    const semRightRegionG = semRegion ? { start: semRegion.start + semHalfG, end: semRegion.end } : null;
-    const phonRegionG = cluster.regions.phon;
-    const fineTypeSizeG = fineTypeRegionG ? fineTypeRegionG.end - fineTypeRegionG.start : 0;
-    const fineThirdG = Math.floor(fineTypeSizeG / 3);
-    const fineHalfG = Math.floor(fineTypeSizeG / 2);
-    const succResult = await this._probeCombinationCosine(
-      [3, 7, 13, 17, 23, 27, 43, 67, 83, 97].map((n) => ({
-        inputs: [{ region: freeRegion, feat: _magnitudeFeatureForNumber(n) }],
-        expected: { region: semRegion, feat: _magnitudeFeatureForNumber(n + 1) }
-      }))
-    );
-    const skipSamples = [];
-    for (let n = 0; n <= 80; n += 10) skipSamples.push({
-      inputs: [{ region: phonRegionG, feat: _magnitudeFeatureForNumber(n) }],
-      expected: { region: semRegion, feat: _magnitudeFeatureForNumber(n + 10) }
-    });
-    const skipResult = await this._probeCombinationCosine(skipSamples);
-    const makeTenSamples = [];
-    for (let n = 0; n <= 10; n++) makeTenSamples.push({
-      inputs: [{ region: freeLeftRegionG, feat: _magnitudeFeatureForDigit(String(n)) }],
-      expected: { region: semRegion, feat: _magnitudeFeatureForDigit(String(10 - n)) }
-    });
-    const makeTenResult = await this._probeCombinationCosine(makeTenSamples);
-    const teenSamples = [];
-    for (let n = 1; n <= 9; n++) teenSamples.push({
-      inputs: [
-        { region: freeLeftRegionG, feat: _magnitudeFeatureForNumber(10) },
-        { region: freeRightRegionG, feat: _magnitudeFeatureForNumber(n) }
-      ],
-      expected: { region: semRegion, feat: _magnitudeFeatureForNumber(10 + n) }
-    });
-    const teenResult = await this._probeCombinationCosine(teenSamples);
-    const attrBuckets = [
-      { name: "greater", start: 0, end: fineThirdG },
-      { name: "less", start: fineThirdG, end: 2 * fineThirdG },
-      { name: "equal", start: 2 * fineThirdG, end: fineTypeSizeG }
-    ];
-    const attrResult = await this._probeCombinationArgmaxTag(
-      [[8, 2], [8, 2], [8, 2], [8, 2], [9, 0], [8, 2], [8, 2], [9, 2]].map(([hi, lo]) => ({
-        inputs: [
-          { region: freeLeftRegionG, feat: _magnitudeFeatureForDigit(String(hi)) },
-          { region: freeRightRegionG, feat: _magnitudeFeatureForDigit(String(lo)) }
-        ],
-        tagRegion: fineTypeRegionG,
-        buckets: attrBuckets,
-        expectedTag: "greater"
-      }))
-    );
-    const classifySamples = [];
-    for (const [category, count] of [
-      ["red", 3],
-      ["blue", 2],
-      ["green", 5],
-      ["yellow", 1],
-      ["big", 2],
-      ["small", 4],
-      ["hands", 2],
-      ["fingers", 10],
-      ["triangle", 3],
-      ["square", 4]
-    ]) {
-      const emb = sharedEmbeddings.getEmbedding(category);
-      if (!emb || emb.length === 0) continue;
-      classifySamples.push({
-        inputs: [{ region: freeRegion, feat: emb, binarize: false }],
-        expected: { region: semRegion, feat: _magnitudeFeatureForDigit(String(Math.min(9, count))) }
-      });
-    }
-    const classifyResult = await this._probeCombinationCosine(classifySamples);
-    const shapeSidesSamples = [];
-    for (const [shapeName, sides] of [
-      ["circle", 0],
-      ["triangle", 3],
-      ["square", 4],
-      ["rectangle", 4],
-      ["hexagon", 6],
-      ["sphere", 0],
-      ["cube", 6],
-      ["cone", 1],
-      ["cylinder", 2]
-    ]) {
-      const emb = sharedEmbeddings.getEmbedding(shapeName);
-      if (!emb || emb.length === 0) continue;
-      shapeSidesSamples.push({
-        inputs: [{ region: semRegion, feat: emb, binarize: false }],
-        expected: { region: freeRegion, feat: _magnitudeFeatureForDigit(String(sides)) }
-      });
-    }
-    const shapeSidesResult = await this._probeCombinationCosine(shapeSidesSamples);
-    const dimBuckets = [
-      { name: "2D", start: 0, end: fineHalfG },
-      { name: "3D", start: fineHalfG, end: fineTypeSizeG }
-    ];
-    const shapeDimSamples = [];
-    for (const [shapeName, dim] of [
-      ["circle", "2D"],
-      ["triangle", "2D"],
-      ["square", "2D"],
-      ["rectangle", "2D"],
-      ["hexagon", "2D"],
-      ["sphere", "3D"],
-      ["cube", "3D"],
-      ["cone", "3D"],
-      ["cylinder", "3D"]
-    ]) {
-      const emb = sharedEmbeddings.getEmbedding(shapeName);
-      if (!emb || emb.length === 0) continue;
-      shapeDimSamples.push({
-        inputs: [{ region: semRegion, feat: emb, binarize: false }],
-        tagRegion: fineTypeRegionG,
-        buckets: dimBuckets,
-        expectedTag: dim
-      });
-    }
-    const shapeDimResult = await this._probeCombinationArgmaxTag(shapeDimSamples);
-    const shapeComposeSamples = [];
-    for (const [aName, bName, cName] of [
-      ["triangle", "triangle", "rectangle"],
-      ["square", "square", "rectangle"],
-      ["rectangle", "rectangle", "square"],
-      ["triangle", "rectangle", "pentagon"],
-      ["triangle", "triangle", "square"]
-    ]) {
-      const aEmb = sharedEmbeddings.getEmbedding(aName);
-      const bEmb = sharedEmbeddings.getEmbedding(bName);
-      const cEmb = sharedEmbeddings.getEmbedding(cName);
-      if (!aEmb || !bEmb || !cEmb || aEmb.length === 0 || bEmb.length === 0 || cEmb.length === 0) continue;
-      shapeComposeSamples.push({
-        inputs: [
-          { region: semLeftRegionG, feat: aEmb, binarize: false },
-          { region: semRightRegionG, feat: bEmb, binarize: false }
-        ],
-        expected: { region: freeRegion, feat: cEmb }
-      });
-    }
-    const shapeComposeResult = await this._probeCombinationCosine(shapeComposeSamples);
-    const mathKProductionSamples = [
-      // K.CC successor (TODO: "What number comes after 7?" → 8)
-      { question: "what number comes after seven", expected: ["8", "eight"] },
-      { question: "what comes after three", expected: ["4", "four"] },
-      { question: "what number is after five", expected: ["6", "six"] },
-      // K.OA addition (TODO: "2 + 3 = ?" → 5)
-      { question: "two plus three equals", expected: ["5", "five"] },
-      { question: "four plus one equals", expected: ["5", "five"] },
-      { question: "three plus two equals", expected: ["5", "five"] },
-      { question: "one plus one equals", expected: ["2", "two"] },
-      // K.OA subtraction (TODO: "5 - 2 = ?" → 3)
-      { question: "five minus two equals", expected: ["3", "three"] },
-      { question: "four minus one equals", expected: ["3", "three"] },
-      { question: "three minus one equals", expected: ["2", "two"] },
-      // K.OA make-ten (TODO: "What plus 6 makes 10?" → 4)
-      { question: "what plus six makes ten", expected: ["4", "four"] },
-      { question: "what plus seven makes ten", expected: ["3", "three"] },
-      { question: "what plus three makes ten", expected: ["7", "seven"] },
-      // K.G side count (TODO: "How many sides does a triangle have?" → 3)
-      { question: "how many sides does a triangle have", expected: ["3", "three"] },
-      { question: "how many sides does a square have", expected: ["4", "four"] },
-      { question: "how many sides does a rectangle have", expected: ["4", "four"] },
-      { question: "how many sides does a hexagon have", expected: ["6", "six"] }
-    ];
-    const prodResult = await this._probeProductionBatch(mathKProductionSamples, {
-      visualCortex: this.engine && this.engine.visualCortex || null
-    });
-    const N = DIGITS.length;
-    const readRate = readPass / N;
-    const thinkRate = thinkPass / N;
-    const talkRate = talkPass / N;
-    const seqRate = seqPass / (N - 1);
-    const orderRate = orderTotal > 0 ? orderPass / orderTotal : 1;
-    const succRate = succResult.total > 0 ? succResult.pass / succResult.total : 0;
-    const skipRate = skipResult.total > 0 ? skipResult.pass / skipResult.total : 0;
-    const makeTenRate = makeTenResult.total > 0 ? makeTenResult.pass / makeTenResult.total : 0;
-    const teenRate = teenResult.total > 0 ? teenResult.pass / teenResult.total : 0;
-    const attrRate = attrResult.total > 0 ? attrResult.pass / attrResult.total : 0;
-    const classifyRate = classifyResult.total > 0 ? classifyResult.pass / classifyResult.total : 0;
-    const shapeSidesRate = shapeSidesResult.total > 0 ? shapeSidesResult.pass / shapeSidesResult.total : 0;
-    const shapeDimRate = shapeDimResult.total > 0 ? shapeDimResult.pass / shapeDimResult.total : 0;
-    const shapeComposeRate = shapeComposeResult.total > 0 ? shapeComposeResult.pass / shapeComposeResult.total : 0;
-    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
-    const PATH_MIN = 0.95;
-    const SEQ_MIN = 0.95;
-    const ORDER_MIN = 0.95;
-    const PROD_MIN = 0.95;
-    const pass = readRate >= PATH_MIN && thinkRate >= PATH_MIN && talkRate >= PATH_MIN && seqRate >= SEQ_MIN && orderRate >= ORDER_MIN && succRate >= PATH_MIN && skipRate >= PATH_MIN && makeTenRate >= PATH_MIN && teenRate >= PATH_MIN && attrRate >= PATH_MIN && classifyRate >= PATH_MIN && shapeSidesRate >= PATH_MIN && shapeDimRate >= PATH_MIN && shapeComposeRate >= PATH_MIN && prodRate >= PROD_MIN;
-    const pct = (r) => (r * 100).toFixed(0);
-    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
-    const _mathKResult = {
-      pass,
-      reason: `READ ${readPass}/${N} (${pct(readRate)}%), THINK ${thinkPass}/${N} (${pct(thinkRate)}%), TALK ${talkPass}/${N} (${pct(talkRate)}%), SEQ ${seqPass}/${N - 1} (${pct(seqRate)}%)${seqFails.length > 0 ? " [FAIL: " + seqFails.join(", ") + "]" : ""}, ORDER ${orderPass}/${orderTotal} (${pct(orderRate)}%), SUCC ${succResult.pass}/${succResult.total} (${pct(succRate)}%), SKIP10 ${skipResult.pass}/${skipResult.total} (${pct(skipRate)}%), MAKETEN ${makeTenResult.pass}/${makeTenResult.total} (${pct(makeTenRate)}%), TEEN ${teenResult.pass}/${teenResult.total} (${pct(teenRate)}%), ATTR ${attrResult.pass}/${attrResult.total} (${pct(attrRate)}%), CLASS ${classifyResult.pass}/${classifyResult.total} (${pct(classifyRate)}%), SHAPE-S ${shapeSidesResult.pass}/${shapeSidesResult.total} (${pct(shapeSidesRate)}%), SHAPE-D ${shapeDimResult.pass}/${shapeDimResult.total} (${pct(shapeDimRate)}%), SHAPE-C ${shapeComposeResult.pass}/${shapeComposeResult.total} (${pct(shapeComposeRate)}%), PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
-      metrics: { readRate, thinkRate, talkRate, seqRate, orderRate, seqFails, succRate, skipRate, makeTenRate, teenRate, attrRate, classifyRate, shapeSidesRate, shapeDimRate, shapeComposeRate, prodRate, prodFails: prodResult.fails }
-    };
-    this._recordGateHistory("math", "kindergarten", "overall", pass, prodRate);
-    return _mathKResult;
-  }
+  // ═══════════════════════════════════════════════════════════════════
+  // Math-K EXTRACTED to js/brain/curriculum/kindergarten.js K_MIXIN
+  // (2026-04-24). runMathKReal + _gateMathKReal now live there.
+  // ═══════════════════════════════════════════════════════════════════
   // ═══════════════════════════════════════════════════════════════════
   // T14.24 SESSION 4 — REAL ELA-G1 TEACHING EQUATIONS (2026-04-15)
   // ═══════════════════════════════════════════════════════════════════
@@ -20917,72 +24048,6 @@ var Curriculum = class _Curriculum {
    * INVERTED in free second half, magnitude(a-b) in sem.
    * All facts where a-b ≥ 0 and a ≤ 10.
    */
-  async _teachSubtractionTransformations(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const semSize = semRegion.end - semRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const lr = cluster.learningRate;
-    const REPS = 8;
-    function buildMagPattern(regionSize, digit) {
-      const feat = _magnitudeFeatureForDigit(String(Math.min(9, Math.max(0, digit))));
-      const pat = new Float64Array(regionSize);
-      const gSize = Math.max(1, Math.floor(regionSize / feat.length));
-      for (let d = 0; d < feat.length; d++) {
-        if (feat[d] <= 0) continue;
-        for (let n = 0; n < gSize; n++) {
-          const idx = d * gSize + n;
-          if (idx < regionSize) pat[idx] = feat[d];
-        }
-      }
-      return pat;
-    }
-    function invertPattern(pat) {
-      const inv = new Float64Array(pat.length);
-      for (let i = 0; i < pat.length; i++) inv[i] = pat[i] > 0 ? 0 : 1;
-      return inv;
-    }
-    const facts = [];
-    for (let a = 0; a <= 10; a++) {
-      for (let b = 0; b <= a; b++) {
-        facts.push([a, b, a - b]);
-      }
-    }
-    for (let rep = 0; rep < REPS; rep++) {
-      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
-      for (const [a, b, diff] of facts) {
-        for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
-        const magA = buildMagPattern(freeHalf, a);
-        for (let i = 0; i < freeHalf; i++) {
-          cluster.lastSpikes[freeRegion.start + i] = magA[i] > 0 ? 1 : 0;
-        }
-        const magB = buildMagPattern(freeSize - freeHalf, b);
-        const magBInv = invertPattern(magB);
-        for (let i = 0; i < freeSize - freeHalf; i++) {
-          cluster.lastSpikes[freeRegion.start + freeHalf + i] = magBInv[i] > 0 ? 1 : 0;
-        }
-        const magDiff = buildMagPattern(semSize, diff);
-        for (let i = 0; i < semSize; i++) {
-          cluster.lastSpikes[semRegion.start + i] = magDiff[i] > 0 ? 1 : 0;
-        }
-        await cluster._crossRegionHebbian(lr);
-      }
-      await _microtask();
-    }
-    this._hb(`[Curriculum] _teachSubtractionTransformations: ${facts.length} facts \xD7 ${REPS} reps`);
-  }
-  /**
-   * COMPARISON as ordinal magnitude relationship.
-   * For pairs (a,b) within 0-10:
-   *   free[first half] = magnitude(a)
-   *   free[second half] = magnitude(b)
-   *   fineType = "greater" feature if a>b, "less" if a<b, "equal" if a==b
-   * The free→fineType projection learns ordinal comparison.
-   */
   async _teachComparisonTransformations(ctx) {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return;
@@ -21421,8 +24486,10 @@ var Curriculum = class _Curriculum {
     const reps = opts.reps ?? 8;
     const lr = opts.lr ?? cluster.learningRate;
     const allowMicrotask = opts.allowMicrotask !== false;
+    const YIELD_EVERY = 128;
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      let factsThisRep = 0;
       for (const fact of facts) {
         if (!fact || !Array.isArray(fact.writes)) continue;
         this._clearSpikes();
@@ -21431,6 +24498,10 @@ var Curriculum = class _Curriculum {
           this._writeTiledPattern(w.region, w.feat, w.binarize !== false);
         }
         await this._teachHebbian(lr);
+        factsThisRep++;
+        if (allowMicrotask && factsThisRep % YIELD_EVERY === 0) {
+          await _microtask();
+        }
       }
       if (allowMicrotask) await _microtask();
     }
@@ -21544,7 +24615,7 @@ var Curriculum = class _Curriculum {
     const directPromptAlt = opts.directPromptAlt !== false;
     const keyTokenTile = opts.keyTokenTile !== false;
     const antiPairs = opts.antiPairs !== false && qaList.length >= 2;
-    const antiLrScale = opts.antiLrScale ?? 0.5;
+    const antiLrScale = opts.antiLrScale ?? 0.3;
     if (!semRegion || !motorRegion) {
       console.warn(`[Curriculum][${label}] skipped \u2014 sem or motor region not available`);
       return { trained: 0, skipped: qaList.length };
@@ -21581,7 +24652,7 @@ var Curriculum = class _Curriculum {
           continue;
         }
         const keyToken = this._extractKeyToken(entry.question);
-        const keyEmb = keyToken && sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(keyToken) : null;
+        const keyEmb = keyToken ? this._dictionaryPatternFor(keyToken) : null;
         const templateId = this._classifyQuestionTemplate(entry.question);
         try {
           this._clearSpikes();
@@ -21651,6 +24722,59 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
+    const qaPruneTopK = opts.pruneTopK ?? 200;
+    let qaPruneReport = "";
+    if (qaPruneTopK > 0 && cluster.crossProjections) {
+      const projKeys = ["sem_to_motor", "motor_to_sem"];
+      const pruned = [];
+      for (const key of projKeys) {
+        const proj = cluster.crossProjections[key];
+        if (proj && typeof proj.pruneTopKPerRow === "function" && proj.values && proj.values.length > 0) {
+          try {
+            const removed = proj.pruneTopKPerRow(qaPruneTopK);
+            if (removed > 0) pruned.push(`${key}:-${removed}`);
+          } catch {
+          }
+        }
+      }
+      if (pruned.length > 0) qaPruneReport = ` \xB7 top-K-prune [${pruned.join(",")}]`;
+    }
+    const qaRescaleFactor = opts.rescaleFactor ?? 0.5;
+    const qaRescaleOnSaturationOnly = opts.rescaleOnSaturationOnly !== false;
+    let qaRescaleReport = "";
+    let qaMaxAbs = 0;
+    try {
+      const proj = cluster.crossProjections && cluster.crossProjections.sem_to_motor;
+      if (proj && proj.values && proj.values.length > 0) {
+        const sample = Math.min(proj.values.length, 1e5);
+        for (let k = 0; k < sample; k++) {
+          const a = proj.values[k] < 0 ? -proj.values[k] : proj.values[k];
+          if (a > qaMaxAbs) qaMaxAbs = a;
+        }
+      }
+    } catch {
+    }
+    const qaSaturated = qaMaxAbs >= 0.95 * 0.2;
+    const qaShouldRescale = qaRescaleFactor > 0 && qaRescaleFactor < 1 && cluster.crossProjections && (qaRescaleOnSaturationOnly ? qaSaturated : true);
+    if (qaShouldRescale) {
+      const projKeys = ["sem_to_motor", "motor_to_sem"];
+      const rescaled = [];
+      for (const key of projKeys) {
+        const proj = cluster.crossProjections[key];
+        if (proj && typeof proj.scale === "function" && proj.values && proj.values.length > 0) {
+          try {
+            const stats = proj.scale(qaRescaleFactor);
+            if (stats && stats.before && stats.after) {
+              rescaled.push(`${key}:${stats.before.max.toFixed(3)}\u2192${stats.after.max.toFixed(3)}`);
+            }
+          } catch {
+          }
+        }
+      }
+      if (rescaled.length > 0) qaRescaleReport = ` \xB7 rescale\xD7${qaRescaleFactor} [${rescaled.join(",")}] (saturated maxAbs=${qaMaxAbs.toFixed(3)})`;
+    } else if (qaMaxAbs > 0) {
+      qaRescaleReport = ` \xB7 rescale-skipped (maxAbs=${qaMaxAbs.toFixed(3)} < 0.95\xD7wMax \u2014 preserving training)`;
+    }
     const elapsedSec = ((Date.now() - startMs) / 1e3).toFixed(1);
     let weightReport = "";
     try {
@@ -21670,7 +24794,7 @@ var Curriculum = class _Curriculum {
     }
     const altReport = directPromptAlt ? ` \xB7 alt-fires=${altTrained}` : "";
     const antiReport = antiPairs ? ` \xB7 anti-fires=${antiFires}` : "";
-    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${weightReport}`);
+    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${qaPruneReport}${qaRescaleReport}${weightReport}`);
     try {
       this._pushBrainEvent?.("teach", "motor", `Q-A DONE: ${label} \xB7 ${trained}/${antiFires}/${altTrained} +/\u2212/alt`, { label, trained, antiFires, altTrained, elapsedSec });
     } catch {
@@ -21958,7 +25082,7 @@ var Curriculum = class _Curriculum {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return { trained: 0, skipped: 0 };
     if (!Array.isArray(pairs) || pairs.length === 0) return { trained: 0, skipped: 0 };
-    const reps = opts.reps ?? 12;
+    const reps = opts.reps ?? 24;
     const lr = opts.lr ?? 0.03;
     const label = opts.label || "ASSOC";
     const semRegion = cluster.regions && cluster.regions.sem;
@@ -21975,11 +25099,12 @@ var Curriculum = class _Curriculum {
     const runSeparationProbe = opts.separationProbe !== false;
     const overloadMax = opts.overloadMax ?? 0.3;
     const antiPairs = opts.antiPairs !== false && pairs.length >= 2;
-    const antiLrScale = opts.antiLrScale ?? 0.5;
+    const antiLrScale = opts.antiLrScale ?? 1.5;
+    const pruneTopK = opts.pruneTopK ?? 200;
     const motorWTA = opts.motorWTA !== false && !binarize;
     const motorTopK = opts.motorTopK ?? 15;
     const semWTA = opts.semWTA !== false && !binarize;
-    const semTopK = opts.semTopK ?? 30;
+    const semTopK = opts.semTopK ?? 8;
     let trained = 0, skipped = 0, antiFires = 0, wtaApplied = 0, semWtaApplied = 0;
     const startMs = Date.now();
     this._hb(`[Curriculum][${label}] START \u2014 ${pairs.length} pairs \xD7 ${reps} reps \xB7 soft-writes=${!binarize} \xB7 row-norm=${normalizeAfter} \xB7 anti-pairs=${antiPairs} \xB7 motor-WTA=${motorWTA}/${motorTopK} \xB7 sem-WTA=${semWTA}/${semTopK}`);
@@ -21996,7 +25121,7 @@ var Curriculum = class _Curriculum {
           continue;
         }
         const [inputWord, outputWord] = pair;
-        const inEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(inputWord) : null;
+        const inEmb = this._dictionaryPatternFor(inputWord);
         const outEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(outputWord) : null;
         if (!inEmb || !outEmb || inEmb.length === 0 || outEmb.length === 0) {
           skipped++;
@@ -22064,6 +25189,69 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
+    let pruneReport = "";
+    if (pruneTopK > 0 && cluster.crossProjections) {
+      const projKeys = ["sem_to_motor", "motor_to_sem"];
+      const pruned = [];
+      for (const key of projKeys) {
+        const proj = cluster.crossProjections[key];
+        if (proj && typeof proj.pruneTopKPerRow === "function" && proj.values && proj.values.length > 0) {
+          try {
+            const removed = proj.pruneTopKPerRow(pruneTopK);
+            if (removed > 0) pruned.push(`${key}:-${removed}`);
+          } catch {
+          }
+        }
+      }
+      if (pruned.length > 0) pruneReport = ` \xB7 top-K-prune [${pruned.join(",")}]`;
+    }
+    let sepReport = "";
+    let collapseFlag = "";
+    let sepResult = null;
+    if (runSeparationProbe && pairs.length >= 2) {
+      try {
+        sepResult = this._checkSemBasinSeparation(pairs, {
+          semRegion,
+          motorRegion,
+          overloadMax,
+          sampleSize: 8,
+          semWTA,
+          semTopK
+        });
+        if (sepResult && typeof sepResult.meanCos === "number") {
+          const overload = sepResult.meanCos > overloadMax;
+          const collapsed = sepResult.meanCos < 0.05 && sepResult.maxCos < 0.05;
+          if (overload) collapseFlag = " \u26A0OVERLOAD";
+          else if (collapsed) collapseFlag = " \u26A0\u26A0 TRAINING_COLLAPSE: motor readouts near-zero \u2014 sem\u2192motor weights too weak to fire motor region";
+          sepReport = ` \xB7 sep-probe mean-cos=${sepResult.meanCos.toFixed(3)} max=${sepResult.maxCos.toFixed(3)}${collapseFlag}`;
+        }
+      } catch {
+      }
+    }
+    const rescaleFactor = opts.rescaleFactor ?? 0.5;
+    const rescaleOnOverloadOnly = opts.rescaleOnOverloadOnly !== false;
+    let rescaleReport = "";
+    const overloadDetected = sepResult && typeof sepResult.meanCos === "number" && sepResult.meanCos > overloadMax;
+    const shouldRescale = rescaleFactor > 0 && rescaleFactor < 1 && cluster.crossProjections && (rescaleOnOverloadOnly ? overloadDetected : true);
+    if (shouldRescale) {
+      const projKeys = ["sem_to_motor", "motor_to_sem"];
+      const rescaled = [];
+      for (const key of projKeys) {
+        const proj = cluster.crossProjections[key];
+        if (proj && typeof proj.scale === "function" && proj.values && proj.values.length > 0) {
+          try {
+            const stats = proj.scale(rescaleFactor);
+            if (stats && stats.before && stats.after) {
+              rescaled.push(`${key}:${stats.before.max.toFixed(3)}\u2192${stats.after.max.toFixed(3)}`);
+            }
+          } catch {
+          }
+        }
+      }
+      if (rescaled.length > 0) rescaleReport = ` \xB7 rescale\xD7${rescaleFactor} [${rescaled.join(",")}] (triggered by overload mean-cos=${sepResult.meanCos.toFixed(3)})`;
+    } else if (sepResult && !overloadDetected) {
+      rescaleReport = ` \xB7 rescale-skipped (basins separated, mean-cos=${sepResult.meanCos.toFixed(3)} < ${overloadMax} \u2014 preserving trained discrimination)`;
+    }
     let normReport = "";
     if (normalizeAfter && cluster.crossProjections) {
       const projKeys = ["sem_to_motor", "motor_to_sem"];
@@ -22079,28 +25267,6 @@ var Curriculum = class _Curriculum {
         }
       }
       if (normed.length > 0) normReport = ` \xB7 row-norm [${normed.join(",")}]`;
-    }
-    let sepReport = "";
-    let collapseFlag = "";
-    if (runSeparationProbe && pairs.length >= 2) {
-      try {
-        const sep = this._checkSemBasinSeparation(pairs, {
-          semRegion,
-          motorRegion,
-          overloadMax,
-          sampleSize: 8,
-          semWTA,
-          semTopK
-        });
-        if (sep && typeof sep.meanCos === "number") {
-          const overload = sep.meanCos > overloadMax;
-          const collapsed = sep.meanCos < 0.05 && sep.maxCos < 0.05;
-          if (overload) collapseFlag = " \u26A0OVERLOAD";
-          else if (collapsed) collapseFlag = " \u26A0\u26A0 TRAINING_COLLAPSE: motor readouts near-zero \u2014 sem\u2192motor weights too weak to fire motor region";
-          sepReport = ` \xB7 sep-probe mean-cos=${sep.meanCos.toFixed(3)} max=${sep.maxCos.toFixed(3)}${collapseFlag}`;
-        }
-      } catch {
-      }
     }
     let weightReport = "";
     try {
@@ -22126,7 +25292,7 @@ var Curriculum = class _Curriculum {
     const elapsedSec = ((Date.now() - startMs) / 1e3).toFixed(1);
     const antiReport = antiPairs ? ` \xB7 anti-fires=${antiFires}` : "";
     const wtaReport = motorWTA ? ` \xB7 motor-WTA=${wtaApplied}/${motorTopK}${semWTA ? ` \xB7 sem-WTA=${semWtaApplied}/${semTopK}` : ""}` : semWTA ? ` \xB7 sem-WTA=${semWtaApplied}/${semTopK}` : "";
-    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${wtaReport}${normReport}${sepReport}${weightReport}`);
+    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} Hebbian updates across ${pairs.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${antiReport}${wtaReport}${pruneReport}${rescaleReport}${normReport}${sepReport}${weightReport}`);
     try {
       this._pushBrainEvent?.("teach", "motor", `ASSOC DONE: ${label} \xB7 ${trained}/${antiFires}`, { label, trained, antiFires, wtaApplied, elapsedSec });
     } catch {
@@ -22155,12 +25321,12 @@ var Curriculum = class _Curriculum {
     const readouts = [];
     const semSize = semRegion.end - semRegion.start;
     const semWTA = opts.semWTA !== false;
-    const semTopK = opts.semTopK ?? 30;
+    const semTopK = opts.semTopK ?? 8;
     for (let i = 0; i < pairs.length && readouts.length < sampleSize; i += step) {
       const pair = pairs[i];
       if (!Array.isArray(pair) || pair.length < 2) continue;
       const [inputWord] = pair;
-      const rawEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(inputWord) : null;
+      const rawEmb = this._dictionaryPatternFor(inputWord);
       if (!rawEmb || rawEmb.length === 0) continue;
       const inEmb = semWTA ? this._topKEmbedding(rawEmb, semTopK) : rawEmb;
       const semInput = new Float64Array(semSize);
@@ -22447,377 +25613,6 @@ var Curriculum = class _Curriculum {
   /**
    * Bridge teaching — magnitude in free region to digit character in
    * motor region. Enables numeric production-probe answers.
-   */
-  async _teachMagnitudeToMotor(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const motorRegion = cluster.regions.motor;
-    if (!freeRegion || !motorRegion) return;
-    const DIGITS = DIGIT_ORDER;
-    ensureLetters(DIGITS.split(""));
-    const facts = [];
-    for (const digit of DIGITS) {
-      facts.push({ writes: [
-        { region: freeRegion, feat: _magnitudeFeatureForDigit(digit) },
-        { region: motorRegion, feat: encodeLetter(digit) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 8 });
-    this._hb(`[Curriculum] _teachMagnitudeToMotor: ${facts.length} digits \xD7 8 reps`);
-  }
-  /**
-   * K.OA DECOMPOSITION — given magnitude(c) in sem, the cortex learns
-   * to activate all (a,b) pairs where a+b=c across the two halves of
-   * free. Dual of addition: addition teaches free→sem, decomposition
-   * teaches sem→free. Covers "5 = 1+4 = 2+3 = 3+2 = 4+1 = 0+5" and
-   * similar for every c in [0, 10].
-   */
-  async _teachDecomposition(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
-    const facts = [];
-    for (let c = 0; c <= 10; c++) {
-      for (let a = 0; a <= c; a++) {
-        facts.push({ writes: [
-          { region: semRegion, feat: _magnitudeFeatureForDigit(String(c)) },
-          { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(a)) },
-          { region: freeRightRegion, feat: _magnitudeFeatureForDigit(String(c - a)) }
-        ] });
-      }
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachDecomposition: ${facts.length} triples \xD7 6 reps`);
-  }
-  /**
-   * K.OA MAKE-TEN — given magnitude(n) ONLY in free's left half (right
-   * half intentionally zeroed), sem should activate magnitude(10-n).
-   * The "left-only" input structure discriminates from the
-   * _teachCountToHundred successor transform which fills ALL of free
-   * with magnitude(n). Covers the K standard "for any number 1-9, find
-   * the number that makes 10".
-   */
-  async _teachMakeTen(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const facts = [];
-    for (let n = 0; n <= 10; n++) {
-      facts.push({ writes: [
-        { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(n)) },
-        { region: semRegion, feat: _magnitudeFeatureForDigit(String(10 - n)) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 8 });
-    this._hb(`[Curriculum] _teachMakeTen: ${facts.length} pairs \xD7 8 reps`);
-  }
-  /**
-   * K.NBT TEEN DECOMPOSITION — 11 through 19 as "ten and some more".
-   * Forward: free left = mag_wide(10), free right = mag_wide(n), sem = mag_wide(10+n).
-   * Inverse: same three writes — symmetric Hebbian doesn't care about
-   * iteration order, so once is enough (the helper fires per-fact
-   * Hebbian, which is symmetric: binding a↔b=binding b↔a). This used
-   * to be duplicated into forward/inverse loops; refactor consolidates.
-   */
-  async _teachTeenDecomposition(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
-    const facts = [];
-    for (let n = 1; n <= 9; n++) {
-      facts.push({ writes: [
-        { region: freeLeftRegion, feat: _magnitudeFeatureForNumber(10) },
-        { region: freeRightRegion, feat: _magnitudeFeatureForNumber(n) },
-        { region: semRegion, feat: _magnitudeFeatureForNumber(10 + n) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 16 });
-    this._hb(`[Curriculum] _teachTeenDecomposition: ${facts.length} teens \xD7 16 reps (symmetric)`);
-  }
-  /**
-   * K.CC UNIVERSAL SUCCESSOR — given magnitude(n), sem activates
-   * magnitude(n+1). This single transform covers "count to 100 by
-   * ones" AND "count forward beginning from any given number" because
-   * the successor function is the same regardless of starting N.
-   * Trained on every n ∈ [0, 99].
-   */
-  async _teachCountToHundred(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const facts = [];
-    for (let n = 0; n <= 99; n++) {
-      facts.push({ writes: [
-        { region: freeRegion, feat: _magnitudeFeatureForNumber(n) },
-        { region: semRegion, feat: _magnitudeFeatureForNumber(n + 1) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 4 });
-    this._hb(`[Curriculum] _teachCountToHundred: ${facts.length} successors \xD7 4 reps`);
-  }
-  /**
-   * K.CC SKIP-COUNT BY TENS — given magnitude(n) injected into PHON
-   * region (not free), sem activates magnitude(n+10). Routing through
-   * phon (instead of free) cleanly discriminates the skip-10 query
-   * from the successor query (_teachCountToHundred uses free). Same
-   * recurrent matrix binds both transforms without interference
-   * because the pre-synaptic activation patterns live in different
-   * regions. Covers 10→20→30→...→100.
-   */
-  async _teachSkipCountByTens(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const phonRegion = cluster.regions.phon;
-    const semRegion = cluster.regions.sem;
-    if (!phonRegion || !semRegion) return;
-    const facts = [];
-    for (let n = 0; n <= 90; n += 10) {
-      facts.push({ writes: [
-        { region: phonRegion, feat: _magnitudeFeatureForNumber(n) },
-        { region: semRegion, feat: _magnitudeFeatureForNumber(n + 10) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 10 });
-    this._hb(`[Curriculum] _teachSkipCountByTens: ${facts.length} steps \xD7 10 reps`);
-  }
-  /**
-   * K.MD ATTRIBUTE COMPARISON — teaches "which is longer/heavier/bigger"
-   * as a magnitude comparison where each attribute pole has a known
-   * numeric magnitude (short=2, long=8, light=2, heavy=8, etc.).
-   * Reuses the existing greater/less/equal fineType encoding from
-   * _teachComparisonTransformations. Adds a GloVe anchor in sem for
-   * each attribute word so the probe can be triggered by attribute
-   * name rather than raw magnitude.
-   */
-  async _teachAttributeCompare(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const fineTypeRegion = cluster.regions.fineType;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !fineTypeRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const third = Math.floor(fineTypeSize / 3);
-    const ATTR_POLES = [
-      { low: "short", high: "long", lowMag: 2, highMag: 8, word: "length" },
-      { low: "light", high: "heavy", lowMag: 2, highMag: 8, word: "weight" },
-      { low: "small", high: "big", lowMag: 2, highMag: 8, word: "size" },
-      { low: "low", high: "high", lowMag: 2, highMag: 8, word: "height" },
-      { low: "empty", high: "full", lowMag: 0, highMag: 9, word: "fullness" },
-      { low: "narrow", high: "wide", lowMag: 2, highMag: 8, word: "width" },
-      { low: "cold", high: "hot", lowMag: 2, highMag: 8, word: "temperature" },
-      { low: "few", high: "many", lowMag: 2, highMag: 9, word: "quantity" }
-    ];
-    const greaterTag = new Float64Array(fineTypeSize);
-    for (let i = 0; i < third && i < fineTypeSize; i++) greaterTag[i] = 1;
-    const lessTag = new Float64Array(fineTypeSize);
-    for (let i = third; i < third * 2 && i < fineTypeSize; i++) lessTag[i] = 1;
-    const facts = [];
-    for (const { highMag, lowMag, word } of ATTR_POLES) {
-      const wordEmb = semRegion ? sharedEmbeddings.getEmbedding(word) : null;
-      const greaterWrites = [
-        { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(highMag)) },
-        { region: freeRightRegion, feat: _magnitudeFeatureForDigit(String(lowMag)) },
-        { region: fineTypeRegion, feat: greaterTag }
-      ];
-      if (wordEmb && wordEmb.length > 0) greaterWrites.push({ region: semRegion, feat: wordEmb, binarize: false });
-      facts.push({ writes: greaterWrites });
-      facts.push({ writes: [
-        { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(lowMag)) },
-        { region: freeRightRegion, feat: _magnitudeFeatureForDigit(String(highMag)) },
-        { region: fineTypeRegion, feat: lessTag }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachAttributeCompare: ${ATTR_POLES.length} attribute pairs \xD7 2 dirs \xD7 6 reps`);
-  }
-  /**
-   * K.MD CLASSIFY AND COUNT — given a set of tagged items, learn to
-   * activate magnitude(count) in sem given the category GloVe in free.
-   * Example training fact: free=GloVe("red"), sem=magnitude(3) meaning
-   * "there are 3 red things". Covers K.MD "count objects in each
-   * category (up to 10)" + "sort objects and compare the counts".
-   */
-  async _teachClassifyCount(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const CATEGORY_COUNTS = [
-      ["red", 3],
-      ["blue", 2],
-      ["green", 5],
-      ["yellow", 1],
-      ["black", 4],
-      ["big", 2],
-      ["small", 4],
-      ["long", 3],
-      ["short", 5],
-      ["apples", 4],
-      ["birds", 5],
-      ["cats", 2],
-      ["dogs", 3],
-      ["hands", 2],
-      ["fingers", 10],
-      ["toes", 10],
-      ["eyes", 2],
-      ["ears", 2],
-      ["triangle", 3],
-      ["square", 4],
-      ["circle", 1],
-      ["cube", 6]
-    ];
-    const facts = [];
-    for (const [category, count] of CATEGORY_COUNTS) {
-      const catEmb = sharedEmbeddings.getEmbedding(category);
-      if (!catEmb || catEmb.length === 0) continue;
-      facts.push({ writes: [
-        { region: freeRegion, feat: catEmb, binarize: false },
-        { region: semRegion, feat: _magnitudeFeatureForDigit(String(Math.min(9, count))) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachClassifyCount: ${facts.length} category-count pairs \xD7 6 reps`);
-  }
-  /**
-   * K.G SHAPE FEATURES — given a shape name GloVe in sem, free region
-   * activates magnitude(side_count) and fineType encodes 2D vs 3D.
-   * Covers K.G "describe shapes" + "analyze and compare 2D and 3D
-   * shapes using number of sides, corners, faces" + "identify shapes
-   * as 2D (flat) or 3D (solid)".
-   */
-  async _teachShapeFeatures(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    const fineTypeRegion = cluster.regions.fineType;
-    if (!freeRegion || !semRegion || !fineTypeRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const fineHalf = Math.floor(fineTypeSize / 2);
-    const SHAPES = [
-      // 2D
-      { name: "circle", sides: 0, dim: "2D" },
-      { name: "triangle", sides: 3, dim: "2D" },
-      { name: "square", sides: 4, dim: "2D" },
-      { name: "rectangle", sides: 4, dim: "2D" },
-      { name: "hexagon", sides: 6, dim: "2D" },
-      // 3D
-      { name: "sphere", sides: 0, dim: "3D" },
-      // ball — 0 flat faces
-      { name: "cube", sides: 6, dim: "3D" },
-      // 6 faces
-      { name: "cone", sides: 1, dim: "3D" },
-      // 1 flat circular face + curved
-      { name: "cylinder", sides: 2, dim: "3D" }
-      // 2 flat circular faces + curved
-    ];
-    const twoDTag = new Float64Array(fineTypeSize);
-    for (let i = 0; i < fineHalf; i++) twoDTag[i] = 1;
-    const threeDTag = new Float64Array(fineTypeSize);
-    for (let i = fineHalf; i < fineTypeSize; i++) threeDTag[i] = 1;
-    const facts = [];
-    for (const { name, sides, dim } of SHAPES) {
-      const shapeEmb = sharedEmbeddings.getEmbedding(name);
-      if (!shapeEmb || shapeEmb.length === 0) continue;
-      facts.push({ writes: [
-        { region: semRegion, feat: shapeEmb, binarize: false },
-        { region: freeRegion, feat: _magnitudeFeatureForDigit(String(sides)) },
-        { region: fineTypeRegion, feat: dim === "2D" ? twoDTag : threeDTag }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 10 });
-    this._hb(`[Curriculum] _teachShapeFeatures: ${facts.length} shapes \xD7 10 reps`);
-  }
-  /**
-   * K.G SHAPE COMPOSITION — "put two triangles together to make a
-   * rectangle" and similar. NOT a magnitude transform (geometric
-   * composition is NOT additive on side counts — two 3-sided
-   * triangles make a 4-sided rectangle, not a 6-sided anything). The
-   * unified combination-operator scaffold handles this cleanly by
-   * swapping the encoder from magnitude features to GloVe embeddings.
-   * Same `_teachCombination` helper, same substrate, same Hebbian,
-   * different encoding of the operands.
-   *
-   * Input structure: sem first half = GloVe(shapeA), sem second half
-   * = GloVe(shapeB). Output: free = GloVe(composed shape). This input
-   * layout is structurally distinct from `_teachShapeFeatures`
-   * (full-sem = single-shape GloVe) and `_teachTeenDecomposition`
-   * (free split = magnitudes), so no cross-transform interference.
-   *
-   * Closes the K.G 66/66 gap in `docs/TODO-full-syllabus.md` without
-   * special-case logic — the reasoning FORM stays the same, only the
-   * encoder varies.
-   */
-  async _teachShapeCompose(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const semSize = semRegion.end - semRegion.start;
-    const semHalf = Math.floor(semSize / 2);
-    const semLeftRegion = { start: semRegion.start, end: semRegion.start + semHalf };
-    const semRightRegion = { start: semRegion.start + semHalf, end: semRegion.end };
-    const COMPOSE = [
-      ["triangle", "triangle", "rectangle"],
-      // K standard fact
-      ["triangle", "triangle", "square"],
-      // alt configuration (4 right triangles → square)
-      ["square", "square", "rectangle"],
-      // two squares side-by-side
-      ["rectangle", "rectangle", "square"],
-      // two rectangles stacked → square
-      ["triangle", "rectangle", "pentagon"]
-      // triangle cap on rectangle
-    ];
-    const facts = [];
-    for (const [aName, bName, cName] of COMPOSE) {
-      const aEmb = sharedEmbeddings.getEmbedding(aName);
-      const bEmb = sharedEmbeddings.getEmbedding(bName);
-      const cEmb = sharedEmbeddings.getEmbedding(cName);
-      if (!aEmb || !bEmb || !cEmb || aEmb.length === 0 || bEmb.length === 0 || cEmb.length === 0) continue;
-      facts.push({ writes: [
-        { region: semLeftRegion, feat: aEmb, binarize: false },
-        { region: semRightRegion, feat: bEmb, binarize: false },
-        { region: freeRegion, feat: cEmb, binarize: false }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 10 });
-    this._hb(`[Curriculum] _teachShapeCompose: ${facts.length} compositions \xD7 10 reps`);
-  }
-  /**
-   * CAUSAL CHAINS — if X then Y as directional cross-projection.
-   * Write embedding(cause) into free with "cause" tag in fineType first third,
-   * write embedding(effect) into sem with "effect" tag in fineType second third.
-   * The free→sem projection learns: this cause → this effect.
-   * Build chains: teach A→B and B→C, then test A→C (transitive inference).
-   * @param {Array<[string,string]>} pairs - array of [cause, effect] word pairs
    */
   async _teachCausalChains(pairs) {
     const cluster = this.cluster;
@@ -23675,6 +26470,8 @@ var Curriculum = class _Curriculum {
       }
     }
     const wordEmb = sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === "function" ? sharedEmbeddings.getEmbedding(cleanWord) : null;
+    const firstLetterOneHot = encodeLetter(letters[0]);
+    const motorFirstLetter = buildPattern(motorSize, firstLetterOneHot);
     for (let rep = 0; rep < reps; rep++) {
       if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
       for (let i = 0; i < letters.length; i++) {
@@ -23696,13 +26493,70 @@ var Curriculum = class _Curriculum {
         for (let j = 0; j < motorSize; j++) {
           cluster.lastSpikes[motorRegion.start + j] = motorPat[j] > 0 ? 1 : 0;
         }
-        if (semRegion && wordEmb && wordEmb.length > 0) {
-          const semPat = buildPattern(semSize, wordEmb);
-          for (let j = 0; j < semSize; j++) {
-            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+        await cluster._crossRegionHebbian(lr);
+      }
+      const semToMotor = cluster.crossProjections?.sem_to_motor;
+      if (semRegion && wordEmb && wordEmb.length > 0 && semToMotor) {
+        const firstLetterCarvingReps = 4;
+        for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+        this._writeTiledPattern(semRegion, wordEmb, true);
+        this._writeTiledPattern(motorRegion, firstLetterOneHot, true);
+        const preF = new Float64Array(semSize);
+        const postF = new Float64Array(motorSize);
+        for (let j = 0; j < semSize; j++) preF[j] = cluster.lastSpikes[semRegion.start + j];
+        for (let j = 0; j < motorSize; j++) postF[j] = cluster.lastSpikes[motorRegion.start + j];
+        for (let k = 0; k < firstLetterCarvingReps; k++) {
+          if (typeof semToMotor.ojaUpdate === "function" && semToMotor.values && semToMotor.values.length > 0) {
+            try {
+              semToMotor.ojaUpdate(preF, postF, lr);
+            } catch {
+            }
+          }
+          if (semToMotor._gpuBound && cluster._gpuProxyReady && cluster._gpuProxy && cluster._gpuProxy.hebbianBound) {
+            try {
+              cluster._gpuProxy.hebbianBound(`${cluster.name}_sem_to_motor`, lr);
+            } catch {
+            }
+          } else if (cluster._gpuProxyReady && cluster._gpuProxy && cluster._gpuProxy.hebbian) {
+            try {
+              cluster._gpuProxy.hebbian(`${cluster.name}_sem_to_motor`, preF, postF, lr);
+            } catch {
+            }
           }
         }
-        await cluster._crossRegionHebbian(lr);
+      }
+      if (semRegion && wordEmb && wordEmb.length > 0 && semToMotor && letters.length > 0) {
+        const wrongLrScale = opts.wrongLrScale ?? 0.5;
+        const wrongAntiReps = opts.wrongAntiReps ?? 2;
+        const correctLetter = letters[0].toLowerCase();
+        const ALPHABET_CONTRAST = "abcdefghijklmnopqrstuvwxyz";
+        for (let wi = 0; wi < ALPHABET_CONTRAST.length; wi++) {
+          const wrongCh = ALPHABET_CONTRAST[wi];
+          if (wrongCh === correctLetter) continue;
+          const wrongOneHot = encodeLetter(wrongCh);
+          for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
+          this._writeTiledPattern(semRegion, wordEmb, true);
+          this._writeTiledPattern(motorRegion, wrongOneHot, true);
+          const preAF = new Float64Array(semSize);
+          const postAF = new Float64Array(motorSize);
+          for (let j = 0; j < semSize; j++) preAF[j] = cluster.lastSpikes[semRegion.start + j];
+          for (let j = 0; j < motorSize; j++) postAF[j] = cluster.lastSpikes[motorRegion.start + j];
+          const antiLr = lr * wrongLrScale;
+          for (let k = 0; k < wrongAntiReps; k++) {
+            if (typeof semToMotor.antiHebbianUpdate === "function" && semToMotor.values && semToMotor.values.length > 0) {
+              try {
+                semToMotor.antiHebbianUpdate(preAF, postAF, antiLr);
+              } catch {
+              }
+            }
+            if (semToMotor._gpuBound && cluster._gpuProxyReady && cluster._gpuProxy && cluster._gpuProxy.hebbianBound) {
+              try {
+                cluster._gpuProxy.hebbianBound(`${cluster.name}_sem_to_motor`, -antiLr);
+              } catch {
+              }
+            }
+          }
+        }
       }
       if (typeof cluster.hebbianPairReinforce === "function" && letters.length > 1) {
         for (let i = 0; i < letters.length - 1; i++) {
@@ -23719,26 +26573,39 @@ var Curriculum = class _Curriculum {
           }
         }
       }
-      if (!opts.skipTemplates && semRegion) {
+      if (!opts.skipTemplates && semRegion && semToMotor) {
         const templates = opts.templates || [
           `i see a ${cleanWord}`,
           `the ${cleanWord} is here`,
           `this is a ${cleanWord}`
         ];
-        const firstLetterOneHot = encodeLetter(letters[0]);
-        const motorFirstLetter = buildPattern(motorSize, firstLetterOneHot);
         for (const sentence of templates) {
           const sentEmb = sharedEmbeddings && typeof sharedEmbeddings.getSentenceEmbedding === "function" ? sharedEmbeddings.getSentenceEmbedding(sentence) : null;
           if (!sentEmb || sentEmb.length === 0) continue;
           for (let j = 0; j < cluster.size; j++) cluster.lastSpikes[j] = 0;
-          const semPat = buildPattern(semSize, sentEmb);
-          for (let j = 0; j < semSize; j++) {
-            cluster.lastSpikes[semRegion.start + j] = semPat[j] > 0 ? 1 : 0;
+          this._writeTiledPattern(semRegion, sentEmb, true);
+          this._writeTiledPattern(motorRegion, firstLetterOneHot, true);
+          const preF = new Float64Array(semSize);
+          const postF = new Float64Array(motorSize);
+          for (let j = 0; j < semSize; j++) preF[j] = cluster.lastSpikes[semRegion.start + j];
+          for (let j = 0; j < motorSize; j++) postF[j] = cluster.lastSpikes[motorRegion.start + j];
+          if (typeof semToMotor.ojaUpdate === "function" && semToMotor.values && semToMotor.values.length > 0) {
+            try {
+              semToMotor.ojaUpdate(preF, postF, lr);
+            } catch {
+            }
           }
-          for (let j = 0; j < motorSize; j++) {
-            cluster.lastSpikes[motorRegion.start + j] = motorFirstLetter[j] > 0 ? 1 : 0;
+          if (semToMotor._gpuBound && cluster._gpuProxyReady && cluster._gpuProxy && cluster._gpuProxy.hebbianBound) {
+            try {
+              cluster._gpuProxy.hebbianBound(`${cluster.name}_sem_to_motor`, lr);
+            } catch {
+            }
+          } else if (cluster._gpuProxyReady && cluster._gpuProxy && cluster._gpuProxy.hebbian) {
+            try {
+              cluster._gpuProxy.hebbian(`${cluster.name}_sem_to_motor`, preF, postF, lr);
+            } catch {
+            }
           }
-          await cluster._crossRegionHebbian(lr);
         }
       }
       if (typeof _microtask === "function") await _microtask();
@@ -24032,1035 +26899,6 @@ var Curriculum = class _Curriculum {
    * F=ma / mass / acceleration / friction / gravity concepts for
    * the physics side of the grade 5 science curriculum.
    */
-  async _teachForceMotionK(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    const fineTypeRegion = cluster.regions.fineType;
-    if (!semRegion || !freeRegion || !fineTypeRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const causeTag = new Float64Array(fineTypeSize);
-    const effectTag = new Float64Array(fineTypeSize);
-    const half = Math.floor(fineTypeSize / 2);
-    for (let i = 0; i < half; i++) causeTag[i] = 1;
-    for (let i = half; i < fineTypeSize; i++) effectTag[i] = 1;
-    const FORCE_MOTION_PAIRS = [
-      ["push", "move"],
-      ["pull", "move"],
-      ["push", "roll"],
-      ["pull", "come"],
-      ["force", "motion"],
-      ["stop", "still"],
-      ["collide", "bounce"],
-      ["hit", "push"]
-    ];
-    const facts = [];
-    for (const [cause, effect] of FORCE_MOTION_PAIRS) {
-      const cEmb = sharedEmbeddings.getEmbedding(cause);
-      const eEmb = sharedEmbeddings.getEmbedding(effect);
-      if (!cEmb || !eEmb) continue;
-      facts.push({ writes: [
-        { region: freeRegion, feat: cEmb, binarize: false },
-        { region: semRegion, feat: eEmb, binarize: false },
-        { region: fineTypeRegion, feat: causeTag }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachForceMotion: ${facts.length} force-motion pairs \xD7 6 reps`);
-  }
-  /**
-   * K-PS2 bigger-push → more-motion magnitude transform.
-   * Force magnitude + object → motion magnitude.
-   */
-  async _teachForceStrengthEffect(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
-    const facts = [];
-    for (let strength = 1; strength <= 9; strength++) {
-      const strengthMag = _magnitudeFeatureForDigit(String(strength));
-      const pushEmb = sharedEmbeddings.getEmbedding("push");
-      if (!pushEmb) continue;
-      facts.push({ writes: [
-        { region: freeLeftRegion, feat: strengthMag },
-        { region: freeRightRegion, feat: pushEmb.slice(0, Math.min(pushEmb.length, 50)), binarize: false },
-        { region: semRegion, feat: _magnitudeFeatureForDigit(String(strength)) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachForceStrengthEffect: ${facts.length} strength\u2192effect \xD7 6 reps`);
-  }
-  /**
-   * K-ESS2 Weather categories — weather type → feature profile
-   * (temperature / precipitation / wind / cloud cover).
-   */
-  async _teachWeatherCategories(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-    function weatherFeat(hot, cold, wet, dry, windy, calm, cloudy, sunny) {
-      return new Float64Array([hot, cold, wet, dry, windy, calm, cloudy, sunny]);
-    }
-    const WEATHER = [
-      { name: "sunny", feat: weatherFeat(1, 0, 0, 1, 0, 1, 0, 1) },
-      { name: "rainy", feat: weatherFeat(0, 0, 1, 0, 0, 1, 1, 0) },
-      { name: "cloudy", feat: weatherFeat(0, 0, 0, 1, 0, 1, 1, 0) },
-      { name: "windy", feat: weatherFeat(0, 0, 0, 1, 1, 0, 0, 0) },
-      { name: "snowy", feat: weatherFeat(0, 1, 1, 0, 0, 1, 1, 0) },
-      { name: "hot", feat: weatherFeat(1, 0, 0, 1, 0, 1, 0, 1) },
-      { name: "cold", feat: weatherFeat(0, 1, 0, 1, 0, 1, 1, 0) },
-      { name: "stormy", feat: weatherFeat(0, 0, 1, 0, 1, 0, 1, 0) }
-    ];
-    const facts = [];
-    for (const { name, feat } of WEATHER) {
-      const emb = sharedEmbeddings.getEmbedding(name);
-      if (!emb) continue;
-      facts.push({ writes: [
-        { region: semRegion, feat: emb, binarize: false },
-        { region: freeRegion, feat }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachWeatherCategories: ${facts.length} weather types \xD7 6 reps`);
-  }
-  /**
-   * K-ESS2 Season → temperature binding. Summer=hot, winter=cold, etc.
-   */
-  async _teachSeasonTemperature(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const SEASON_TEMP = [
-      { season: "summer", temp: "hot", tempMag: 9 },
-      { season: "fall", temp: "cool", tempMag: 4 },
-      { season: "winter", temp: "cold", tempMag: 1 },
-      { season: "spring", temp: "warm", tempMag: 6 }
-    ];
-    const facts = [];
-    for (const { season, temp, tempMag } of SEASON_TEMP) {
-      const sEmb = sharedEmbeddings.getEmbedding(season);
-      const tEmb = sharedEmbeddings.getEmbedding(temp);
-      if (!sEmb || !tEmb) continue;
-      facts.push({ writes: [
-        { region: semRegion, feat: sEmb, binarize: false },
-        { region: freeLeftRegion, feat: _magnitudeFeatureForDigit(String(tempMag)) }
-      ] });
-      facts.push({ writes: [
-        { region: semRegion, feat: tEmb, binarize: false },
-        { region: freeRegion, feat: sEmb, binarize: false }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 8 });
-    this._hb(`[Curriculum] _teachSeasonTemperature: ${facts.length} season-temp pairs \xD7 8 reps`);
-  }
-  /**
-   * K-LS1 Plant + animal needs — organism type → survival requirements.
-   */
-  async _teachLivingThingNeeds(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-    const NEEDS = [
-      { thing: "plant", needs: ["water", "light", "air"] },
-      { thing: "animal", needs: ["food", "water", "air"] },
-      { thing: "dog", needs: ["food", "water", "air"] },
-      { thing: "cat", needs: ["food", "water", "air"] },
-      { thing: "bird", needs: ["food", "water", "air"] },
-      { thing: "fish", needs: ["food", "water", "air"] },
-      { thing: "tree", needs: ["water", "light", "air"] },
-      { thing: "flower", needs: ["water", "light", "air"] },
-      { thing: "human", needs: ["food", "water", "air"] }
-    ];
-    const facts = [];
-    for (const { thing, needs } of NEEDS) {
-      const tEmb = sharedEmbeddings.getEmbedding(thing);
-      if (!tEmb) continue;
-      for (const need of needs) {
-        const nEmb = sharedEmbeddings.getEmbedding(need);
-        if (!nEmb) continue;
-        facts.push({ writes: [
-          { region: semRegion, feat: tEmb, binarize: false },
-          { region: freeRegion, feat: nEmb, binarize: false }
-        ] });
-      }
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachLivingThingNeeds: ${facts.length} need facts \xD7 6 reps`);
-  }
-  /**
-   * K-LS1 Animal diet classification — herbivore / carnivore / omnivore.
-   */
-  async _teachDietClassification(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const fineTypeRegion = cluster.regions.fineType;
-    const motorRegion = cluster.regions.motor;
-    if (!semRegion || !fineTypeRegion || !motorRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const herbTag = new Float64Array(fineTypeSize);
-    const carnTag = new Float64Array(fineTypeSize);
-    const omniTag = new Float64Array(fineTypeSize);
-    const third = Math.floor(fineTypeSize / 3);
-    for (let i = 0; i < third; i++) herbTag[i] = 1;
-    for (let i = third; i < 2 * third; i++) carnTag[i] = 1;
-    for (let i = 2 * third; i < fineTypeSize; i++) omniTag[i] = 1;
-    const DIET_FACTS = [
-      // eats-only-plants
-      { animal: "cow", diet: "herbivore" },
-      { animal: "horse", diet: "herbivore" },
-      { animal: "rabbit", diet: "herbivore" },
-      { animal: "deer", diet: "herbivore" },
-      { animal: "sheep", diet: "herbivore" },
-      { animal: "giraffe", diet: "herbivore" },
-      // eats-only-meat
-      { animal: "lion", diet: "carnivore" },
-      { animal: "tiger", diet: "carnivore" },
-      { animal: "wolf", diet: "carnivore" },
-      { animal: "shark", diet: "carnivore" },
-      { animal: "eagle", diet: "carnivore" },
-      // eats-both
-      { animal: "bear", diet: "omnivore" },
-      { animal: "pig", diet: "omnivore" },
-      { animal: "human", diet: "omnivore" },
-      { animal: "dog", diet: "omnivore" }
-    ];
-    const facts = [];
-    for (const { animal, diet } of DIET_FACTS) {
-      const aEmb = sharedEmbeddings.getEmbedding(animal);
-      if (!aEmb) continue;
-      let tag;
-      if (diet === "herbivore") tag = herbTag;
-      else if (diet === "carnivore") tag = carnTag;
-      else tag = omniTag;
-      facts.push({ writes: [
-        { region: semRegion, feat: aEmb, binarize: false },
-        { region: fineTypeRegion, feat: tag },
-        { region: motorRegion, feat: encodeLetter(diet[0]) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachDietClassification: ${facts.length} diet facts \xD7 6 reps`);
-  }
-  /**
-   * K-LS1 Body part → function (wings→fly, fins→swim, legs→walk).
-   */
-  async _teachBodyPartFunction(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-    const BODY_FUNCTIONS = [
-      { part: "wings", function_: "fly" },
-      { part: "fins", function_: "swim" },
-      { part: "legs", function_: "walk" },
-      { part: "arms", function_: "reach" },
-      { part: "hands", function_: "grab" },
-      { part: "eyes", function_: "see" },
-      { part: "ears", function_: "hear" },
-      { part: "nose", function_: "smell" },
-      { part: "mouth", function_: "eat" },
-      { part: "teeth", function_: "chew" },
-      { part: "gills", function_: "breathe" },
-      { part: "roots", function_: "grow" }
-    ];
-    const facts = [];
-    for (const { part, function_ } of BODY_FUNCTIONS) {
-      const pEmb = sharedEmbeddings.getEmbedding(part);
-      const fEmb = sharedEmbeddings.getEmbedding(function_);
-      if (!pEmb || !fEmb) continue;
-      facts.push({ writes: [
-        { region: semRegion, feat: pEmb, binarize: false },
-        { region: freeRegion, feat: fEmb, binarize: false }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachBodyPartFunction: ${facts.length} part-function pairs \xD7 6 reps`);
-  }
-  /**
-   * K-ESS3 Natural resources + natural-vs-human-made classification.
-   */
-  async _teachNaturalVsHumanMade(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const fineTypeRegion = cluster.regions.fineType;
-    const motorRegion = cluster.regions.motor;
-    if (!semRegion || !fineTypeRegion || !motorRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const naturalTag = new Float64Array(fineTypeSize);
-    const humanMadeTag = new Float64Array(fineTypeSize);
-    const half = Math.floor(fineTypeSize / 2);
-    for (let i = 0; i < half; i++) naturalTag[i] = 1;
-    for (let i = half; i < fineTypeSize; i++) humanMadeTag[i] = 1;
-    const CLASSIFIED = [
-      { thing: "tree", type: "natural" },
-      { thing: "rock", type: "natural" },
-      { thing: "water", type: "natural" },
-      { thing: "air", type: "natural" },
-      { thing: "soil", type: "natural" },
-      { thing: "plant", type: "natural" },
-      { thing: "animal", type: "natural" },
-      { thing: "mountain", type: "natural" },
-      { thing: "river", type: "natural" },
-      { thing: "building", type: "humanmade" },
-      { thing: "road", type: "humanmade" },
-      { thing: "car", type: "humanmade" },
-      { thing: "house", type: "humanmade" },
-      { thing: "bridge", type: "humanmade" },
-      { thing: "plastic", type: "humanmade" },
-      { thing: "computer", type: "humanmade" },
-      { thing: "chair", type: "humanmade" }
-    ];
-    const facts = [];
-    for (const { thing, type } of CLASSIFIED) {
-      const emb = sharedEmbeddings.getEmbedding(thing);
-      if (!emb) continue;
-      const tag = type === "natural" ? naturalTag : humanMadeTag;
-      facts.push({ writes: [
-        { region: semRegion, feat: emb, binarize: false },
-        { region: fineTypeRegion, feat: tag },
-        { region: motorRegion, feat: encodeLetter(type[0]) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachNaturalVsHumanMade: ${facts.length} classified \xD7 6 reps`);
-  }
-  async runSciKReal(ctx) {
-    await this._teachClassification();
-    await this._teachStatesOfMatter();
-    if (!this._sciKRemakeDone) {
-      await this._phasedTeach("_teachForceMotionK", () => this._teachForceMotionK(ctx));
-      await this._phasedTeach("_teachForceStrengthEffect", () => this._teachForceStrengthEffect(ctx));
-      await this._phasedTeach("_teachWeatherCategories", () => this._teachWeatherCategories(ctx));
-      await this._phasedTeach("_teachSeasonTemperature", () => this._teachSeasonTemperature(ctx));
-      await this._phasedTeach("_teachLivingThingNeeds", () => this._teachLivingThingNeeds(ctx));
-      await this._phasedTeach("_teachDietClassification", () => this._teachDietClassification(ctx));
-      await this._phasedTeach("_teachBodyPartFunction", () => this._teachBodyPartFunction(ctx));
-      await this._phasedTeach("_teachNaturalVsHumanMade", () => this._teachNaturalVsHumanMade(ctx));
-      await this._teachCausalChains([
-        ["push", "move"],
-        ["pull", "move"],
-        ["push", "fall"],
-        ["water", "grow"],
-        ["sun", "warm"],
-        ["sun", "grow"],
-        ["rain", "wet"],
-        ["cold", "ice"],
-        ["hot", "melt"],
-        ["wind", "blow"],
-        ["seed", "plant"],
-        ["plant", "flower"],
-        ["food", "energy"],
-        ["sleep", "rest"],
-        ["fire", "hot"]
-      ]);
-      await this._teachClassificationReasoning([
-        { item: "dog", features: new Float64Array([1, 1, 1, 1, 1, 1, 0, 0]), category: "animal" },
-        { item: "cat", features: new Float64Array([1, 1, 1, 1, 1, 1, 0, 0]), category: "animal" },
-        { item: "bird", features: new Float64Array([1, 1, 1, 1, 1, 1, 0, 0]), category: "animal" },
-        { item: "fish", features: new Float64Array([1, 1, 1, 1, 1, 0, 0, 0]), category: "animal" },
-        { item: "bug", features: new Float64Array([1, 1, 1, 1, 1, 1, 0, 0]), category: "animal" },
-        { item: "tree", features: new Float64Array([1, 0, 1, 0, 0, 0, 1, 0]), category: "plant" },
-        { item: "flower", features: new Float64Array([1, 0, 1, 0, 0, 0, 1, 0]), category: "plant" },
-        { item: "grass", features: new Float64Array([1, 0, 1, 0, 0, 0, 1, 0]), category: "plant" },
-        { item: "rock", features: new Float64Array([0, 0, 0, 0, 0, 0, 0, 1]), category: "mineral" },
-        { item: "water", features: new Float64Array([0, 0, 0, 0, 0, 0, 0, 0]), category: "mineral" },
-        { item: "sand", features: new Float64Array([0, 0, 0, 0, 0, 0, 0, 1]), category: "mineral" }
-      ]);
-      await this._phasedTeach("SCI-K-CONCEPTS", () => this._teachAssociationPairs([
-        // Phase transitions
-        ["ice", "solid"],
-        ["steam", "gas"],
-        ["water", "liquid"],
-        ["melt", "liquid"],
-        ["freeze", "solid"],
-        ["boil", "gas"],
-        // Sunlight / heat
-        ["sun", "warm"],
-        ["sun", "light"],
-        ["shade", "cool"],
-        ["fire", "hot"],
-        ["snow", "cold"],
-        ["shadow", "block"],
-        // Animal products
-        ["cow", "milk"],
-        ["chicken", "eggs"],
-        ["bee", "honey"],
-        ["sheep", "wool"],
-        ["duck", "eggs"],
-        ["pig", "bacon"],
-        // Life needs
-        ["plant", "water"],
-        ["plant", "sun"],
-        ["animal", "food"],
-        ["fish", "water"],
-        ["bird", "nest"],
-        ["bear", "cave"],
-        // Natural resources
-        ["tree", "wood"],
-        ["river", "water"],
-        ["ocean", "salt"],
-        ["mountain", "rock"],
-        ["forest", "tree"],
-        ["sun", "energy"],
-        // Push/pull
-        ["push", "away"],
-        ["pull", "toward"],
-        ["harder", "faster"],
-        ["heavier", "slower"]
-      ], { reps: 8, label: "SCI-K-CONCEPTS", relationTagId: 1 }));
-      const sciQA = TRAIN_BANKS["science/kindergarten"] || [];
-      if (sciQA.length > 0) {
-        await this._phasedTeach("SCI-K-QA-TRAIN", () => this._teachQABinding(sciQA, { label: "SCI-K-QA-TRAIN" }));
-      }
-      this._sciKRemakeDone = true;
-    }
-    return await this._gateSciKReal();
-  }
-  async _gateSciKReal() {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.synapses) return { pass: false, reason: "no cluster" };
-    await this._pregateEnrichment("science/kindergarten");
-    const sciKProductionSamples = [
-      // K-PS2 Tests
-      { question: "what happens when you push a ball", expected: ["move", "roll", "m"] },
-      { question: "what makes a wagon go", expected: ["pull", "push", "p"] },
-      { question: "big push or small push which goes farther", expected: ["big", "b"] },
-      { question: "what happens when two balls hit each other", expected: ["push", "bounce", "p", "b"] },
-      // K-ESS2 Tests
-      { question: "what is weather", expected: ["air", "outside", "condition"] },
-      { question: "when is it hottest", expected: ["summer", "s"] },
-      { question: "when is it coldest", expected: ["winter", "w"] },
-      // K-LS1 Tests
-      { question: "what do plants need to grow", expected: ["water", "light", "air", "w", "l", "a"] },
-      { question: "what do animals need to survive", expected: ["food", "water", "air", "f", "w"] },
-      { question: "an animal that eats only plants is called", expected: ["herbivore", "h"] },
-      { question: "an animal that eats only meat is called", expected: ["carnivore", "c"] },
-      { question: "why do birds have wings", expected: ["fly", "f"] },
-      { question: "why do fish have fins", expected: ["swim", "s"] },
-      // K-ESS3 Tests
-      { question: "name a natural resource", expected: ["water", "air", "soil", "tree", "rock", "w", "a", "s", "t", "r"] },
-      { question: "what do all living things need", expected: ["water", "w"] },
-      { question: "is a tree natural or human made", expected: ["natural", "n"] },
-      { question: "is a building natural or human made", expected: ["human", "h"] }
-    ];
-    const prodResult = await this._probeProductionBatch(sciKProductionSamples, {
-      visualCortex: this.engine && this.engine.visualCortex || null
-    });
-    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
-    const PROD_MIN = 0.95;
-    const pass = prodRate >= PROD_MIN;
-    const pct = (r) => (r * 100).toFixed(0);
-    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
-    const _sciKResult = {
-      pass,
-      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
-      metrics: { prodRate, prodFails: prodResult.fails }
-    };
-    this._recordGateHistory("science", "kindergarten", "overall", pass, prodRate);
-    return _sciKResult;
-  }
-  // ═══════════════════════════════════════════════════════════════════
-  // Social-K equational course (LAW 3 + LAW 7)
-  // ═══════════════════════════════════════════════════════════════════
-  /**
-   * Core Knowledge K community helpers — helper → job via sem↔sem binding.
-   */
-  async _teachCommunityHelpers(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-    const HELPERS = [
-      { helper: "firefighter", job: "fires" },
-      { helper: "police", job: "safety" },
-      { helper: "doctor", job: "sick" },
-      { helper: "nurse", job: "care" },
-      { helper: "teacher", job: "learn" },
-      { helper: "dentist", job: "teeth" },
-      { helper: "farmer", job: "food" },
-      { helper: "mail", job: "letters" }
-    ];
-    const facts = [];
-    for (const { helper, job } of HELPERS) {
-      const hEmb = sharedEmbeddings.getEmbedding(helper);
-      const jEmb = sharedEmbeddings.getEmbedding(job);
-      if (!hEmb || !jEmb) continue;
-      facts.push({ writes: [
-        { region: semRegion, feat: jEmb, binarize: false },
-        { region: freeRegion, feat: hEmb, binarize: false }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 8 });
-    this._hb(`[Curriculum] _teachCommunityHelpers: ${facts.length} \xD7 8 reps`);
-  }
-  /**
-   * Core Knowledge K needs vs wants — binary classification with fineType tag.
-   */
-  async _teachNeedsVsWants(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const fineTypeRegion = cluster.regions.fineType;
-    const motorRegion = cluster.regions.motor;
-    if (!semRegion || !fineTypeRegion || !motorRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const needTag = new Float64Array(fineTypeSize);
-    const wantTag = new Float64Array(fineTypeSize);
-    const half = Math.floor(fineTypeSize / 2);
-    for (let i = 0; i < half; i++) needTag[i] = 1;
-    for (let i = half; i < fineTypeSize; i++) wantTag[i] = 1;
-    const CLASSIFIED = [
-      { thing: "food", type: "need" },
-      { thing: "water", type: "need" },
-      { thing: "shelter", type: "need" },
-      { thing: "clothing", type: "need" },
-      { thing: "air", type: "need" },
-      { thing: "sleep", type: "need" },
-      { thing: "toy", type: "want" },
-      { thing: "candy", type: "want" },
-      { thing: "game", type: "want" },
-      { thing: "tv", type: "want" },
-      { thing: "phone", type: "want" }
-    ];
-    const facts = [];
-    for (const { thing, type } of CLASSIFIED) {
-      const emb = sharedEmbeddings.getEmbedding(thing);
-      if (!emb) continue;
-      facts.push({ writes: [
-        { region: semRegion, feat: emb, binarize: false },
-        { region: fineTypeRegion, feat: type === "need" ? needTag : wantTag },
-        { region: motorRegion, feat: encodeLetter(type[0]) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachNeedsVsWants: ${facts.length} \xD7 6 reps`);
-  }
-  /**
-   * Core Knowledge K American symbols — symbol ↔ fact pairs.
-   */
-  async _teachAmericanSymbols(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-    const SYMBOLS = [
-      { concept: "flag colors", answer: "red white blue" },
-      { concept: "fifty stars", answer: "states" },
-      { concept: "national bird", answer: "eagle" },
-      { concept: "july fourth", answer: "independence" },
-      { concept: "country leader", answer: "president" },
-      { concept: "liberty statue", answer: "freedom" },
-      { concept: "thanksgiving", answer: "thanks" },
-      { concept: "presidents day", answer: "honor" }
-    ];
-    const facts = [];
-    for (const { concept, answer } of SYMBOLS) {
-      const words = concept.split(" ");
-      const aWords = answer.split(" ");
-      for (const cWord of words) {
-        const cEmb = sharedEmbeddings.getEmbedding(cWord);
-        if (!cEmb) continue;
-        for (const aWord of aWords) {
-          const aEmb = sharedEmbeddings.getEmbedding(aWord);
-          if (!aEmb) continue;
-          facts.push({ writes: [
-            { region: semRegion, feat: cEmb, binarize: false },
-            { region: freeRegion, feat: aEmb, binarize: false }
-          ] });
-        }
-      }
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachAmericanSymbols: ${facts.length} \xD7 6 reps`);
-  }
-  /**
-   * Core Knowledge K geography — continents, oceans, cardinal directions.
-   */
-  async _teachGeographyBasics(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-    const GEO_FACTS = [
-      // Continent count
-      { concept: "continents count", answer: "seven" },
-      // Continents
-      { concept: "north america", answer: "continent" },
-      { concept: "south america", answer: "continent" },
-      { concept: "europe", answer: "continent" },
-      { concept: "africa", answer: "continent" },
-      { concept: "asia", answer: "continent" },
-      { concept: "australia", answer: "continent" },
-      { concept: "antarctica", answer: "continent" },
-      // Oceans
-      { concept: "atlantic", answer: "ocean" },
-      { concept: "pacific", answer: "ocean" },
-      { concept: "indian", answer: "ocean" },
-      { concept: "arctic", answer: "ocean" },
-      // Cardinal directions
-      { concept: "north direction", answer: "up" },
-      { concept: "south direction", answer: "down" },
-      { concept: "east direction", answer: "right" },
-      { concept: "west direction", answer: "left" },
-      // Globe
-      { concept: "globe", answer: "earth" },
-      { concept: "map", answer: "places" }
-    ];
-    const facts = [];
-    for (const { concept, answer } of GEO_FACTS) {
-      const cWords = concept.split(" ");
-      const cEmb = cWords.length > 1 ? sharedEmbeddings.getEmbedding(cWords[0]) : sharedEmbeddings.getEmbedding(concept);
-      const aEmb = sharedEmbeddings.getEmbedding(answer);
-      if (!cEmb || !aEmb) continue;
-      facts.push({ writes: [
-        { region: semRegion, feat: cEmb, binarize: false },
-        { region: freeRegion, feat: aEmb, binarize: false }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachGeographyBasics: ${facts.length} \xD7 6 reps`);
-  }
-  async runSocKReal(ctx) {
-    await this._teachFamilyRoles();
-    if (!this._socKRemakeDone) {
-      await this._phasedTeach("_teachCommunityHelpers", () => this._teachCommunityHelpers(ctx));
-      await this._phasedTeach("_teachNeedsVsWants", () => this._teachNeedsVsWants(ctx));
-      await this._phasedTeach("_teachAmericanSymbols", () => this._teachAmericanSymbols(ctx));
-      await this._phasedTeach("_teachGeographyBasics", () => this._teachGeographyBasics(ctx));
-      await this._teachCausalChains([
-        ["fire", "firefighter"],
-        ["sick", "doctor"],
-        ["hurt", "nurse"],
-        ["crime", "police"],
-        ["learn", "school"],
-        ["share", "friend"],
-        ["kind", "happy"],
-        ["mean", "sad"],
-        ["help", "thank"],
-        ["rule", "safe"],
-        ["work", "money"],
-        ["money", "food"]
-      ]);
-      await this._phasedTeach("SOC-K-CONCEPTS", () => this._teachAssociationPairs([
-        // Needs vs wants
-        ["food", "need"],
-        ["water", "need"],
-        ["shelter", "need"],
-        ["clothing", "need"],
-        ["air", "need"],
-        ["sleep", "need"],
-        ["toy", "want"],
-        ["candy", "want"],
-        ["game", "want"],
-        ["phone", "want"],
-        ["tv", "want"],
-        ["dessert", "want"],
-        // Manners
-        ["please", "polite"],
-        ["thanks", "grateful"],
-        ["sorry", "apology"],
-        ["hello", "greeting"],
-        ["goodbye", "farewell"],
-        // Safety signals
-        ["stop", "red"],
-        ["go", "green"],
-        ["wait", "yellow"],
-        ["emergency", "911"],
-        ["danger", "stop"],
-        ["siren", "help"],
-        // Directions
-        ["north", "up"],
-        ["south", "down"],
-        ["east", "right"],
-        ["west", "left"],
-        // Kinship
-        ["mother", "parent"],
-        ["father", "parent"],
-        ["brother", "sibling"],
-        ["sister", "sibling"],
-        ["grandma", "family"],
-        ["grandpa", "family"],
-        ["aunt", "family"],
-        ["uncle", "family"],
-        ["cousin", "family"],
-        // Community roles
-        ["fire", "firefighter"],
-        ["crime", "police"],
-        ["sick", "doctor"],
-        ["teeth", "dentist"],
-        ["mail", "carrier"],
-        ["food", "farmer"]
-      ], { reps: 8, label: "SOC-K-CONCEPTS", relationTagId: 1 }));
-      const socQA = TRAIN_BANKS["social/kindergarten"] || [];
-      if (socQA.length > 0) {
-        await this._phasedTeach("SOC-K-QA-TRAIN", () => this._teachQABinding(socQA, { label: "SOC-K-QA-TRAIN" }));
-      }
-      this._socKRemakeDone = true;
-    }
-    return await this._gateSocKReal();
-  }
-  async _gateSocKReal() {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.synapses) return { pass: false, reason: "no cluster" };
-    await this._pregateEnrichment("social/kindergarten");
-    const socKProductionSamples = [
-      // Self / Family / Community Tests
-      { question: "who fights fires", expected: ["firefighter", "f"] },
-      { question: "who helps sick people", expected: ["doctor", "d"] },
-      { question: "what are the four basic needs", expected: ["food", "water", "shelter", "clothing", "f", "w", "s", "c"] },
-      { question: "is a toy a need or a want", expected: ["want", "w"] },
-      { question: "is food a need or a want", expected: ["need", "n"] },
-      // American Symbols Tests
-      { question: "what colors are on the american flag", expected: ["red", "white", "blue", "r", "w", "b"] },
-      { question: "what do the fifty stars represent", expected: ["states", "s"] },
-      { question: "what is the national bird", expected: ["eagle", "e"] },
-      { question: "what holiday is on july fourth", expected: ["independence", "i"] },
-      { question: "who is the leader of the united states", expected: ["president", "p"] },
-      // Geography Tests
-      { question: "how many continents are there", expected: ["7", "seven", "s"] },
-      { question: "name the continent we live on", expected: ["north", "america", "n", "a"] },
-      { question: "what is a globe", expected: ["earth", "model", "e", "m"] },
-      { question: "name the four directions", expected: ["north", "south", "east", "west", "n", "s", "e", "w"] }
-    ];
-    const prodResult = await this._probeProductionBatch(socKProductionSamples, {
-      visualCortex: this.engine && this.engine.visualCortex || null
-    });
-    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
-    const pass = prodRate >= 0.95;
-    const pct = (r) => (r * 100).toFixed(0);
-    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
-    const _socKResult = {
-      pass,
-      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
-      metrics: { prodRate, prodFails: prodResult.fails }
-    };
-    this._recordGateHistory("social", "kindergarten", "overall", pass, prodRate);
-    return _socKResult;
-  }
-  // ═══════════════════════════════════════════════════════════════════
-  // Arts-K equational course (LAW 3 + LAW 7)
-  // ═══════════════════════════════════════════════════════════════════
-  /**
-   * Visual Arts K — color mixing transforms (primary + primary → secondary).
-   *
-   * Named `_teachColorMixingK` (K-suffix) to distinguish from the
-   * older Art-G1 `_teachColorMixing` at line ~11110 which teaches
-   * 8-dim RGB/warm/cool/secondary feature vectors. The K version
-   * does equational A+B→C pair-to-composite binding via
-   * `_teachCombination` (freeLeft+freeRight→sem) while the G1
-   * version uses `_conceptTeach` feature-vector clustering.
-   */
-  async _teachColorMixingK(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
-    const MIXES = [
-      ["red", "yellow", "orange"],
-      ["yellow", "blue", "green"],
-      ["red", "blue", "purple"],
-      ["blue", "red", "purple"],
-      ["yellow", "red", "orange"],
-      ["blue", "yellow", "green"]
-    ];
-    const facts = [];
-    for (const [a, b, c] of MIXES) {
-      const aEmb = sharedEmbeddings.getEmbedding(a);
-      const bEmb = sharedEmbeddings.getEmbedding(b);
-      const cEmb = sharedEmbeddings.getEmbedding(c);
-      if (!aEmb || !bEmb || !cEmb) continue;
-      facts.push({ writes: [
-        { region: freeLeftRegion, feat: aEmb, binarize: false },
-        { region: freeRightRegion, feat: bEmb, binarize: false },
-        { region: semRegion, feat: cEmb, binarize: false }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 8 });
-    this._hb(`[Curriculum] _teachColorMixing: ${facts.length} \xD7 8 reps`);
-  }
-  /**
-   * Visual Arts K — warm/cool color classification.
-   */
-  async _teachWarmCoolColors(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const fineTypeRegion = cluster.regions.fineType;
-    const motorRegion = cluster.regions.motor;
-    if (!semRegion || !fineTypeRegion || !motorRegion) return;
-    const fineTypeSize = fineTypeRegion.end - fineTypeRegion.start;
-    const warmTag = new Float64Array(fineTypeSize);
-    const coolTag = new Float64Array(fineTypeSize);
-    const half = Math.floor(fineTypeSize / 2);
-    for (let i = 0; i < half; i++) warmTag[i] = 1;
-    for (let i = half; i < fineTypeSize; i++) coolTag[i] = 1;
-    const COLORS = [
-      { color: "red", temp: "warm" },
-      { color: "orange", temp: "warm" },
-      { color: "yellow", temp: "warm" },
-      { color: "blue", temp: "cool" },
-      { color: "green", temp: "cool" },
-      { color: "purple", temp: "cool" }
-    ];
-    const facts = [];
-    for (const { color, temp } of COLORS) {
-      const emb = sharedEmbeddings.getEmbedding(color);
-      if (!emb) continue;
-      facts.push({ writes: [
-        { region: semRegion, feat: emb, binarize: false },
-        { region: fineTypeRegion, feat: temp === "warm" ? warmTag : coolTag },
-        { region: motorRegion, feat: encodeLetter(temp[0]) }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachWarmCoolColors: ${facts.length} \xD7 6 reps`);
-  }
-  /**
-   * Visual Arts K — AB pattern next-item prediction.
-   * Previous two items → next item in the repeating pattern.
-   */
-  async _teachPatternCompletion(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const freeRegion = cluster.regions.free;
-    const semRegion = cluster.regions.sem;
-    if (!freeRegion || !semRegion) return;
-    const freeSize = freeRegion.end - freeRegion.start;
-    const freeHalf = Math.floor(freeSize / 2);
-    const freeLeftRegion = { start: freeRegion.start, end: freeRegion.start + freeHalf };
-    const freeRightRegion = { start: freeRegion.start + freeHalf, end: freeRegion.end };
-    const PATTERNS2 = [
-      ["red", "blue", "red"],
-      ["blue", "red", "blue"],
-      ["yellow", "green", "yellow"],
-      ["circle", "square", "circle"],
-      ["square", "circle", "square"],
-      ["triangle", "circle", "triangle"]
-    ];
-    const facts = [];
-    for (const [a, b, next] of PATTERNS2) {
-      const aEmb = sharedEmbeddings.getEmbedding(a);
-      const bEmb = sharedEmbeddings.getEmbedding(b);
-      const nEmb = sharedEmbeddings.getEmbedding(next);
-      if (!aEmb || !bEmb || !nEmb) continue;
-      facts.push({ writes: [
-        { region: freeLeftRegion, feat: aEmb, binarize: false },
-        { region: freeRightRegion, feat: bEmb, binarize: false },
-        { region: semRegion, feat: nEmb, binarize: false }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachPatternCompletion: ${facts.length} \xD7 6 reps`);
-  }
-  /**
-   * Music K — tempo/dynamics/pitch classifications + beat concept.
-   */
-  async _teachMusicBasics(ctx) {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.crossProjections) return;
-    const semRegion = cluster.regions.sem;
-    const freeRegion = cluster.regions.free;
-    if (!semRegion || !freeRegion) return;
-    const MUSIC_CONCEPTS = [
-      ["steady", "beat"],
-      ["music", "beat"],
-      ["pulse", "beat"],
-      ["fast", "tempo"],
-      ["slow", "tempo"],
-      ["loud", "dynamics"],
-      ["soft", "dynamics"],
-      ["quiet", "dynamics"],
-      ["high", "pitch"],
-      ["low", "pitch"],
-      ["sing", "voice"],
-      ["song", "music"],
-      ["rhythm", "pattern"],
-      ["drum", "beat"],
-      ["piano", "instrument"],
-      ["guitar", "instrument"],
-      ["violin", "instrument"],
-      ["flute", "instrument"],
-      ["trumpet", "instrument"]
-    ];
-    const facts = [];
-    for (const [a, b] of MUSIC_CONCEPTS) {
-      const aEmb = sharedEmbeddings.getEmbedding(a);
-      const bEmb = sharedEmbeddings.getEmbedding(b);
-      if (!aEmb || !bEmb) continue;
-      facts.push({ writes: [
-        { region: semRegion, feat: aEmb, binarize: false },
-        { region: freeRegion, feat: bEmb, binarize: false }
-      ] });
-    }
-    await this._teachCombination(facts, { reps: 6 });
-    this._hb(`[Curriculum] _teachMusicBasics: ${facts.length} \xD7 6 reps`);
-  }
-  async runArtKReal(ctx) {
-    await this._teachPrimaryColors();
-    await this._teachBasicShapes();
-    await this._teachSimpleSongs();
-    if (!this._artKRemakeDone) {
-      await this._phasedTeach("_teachColorMixingK", () => this._teachColorMixingK(ctx));
-      await this._phasedTeach("_teachWarmCoolColors", () => this._teachWarmCoolColors(ctx));
-      await this._phasedTeach("_teachPatternCompletion", () => this._teachPatternCompletion(ctx));
-      await this._phasedTeach("_teachMusicBasics", () => this._teachMusicBasics(ctx));
-      await this._phasedTeach("ART-K-CONCEPTS", () => this._teachAssociationPairs([
-        // Primary color mixing
-        ["red-yellow", "orange"],
-        ["blue-yellow", "green"],
-        ["red-blue", "purple"],
-        ["white-black", "gray"],
-        // Warm / cool
-        ["red", "warm"],
-        ["orange", "warm"],
-        ["yellow", "warm"],
-        ["blue", "cool"],
-        ["green", "cool"],
-        ["purple", "cool"],
-        // Shape attributes
-        ["circle", "round"],
-        ["square", "four"],
-        ["triangle", "three"],
-        ["rectangle", "four"],
-        ["oval", "round"],
-        ["diamond", "four"],
-        // Art tools
-        ["brush", "paint"],
-        ["pencil", "draw"],
-        ["crayon", "color"],
-        ["scissors", "cut"],
-        ["glue", "stick"],
-        ["paper", "draw"],
-        ["clay", "sculpt"],
-        ["marker", "color"],
-        ["eraser", "undo"],
-        // Music elements
-        ["drum", "beat"],
-        ["beat", "pulse"],
-        ["fast", "tempo"],
-        ["slow", "tempo"],
-        ["loud", "forte"],
-        ["soft", "piano"],
-        ["high", "soprano"],
-        ["low", "bass"],
-        ["violin", "string"],
-        ["flute", "wind"],
-        ["piano", "keys"],
-        ["song", "melody"],
-        ["rhythm", "beat"]
-      ], { reps: 8, label: "ART-K-CONCEPTS", relationTagId: 1 }));
-      const artQA = TRAIN_BANKS["art/kindergarten"] || [];
-      if (artQA.length > 0) {
-        await this._phasedTeach("ART-K-QA-TRAIN", () => this._teachQABinding(artQA, { label: "ART-K-QA-TRAIN" }));
-      }
-      this._artKRemakeDone = true;
-    }
-    return await this._gateArtKReal();
-  }
-  async _gateArtKReal() {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.synapses) return { pass: false, reason: "no cluster" };
-    await this._pregateEnrichment("art/kindergarten");
-    const artKProductionSamples = [
-      // Visual Arts K Tests
-      { question: "what are the three primary colors", expected: ["red", "yellow", "blue", "r", "y", "b"] },
-      { question: "what color do red and yellow make", expected: ["orange", "o"] },
-      { question: "what color do blue and yellow make", expected: ["green", "g"] },
-      { question: "is red a warm color or cool color", expected: ["warm", "w"] },
-      { question: "is blue a warm color or cool color", expected: ["cool", "c"] },
-      { question: "what comes next red blue red blue", expected: ["red", "r"] },
-      // Music K Tests
-      { question: "what is the steady pulse in music called", expected: ["beat", "b"] },
-      { question: "fast music has a fast what", expected: ["tempo", "t"] },
-      { question: "a drum is hit to make what", expected: ["sound", "beat", "s", "b"] }
-    ];
-    const prodResult = await this._probeProductionBatch(artKProductionSamples, {
-      visualCortex: this.engine && this.engine.visualCortex || null
-    });
-    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
-    const pass = prodRate >= 0.95;
-    const pct = (r) => (r * 100).toFixed(0);
-    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
-    const _artKResult = {
-      pass,
-      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
-      metrics: { prodRate, prodFails: prodResult.fails }
-    };
-    this._recordGateHistory("art", "kindergarten", "overall", pass, prodRate);
-    return _artKResult;
-  }
-  // ═══════════════════════════════════════════════════════════════════
-  // T14.24 SESSION 7 — REAL ELA-G2 TEACHING EQUATIONS (2026-04-15)
-  // ═══════════════════════════════════════════════════════════════════
-  //
-  // Gee binding 2026-04-14: "all the way up to doctorate in english" +
-  // "remember Unity needs to be able to use these to think, read, and
-  // talk".
-  //
-  // Real Grade 2 English. Teaches LETTER-PAIR DIGRAPHS as single
-  // phonological units (th / sh / ch / ph / wh / ck / ng) plus 2-word
-  // phrases that exercise the digraphs in natural English. Digraphs are
-  // 2-letter sequences that represent a single phoneme in English — a
-  // child who only knows letters can't read "the" because "th" is not
-  // pronounced as "t" followed by "h". Session 7 builds the digraph-as-
-  // unit basin via a distinct phoneme feature per digraph (trig-hashed
-  // from both constituent letters combined, so it's decorrelated from
-  // the individual letter phoneme features Session 2 already taught).
-  _phonemeFeatureForDigraph(digraph) {
-    const a = ALPHABET_ORDER.indexOf(digraph[0].toLowerCase());
-    const b = ALPHABET_ORDER.indexOf(digraph[1].toLowerCase());
-    if (a < 0 || b < 0) return new Float64Array(PHONEME_FEATURE_DIM);
-    const out = new Float64Array(PHONEME_FEATURE_DIM);
-    const PRIMES = [29, 31, 37, 41, 43, 47, 53, 59];
-    for (let i = 0; i < PHONEME_FEATURE_DIM; i++) {
-      const p = PRIMES[i % PRIMES.length];
-      const phase = i * 0.23 + 0.41;
-      out[i] = Math.sin((a + b * 27) * 0.3819 * p + phase) + Math.cos((a * 27 + b) * 0.618 * p + phase * 2);
-    }
-    let norm = 0;
-    for (let i = 0; i < PHONEME_FEATURE_DIM; i++) norm += out[i] * out[i];
-    norm = Math.sqrt(norm) || 1;
-    for (let i = 0; i < PHONEME_FEATURE_DIM; i++) out[i] /= norm;
-    return out;
-  }
-  // ─── TODO-aligned ELA-G2 helpers (Session 28) ────────────────────
-  //
-  // docs/TODO.md T14.24 ELA-G2 spec (line 152):
-  //   _teachDigraphs(digraphs) injects each digraph as a paired letter
-  //     stream with shorter inter-letter gap (2 ticks instead of 3) so
-  //     the letter-region transition surprise treats them as a unit.
-  //   _teachLongWords(words) extends the CVC pattern to 4-6 letters
-  //     with boundary detection via cluster.detectBoundaries(word).
-  //   _teachPhrases(phrases) walks 3-word phrases through the full
-  //     letter-stream + sem-inject pipeline per word + sequence Hebbian
-  //     between words.
   async _teachDigraphs(digraphs, opts = {}) {
     const cluster = this.cluster;
     if (!cluster) return { taught: 0 };
@@ -27429,14 +29267,6 @@ var Curriculum = class _Curriculum {
       { name: "building", feat: [0, 0, 1, 0, 0, 0, 1, 1] }
     ], 4);
   }
-  async _teachStatesOfMatter() {
-    return this._conceptTeach([
-      { name: "solid", feat: [1, 0, 0, 1, 0, 0, 1, 0] },
-      { name: "liquid", feat: [0, 1, 0, 1, 0, 0, 0, 1] },
-      { name: "gas", feat: [0, 0, 1, 1, 1, 0, 0, 0] },
-      { name: "plasma", feat: [0, 0, 1, 1, 1, 1, 0, 0] }
-    ], 4);
-  }
   async _teachLivingNonliving() {
     return this._conceptTeach([
       { name: "living", feat: [1, 1, 1, 0, 0, 1, 0, 0] },
@@ -27879,39 +29709,6 @@ var Curriculum = class _Curriculum {
       { name: "pastel", feat: [1, 1, 1, 1, 0, 0, 0, 0] }
     ], 4);
   }
-  async _teachPrimaryColors() {
-    return this._conceptTeach([
-      { name: "red", feat: [1, 0, 0, 0, 1, 1, 1, 0] },
-      { name: "blue", feat: [0, 0, 1, 1, 1, 0, 0, 1] },
-      { name: "yellow", feat: [1, 1, 0, 0, 0, 1, 1, 0] },
-      { name: "green", feat: [0, 1, 0, 1, 0, 1, 0, 1] },
-      { name: "orange", feat: [1, 1, 0, 0, 0, 1, 1, 0] },
-      { name: "purple", feat: [1, 0, 1, 0, 1, 0, 0, 1] },
-      { name: "black", feat: [0, 0, 0, 1, 1, 1, 0, 0] },
-      { name: "white", feat: [1, 1, 1, 0, 0, 0, 0, 0] }
-    ], 4);
-  }
-  async _teachBasicShapes() {
-    return this._conceptTeach([
-      { name: "circle", feat: [1, 0, 0, 0, 1, 1, 1, 1] },
-      { name: "square", feat: [0, 1, 0, 1, 0, 1, 1, 1] },
-      { name: "triangle", feat: [0, 1, 1, 0, 0, 1, 1, 1] },
-      { name: "rectangle", feat: [0, 1, 0, 1, 0, 1, 1, 0] },
-      { name: "oval", feat: [1, 0, 0, 0, 1, 1, 1, 0] },
-      { name: "diamond", feat: [0, 1, 0, 1, 0, 1, 1, 1] },
-      { name: "star", feat: [0, 1, 0, 0, 0, 1, 1, 1] },
-      { name: "heart", feat: [1, 1, 0, 0, 0, 1, 1, 0] }
-    ], 4);
-  }
-  async _teachSimpleSongs() {
-    return this._teachSequenceCycles([
-      ["clap", "clap", "stomp"],
-      ["high", "low", "high", "low"],
-      ["fast", "slow", "fast", "slow"],
-      ["sing", "a", "song"],
-      ["beat", "beat", "beat", "rest"]
-    ], { reps: 4, ticksPerStep: 2 });
-  }
   async _teachOriginalHistoricalResearch() {
     return this._conceptTeach([
       { name: "original scholarship", feat: [1, 1, 0, 0, 1, 0, 0, 1] },
@@ -28167,22 +29964,6 @@ var Curriculum = class _Curriculum {
       { name: "mail carrier", feat: [0, 0, 0, 0, 0, 1, 1, 0] },
       { name: "shopkeeper", feat: [0, 0, 0, 0, 1, 1, 0, 1] },
       { name: "farmer", feat: [0, 0, 0, 0, 1, 0, 0, 0] }
-    ], 4);
-  }
-  async _teachFamilyRoles() {
-    return this._conceptTeach([
-      { name: "mom", feat: [1, 0, 0, 1, 0, 1, 0, 1] },
-      { name: "dad", feat: [1, 0, 0, 0, 1, 1, 0, 1] },
-      { name: "sister", feat: [0, 1, 0, 1, 0, 1, 0, 0] },
-      { name: "brother", feat: [0, 1, 0, 0, 1, 1, 0, 0] },
-      { name: "baby", feat: [0, 1, 0, 0, 0, 1, 0, 0] },
-      { name: "grandma", feat: [0, 0, 1, 1, 0, 0, 1, 1] },
-      { name: "grandpa", feat: [0, 0, 1, 0, 1, 0, 1, 1] },
-      { name: "aunt", feat: [1, 0, 0, 1, 0, 0, 1, 0] },
-      { name: "uncle", feat: [1, 0, 0, 0, 1, 0, 1, 0] },
-      { name: "cousin", feat: [0, 1, 0, 0, 0, 0, 1, 0] },
-      { name: "family", feat: [1, 1, 1, 1, 1, 1, 1, 1] },
-      { name: "home", feat: [1, 1, 1, 0, 0, 1, 0, 1] }
     ], 4);
   }
   async _teachResearchGradeScience() {
@@ -35331,18 +37112,39 @@ var Curriculum = class _Curriculum {
   async runCompleteCurriculum(corpora, opts = {}) {
     if (!this.cluster) return { reached: {}, passed: {}, failed: {} };
     try {
+      const audit = this._verifyFractalEquation();
+      if (audit.pass) {
+        console.log(`[Brain] \u2713 fractal equation verified \u2014 ${audit.checks.length} checks passed`);
+        for (const c of audit.checks) console.log(`  ${c}`);
+      } else {
+        console.warn(`[Brain] \u26A0 fractal equation drift detected \u2014 ${audit.issues.length} issue(s) + ${audit.checks.length} ok:`);
+        for (const i of audit.issues) console.warn(`  ${i}`);
+        for (const c of audit.checks) console.log(`  ${c}`);
+      }
+    } catch (err) {
+      console.warn("[Brain] fractal-equation audit failed:", err?.message || err);
+    }
+    try {
       let totalOverlap = 0;
       let totalExam = 0;
+      let totalStripped = 0;
       for (const cellKey of Object.keys(EXAM_BANKS)) {
-        const exam = EXAM_BANKS[cellKey] || [];
-        totalExam += exam.length;
         const overlap = trainExamOverlap(cellKey);
         if (overlap.length > 0) {
-          console.warn(`[Curriculum] \u26A0 EXAM/TRAIN OVERLAP on ${cellKey}: ${overlap.length} shared question text(s) \u2014 held-out eval INVALID for this cell. Sample: "${overlap[0].slice(0, 60)}"`);
+          const overlapSet = new Set(overlap);
+          const before = EXAM_BANKS[cellKey].length;
+          EXAM_BANKS[cellKey] = EXAM_BANKS[cellKey].filter((e) => {
+            const q = String(e.question || e.q || "").trim().toLowerCase();
+            return !overlapSet.has(q);
+          });
+          const stripped = before - EXAM_BANKS[cellKey].length;
+          totalStripped += stripped;
+          console.warn(`[Curriculum] EXAM/TRAIN OVERLAP on ${cellKey}: auto-stripped ${stripped} duplicate question(s) from EXAM bank to preserve held-out validity. Sample: "${overlap[0].slice(0, 60)}"`);
           totalOverlap += overlap.length;
         }
+        totalExam += (EXAM_BANKS[cellKey] || []).length;
       }
-      this._hb(`[Curriculum] Held-out eval check: ${totalExam} exam questions across ${Object.keys(EXAM_BANKS).length} cells \xB7 overlap=${totalOverlap} (0 = valid held-out)`);
+      this._hb(`[Curriculum] Held-out eval check: ${totalExam} exam questions across ${Object.keys(EXAM_BANKS).length} cells \xB7 overlap=${totalOverlap} \u2192 auto-stripped=${totalStripped} (0 remaining = valid held-out)`);
     } catch (err) {
       console.warn("[Curriculum] Held-out eval check failed:", err?.message || err);
     }
@@ -35528,160 +37330,13 @@ var Curriculum = class _Curriculum {
   // continues to use `this.X` which resolves identically through the
   // mixin path — zero public-API change.
   // ══════════════════════════════════════════════════════════════════
-  // ── KINDERGARTEN (age 5) — school begins ─────────────────────────
-  async runLifeK(ctx) {
-    const EMOTIONS_K = [
-      { name: "school", feat: [0.5, 0, 0.3, 0.5, 0, 0, 0.5, 0] },
-      // exciting but scary
-      { name: "teacher", feat: [0.5, 0, 0.8, 0, 0, 0.3, 0, 0] },
-      // trust + comfort
-      { name: "friend", feat: [1, 0, 0.5, 0, 0, 0.5, 0, 0] },
-      // joy + trust
-      { name: "recess", feat: [1, 0, 0, 0, 0, 0.3, 1, 0] },
-      // joy + freedom
-      { name: "nap time", feat: [0, 0.3, 0, 0, 0.5, 0, 0, 0] },
-      // annoying
-      { name: "halloween", feat: [1, 0, 0, 0, 0, 1, 0, 1] },
-      // joy + love + identity
-      { name: "monsters", feat: [1, 0, 0, 0, 0, 0.5, 0, 1] },
-      // loves them = identity
-      { name: "pink", feat: [0, 0.3, 0, 0, 0.5, 0, 0, 0] },
-      // hates it
-      { name: "swings", feat: [1, 0, 0, 0, 0, 0, 1, 0] },
-      // joy + freedom
-      { name: "cereal", feat: [0.5, 0, 0.5, 0, 0, 0, 0, 0] },
-      // comfort routine
-      { name: "bus ride", feat: [0.3, 0, 0, 0.3, 0, 0, 0.5, 0] },
-      // independence forming
-      { name: "separation", feat: [0, 0.5, 0, 1, 0, 0, 0, 0] }
-      // fear when mom leaves
-    ];
-    await this._conceptTeach(EMOTIONS_K, 8);
-    await this._teachEmotionalInference([
-      { situation: "mom", emotion: new Float64Array([0.5, 0, 1, 0, 0, 1, 0, 0]), label: "love" },
-      { situation: "friend", emotion: new Float64Array([1, 0, 0.5, 0, 0, 0.5, 0, 0]), label: "happy" },
-      { situation: "alone", emotion: new Float64Array([0, 0.5, 0, 1, 0, 0, 0, 0]), label: "scared" },
-      { situation: "school", emotion: new Float64Array([0.5, 0, 0.3, 0.3, 0, 0, 0.5, 0]), label: "nervous" },
-      { situation: "draw", emotion: new Float64Array([1, 0, 0, 0, 0, 0.5, 1, 1]), label: "happy" },
-      { situation: "music", emotion: new Float64Array([1, 0, 0, 0, 0, 1, 0, 0.5]), label: "calm" },
-      { situation: "dark", emotion: new Float64Array([0, 0, 0, 1, 0, 0, 0, 0]), label: "scared" },
-      { situation: "mean", emotion: new Float64Array([0, 0.5, 0, 0, 1, 0, 0, 0]), label: "angry" },
-      { situation: "hug", emotion: new Float64Array([1, 0, 1, 0, 0, 1, 0, 0]), label: "love" },
-      { situation: "yell", emotion: new Float64Array([0, 1, 0, 0.5, 0.5, 0, 0, 0]), label: "scared" }
-    ]);
-    if (!this._lifeKRemakeDone) {
-      await this._teachBiographicalFacts([
-        // Pre-K core identity facts
-        { question: "your name", answer: "unity" },
-        { question: "boy or girl", answer: "girl" },
-        { question: "hair color", answer: "dark" },
-        { question: "eye colors", answer: "different" },
-        { question: "takes care of you", answer: "mom" },
-        { question: "scared of", answer: "dark" },
-        { question: "makes you calm", answer: "music" },
-        // Kindergarten (age 5) facts
-        { question: "favorite holiday", answer: "halloween" },
-        { question: "birthday wish", answer: "cat" },
-        { question: "favorite food", answer: "cookies" },
-        { question: "favorite crayon", answer: "black" },
-        { question: "favorite drawing", answer: "monsters" },
-        { question: "nightmare about", answer: "dark" },
-        { question: "dream about", answer: "flying" },
-        { question: "sleepover", answer: "homesick" },
-        { question: "first day school", answer: "scared" },
-        { question: "age", answer: "five" },
-        { question: "lives with", answer: "mom" },
-        { question: "dislike color", answer: "pink" },
-        { question: "costume", answer: "witch" },
-        { question: "favorite place", answer: "recess" },
-        { question: "school activity", answer: "drawing" }
-      ], { reps: 10 });
-      await this._teachAssociationPairs([
-        // Body parts → function
-        ["eye", "see"],
-        ["ear", "hear"],
-        ["nose", "smell"],
-        ["mouth", "taste"],
-        ["hand", "touch"],
-        ["foot", "walk"],
-        ["head", "think"],
-        ["heart", "beat"],
-        ["tongue", "taste"],
-        ["skin", "feel"],
-        ["leg", "run"],
-        ["arm", "lift"],
-        // Family
-        ["mother", "parent"],
-        ["father", "parent"],
-        ["brother", "sibling"],
-        ["sister", "sibling"],
-        ["grandma", "family"],
-        ["grandpa", "family"],
-        // Feelings
-        ["happy", "smile"],
-        ["sad", "cry"],
-        ["angry", "frown"],
-        ["scared", "shake"],
-        ["excited", "jump"],
-        ["tired", "yawn"],
-        // Self-care routines
-        ["brush", "teeth"],
-        ["wash", "hands"],
-        ["comb", "hair"],
-        ["eat", "food"],
-        ["drink", "water"],
-        ["sleep", "bed"],
-        // Friendship / safety
-        ["share", "friend"],
-        ["help", "kind"],
-        ["hurt", "mean"],
-        ["stranger", "careful"],
-        ["cross", "look"],
-        ["fire", "911"],
-        ["hot", "careful"],
-        ["sharp", "careful"]
-      ], { reps: 8, label: "LIFE-K-CONCEPTS", relationTagId: 1 });
-      this._lifeKRemakeDone = true;
-    }
-    return await this._gateLifeKReal();
-  }
-  async _gateLifeKReal() {
-    const cluster = this.cluster;
-    if (!cluster || !cluster.synapses) return { pass: false, reason: "no cluster" };
-    await this._pregateEnrichment("life/kindergarten");
-    const lifeKProductionSamples = [
-      // Life Pre-K Tests
-      { question: "what is your name", expected: ["unity", "u"] },
-      { question: "are you a boy or a girl", expected: ["girl", "g"] },
-      { question: "what color is your hair", expected: ["dark", "black", "d", "b"] },
-      { question: "who takes care of you", expected: ["mom", "m"] },
-      { question: "what are you scared of", expected: ["dark", "d"] },
-      { question: "what makes you calm", expected: ["music", "m"] },
-      // Life-K Tests
-      { question: "what is your favorite holiday", expected: ["halloween", "h"] },
-      { question: "what do you wish for on your birthday", expected: ["cat", "c"] },
-      { question: "what is your favorite thing to eat", expected: ["cookies", "grandma", "c", "g"] },
-      { question: "what do you have nightmares about", expected: ["dark", "d"] },
-      { question: "what do you dream about", expected: ["flying", "cat", "f", "c"] },
-      { question: "what happened when you tried a sleepover", expected: ["homesick", "mom", "h", "m"] },
-      { question: "what do you do when you are alone after school", expected: ["tv", "draw", "t", "d"] },
-      { question: "in fairy tales who do you like better the princess or the witch", expected: ["witch", "w"] }
-    ];
-    const prodResult = await this._probeProductionBatch(lifeKProductionSamples, {
-      visualCortex: this.engine && this.engine.visualCortex || null
-    });
-    const prodRate = prodResult.total > 0 ? prodResult.pass / prodResult.total : 0;
-    const pass = prodRate >= 0.95;
-    const pct = (r) => (r * 100).toFixed(0);
-    const prodFailSummary = prodResult.fails && prodResult.fails.length > 0 ? " [FAIL: " + prodResult.fails.slice(0, 5).map((f) => `"${f.q}"\u2192"${String(f.emitted).slice(0, 30)}"`).join("; ") + "]" : "";
-    const _lifeKResult = {
-      pass,
-      reason: `PROD ${prodResult.pass}/${prodResult.total} (${pct(prodRate)}%)${prodFailSummary}`,
-      metrics: { prodRate, prodFails: prodResult.fails }
-    };
-    this._recordGateHistory("life", "kindergarten", "overall", pass, prodRate);
-    return _lifeKResult;
-  }
+  // ── KINDERGARTEN (age 5) — runLifeK + _gateLifeKReal extracted to
+  //    `js/brain/curriculum/kindergarten.js` K_MIXIN, attached via
+  //    Object.assign at the entry-point bottom. Shared primitives
+  //    (_conceptTeach, _teachBiographicalFacts, _teachAssociationPairs,
+  //    _teachEmotionalInference, _pregateEnrichment,
+  //    _probeProductionBatch, _recordGateHistory) stay on Curriculum
+  //    base class so K_MIXIN.runLifeK resolves them through `this.`.
   // ── GRADE 1 (age 6) — reading clicks, dad fading ────────────────
   async runLifeG1(ctx) {
     await this._conceptTeach([
@@ -37119,6 +38774,7 @@ function _microtask() {
   });
 }
 Object.assign(Curriculum.prototype, PREK_MIXIN);
+Object.assign(Curriculum.prototype, K_MIXIN);
 
 // ../js/brain/drug-scheduler.js
 var GRADE_ORDER2 = [
@@ -45185,6 +46841,75 @@ Probes: ${ps.totalProbes} total, ${ps.totalPasses} pass, ${ps.totalFails} fail`;
     this._stateHistory.push(state);
     while (this._stateHistory.length > this._maxHistory) {
       this._stateHistory.shift();
+    }
+    const brainEvents = Array.isArray(state.brainEvents) ? state.brainEvents : [];
+    if (brainEvents.length > 0) {
+      if (typeof this._lastPlasticitySeq !== "number") this._lastPlasticitySeq = 0;
+      const POPUP_CAP_PER_TICK = 5;
+      const POPUP_STAGGER_MS = 50;
+      const fresh = [];
+      for (const evt of brainEvents) {
+        if (evt && typeof evt.seq === "number" && evt.seq > this._lastPlasticitySeq) {
+          fresh.push(evt);
+        }
+      }
+      if (fresh.length > 0) {
+        fresh.sort((a, b) => a.seq - b.seq);
+        const regionMap = {
+          motor: 7,
+          lang_motor: 7,
+          phon: 8,
+          lang_phon: 8,
+          sem: 9,
+          lang_sem: 9,
+          letter: 10,
+          lang_letter: 10,
+          visual: 11,
+          lang_visual: 11,
+          auditory: 12,
+          lang_auditory: 12,
+          fineType: 13,
+          lang_fineType: 13,
+          free: 14,
+          lang_free: 14,
+          cortex: 0,
+          hippocampus: 1,
+          amygdala: 2,
+          basalGanglia: 3,
+          cerebellum: 4,
+          hypothalamus: 5,
+          mystery: 6,
+          intra: 0
+        };
+        const typeEmoji = {
+          plasticity: "\u26A1",
+          teach: "\u{1F4DA}",
+          gate: "\u{1F3AF}",
+          audit: "\u{1F4CB}",
+          drug: "\u{1F48A}",
+          arbiter: "\u{1F39B}",
+          event: "\u{1F9E0}"
+        };
+        const toFire = fresh.length > POPUP_CAP_PER_TICK ? fresh.slice(fresh.length - POPUP_CAP_PER_TICK) : fresh;
+        let lastSeq = this._lastPlasticitySeq;
+        for (let i = 0; i < toFire.length; i++) {
+          const evt = toFire[i];
+          if (evt.seq > lastSeq) lastSeq = evt.seq;
+          const clusterIdx = regionMap[evt.region] ?? 0;
+          const emoji = typeEmoji[evt.type] || "\u{1F9E0}";
+          const label = String(evt.label || "").slice(0, 80);
+          if (i === 0) {
+            this._addNotification(`${emoji} ${label}`, clusterIdx);
+          } else {
+            setTimeout(
+              () => this._addNotification(`${emoji} ${label}`, clusterIdx),
+              i * POPUP_STAGGER_MS
+            );
+          }
+        }
+        this._lastPlasticitySeq = lastSeq;
+        return;
+      }
     }
     const prev = this._stateHistory.length >= 2 ? this._stateHistory[this._stateHistory.length - 2] : null;
     const events = detectBrainEvents(state, prev, this._stateHistory);

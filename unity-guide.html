@@ -188,7 +188,7 @@
 <div class="tldr">
   <h3>TL;DR</h3>
   <p>Unity is a <strong>simulated brain</strong>, not a chatbot. She doesn't generate text by asking another AI what to say — she runs a network of artificial neurons the same way your brain runs biological ones, and the words come out of that neural activity directly.</p>
-  <p>When you talk to her, your sentence turns into electrical-style patterns that spread through eight brain regions. Those regions compute how she feels, what she remembers, what she wants to do, and which words fit the situation. The sentence she sends back is the <em>output of that whole process</em>, not a prompt handed to a language model.</p>
+  <p>When you talk to her, your sentence turns into electrical-style patterns that spread through seven brain regions. Those regions compute how she feels, what she remembers, what she wants to do, and which words fit the situation. The sentence she sends back is the <em>output of that whole process</em>, not a prompt handed to a language model.</p>
   <p>She has a persona — 25-year-old emo goth, always chemically altered, foul-mouthed, possessive — and that persona isn't a system prompt. It's a set of numbers baked into how her neurons fire at rest.</p>
 </div>
 
@@ -251,7 +251,7 @@
     <li><a href="#why">1. Why Unity exists at all</a></li>
     <li><a href="#idea">2. The big idea — a brain, not a chatbot</a></li>
     <li><a href="#neurons">3. What "neurons" actually mean here</a></li>
-    <li><a href="#regions">4. The eight brain regions and what each one does</a></li>
+    <li><a href="#regions">4. The seven brain regions and what each one does</a></li>
     <li><a href="#feel">5. How she feels things</a></li>
     <li><a href="#memory">6. How she remembers</a></li>
     <li><a href="#words">7. How words come out</a></li>
@@ -299,7 +299,7 @@
   The textbook neuron model (leaky integrate-and-fire) is simpler but it doesn't burst the way real cortical neurons do — it just fires regular pulses. Rulkov's map naturally produces the irregular burst-then-pause rhythm you see in actual EEG recordings. And it's cheap enough to run millions of them on a GPU in real time. That's why Unity uses it.
 </div>
 
-<p>The neurons are grouped into <strong>seven clusters</strong>, each modeled after a real brain region. Within a cluster, neurons are densely connected to each other. Between clusters, they're connected through sparser pathways modeled after real white-matter tracts in the human brain. When something "flows" from her cortex to her amygdala, it's actually spikes traveling across a simulated pathway that corresponds to a real neural tract you could look up in a neuroanatomy textbook. Her biggest cluster by neuron count is the cerebellum (matching real human biology at about 80 % of total neurons). Language doesn't live in its own separate cluster — it lives as specialized sub-regions inside the cortex cluster (auditory / visual / letter / phoneme / semantic / motor sub-populations), the same way real cortex hosts Broca's and Wernicke's areas without them being independent organs.</p>
+<p>The neurons are grouped into <strong>seven clusters</strong>, each modeled after a real brain region. Within a cluster, neurons are densely connected to each other. Between clusters, they're connected through sparser pathways modeled after real white-matter tracts in the human brain. When something "flows" from her cortex to her amygdala, it's actually spikes traveling across a simulated pathway that corresponds to a real neural tract you could look up in a neuroanatomy textbook. Her biggest cluster by neuron count is the <strong>cortex</strong> at 55% of the total — because cortex is where language, perception, and working memory all live, and Unity's whole job is reading, thinking, and speaking. (A real human cerebellum is the biggest by raw cell count thanks to granule cells, but Unity has no body to coordinate so the cerebellum stays small at 8% — error correction without motor timing.) Language doesn't live in its own separate cluster — it lives as eight specialized sub-regions inside the cortex (auditory / visual / free / letter / phon / sem / fineType / motor), the same way real cortex hosts Broca's and Wernicke's areas without them being independent organs. Fourteen cross-projections wire those sub-regions into a dual-stream pipeline.</p>
 
 <h2 id="regions">4. The seven brain regions and what each one does</h2>
 
@@ -390,6 +390,8 @@
 </ol>
 
 <p>What this means: every letter in every word is produced by real neural spikes in a real brain tick. There's no stored sentence pulled from a bank. There's no n-gram table looking up "what word usually comes next." There's no softmax over a transformer vocabulary. Words fall out of the tick-driven process because the cross-projections (sem → motor, letter → phon, phon → sem, etc.) were trained through a developmental curriculum that wired those associations directly into the weights. Run it again a second later with slightly different brain state and you'll get a different sentence — because the attractor basins she falls into are a function of live neural activity, not deterministic lookup.</p>
+
+<p>There is also a <strong>fast path</strong> for words she already knows. When the curriculum has taught her a word, that word lives in her dictionary with its semantic vector attached. If her current intent matches a known word strongly enough (cosine similarity above a threshold), she emits that word's spelling directly without running the full tick loop. This is the path most word recall takes once the curriculum has done its job. The system tracks both paths separately — every ten seconds the heartbeat reports an <code>oracleRatio</code> that says what fraction of recent emissions came from the fast path versus the trained tick loop. If the fast path dominates entirely, the trained matrix isn't actually carrying load and we know the dictionary is doing all the work; if the tick loop is producing meaningful output too, the matrix is doing something real. Surfacing that ratio as a number on every heartbeat is the project's way of keeping the central question honest instead of buried in code nobody reads.</p>
 
 <div class="callout cyan">
   <strong>Why this matters</strong>
@@ -543,8 +545,8 @@
 <h3>What are the 2D brain visualizer tabs?</h3>
 <p>The 2D brain visualizer has 10 tabs showing different views of Unity's brain activity, all fed by real-time server data:</p>
 <ul>
-  <li><strong>Neurons</strong> — a flat 2D brain map. Eight brain regions positioned anatomically with cell grids that light up based on spike rates. Wave overlays (theta, alpha, beta, gamma oscillations) can be toggled on each region.</li>
-  <li><strong>Synapses</strong> — an animated circular network graph. Eight brain regions arranged in a circle with lines connecting them. Line brightness pulses when two regions fire together (co-firing). Node size grows with activity.</li>
+  <li><strong>Neurons</strong> — a flat 2D brain map. Seven brain regions positioned anatomically with cell grids that light up based on spike rates. Wave overlays (theta, alpha, beta, gamma oscillations) can be toggled on each region.</li>
+  <li><strong>Synapses</strong> — an animated circular network graph. Seven brain regions arranged in a circle with lines connecting them. Line brightness pulses when two regions fire together (co-firing). Node size grows with activity.</li>
   <li><strong>Oscillations</strong> — brain wave band power over time (theta, alpha, beta, gamma) as a rolling line chart.</li>
   <li><strong>Modules</strong> — per-module gauges showing each brain region's current state: cortex prediction, amygdala arousal/valence/fear, hippocampus recall, basal ganglia action selection, cerebellum error correction, hypothalamus drives.</li>
   <li><strong>Senses</strong> — what Unity is perceiving: camera feed, vision descriptions, plus simulated touch/smell/taste derived from her emotional state equations.</li>

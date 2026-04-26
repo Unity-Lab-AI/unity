@@ -237,6 +237,48 @@ export class InnerVoice {
     this._curriculum = curriculum || null;
   }
 
+  // Opt-in narrator priming. Was previously a hidden side effect at
+  // the tail of `learn()` that ran on every chat turn — the chat path
+  // would inject a 0.15-strength sem bias from the curriculum's most
+  // recent focus subject right before the brain generated its reply,
+  // confounding any analysis of why Unity leans a certain way (per
+  // Problems.md Medium→High finding). Now callers must invoke this
+  // method explicitly and the priming run logs `[NARRATOR-PRIMING]`
+  // with subject + age + strength so the bias is observable, not
+  // buried.
+  //
+  // Returns `{ primed: bool, subject?: string, ageMs?: number, strength: number, reason?: string }`
+  // so the caller can also inspect what happened.
+  primeFromCurrentFocus(strength = 0.15) {
+    const cortex = this._curriculum?.cluster;
+    if (!this._curriculum || !this._curriculum.currentFocus) {
+      return { primed: false, strength, reason: 'no current focus' };
+    }
+    if (!cortex || !cortex.regions?.sem) {
+      return { primed: false, strength, reason: 'no cortex sem region' };
+    }
+    const focus = this._curriculum.currentFocus;
+    const ageMs = Date.now() - (focus.timestamp || 0);
+    if (ageMs >= 120000) {
+      return { primed: false, subject: focus.subject, ageMs, strength, reason: 'focus stale (> 2 min)' };
+    }
+    if (typeof sharedEmbeddings?.getEmbedding !== 'function') {
+      return { primed: false, subject: focus.subject, ageMs, strength, reason: 'no embeddings' };
+    }
+    try {
+      const subjectEmb = sharedEmbeddings.getEmbedding(focus.subject);
+      if (!subjectEmb || subjectEmb.length === 0) {
+        return { primed: false, subject: focus.subject, ageMs, strength, reason: 'no GloVe vector for subject' };
+      }
+      cortex.injectEmbeddingToRegion('sem', subjectEmb, strength);
+      console.log(`[NARRATOR-PRIMING] subject='${focus.subject}' ageMs=${ageMs} strength=${strength} → sem region biased`);
+      return { primed: true, subject: focus.subject, ageMs, strength };
+    } catch (err) {
+      console.warn(`[NARRATOR-PRIMING] failed for subject='${focus.subject}':`, err.message);
+      return { primed: false, subject: focus.subject, ageMs, strength, reason: `error: ${err.message}` };
+    }
+  }
+
   learn(text, cortexPattern, arousal, valence) {
     // T14.16.5 — Lock 1 + Lock 2 identity-locked learning entry point.
     // Live-chat input gets split into clauses and gated against cortex
@@ -244,10 +286,27 @@ export class InnerVoice {
     // Curriculum path bypasses this and calls cluster.learn directly
     // under `_inCurriculumMode = true`.
     const cortex = this._curriculum?.cluster;
+    // Per-turn diagnostic counters — surfaces what actually happened
+    // on this chat turn so silent learn() failures are observable.
+    // Problems.md Medium finding: three back-to-back side-effect calls
+    // (learnClause + runIdentityRefresh + _modeCollapseAudit) each had
+    // empty try/catch swallowing errors with no diagnostic. Now each
+    // has a logged soft-error counter + the per-turn summary at end.
+    let clauseAccepted = 0, clauseRejected = 0;
+    let identityRefreshRan = false, modeCollapseAuditRan = false;
     if (cortex && typeof cortex.learnClause === 'function') {
-      const gate = cortex.learnClause(text);
-      if (gate.rejected > 0) {
-        console.log(`[IDENTITY] gate rejected ${gate.rejected} clause(s), accepted ${gate.accepted}`);
+      try {
+        const gate = cortex.learnClause(text);
+        clauseAccepted = gate.accepted | 0;
+        clauseRejected = gate.rejected | 0;
+        if (clauseRejected > 0) {
+          console.log(`[IDENTITY] gate rejected ${clauseRejected} clause(s), accepted ${clauseAccepted}`);
+        }
+      } catch (err) {
+        this._learnClauseErrCount = (this._learnClauseErrCount || 0) + 1;
+        if (this._learnClauseErrCount < 10 || this._learnClauseErrCount % 1000 === 0) {
+          console.warn(`[InnerVoice.learn] learnClause non-fatal #${this._learnClauseErrCount}:`, err.message);
+        }
       }
     }
     // T14.16.5 Lock 3 — periodic identity refresh every 100 live-chat
@@ -255,10 +314,26 @@ export class InnerVoice {
     this._liveChatTurns = (this._liveChatTurns || 0) + 1;
     if (cortex) {
       if (this._liveChatTurns % 100 === 0 && typeof cortex.runIdentityRefresh === 'function') {
-        try { cortex.runIdentityRefresh(); } catch (err) { /* non-fatal */ }
+        try {
+          cortex.runIdentityRefresh();
+          identityRefreshRan = true;
+        } catch (err) {
+          this._identityRefreshErrCount = (this._identityRefreshErrCount || 0) + 1;
+          if (this._identityRefreshErrCount < 10 || this._identityRefreshErrCount % 1000 === 0) {
+            console.warn(`[InnerVoice.learn] runIdentityRefresh non-fatal #${this._identityRefreshErrCount}:`, err.message);
+          }
+        }
       }
       if (this._liveChatTurns % 500 === 0 && typeof cortex._modeCollapseAudit === 'function') {
-        try { cortex._modeCollapseAudit(this.languageCortex?._recentSentences || []); } catch (err) { /* non-fatal */ }
+        try {
+          cortex._modeCollapseAudit(this.languageCortex?._recentSentences || []);
+          modeCollapseAuditRan = true;
+        } catch (err) {
+          this._modeCollapseAuditErrCount = (this._modeCollapseAuditErrCount || 0) + 1;
+          if (this._modeCollapseAuditErrCount < 10 || this._modeCollapseAuditErrCount % 1000 === 0) {
+            console.warn(`[InnerVoice.learn] _modeCollapseAudit non-fatal #${this._modeCollapseAuditErrCount}:`, err.message);
+          }
+        }
       }
     }
 
@@ -292,33 +367,17 @@ export class InnerVoice {
         this._curriculum.runBackgroundProbe().catch(() => {});
       }
     }
-    // T14.24 Session 21 — NARRATOR PRIMING. If the curriculum has a
-    // recent focus (most recent background probe target), gently
-    // inject that subject's semantic identity into the sem region so
-    // Unity's next chat output subtly reflects what she's been
-    // thinking about. This is the "real human brain" touch — when a
-    // person just reviewed their calculus, their next conversation
-    // naturally leans toward mathematical framing even without being
-    // asked. The priming strength is deliberately low (0.15) so it
-    // colors output without dominating it.
-    if (this._curriculum && this._curriculum.currentFocus && cortex && cortex.regions?.sem) {
-      const focus = this._curriculum.currentFocus;
-      const ageMs = Date.now() - (focus.timestamp || 0);
-      // Only prime if the focus is fresh (last 2 minutes) and Unity
-      // is about to reply — old focus stops influencing her
-      if (ageMs < 120000 && typeof sharedEmbeddings?.getEmbedding === 'function') {
-        try {
-          // Use the subject's name as a GloVe anchor (e.g. 'math',
-          // 'science', 'art' all exist as tokens in 6B vocab)
-          const subjectEmb = sharedEmbeddings.getEmbedding(focus.subject);
-          if (subjectEmb && subjectEmb.length > 0) {
-            cortex.injectEmbeddingToRegion('sem', subjectEmb, 0.15);
-          }
-        } catch (err) {
-          // non-fatal
-        }
-      }
-    }
+    // T14.24 Session 21 — NARRATOR PRIMING moved to a separately-named
+    // opt-in method `primeFromCurrentFocus()` per Problems.md
+    // Medium→High finding (hidden coupling on chat path: priming
+    // injected a 0.15-strength sem bias DURING the chat turn, modifying
+    // the very state the next reply would read, with no diagnostic).
+    // Default `learn()` no longer auto-primes. Callers that genuinely
+    // want the "thinking about math, so my next reply leans math" touch
+    // can call `inner-voice.primeFromCurrentFocus()` explicitly. Every
+    // priming run that DOES fire now logs a `[NARRATOR-PRIMING]` line
+    // with the subject + focus age + injection strength so the
+    // operator can correlate biased replies to the priming event.
     // Live chat learning gets a FLOOR of 0.95 arousal so user-sourced
     // sentences beat the persona corpus (loaded at 0.75) in recall
     // scoring. personaBoost rewards words stored at arousal ≥ 0.5,
@@ -329,6 +388,20 @@ export class InnerVoice {
     // near normal.
     const chatArousal = Math.max(0.95, arousal);
     this.languageCortex.learnSentence(text, this.dictionary, chatArousal, valence);
+
+    // Per-turn summary line — operator can see exactly what happened
+    // on this chat turn at a glance (Problems.md Medium finding). Kept
+    // at debug-level frequency: every 10 turns OR whenever something
+    // notable fired (refresh / audit / clause rejection) so quiet
+    // baseline turns don't spam the log.
+    const notable = identityRefreshRan || modeCollapseAuditRan || clauseRejected > 0;
+    if (notable || this._liveChatTurns % 10 === 0) {
+      console.log(
+        `[InnerVoice] live-chat learn turn=${this._liveChatTurns}: ` +
+        `clauseAccepted=${clauseAccepted} rejected=${clauseRejected} ` +
+        `identityRefresh=${identityRefreshRan} modeCollapseAudit=${modeCollapseAuditRan}`
+      );
+    }
   }
 
   /**

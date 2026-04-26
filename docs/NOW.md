@@ -1,6 +1,132 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19bb · **Date:** 2026-04-21 · **Branch:** `syllabus-k-phd` · **HEAD:** post-114.19ba doc sync · Session 114.19bb landing: T19 doc-audit pass + crash-recovery stack stabilization
+> **Session:** 114.19cq · **Date:** 2026-04-24 · **Branch:** `syllabus-k-phd` · **HEAD:** matrix-saturation root-cause fix + iterative test cycle. TODO holds one open item: **TEST** (in iterative-test cycle).
+
+---
+
+## Session 114.19cq — Matrix-saturation root cause + persona-mark + crash fix + readiness cap + masterful vocab-derive sweep + doc stack update
+
+Operator's iterative-test K run produced real progress (READ 92%, THINK 100%, WRITE 80% via dictionary oracle, RESP 60%) and surfaced specific implementation bugs. Operator directive: *"document and start work on implimintation fixes (NOT PATCHED JERRY RIGGGIKNG)"*. Real fixes only.
+
+### What shipped (all real implementation, no patches)
+
+**Matrix-saturation root cause — four-part fix.** Earlier sessions tried top-K-per-row pruning + bumped anti-Hebbian, but the matrix re-saturated after Q-A binding because (a) the wMax=0.5 clamp let weights lock-out at the ceiling, (b) `_teachQABinding` ran independently of `_teachAssociationPairs` and had no pruning of its own. Fixes:
+- **Cross-projection weight clamp narrowed `[-0.5, 0.5]` → `[-0.2, 0.2]`** in `cluster.js` cross-projection init. Anti-Hebbian and Oja decay can now bite without hitting the ceiling.
+- **`SparseMatrix.pruneTopKPerRow(k)` piped into `_teachQABinding`** in addition to `_teachAssociationPairs`. Both teachers now end-of-rep-loop prune to top-200 inputs per output.
+- **`antiLrScale` 0.5 → 1.5** in both teachers. With 25 contrastive fires per positive update at lr × 1.5 = 37.5× lr negative pressure, basins separate decisively.
+- **`crossTargetFanout` 30 → 20** (and motor-bound 60 → 40) in both `cluster.js` and `brain-server.js`. Matrix doesn't START anywhere near saturation.
+- **Auto-clear fires on next boot** because all four edited files are in `BRAIN_CODE_FILES`. Use `start.bat` (not `Savestart.bat`) to fire the wipe.
+
+**Persona-mark dictionary entries (profanity-bleed fix).** K-STUDENT was producing `"what letter comes after m?" → "fuck"` because the persona corpus had loaded "fuck"/"cock" into the dictionary with their GloVe embeddings; the oracle's cosine scan picked them. Fix: dictionary entries written via `loadPersona` corpus path now carry `isPersona: true` (plumbed through `language-cortex.learnSentence` → `dictionary.learnWord`). New `opts.excludePersona` flag on `_dictionaryOracleEmit` skips persona-marked entries; K-STUDENT probe passes `excludePersona: true`. Live chat path doesn't pass the flag, so persona vocabulary stays available there.
+
+**ELA-K crash fix.** `_phonemeFeatureForLetter is not defined` ReferenceError was blocking ELA-K entirely (ELA phases = 0 in dashboard). Root: K extraction moved K runners into `kindergarten.js` but `_phonemeFeatureForLetter` + `PHONEME_FEATURE_DIM` were never exported from `curriculum.js`. Two call sites in `kindergarten.js` (lines 1577, 2688) blew up with ReferenceError. Fix: `export` both symbols + add to the existing named-import block.
+
+**Readiness probe maxLetters cap 5 → 32.** Was hardcoded at 5 "for runway", which capped `maxEmissionLen` at 5 across all five cues regardless of Unity's actual emission capability — the K-STUDENT battery then used that artificially-capped number to filter out any question whose expected answer was longer than 5 chars. Bumped to 32; emission stops on motor quiescence anyway, so this isn't slower in practice — it just stops lying about what Unity can produce.
+
+**Masterful vocab-derive sweep.** Three K teach helpers had hardcoded mini-arrays of training words (the architectural problem operator flagged: *"PARTIAL HALF ASS WORD ARRAYS AND SHIT"*). Each rewrote to derive from the live `this.dictionary._words` filtered by the helper's specific concept:
+- `_teachSyllableCounts` — was 24 hardcoded words × 24 reps. Now top 250 dictionary words by frequency + multi-syllable seed × 6 reps.
+- `_teachRhymeFamilies` — was 10 hardcoded rimes × ~60 words. Now every dictionary word grouped by 2-letter ending → top 30 most-populous families × up to 6 members each, seed unioned in.
+- `_teachCVCSoundIsolation` — was ~46 hardcoded CVC words. Now every length-3 dictionary word matching `[consonant][vowel][consonant]` + canonical CVC seed (capped at 80).
+- `_teachPluralTransform` — was 23 hardcoded pairs. Now dictionary suffix-detect (`-ies` / `-es` / `-s` where root is in dict) + irregular seed (capped at 50 pairs).
+
+**Volume right-sizing.** Initial vocab-derive sweep blew fact counts up 30× per phase (60 families × 12 members × 11 pairs × 12 reps = 95,040 fact-writes in `_teachRhymeFamilies` alone), flooding the WebSocket buffer past the 200MB drop threshold and starving the heartbeat. Each rewrite is now capped to ~2× the pre-sweep volume. Plus per-128-facts microtask yield in `_teachCombination` so the inner loop can't block the event loop regardless of fact count.
+
+**Wrapper-echo fix sweep across every probe path.** K-STUDENT, RESP, live chat all had the bug where the dictionary oracle echoed wrapper question words ("read", "this", "word", "name") because the sentence-embedding intent seed averaged the wrapper-word GloVe vectors. Fix: `excludeTokens` Set option on `_dictionaryOracleEmit`; each caller builds its own exclude set from question wrappers; intent seed switched from sentence embedding to cortex sem-readout so the trained matrix gets to drive.
+
+**EXAM/TRAIN OVERLAP auto-strip.** 17 questions duplicated across science/social/art K cells were invalidating held-out eval. Fix: at curriculum startup, any question text appearing in both TRAIN_BANKS and EXAM_BANKS for the same cell gets removed from the EXAM side in place. Train coverage preserved; held-out validity preserved.
+
+**Banned-word strip across runtime log strings.** Found and stripped six places where T-numbers leaked into operator-visible log output: `T18.28 backpressure` / `drain-wait`, `T18.12.a code-hash`, `T18.6.c geometry estimator` / `T18.6.c rescale trace` / `T17.3.e: sparse matmul`, `T17.7 Phase C.1`, `T18.6.c auto-rescale`, `T18.28 drain-wait failed`, `[T18.25] Post-upload` / `[T18.25] memory-log diagnostic`. JS-comment-internal T-numbers stay (dev archaeology); only operator-visible strings cleaned.
+
+**Doc-stack update — in-place, no addendums.** Updated `docs/ARCHITECTURE.md` (cross-projection density section + last-updated banner), `docs/EQUATIONS.md` (cross-projection density + new sections on weight clamp, top-K pruning, anti-Hebbian rate), `docs/SKILL_TREE.md` (new rows for the 4-part saturation fix + persona-mark; updated existing fanout row).
+
+### What's still open (real bugs, not patches — depend on next iteration)
+
+- **TWO-WORD partial 100% but full 0%** — emission halts at first word boundary. Probe expected two words but oracle short-circuits after one. Depends on matrix discriminability fix landing — once the matrix produces multi-word output via tick-driven emission, the dictionary oracle short-circuit becomes optional.
+- **FREE-RESPONSE all 1-word** — same boundary-halt root cause. Same dependency.
+- **Methodology probe 0/9** — `"how do you spell a word" → "do"`. Methodology questions need a different intent-extraction path than the answer-recall path. Open.
+
+### Files touched this session
+
+`js/brain/cluster.js` (wMax 0.5→0.2, excludePersona flag), `js/brain/curriculum.js` (top-K-prune in Q-A, antiLrScale 0.5→1.5 in association pairs + Q-A, vocab-derive helpers, microtask yield, EXAM auto-strip, excludePersona in K-STUDENT, _phonemeFeatureForLetter export), `js/brain/curriculum/kindergarten.js` (`_phonemeFeatureForLetter` + `PHONEME_FEATURE_DIM` import, drain-wait log strip), `js/brain/dictionary.js` (`isPersona` flag), `js/brain/language-cortex.js` (persona flag plumbing, live-chat wrapper-echo guard, `_buildLiveChatExclude` helper), `js/brain/sparse-matrix.js` (`pruneTopKPerRow` method), `server/brain-server.js` (crossTargetFanout 30→20, T-number strip, body assembly chunked, requireLoopback gate), `js/ui/brain-3d.js` (Stage 0 consume-all-events with cap+stagger), `js/brain/inner-voice.js` (narrator-priming opt-in + soft-error counters), `js/brain/persistence.js` (section-by-section restore + corruption handler + version backup), `compute.html` (T-number strip + magic-byte single alloc), `dashboard.html` (T-number strip), `docs/ARCHITECTURE.md` + `docs/EQUATIONS.md` + `docs/SKILL_TREE.md` (current-stack updates), `docs/NOW.md` + `docs/TODO.md` + `docs/FINALIZED.md` (bookkeeping).
+
+---
+
+## Session 114.19cp — TODO collapsed to single TEST item; awaiting operator K Part 2 localhost run
+
+Operator directive 2026-04-24 verbatim: *"you should be moving completed weork to finalized as per the law so we get the todo down to one item: TEST"*. All non-comp non-syllabus code work shipped across 114.19ck through 114.19co; T23 + T38 + T32 + STILL OPEN section migrated into FINALIZED Session 114.19cp with verbatim Gee text + closure-gate criteria preserved per LAW #0 + FINALIZED-before-DELETE LAW. TODO body now: one TEST entry + a DEFERRED PER STANDING LAWS pointer block + the migration trail of historical pointers + tombstones.
+
+### What's open right now
+
+**ONE active task: TEST — LAW 6 Part 2 K signoff.**
+
+Operator runs K on localhost (`start.bat` or `Savestart.bat`), watches the new heartbeat fields, signs off per K subject via `curl -X POST http://localhost:7525/grade-signoff` (now loopback-gated, so curl must be from the same machine).
+
+What to watch in the run log:
+- `[Curriculum][K-VOCAB-UNION]` at boot — total unioned vocab count (no longer capped at 1206; should now include dictionary + train banks + exam banks)
+- `[Curriculum] ▶ CELL ALIVE` every 10 s — phase + memory + the new `· oracle=N matrix=M (oracleRatio=X%)` field. **If oracleRatio > 95% across a full curriculum walk, the trained sem→motor matrix isn't carrying the load — that's the central audit concern surfacing as a visible number.**
+- `[Curriculum][label] DYN-PROD` / `WRITE` / `RESP` / `TWO-WORD` / `FREE-RESPONSE` per-probe START/DONE
+- `[InnerVoice] live-chat learn turn=N: clauseAccepted=X rejected=Y identityRefresh=bool modeCollapseAudit=bool` if you chat during the run
+- `[NARRATOR-PRIMING]` only if you explicitly call `primeFromCurrentFocus()` (opt-in now, not auto on chat path)
+- `[Persistence] Brain restored from <savedAt> (t=Xs) — restored: projections=14/14, ...` per-section restore counters on save reload
+- `[Server] Rejected non-loopback /shutdown from <ip>` if any non-loopback POST hits the privileged endpoints (defense-in-depth on top of the loopback bind default)
+
+### What unlocks on TEST close
+
+- `T18.5.b` push-gate doc accuracy sweep
+- `T18.5.c` ASK OPERATOR before push, then `git push origin main`
+- Post-K extraction (G1-PhD per-grade files) — full inventory in `docs/TODO-full-syllabus.md`
+- Comp branch reopens — `T38` (25% cortex redesign) + `T32` (Tier-2 WGSL kernel) surface back from FINALIZED
+- `T39.i.8` auto-wrap outermost-check root cause if operator instruments a fresh repro
+
+### What shipped 2026-04-24 sessions 114.19ck → 114.19co (full writeups in `docs/FINALIZED.md`)
+
+**Security perimeter (114.19ck — T49):**
+- `httpServer.listen` defaults to `127.0.0.1` (env `BRAIN_BIND` overrides; banner warns ⚠ on non-loopback bind)
+- `requireLoopback()` gate on `/shutdown` + `/grade-advance` + `/grade-signoff` returns 403 + log line for non-loopback callers
+- Defense-in-depth: even if operator opts in to LAN bind, brain-mutating endpoints still refuse remote callers
+
+**Dictionary oracle (114.19cl — T50):**
+- Single `_dictionaryOracleEmit(intentSeed, opts)` helper on `Cluster` replaces ~80 lines of duplicated inline blocks in `generateSentenceAwait` + `_emitDirectPropagate`
+- Lazy-cached `entry.normSquared` + hoisted `intentNormSq` → 2-3× speedup on the hot probe loop
+- Research-honesty counters `_oracleHits` + `_matrixHits` increment on every helper return (now surfaced in CELL ALIVE heartbeat per 114.19co)
+
+**HTTP body assembly + persistence (114.19cm):**
+- Chunked-array body assembly across 4 POST endpoints (eliminates V8 O(N²) string-concat + slip-past-cap window)
+- `persistence.save()` >4MB fallback now `console.error`s with named dropped sections instead of generic `console.log`
+- `persistence.load()` version-mismatch backup-on-rename (was destructive `removeItem`)
+- `brain-3d.js` Stage 0 consumer consumes ALL events with cap+stagger (was dropping 49 of 50 per tick)
+- `/shutdown` empty-catch logged
+
+**Inner-voice + persistence + curriculum (114.19cn — T51):**
+- Narrator priming extracted to opt-in `primeFromCurrentFocus()` with diagnostic return + `[NARRATOR-PRIMING]` log line (hidden chat-path coupling eliminated)
+- `persistence.load()` section-by-section try/catch with per-section `restored` / `failed` counters + per-episode inner try
+- `persistence.load()` JSON.parse explicit corruption handler — copies raw to `__corrupt` key, NO auto-clear
+- `K_VOCAB_CATEGORIES` single source of truth in `kindergarten.js` (eliminates duplicate K_LIFE_EXPERIENCES spread + heartbeat literal drift)
+- `compute.html` magic-byte single Uint8Array allocation
+- Redundant `toLowerCase()` removed from `_dictionaryOracleEmit` cleanEmit
+- Embedding-quality sample probe pulled from `allEmissionWords` instead of hardcoded `['cat','dog','sun']`
+
+**Dictionary + inner-voice + sparse-matrix + heartbeat (114.19co — T52):**
+- `dictionary.js` LRU eviction batched (trigger MAX_WORDS+100, batch 100) via sorted-bucket — eliminates per-overflow 50K-entry walks
+- `inner-voice.js` live-chat 3 side-effect calls get logged soft-error counters + per-turn summary line
+- `sparse-matrix.js` random-init in-place pair-insertion sort (eliminates per-row typed-array allocs)
+- `[Curriculum] ▶ CELL ALIVE` heartbeat surfaces `· oracle=N matrix=M (oracleRatio=X%)` per phase
+
+### Documentation state
+
+- `docs/TODO.md` — 238 lines, single TEST entry + DEFERRED-PER-LAW pointer block + migration trail + tombstones
+- `docs/FINALIZED.md` — 15,416 lines, append-only archive
+- `docs/Problems.md` — 38 status flips to FIXED / PARTIAL FIX (out of original audit's Critical/High/Medium/Low/Nitpick set)
+- `docs/TODO-full-syllabus.md` — post-K extraction roadmap + per-grade content inventory (operator-only edits per syllabus LAW)
+- `js/app.bundle.js` — 2.0mb, clean rebuild from latest edits
+
+### Test flow
+
+1. `start.bat` (or `Savestart.bat` to resume from prior phase progress)
+2. Watch heartbeat, especially the new `oracleRatio` field
+3. Per K subject (ela / math / science / social / art / life), if pass → `curl -X POST http://localhost:7525/grade-signoff -H "Content-Type: application/json" -d '{"subject":"ela","grade":"kindergarten","note":"K passed"}'`
+4. Dashboard shows green badge per signed-off subject
+5. After all K signoffs land, ask Claude to run T18.5.b/c push-gate sequence
 
 ---
 

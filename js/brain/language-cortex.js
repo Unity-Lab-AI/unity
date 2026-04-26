@@ -47,6 +47,36 @@ const PATTERN_DIM = EMBED_DIM;
 const VOWELS = 'aeiou';
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 
+// Wrapper-echo guard for live-chat emission. When the dictionary
+// oracle scans for the highest-cosine entry against the user's text
+// embedding, structural words ("what", "is", "how", "tell", "do",
+// "the", etc.) tend to dominate that average and get echoed back as
+// the reply. Same bug class the K-STUDENT probe exhibits with question
+// wrapper words. The fix: build a Set of function/question words from
+// the user's text and pass it to the oracle's `excludeTokens` filter.
+// Topic words (cats, color, favorite — anything outside the stoplist)
+// stay available so Unity can discuss what the user mentioned. This
+// matches the function-word stoplist the K-STUDENT vocab filter uses.
+const _LIVE_CHAT_STOPWORDS = new Set([
+  'a','an','the','is','are','was','were','be','been','being','am',
+  'of','in','on','at','to','for','with','from','by','as','or','and',
+  'but','so','if','then','else','not','no','yes','do','does','did',
+  'can','could','would','should','will','may','might','this','that',
+  'these','those','it','its','i','you','he','she','we','they','my',
+  'your','his','her','our','their','has','have','had','what','which',
+  'who','when','where','why','how','whose','there','here','tell','say',
+  'said','about','into','out','up','down','over','under','just','like',
+]);
+function _buildLiveChatExclude(userText) {
+  if (!userText || typeof userText !== 'string') return null;
+  const tokens = userText.toLowerCase().split(/[^a-z0-9']+/).filter(w => w.length > 0);
+  const excl = new Set();
+  for (const tok of tokens) {
+    if (_LIVE_CHAT_STOPWORDS.has(tok)) excl.add(tok);
+  }
+  return excl.size > 0 ? excl : null;
+}
+
 // NO BRAIN_SELF_SCHEMA — deleted. Unity's self-awareness comes
 // from her actual current neural state (cluster firing,
 // amygdala basins, Ψ, hippocampal patterns, drug state), not from a
@@ -1493,9 +1523,21 @@ export class LanguageCortex {
         // `suppressNoise: true` to generateSentence so noiseAmplitude
         // drops 7 → 0.5 for the emission only. Live chat (no
         // _internalThought flag) keeps chaotic dynamics.
+        //
+        // Oracle wrapper-echo guard — when the intent seed came from
+        // the user's text (cluster._lastUserInputText), block the
+        // dictionary oracle from echoing the user's STRUCTURAL words
+        // back as the reply. Topic words stay available so Unity can
+        // discuss what the user mentioned ("cats" stays); function
+        // words get blocked so she can't reply to "what is your
+        // favorite color?" with "what" / "is" / "favorite". Same
+        // function-word stoplist the K-STUDENT vocab filter uses.
+        const _liveExclude = _buildLiveChatExclude(cluster._lastUserInputText);
+        cluster._lastUserInputText = null; // consume
         const raw = cluster.generateSentence(intentSeed, {
           injectStrength: 0.6,
           suppressNoise: opts._internalThought === true,
+          excludeTokens: _liveExclude,
         });
         words = raw ? raw.split(/\s+/).filter(Boolean) : [];
       }
@@ -1814,9 +1856,17 @@ export class LanguageCortex {
           } catch {}
         }
         try {
+          // Same wrapper-echo guard generate() applies on the sync
+          // path — block structural words from the user's text so the
+          // oracle can't echo "what" / "is" / "how" back as a reply.
+          const _liveExcludeAsync = _buildLiveChatExclude(cluster._lastUserInputText);
+          // Note: don't consume `_lastUserInputText` here — the sync
+          // generate() path that runs after this consumes it once and
+          // both paths read the same field.
           const raw = await cluster.generateSentenceAwait(intentSeed, {
             injectStrength: 0.6,
             suppressNoise: opts._internalThought === true,
+            excludeTokens: _liveExcludeAsync,
           });
           preEmittedWords = raw ? raw.split(/\s+/).filter(Boolean) : [];
         } catch (err) {
@@ -2274,7 +2324,12 @@ export class LanguageCortex {
     for (let t = 0; t < words.length; t++) {
       const w = words[t];
       const pattern = cortexPattern || this.wordToPattern(w);
-      dictionary?.learnWord?.(w, pattern, arousal, valence);
+      // Forward `fromPersona` so the dictionary entry gets `isPersona`
+      // marked when this sentence came from the persona corpus loader.
+      // Test probes (K-STUDENT, methodology) pass `excludePersona: true`
+      // to the oracle; live chat path doesn't, so persona vocabulary
+      // stays available in normal conversation.
+      dictionary?.learnWord?.(w, pattern, arousal, valence, { isPersona: fromPersona === true });
 
       // T14.24-CLEAN.B1 — _learnUsageType + _generateInflections call
       // sites removed. They fed the pre-T14 slot-scorer's usage-type

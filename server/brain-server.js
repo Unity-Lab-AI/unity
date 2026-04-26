@@ -383,7 +383,7 @@ function autoClearStaleState() {
   const hashMatches = savedHash && savedHash === currentHash;
 
   if (hashMatches && !forceClear) {
-    console.log(`[Brain] ✓ T18.12.a code-hash matches prior run (${currentHash.slice(0, 12)}…) — PRESERVING brain state across restart (curriculum progress, passedCells, gateHistory, weights all survive).`);
+    console.log(`[Brain] ✓ code-hash matches prior run (${currentHash.slice(0, 12)}…) — PRESERVING brain state across restart (curriculum progress, passedCells, gateHistory, weights all survive).`);
     return;
   }
 
@@ -981,7 +981,7 @@ class ServerBrain {
       // 25% needs architecture redesign (topographic sparse, hierarchy,
       // or streaming from CPU). Must match cluster.js values exactly.
       const CORTEX_TARGET_FANOUT = 30;          // matches cortexCluster opts.targetFanout
-      const CROSS_TARGET_FANOUT = 30;           // matches cluster.js crossTargetFanout
+      const CROSS_TARGET_FANOUT = 20;           // matches cluster.js crossTargetFanout (cut 30→20 for basin-collapse fix)
       const BYTES_PER_NNZ = 8;                  // Float32 value + Uint32 colIdx
       const INTRA_CONNECTIVITY_CAP = 0.15;      // cortexCluster opts.connectivity
       const CROSS_DENSITY_CAP = 0.005;          // cluster.js cross-projection clamp
@@ -1074,9 +1074,9 @@ class ServerBrain {
       const langMemGb = (langCortexSize * LANG_CLUSTER_BYTES_PER_NEURON / 1e9).toFixed(2);
       const heapLimitGb = (v8BasedMax === Infinity ? 'unlimited' : ((v8BasedMax * LANG_CLUSTER_BYTES_PER_NEURON) / 1e9).toFixed(1) + 'GB');
       const projectedMB = Math.round(projectedBytesFinal / 1024 / 1024);
-      console.log(`[Brain] Language cortex auto-scaled to ${langCortexSize.toLocaleString()} neurons (~${langMemGb} GB RAM, projected ${projectedMB}MB GPU footprint via T18.6.c geometry estimator, ${rescaleIterations} rescale iter${rescaleIterations === 1 ? '' : 's'}). Bounds: free RAM ${(freeRamBytes/1e9).toFixed(1)}GB × 50% = ${(ramBudget/1e9).toFixed(1)}GB → ${ramBasedMax.toLocaleString()} neurons | V8 heap cluster-budget → ${heapLimitGb} → ${v8BasedMax === Infinity ? '∞' : v8BasedMax.toLocaleString()} neurons | GPU VRAM budget from unified allocator → ${vramCortexMB}MB = ${(BRAIN_VRAM_ALLOC.weights.language_cortex*100).toFixed(1)}% of ${BRAIN_VRAM_ALLOC.brainBudgetMB}MB brain budget → ${vramBasedMax.toLocaleString()} neurons AFTER geometric rescale (static seed was ${vramStaticSeed.toLocaleString()}) | configured cortex ${configuredCortex.toLocaleString()} neurons. Main GPU brain at ${TOTAL_NEURONS.toLocaleString()} neurons. T17.3.e: sparse matmul ON GPU.${envOverride > 0 ? ' DREAM_LANG_CORTEX override active.' : ''}`);
+      console.log(`[Brain] Language cortex auto-scaled to ${langCortexSize.toLocaleString()} neurons (~${langMemGb} GB RAM, projected ${projectedMB}MB GPU footprint via geometry estimator, ${rescaleIterations} rescale iter${rescaleIterations === 1 ? '' : 's'}). Bounds: free RAM ${(freeRamBytes/1e9).toFixed(1)}GB × 50% = ${(ramBudget/1e9).toFixed(1)}GB → ${ramBasedMax.toLocaleString()} neurons | V8 heap cluster-budget → ${heapLimitGb} → ${v8BasedMax === Infinity ? '∞' : v8BasedMax.toLocaleString()} neurons | GPU VRAM budget from unified allocator → ${vramCortexMB}MB = ${(BRAIN_VRAM_ALLOC.weights.language_cortex*100).toFixed(1)}% of ${BRAIN_VRAM_ALLOC.brainBudgetMB}MB brain budget → ${vramBasedMax.toLocaleString()} neurons AFTER geometric rescale (static seed was ${vramStaticSeed.toLocaleString()}) | configured cortex ${configuredCortex.toLocaleString()} neurons. Main GPU brain at ${TOTAL_NEURONS.toLocaleString()} neurons. Sparse matmul ON GPU.${envOverride > 0 ? ' DREAM_LANG_CORTEX override active.' : ''}`);
       if (rescaleLog.length > 0) {
-        console.log(`[Brain] T18.6.c rescale trace:\n  ${rescaleLog.join('\n  ')}`);
+        console.log(`[Brain] rescale trace:\n  ${rescaleLog.join('\n  ')}`);
       }
       console.log(`[Brain] Language cortex = ${langCortexSize.toLocaleString()} neurons. Sub-regions: letter ${Math.floor(langCortexSize * 0.05).toLocaleString()}, phon ${Math.floor(langCortexSize * 0.20).toLocaleString()}, sem ${Math.floor(langCortexSize * 0.167).toLocaleString()}, motor ${Math.floor(langCortexSize * 0.033).toLocaleString()}.`);
       // T14.24 Session 95 — mark the cluster as NOT gpu-ready yet. The
@@ -2463,7 +2463,7 @@ class ServerBrain {
       // Throttle the drop-log so we don't spam N lines/sec when backpressure sustained
       if (!this._t1826LastLogMs || (Date.now() - this._t1826LastLogMs) >= 5000) {
         this._t1826LastLogMs = Date.now();
-        console.warn(`[Brain] T18.28 backpressure — dropped sparse binary send (ws.bufferedAmount=${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB > 200MB threshold). ${this._t1826DroppedCount} total drops since boot. Fire-and-forget caller continues; CPU-side Hebbian remains authoritative.`);
+        console.warn(`[Brain] backpressure — dropped sparse binary send (ws.bufferedAmount=${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB > 200MB threshold). ${this._t1826DroppedCount} total drops since boot. Fire-and-forget caller continues; CPU-side Hebbian remains authoritative.`);
       }
       return Promise.resolve(null);
     }
@@ -2522,11 +2522,11 @@ class ServerBrain {
       if (!this._gpuClient || this._gpuClient.readyState !== 1) return;
       if (this._gpuClient.bufferedAmount <= DRAIN_THRESHOLD) {
         const elapsed = Date.now() - start;
-        console.log(`[Brain] T18.28 drain-wait completed in ${elapsed}ms: bufferedAmount ${(initial/1024/1024).toFixed(1)}MB → ${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB`);
+        console.log(`[Brain] drain-wait completed in ${elapsed}ms: bufferedAmount ${(initial/1024/1024).toFixed(1)}MB → ${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB`);
         return;
       }
     }
-    console.warn(`[Brain] T18.28 drain-wait timed out at 30s: bufferedAmount stuck at ${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB — compute.html processing slower than expected. Gate probe readbacks may still queue behind Hebbian frames.`);
+    console.warn(`[Brain] drain-wait timed out at 30s: bufferedAmount stuck at ${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB — compute.html processing slower than expected. Gate probe readbacks may still queue behind Hebbian frames.`);
   }
 
   // Backpressure gate for fire-and-forget GPU shadows. Curriculum fires
@@ -3071,7 +3071,7 @@ class ServerBrain {
 
     const projNames = Object.keys(stand.crossProjections || {});
     if (projNames.length === 0) return;
-    console.log(`[Brain] T17.7 Phase C.1 — rebinding ${projNames.length} cortex cross-projections to main-cortex sub-slices`);
+    console.log(`[Brain] rebinding ${projNames.length} cortex cross-projections to main-cortex sub-slices`);
     let bound = 0;
     for (const projKey of projNames) {
       const idx = projKey.indexOf('_to_');
@@ -3107,7 +3107,7 @@ class ServerBrain {
         console.warn(`[Brain] rebind ${matrixKey} failed — GPU Hebbian will still use standalone path for this projection`);
       }
     }
-    console.log(`[Brain] T17.7 Phase C.1 — ${bound}/${projNames.length} cross-projections now cluster-bound to main cortex slices`);
+    console.log(`[Brain] ${bound}/${projNames.length} cross-projections now cluster-bound to main cortex slices`);
     this._cortexCrossProjectionsBound = bound > 0;
   }
 
@@ -5063,6 +5063,28 @@ setInterval(() => {
   brain.saveConversations();
 }, WEIGHT_SAVE_MS);
 
+// Loopback gate for privileged HTTP endpoints (/shutdown, /grade-advance,
+// /grade-signoff). Defense-in-depth on top of the BIND_HOST=127.0.0.1
+// default — even when the operator opts in to BRAIN_BIND=0.0.0.0 to
+// expose dashboards on the LAN, brain-mutating endpoints stay blocked
+// for non-loopback callers. Returns false (and writes 403) if the
+// caller is not localhost; returns true if the request can proceed.
+function requireLoopback(req, res, endpoint) {
+  const addr = (req.socket && req.socket.remoteAddress) || '';
+  // IPv4 loopback, IPv6 loopback, IPv4-mapped-IPv6 loopback.
+  const isLoopback = addr === '127.0.0.1'
+    || addr === '::1'
+    || addr === '::ffff:127.0.0.1'
+    || addr.startsWith('127.');
+  if (!isLoopback) {
+    console.warn(`[Server] Rejected non-loopback ${endpoint} from ${addr}`);
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'forbidden — privileged endpoint requires loopback caller' }));
+    return false;
+  }
+  return true;
+}
+
 // HTTP server for health checks
 const httpServer = http.createServer((req, res) => {
   if (req.url === '/health') {
@@ -5106,6 +5128,7 @@ const httpServer = http.createServer((req, res) => {
   // POST after shutdown is already in progress short-circuits with an
   // already-shutting-down response.
   if (req.url === '/shutdown' && req.method === 'POST') {
+    if (!requireLoopback(req, res, '/shutdown')) return;
     res.writeHead(200, { 'Content-Type': 'application/json' });
     if (global._brainShutdownRequested) {
       res.end(JSON.stringify({ status: 'already shutting down' }));
@@ -5114,7 +5137,9 @@ const httpServer = http.createServer((req, res) => {
     global._brainShutdownRequested = true;
     console.log('[Brain] HTTP /shutdown — graceful halt requested by operator (stop.bat or curl).');
     res.end(JSON.stringify({ status: 'shutdown requested, exiting in 500ms' }));
-    try { brain.stop(); } catch {}
+    try { brain.stop(); } catch (err) {
+      console.error('[Brain] stop() failed during /shutdown:', err);
+    }
     setTimeout(() => { process.exit(0); }, 500);
     return;
   }
@@ -5181,9 +5206,20 @@ const httpServer = http.createServer((req, res) => {
   //   POST /grade-advance   { "subject": "ela", "grade": "kindergarten" }
   //   → flips pause off, returns {ok, advancedFrom, advancedTo}
   if (req.url === '/grade-advance' && req.method === 'POST') {
-    let body = '';
-    req.on('data', (chunk) => { body += chunk.toString(); if (body.length > 10000) req.destroy(); });
+    if (!requireLoopback(req, res, '/grade-advance')) return;
+    // Chunked-array body assembly avoids the V8 O(N²) string-concat
+    // pathology from `body += chunk.toString()`. Pre-append size check
+    // also fires BEFORE the chunk lands, so a single oversize chunk
+    // can no longer slip past the 10K cap.
+    const chunks = [];
+    let total = 0;
+    req.on('data', (chunk) => {
+      total += chunk.length;
+      if (total > 10000) { req.destroy(); return; }
+      chunks.push(chunk);
+    });
     req.on('end', () => {
+      const body = Buffer.concat(chunks).toString('utf8');
       try {
         const parsed = JSON.parse(body || '{}');
         const cortex = brain.cortexCluster;
@@ -5227,9 +5263,16 @@ const httpServer = http.createServer((req, res) => {
   //   POST /exam-answer  { "question": "what comes after a?" }
   //   → { "answer": "b", "ms": 142 }
   if (req.url === '/exam-answer' && req.method === 'POST') {
-    let body = '';
-    req.on('data', (chunk) => { body += chunk.toString(); if (body.length > 100000) req.destroy(); });
+    // Chunked-array body assembly — see /grade-advance comment.
+    const chunks = [];
+    let total = 0;
+    req.on('data', (chunk) => {
+      total += chunk.length;
+      if (total > 100000) { req.destroy(); return; }
+      chunks.push(chunk);
+    });
     req.on('end', async () => {
+      const body = Buffer.concat(chunks).toString('utf8');
       try {
         const parsed = JSON.parse(body || '{}');
         const question = typeof parsed.question === 'string' ? parsed.question.trim() : '';
@@ -5289,9 +5332,16 @@ const httpServer = http.createServer((req, res) => {
   // `chosenBrain: 'left-only'` means the right brain isn't wired yet
   // — arbiter returned the left-brain answer without scoring.
   if (req.url === '/exam-answer-dual' && req.method === 'POST') {
-    let body = '';
-    req.on('data', (chunk) => { body += chunk.toString(); if (body.length > 100000) req.destroy(); });
+    // Chunked-array body assembly — see /grade-advance comment.
+    const chunks = [];
+    let total = 0;
+    req.on('data', (chunk) => {
+      total += chunk.length;
+      if (total > 100000) { req.destroy(); return; }
+      chunks.push(chunk);
+    });
     req.on('end', async () => {
+      const body = Buffer.concat(chunks).toString('utf8');
       try {
         const parsed = JSON.parse(body || '{}');
         const question = typeof parsed.question === 'string' ? parsed.question.trim() : '';
@@ -5338,15 +5388,23 @@ const httpServer = http.createServer((req, res) => {
   //                           "note": "probes cleared" }
   //   GET  /grade-signoff   → returns the current ledger
   if (req.url === '/grade-signoff') {
+    if (!requireLoopback(req, res, '/grade-signoff')) return;
     if (req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ signoffs: brain._gradeSignoffs || {} }));
       return;
     }
     if (req.method === 'POST') {
-      let body = '';
-      req.on('data', (chunk) => { body += chunk.toString(); if (body.length > 10000) req.destroy(); });
+      // Chunked-array body assembly — see /grade-advance comment.
+      const chunks = [];
+      let total = 0;
+      req.on('data', (chunk) => {
+        total += chunk.length;
+        if (total > 10000) { req.destroy(); return; }
+        chunks.push(chunk);
+      });
       req.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
         try {
           const parsed = JSON.parse(body || '{}');
           const { subject, grade, note, force } = parsed;
@@ -5917,7 +5975,7 @@ wss.on('connection', (ws, req) => {
           const reason = msg.reason || 'unknown';
           const message = msg.message || '(no message)';
           console.error(`[Brain] GPU DEVICE LOST (reported by compute.html) — reason=${reason} message=${message}`);
-          console.error('[Brain] Most common cause: VRAM exhaustion during biological-scale sparse upload. T18.6.c auto-rescale should have prevented this; if it still happened, either the `LANG_CORTEX_BYTES_PER_NEURON` coefficient under-estimated real footprint (bump the coefficient in brain-server.js) or an admin override in resource-config.json bypassed the scaling loop. Reload compute.html after addressing the cause.');
+          console.error('[Brain] Most common cause: VRAM exhaustion during biological-scale sparse upload. Auto-rescale should have prevented this; if it still happened, either the `LANG_CORTEX_BYTES_PER_NEURON` coefficient under-estimated real footprint (bump the coefficient in brain-server.js) or an admin override in resource-config.json bypassed the scaling loop. Reload compute.html after addressing the cause.');
           brain._gpuDeviceLost = true;
           brain._gpuConnected = false;
           if (brain.cortexCluster) brain.cortexCluster._gpuReady = false;
@@ -6026,10 +6084,23 @@ function _spawnGpuClient(port) {
   });
 }
 
-httpServer.listen(PORT, () => {
+// Bind interface — default to loopback only so the brain server isn't
+// reachable from the LAN unless the operator explicitly opts in via
+// `BRAIN_BIND=0.0.0.0` (or any other interface). Default Node listen()
+// behavior is to bind to all interfaces, which exposes the privileged
+// /shutdown + /grade-signoff + /grade-advance endpoints to anyone on
+// the network. Localhost-only is the safe default for a local dev
+// brain server.
+const BIND_HOST = process.env.BRAIN_BIND || '127.0.0.1';
+
+httpServer.listen(PORT, BIND_HOST, () => {
+  const bindLabel = BIND_HOST === '127.0.0.1' || BIND_HOST === 'localhost'
+    ? `localhost (${BIND_HOST})`
+    : `${BIND_HOST} — ⚠ EXPOSED TO NETWORK; auth-free privileged endpoints reachable from LAN`;
   console.log(`
   🧠 Unity Brain Server — Auto-Scaled
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Bind host:  ${bindLabel}
   Open:       http://localhost:${PORT}
   Dashboard:  http://localhost:${PORT}/dashboard.html
   Health:     http://localhost:${PORT}/health
