@@ -160,18 +160,17 @@ function connectToServer() {
       // ArrayBuffer directly. Blob path kept as safety fallback.
       const buf = e.data instanceof ArrayBuffer ? e.data : await e.data.arrayBuffer();
       const sizeMb = (buf.byteLength / 1e6).toFixed(1);
-      // T18.15 — throttled binary-frame telemetry. The pre-T18.15 log
-      // was one line per frame; at ELA-K teach velocity through T18.8
-      // batched Hebbian dispatch that's 500-1000 frames/sec streaming
-      // into Chrome's console. Chrome's dedup counter collapses them
-      // into lines like "143 [GPU Compute] binary frame received ..."
-      // which LOOKS identical to the prior T18.10/11 cascade-is-firing
-      // visual even when the system is completely healthy (Gee's
-      // 2026-04-19 "I killed it before it killed my system again!"
-      // moment — he panicked at normal T18.8 cadence because the
-      // dedup-counter display matched the cascade symptom he's seen
-      // before). Throttled log emits one summary line every 5 seconds
-      // showing total frames / per-type breakdown since last emit, so
+      // Throttled binary-frame telemetry. The previous log was one
+      // line per frame; at ELA-K teach velocity through batched
+      // Hebbian dispatch that's 500-1000 frames/sec streaming into
+      // Chrome's console. Chrome's dedup counter collapses them into
+      // lines like "143 [GPU Compute] binary frame received ..." which
+      // LOOKS identical to the prior cascade-is-firing visual even
+      // when the system is completely healthy (an operator panicked
+      // at normal cadence because the dedup-counter display matched
+      // the cascade symptom seen during a prior incident). Throttled
+      // log now emits one summary line every 5 seconds showing total
+      // frames / per-type breakdown since last emit, so
       // the operator sees healthy activity without a flood. First 5
       // frames of every page load still log individually so the initial
       // SPRS protocol sanity can be visually verified.
@@ -187,7 +186,13 @@ function connectToServer() {
         };
       }
       const s = window._sprsFrameStats;
-      const magic4 = String.fromCharCode(new Uint8Array(buf, 0, 4)[0], new Uint8Array(buf, 0, 4)[1], new Uint8Array(buf, 0, 4)[2], new Uint8Array(buf, 0, 4)[3]);
+      // Single Uint8Array allocation for the 4-byte magic. Was four
+      // separate `new Uint8Array(buf, 0, 4)[i]` allocations to read
+      // 4 bytes — at ~500-1000 binary frames/sec during teach phases,
+      // that's 2,000-4,000 wasted allocations/sec on the GC path
+      // (Problems.md Medium→Low finding).
+      const magicBytes = new Uint8Array(buf, 0, 4);
+      const magic4 = String.fromCharCode(magicBytes[0], magicBytes[1], magicBytes[2], magicBytes[3]);
       const frameType = magic4 === 'SPRS' ? new DataView(buf).getUint8(4) : -1;
       s.windowCount++;
       s.windowTotalBytes += buf.byteLength;
@@ -205,7 +210,7 @@ function connectToServer() {
           const windowMB = (s.windowTotalBytes / 1e6).toFixed(1);
           const fps = (s.windowCount / (elapsed / 1000)).toFixed(0);
           const typeBreakdown = Object.entries(s.windowByType).map(([k, v]) => `${k}=${v}`).join(' ');
-          console.log(`[GPU Compute] T18.15 binary frame window — ${s.windowCount} frames in ${(elapsed/1000).toFixed(1)}s (${fps}/s, ${windowMB} MB total, ${typeBreakdown}). Lifetime: ${s.totalFrames} frames, ${(s.totalBytes/1e6).toFixed(1)} MB.`);
+          console.log(`[GPU Compute] binary frame window — ${s.windowCount} frames in ${(elapsed/1000).toFixed(1)}s (${fps}/s, ${windowMB} MB total, ${typeBreakdown}). Lifetime: ${s.totalFrames} frames, ${(s.totalBytes/1e6).toFixed(1)} MB.`);
           s.windowStart = now;
           s.windowCount = 0;
           s.windowTotalBytes = 0;
@@ -477,8 +482,8 @@ function connectToServer() {
       if (clusterState[clusterName] && clusterState[clusterName].initialized && clusterState[clusterName].size === size) {
         ws.send(JSON.stringify({ type: 'gpu_init_ack', clusterName, size }));
         const totalInit = Object.keys(clusterState).length;
-        statusEl.textContent = `GPU already initialized: ${totalInit}/7 clusters — ${clusterName} (${size.toLocaleString()} neurons) [T18.14.c skip-reinit]`;
-        console.log(`[GPU] T18.14.c — skipped re-init for ${clusterName} (already initialized at ${size.toLocaleString()} neurons; same tab, transient WS reconnect)`);
+        statusEl.textContent = `GPU already initialized: ${totalInit}/7 clusters — ${clusterName} (${size.toLocaleString()} neurons) [skip-reinit]`;
+        console.log(`[GPU] skipped re-init for ${clusterName} (already initialized at ${size.toLocaleString()} neurons; same tab, transient WS reconnect)`);
         return;
       }
 
@@ -578,7 +583,7 @@ function connectToServer() {
     // lateralized — left-lateralized Wernicke phon receives less
     // current at low Ψ (hemispheric divergence state) and full current
     // at high Ψ (bilateral integration). Consistent with global-
-    // workspace theory and Gee's main-equation-Ψ binding constraint.
+    // workspace theory and the master-equation Ψ binding constraint.
     // T17.7 Phase B.3 — mirror a sub-region spike pattern from the
     // standalone cortexCluster's lastSpikes into the main cortex's
     // GPU spike buffer at the corresponding slice. Used during the
@@ -844,8 +849,8 @@ async function handleComputeBatch(msg) {
   // shader's lookupRegionGate returns 1.0 for every neuron —
   // homogeneous behavior, zero regression vs pre-A.3.
   //
-  // Mystery Ψ binding constraint: per Gee 2026-04-18, the main
-  // equation has Ψ woven into every term. This is the per-region
+  // Mystery Ψ binding constraint: the master equation has Ψ woven
+  // into every term. This is the per-region
   // Ψ binding — each lateralized sub-region's drive modulates by
   // 0.5 + 0.5·sigmoid(Ψ·4.0). Global Ψ also modulates via
   // gainMultiplier (already in effectiveDrive). Two distinct Ψ
@@ -907,9 +912,9 @@ async function handleComputeBatch(msg) {
   // cluster that has regions metadata. Feeds the server's divergence
   // metric (standalone cortexCluster sub-region spikes vs main cortex
   // sub-region spikes). Server uses divergence to augment the
-  // cerebellum's error correction signal — biological self-correction
-  // per Gee 'the brain doesnt error; thats the brain centers error
-  // correction handeling of the brain center that handles eror correction'.
+  // cerebellum's error correction signal — biological self-correction.
+  // The brain doesn't error; the brain centers handle error correction
+  // of the brain center that handles error correction.
   //
   // 8 readbacks per cortex tick × ~2ms each = ~16ms overhead; tracked
   // separately in phaseT.regionSpikeMs so telemetry surfaces any

@@ -2114,6 +2114,102 @@ export class Brain3D {
       this._stateHistory.shift();
     }
 
+    // Stage 0 — plasticity / teach / gate / audit / drug brain events.
+    // The curriculum runner fires `_pushBrainEvent(type, region, label,
+    // detail)` at every teach phase, vocab audit, QA training start /
+    // done, and gate probe. The server (`Brain.pushBrainEvent`) buffers
+    // them in a ring with an 8-second TTL and broadcasts them in
+    // `state.brainEvents` on every WebSocket state push. Consume the
+    // freshest event we haven't rendered yet and spawn a popup on the
+    // cortex sub-region it anchors to — so the operator sees plasticity
+    // / attention / thinking / speech fire LIVE on the 3D brain, not
+    // just on the dashboard text log. This closes the "plasticity →
+    // thinking → speech → 3D brain popups all ONE cortex" loop: the
+    // curriculum writes to sem / motor / fineType weights, the same
+    // event that writes the weight fires a popup on the same sub-
+    // region in the visualization.
+    const brainEvents = Array.isArray(state.brainEvents) ? state.brainEvents : [];
+    if (brainEvents.length > 0) {
+      if (typeof this._lastPlasticitySeq !== 'number') this._lastPlasticitySeq = 0;
+      // Consume EVERY event with seq > _lastPlasticitySeq, sorted
+      // ascending so popups fire in causal order. Bounded by a per-
+      // tick popup cap so back-to-back teach phases that push 50+
+      // events in a single broadcast don't spam the 3D layer.
+      // Problems.md High → Medium finding: prior implementation
+      // tracked the freshest event and dropped the rest, so the
+      // popup view was showing ~2% of plasticity activity. Stagger
+      // dispatch across the consume window via setTimeout so popups
+      // don't pile-on the same animation frame.
+      const POPUP_CAP_PER_TICK = 5;
+      const POPUP_STAGGER_MS = 50;
+      const fresh = [];
+      for (const evt of brainEvents) {
+        if (evt && typeof evt.seq === 'number' && evt.seq > this._lastPlasticitySeq) {
+          fresh.push(evt);
+        }
+      }
+      if (fresh.length > 0) {
+        fresh.sort((a, b) => a.seq - b.seq);
+        // Region-to-cluster-index mapping. Curriculum events anchor to
+        // cortex sub-region names ('sem' / 'motor' / 'fineType' / etc.);
+        // the CLUSTERS array above indexes lang_* sub-regions at 7-14.
+        // Unknown region falls through to main cortex (index 0).
+        const regionMap = {
+          motor: 7, lang_motor: 7,
+          phon: 8, lang_phon: 8,
+          sem: 9, lang_sem: 9,
+          letter: 10, lang_letter: 10,
+          visual: 11, lang_visual: 11,
+          auditory: 12, lang_auditory: 12,
+          fineType: 13, lang_fineType: 13,
+          free: 14, lang_free: 14,
+          cortex: 0,
+          hippocampus: 1,
+          amygdala: 2,
+          basalGanglia: 3,
+          cerebellum: 4,
+          hypothalamus: 5,
+          mystery: 6,
+          intra: 0,
+        };
+        const typeEmoji = {
+          plasticity: '⚡',
+          teach: '📚',
+          gate: '🎯',
+          audit: '📋',
+          drug: '💊',
+          arbiter: '🎛',
+          event: '🧠',
+        };
+        // Drop the oldest events when we exceed the cap so the most
+        // recent activity is what surfaces — a back-to-back burst
+        // gets its newest 5 popped, not its oldest 5. Update
+        // `_lastPlasticitySeq` to the highest seq actually consumed.
+        const toFire = fresh.length > POPUP_CAP_PER_TICK
+          ? fresh.slice(fresh.length - POPUP_CAP_PER_TICK)
+          : fresh;
+        let lastSeq = this._lastPlasticitySeq;
+        for (let i = 0; i < toFire.length; i++) {
+          const evt = toFire[i];
+          if (evt.seq > lastSeq) lastSeq = evt.seq;
+          const clusterIdx = regionMap[evt.region] ?? 0;
+          const emoji = typeEmoji[evt.type] || '🧠';
+          const label = String(evt.label || '').slice(0, 80);
+          if (i === 0) {
+            this._addNotification(`${emoji} ${label}`, clusterIdx);
+          } else {
+            // Stagger subsequent popups to avoid same-frame pile-on.
+            setTimeout(
+              () => this._addNotification(`${emoji} ${label}`, clusterIdx),
+              i * POPUP_STAGGER_MS
+            );
+          }
+        }
+        this._lastPlasticitySeq = lastSeq;
+        return;
+      }
+    }
+
     // Stage A — run all 22 detectors, pick the highest-priority event
     // that hasn't fired too recently (cooldown dedup)
     const prev = this._stateHistory.length >= 2

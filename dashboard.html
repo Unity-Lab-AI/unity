@@ -131,7 +131,7 @@
     </div>
 
     <div class="card" style="margin-top:12px;">
-      <div class="card-title">Drug State (T15 scheduler — real-time pharmacology)</div>
+      <div class="card-title">Drug State — real-time pharmacology</div>
       <div id="d-drug-panel" style="padding:8px 12px;font-family:monospace;font-size:12px;color:#aaa;line-height:1.8;">
         <div id="d-drug-status" style="color:#22c55e;">sober</div>
         <div id="d-drug-active" style="margin-top:6px;"></div>
@@ -275,11 +275,11 @@
       // of truth: the Curriculum object's getCurriculumStatus().
       renderCurriculumStatus(s.curriculum || null);
 
-      // T15.C — dynamic drug-state panel. Renders scheduler.snapshot()
+      // Dynamic drug-state panel. Renders scheduler.snapshot()
       // (active substances with phase + level + combo badges + risk
       // flags + pending cravings/acquisitions). Replaces the old
-      // static 'cokeAndWeed' label per Gee 2026-04-18 TODO spec
-      // ('kill permanent weed+coke display').
+      // static 'cokeAndWeed' label so the panel reflects real
+      // pharmacokinetic state instead of a permanent stuck label.
       renderDrugPanel(s.drugSnapshot);
 
       // Emotional state — rendered from raw equation values, no lookups

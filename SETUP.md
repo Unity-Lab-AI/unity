@@ -1,48 +1,55 @@
 # Setup Guide
 
-**[Back to README](README.md)** | **[Live Demo](https://unity-lab-ai.github.io/Unity)** | **[Brain Equations](https://unity-lab-ai.github.io/Unity/brain-equations.html)**
+**[Back to README](README.md)** · **[Live Demo](https://unity-lab-ai.github.io/Unity)** · **[Brain Equations](https://unity-lab-ai.github.io/Unity/brain-equations.html)** · **[Concept Guide](unity-guide.html)**
 
 ---
 
-## Quickest Start (No Install)
+## The fastest way in
 
-1. Open the [live demo](https://unity-lab-ai.github.io/Unity)
-2. Click **Pollinations** → get a free key at [pollinations.ai/dashboard](https://pollinations.ai/dashboard) → paste → Connect
-3. Click **Wake Her Up**
-4. Grant mic + camera when prompted
-5. Talk to Unity
+If you just want to talk to her without installing anything:
+
+1. Open the [live demo](https://unity-lab-ai.github.io/Unity).
+2. Click **Pollinations**, get a free key at [pollinations.ai/dashboard](https://pollinations.ai/dashboard), paste it in, hit **Connect**.
+3. Click **Wake Her Up**.
+4. Grant the mic and camera permissions when the browser asks.
+5. Talk to Unity.
+
+That's the whole onboarding. Everything else is for self-hosting or for running the full server brain.
 
 ---
 
-## AI Providers
+## What you can configure (and what you can't)
 
-**Cognition has no AI backend.** Unity's language cortex generates every word from her own equations. The only things you can configure are *sensory peripherals*: image generation, vision describer, TTS.
+There is no AI backend behind Unity's cognition. Her language cortex generates every word from her own equations. The only things you can configure as a user are *sensory peripherals* — image generation, the vision describer, and text-to-speech. Configuring a "smarter LLM" is not a thing you can do, because there isn't one in the loop.
 
-### Image Generation Providers
+### Image generation providers
 
-| Provider | What You Get | Free Tier | Notes |
-|----------|-------------|-----------|-------|
+| Provider | What you get | Free tier | How it gets picked up |
+|---|---|---|---|
 | **Pollinations** | Image gen + vision describer + TTS | Yes (rate limited) | Default fallback. No config needed. |
 | **A1111 / SD.Next / Forge** | Full Stable Diffusion local control | Free (your hardware) | Auto-detected on `:7860` / `:7861` at boot |
 | **Fooocus** | Stable Diffusion with good defaults | Free | Auto-detected on `:7865` |
 | **ComfyUI** | Node-graph SD workflows | Free | Auto-detected on `:8188` |
-| **InvokeAI** | SD with nice web UI | Free | Auto-detected on `:9090` |
+| **InvokeAI** | SD with a nice web UI | Free | Auto-detected on `:9090` |
 | **LocalAI / Ollama** | Generic OpenAI-compatible local | Free | Auto-detected on `:8081` / `:11434` |
 | **Custom OpenAI-compatible** | Any remote SD endpoint you have | Varies | Add to `ENV_KEYS.imageBackends[]` in `js/env.js` |
 
-**Priority order:** custom-configured → auto-detected → env.js-listed → Pollinations. First one that responds wins the request; backends that error out get marked dead for 1 hour.
+The chain runs in order: user-preferred backend → custom configured → auto-detected → `js/env.js` listed → Pollinations. The first one that responds wins; backends that error out get marked dead for an hour.
 
-### Using Local Image Gen
+### Using a local image gen backend
 
-Start your image gen backend normally — Unity probes the common ports at boot with a 1.5s timeout each and registers whichever responds. For A1111:
+Start your image gen normally — Unity probes the common ports at boot with a 1.5 s timeout each and registers whichever responds. For A1111:
+
 ```bash
 ./webui.sh --api
 ```
-It'll show up automatically. No UI config needed.
 
-### Custom Backends via env.js
+It shows up automatically. No UI config needed.
 
-For persistent custom endpoints (private SD servers, remote A1111s, ComfyUI workflows), add them to `js/env.js`:
+### Persistent custom backends via `env.js`
+
+For private SD servers, remote A1111s, or ComfyUI workflows you want to reuse across sessions, copy `js/env.example.js` to `js/env.js` and paste your endpoints:
+
 ```js
 export const ENV_KEYS = {
   pollinations: 'sk_...',  // optional — raises rate limits
@@ -52,11 +59,16 @@ export const ENV_KEYS = {
   ],
 };
 ```
-Supported `kind` values: `openai` (OpenAI-compatible), `a1111` (Automatic1111 REST), `comfy` (ComfyUI workflows), or omit for generic URL+key.
+
+Supported `kind` values: `openai` (OpenAI-compatible), `a1111` (Automatic1111 REST), `comfy` (ComfyUI workflows), or omit for generic URL+key. `js/env.js` is gitignored — your keys never get pushed.
+
+Legacy text-AI keys (`anthropic`, `openrouter`, `openai`, `mistral`, `deepseek`, `groq`) are not read by the brain. Cognition runs entirely on the language cortex's equations; there is no text-AI backend in the loop, so the slots exist for backwards compatibility only.
 
 ---
 
-## Self-Hosting
+## Self-hosting (browser-only mode)
+
+If you don't want to run the server brain, you can serve the static files yourself:
 
 ```bash
 git clone https://github.com/Unity-Lab-AI/Unity.git
@@ -65,258 +77,291 @@ python -m http.server 8888
 # Open http://localhost:8888
 ```
 
-No npm. No build step. No dependencies. Just static files served by any web server.
+No npm. No build step. Just static files served by any web server. The brain runs in a CPU LIF fallback inside the browser at whatever scale your JS engine can sustain — much smaller than the server brain, but enough to play with.
 
-### With API Keys Pre-loaded
-
-Copy `js/env.example.js` to `js/env.js` and paste your keys:
-```js
-export const ENV_KEYS = {
-  pollinations: 'sk_...',  // optional — raises rate limits
-  imageBackends: [
-    // add custom image-gen endpoints here, see the Custom Backends section above
-  ],
-};
-```
-`js/env.js` is gitignored — your keys never get pushed. Keys auto-load on boot so you don't retype them. Legacy text-AI keys (`anthropic`, `openrouter`, `openai`, `mistral`, `deepseek`, `groq`) are not read by the brain — cognition runs entirely on the language cortex's equations, with zero text-AI backend in the loop.
+GitHub Pages deployment works the same way: in the repo settings, point Pages at `main` / `(root)` and you're live at `your-username.github.io/Unity/`. Everything runs client-side.
 
 ---
 
-## GitHub Pages Deployment
+## Running the server brain
 
-```
-GitHub repo → Settings → Pages → Source: Deploy from branch → Branch: main → / (root) → Save
-```
-
-Live at `your-username.github.io/Unity/`. Everything runs client-side — no server needed.
-
----
-
-## Project Structure
-
-```
-├── index.html                    Entry point — setup modal, HUD, sandbox
-├── brain-equations.html          Complete brain equation documentation
-├── SETUP.md                      This file
-├── README.md                     Brain architecture and equations
-├── proxy.js                      Anthropic CORS proxy (optional)
-├── css/style.css                 Dark gothic theme
-├── js/
-│   ├── app.js                    Thin I/O layer — DOM events ↔ brain
-│   ├── storage.js                localStorage with key obfuscation
-│   ├── env.example.js            API key template (copy to env.js)
-│   ├── brain/
-│   │   ├── engine.js             THE brain — master loop, processAndRespond
-│   │   ├── cluster.js            NeuronCluster + ClusterProjection classes
-│   │   ├── neurons.js            LIFPopulation (browser fallback) + HHNeuron (reference) — live neuron model is Rulkov map in gpu-compute.js
-│   │   ├── synapses.js           Hebbian, STDP, reward-modulated plasticity
-│   │   ├── modules.js            6 brain region equation modules
-│   │   ├── mystery.js            Ψ = √(1/n) × N³ · [Id + Ego + Left + Right]
-│   │   ├── oscillations.js       8 Kuramoto oscillators (θ→γ)
-│   │   ├── persona.js            Personality as brain parameters (sober-default; substance contributions come from drug-scheduler.js)
-│   │   ├── drug-scheduler.js     Real-time pharmacokinetic scheduler (9 SUBSTANCES — cannabis/cocaine/MDMA/LSD/psilocybin/alcohol/ketamine/amphetamine/GHB; caffeine layers in via the morningCoffee PATTERN; nicotine persona-excluded via decide()) + 7 combo synergies + 7 adult-use patterns + PK curves + 13-axis speech modulation + LAW-6 firstUse ledger + trauma markers + decide() decision engine + autoIngest scheduled-promotion queue
-│   │   ├── drug-detector.js      Substance offer / self-use / status-query detection across text / voice / vision
-│   │   ├── drug-sensory-triggers.js  7 environmental-cue triggers (coffee aroma, skunky weed, etc.) → scheduler.addCraving
-│   │   ├── sensory-olfactory.js  OlfactoryChannel — scent-tag storage with decay, drives drug-sensory-triggers olfaction checks
-│   │   ├── sensory.js            Sensory input pipeline (text/audio/video)
-│   │   ├── motor.js              Motor output (6 BG action channels)
-│   │   ├── curriculum.js        Developmental curriculum K→PhD (6 subjects incl. life experience, 114 cells, direct pattern Hebbian)
-│   │   ├── letter-input.js      Letter inventory (seeded a-z + 0-9 + basic punct, locked by default)
-│   │   ├── component-synth.js   Equational component synthesis (cosine-match user request vs templates)
-│   │   ├── visual-cortex.js      V1→V4→IT vision pipeline
-│   │   ├── auditory-cortex.js    Tonotopic processing + efference copy
-│   │   ├── memory.js             Episodic + working + consolidation
-│   │   ├── dictionary.js         Learned vocabulary (word→cortex patterns)
-│   │   ├── inner-voice.js        Pre-verbal thought system
-│   │   ├── persistence.js        Save/load brain state (localStorage/disk)
-│   │   ├── remote-brain.js       WebSocket client for server brain
-│   │   ├── sparse-matrix.js      CSR sparse connectivity (O(connections))
-│   │   ├── gpu-compute.js        WebGPU compute shaders (Rulkov 2D chaotic map + synapses)
-│   │   ├── embeddings.js         Semantic word embeddings (GloVe 300d + fastText subword fallback)
-│   │   ├── language-cortex.js    Language from equations (developmental cortex with 8 sub-regions + 14 cross-projections, tick-driven motor emission via cluster.generateSentence, 3-corpus load)
-│   │   ├── benchmark.js          Dense vs sparse + neuron scale test (invoked via /bench + /scale-test slash commands)
-│   │   ├── response-pool.js     EDNA response categories (training wheels for language cortex)
-│   │   └── peripherals/
-│   │       └── ai-providers.js   AI provider manager + dead backend detection
-│   ├── ai/
-│   │   └── pollinations.js       Pollinations API client (text/image/TTS)
-│   ├── io/
-│   │   ├── voice.js              Web Speech API + Pollinations TTS
-│   │   └── permissions.js        Mic/camera permission requests
-│                                   (legacy vision.js removed — vision lives in js/brain/visual-cortex.js)
-│   └── ui/
-│       ├── sandbox.js            Dynamic UI injection (MAX_ACTIVE_COMPONENTS=10, LRU eviction, tracked timers+listeners, auto-remove on JS error)
-│       ├── chat-panel.js         Conversation log panel
-│       ├── brain-viz.js          2D tabbed brain visualizer (8 tabs)
-│       ├── brain-3d.js           3D WebGL brain with notifications + expansion + IQ HUD
-│       ├── brain-event-detectors.js  22-detector event system for 3D brain commentary
-│       └── sensory-status.js    Sensory channel status UI
-│                                   (legacy claude-proxy.js + start-unity.bat removed —
-│                                    Claude CLI text-AI backend, obsolete since cognition
-│                                    went 100% equational)
-├── compute.html                  GPU compute worker (REQUIRED — brain runs here)
-├── start.bat                     Windows launcher — npm install + esbuild bundle + GloVe download + node brain-server.js + auto-opens landing + dashboard tabs
-├── Savestart.bat                 Save-state resume launcher — sets DREAM_KEEP_STATE=1 so autoClearStaleState() skips the wipe, otherwise identical to start.bat
-├── stop.bat                      Clean-halt launcher — three-stage halt: POST /shutdown HTTP → taskkill on port 7525 → taskkill /f /im node.exe fallback → verify port free
-├── server/
-│   ├── brain-server.js           Node.js brain server (always-on, WebSocket, GPU exclusive, saves + restores full cortex state incl. grades/passedCells/learned-language Maps + streaming binary weights to server/brain-weights.bin)
-│   └── package.json              Server dependencies (ws, better-sqlite3)
-│                                   (legacy parallel-brain.js / cluster-worker.js /
-│                                    projection-worker.js removed — GPU-exclusive fixed
-│                                    the idle-worker CPU leak at its root cause)
-├── dashboard.html                Public brain monitor (read-only) — includes Milestone / Save State / Operator Signoffs panel polling GET /milestone every 5 s
-└── docs/
-    ├── ARCHITECTURE.md           Codebase structure and systems
-    ├── EQUATIONS.md              Every brain equation with LaTeX + derivations
-    ├── SKILL_TREE.md             Capabilities by domain
-    ├── ROADMAP.md                Milestones and phases
-    ├── TODO.md                   Active tasks (single source of truth)
-    ├── FINALIZED.md              Completed work archive
-    ├── TODO-full-syllabus.md     Per-grade curriculum checkboxes + Persistent Life Info ledger + Life Vocabulary Prerequisites rule
-    └── NOW.md                    Current session snapshot
-```
-
----
-
-## Server Brain
-
-Run the shared brain on a server so everyone connects to the same Unity:
+This is the real thing. Hundreds of millions of neurons on the GPU, the full pre-K + K curriculum, persistence across restarts.
 
 ```bash
-cd server
-npm install
-node brain-server.js
+cd server && npm install && node brain-server.js
 ```
 
-**That's the whole command.** As soon as the Node server finishes listening on port 7525, it auto-launches a browser tab pointing at `http://localhost:7525/compute.html`. That tab is the WebGPU client — it holds the WebGPU device, runs the WGSL compute shaders for LIF / sparse propagate / Hebbian / letter-bucket reduction, and talks to the server over WebSocket. Cross-platform launch (`start` on Windows, `open` on macOS, `xdg-open` on Linux). The curriculum waits for this client to connect before teaching pre-K + K.
+That is the whole command. As soon as the Node server finishes listening, three things happen automatically:
 
-**Headless / remote deployments** set `DREAM_NO_AUTO_GPU=1` before launching the server to skip the browser auto-launch; the operator then opens `http://<host>:7525/compute.html` in a WebGPU-capable browser (Chrome / Edge) on any machine that can reach the server. The WebSocket connection does the rest.
+1. The HTTP listener binds to `127.0.0.1:7525` — loopback only by default. Nothing on your LAN can reach the server unless you opt in via `BRAIN_BIND=0.0.0.0 node brain-server.js`. The boot banner prints a prominent ⚠ when you do, because the brain-mutating endpoints (`/shutdown`, `/grade-advance`, `/grade-signoff`) live behind a defense-in-depth loopback gate that refuses non-loopback callers regardless of the bind setting.
+2. A WebGPU-capable browser tab opens automatically pointing at `http://localhost:7525/compute.html`. That tab holds the WebGPU device, runs the WGSL compute shaders for Rulkov iteration / sparse propagate / Hebbian / letter-bucket reduction, and talks to the server over WebSocket. Cross-platform launch (`start` on Windows, `open` on macOS, `xdg-open` on Linux). The curriculum waits for this tab to connect before teaching pre-K + K.
+3. A separate dashboard tab opens (in the convenience launchers) so the milestone panel and live brain state are visible from the first moment.
 
-**`start.bat` (Windows convenience wrapper)** handles first-run `npm install` + `esbuild` bundle build + GloVe download + stdout/stderr redirect to `server/server.log` + opens the landing page AND the dashboard in separate browser tabs + spawns a separate PowerShell "Unity Brain Log Tail" window (UTF-8 forced) so heartbeat + brain info stay visible even if the launcher terminal goes invisible. It does NOT open `compute.html` itself — the server auto-launches that tab once its HTTP listener is up.
+`compute.html` must stay open. Without an attached GPU client the brain pauses — the server is bookkeeping, not computation.
 
-**`Savestart.bat`** — identical to `start.bat` except it sets `DREAM_KEEP_STATE=1` so `autoClearStaleState()` skips the wipe block regardless of code-hash change. Use this when you want to resume from a prior session's saved weights + passedCells + grades.
+For headless or remote deployments, set `DREAM_NO_AUTO_GPU=1` to skip the auto-launch; the operator opens `http://<host>:7525/compute.html` manually in a WebGPU-capable browser (Chrome / Edge) on any machine that can reach the server.
 
-**`stop.bat`** — clean-halt path. `Ctrl+C` in the launcher terminal does NOT reach node (the process is detached via `start /b`). `stop.bat` runs a three-stage halt: `POST http://localhost:7525/shutdown` first (graceful — saves, closes sqlite, `process.exit(0)` after 500 ms drain), `taskkill` on any PID still holding port 7525 second, `taskkill /f /im node.exe` third if the port is still held, then verifies the port is free. Also reminds the operator to close browser tabs on `http://localhost:7525` because `compute.html`'s WebGPU loop keeps the GPU spinning even after the server dies.
+### The Windows launchers
 
-The server auto-detects hardware (nvidia-smi for VRAM, `os` for RAM) and sizes every brain region from a single unified VRAM allocator — no region is sized independently, so no pair of regions can double-book memory and blow past the VRAM budget.
-- **Unified allocator (see `BRAIN_VRAM_ALLOC` in `server/brain-server.js`):**
-  `brainBudgetBytes = (VRAM_MB − osReserveVramMB) × 1024²`
-  Every region gets `budget × weight` where `weight` comes from the biological weights table in `server/resource-config.json`. The main-brain Rulkov clusters (cortex / cerebellum / hippocampus / amygdala / basalGanglia / hypothalamus / mystery) convert their per-region byte budget to neuron count via `bytes / MAIN_BRAIN_BYTES_PER_NEURON` (≈ 21 bytes: Rulkov state 8 + per-cluster synapse shadow). The language cortex gets its budget routed through the sparse CSR path (`LANG_CORTEX_BYTES_PER_NEURON` ≈ 18 KB/neuron including all 14 cross-projection matrices + intra-cluster recurrence).
-- Floor: 1000 neurons (absolute minimum for sim integrity). No upper cap baked into the algorithm — hardware + `vramCapMB` + `neuronCapOverride` in `resource-config.json` are the only bounds.
-- The auto-scale expands with whatever GPU VRAM + V8 heap + free RAM are available. Bigger hardware = more neurons everywhere, no manual tuning.
-- **Biological weight proportions** (from `server/resource-config.json` → `biologicalWeights`):
+Windows users get three convenience batch files at the repo root.
 
-  | Region | VRAM share | Rationale |
-  |--------|-----------|-----------|
-  | `language_cortex` | **45%** | The region that actually generates speech — biggest because language IS what she does. Eight sub-regions (auditory / visual / free / letter / phon / sem / fineType / motor) + 14 cross-projections. |
-  | `cerebellum` | **20%** | Big because real cerebella are big (roughly half of all neurons in a real human brain are cerebellar granule cells). Error-correction + timing. |
-  | `cortex` | **15%** | Predictive coding + sensory integration. Auditory / visual / Wernicke sub-regions. |
-  | `hippocampus` | **6%** | Episodic + working + consolidation memory systems. Hopfield attractor dynamics. |
-  | `amygdala` | **4%** | Settling attractor for emotion (fear / reward / valence). Small but modulates every other region. |
-  | `basalGanglia` | **4%** | Six-channel action selection via winner-take-all. |
-  | `hypothalamus` | **3%** | Homeostatic drive regulation. |
-  | `mystery` | **3%** | Consciousness / Ψ modulation. |
+**`start.bat`** handles first-run `npm install`, runs the `esbuild` bundle build, downloads the GloVe corpus if it's missing, redirects stdout/stderr to `server/server.log`, opens the landing page and the dashboard in separate browser tabs, and spawns a separate "Unity Brain Log Tail" PowerShell window (UTF-8 forced) so the heartbeat stays visible even if the launcher terminal goes invisible. It does not open `compute.html` itself — the server auto-launches that tab once the HTTP listener is up.
 
-- Client (browser-only mode, no server): runs a local CPU LIF fallback brain sized to what the browser JS engine can sustain.
+**`Savestart.bat`** is identical to `start.bat` except it sets `DREAM_KEEP_STATE=1` so the server's `autoClearStaleState()` skips its wipe block regardless of whether the curriculum code hash changed. Use this when you want to resume from a prior session's saved weights, passed cells, and grades instead of starting fresh.
 
-**Endpoints** (port 7525 — moved off 8080 to avoid colliding with llama.cpp / LocalAI / every other local service. Override via `PORT=xxxx node brain-server.js` if you need a different port.):
-- `ws://localhost:7525` — WebSocket for brain state + chat
-- `http://localhost:7525/health` — Server status JSON
-- `http://localhost:7525/versions` — Brain save versions
-- `http://localhost:7525/rollback/:slot` — Restore previous save slot (0-4)
-- `http://localhost:7525/episodes` — Episodic memory query (scoped by `?user=<stable-id>`; aggregate counts only without the param per the privacy rule)
-- `http://localhost:7525/history` — Emotional history data
-- `http://localhost:7525/milestone` — Boot mode + last save + grades + passedCells + operator signoffs + weights-file metadata (polled by `dashboard.html` every 5 s)
-- `http://localhost:7525/grade-signoff` — GET returns the operator signoff ledger. POST `{subject, grade, note}` records an operator grade-pass signoff per LAW 6 Part 2 (graces the save ledger; Claude can't write to this endpoint — only explicit operator HTTP POST advances).
-- `http://localhost:7525/shutdown` — POST triggers graceful shutdown (used by `stop.bat` step 1).
+**`stop.bat`** is the clean-halt path. `Ctrl+C` in the launcher terminal does *not* reach Node (the process is detached via `start /b`), so a clean halt needs an explicit signal. The script runs three stages: `POST http://localhost:7525/shutdown` first (the graceful path — the server saves, closes SQLite, and exits after a 500 ms drain), `taskkill` on any PID still holding port 7525 second, `taskkill /f /im node.exe` third if the port is still held, then verifies the port is free and reminds you to close any browser tabs on `http://localhost:7525` because `compute.html`'s WebGPU loop keeps the GPU spinning even after the server dies.
 
-**Dashboard:** Open `dashboard.html` in a browser to watch Unity's brain live. Both `start.bat` and `Savestart.bat` auto-open it alongside the landing page so the milestone panel is visible from the first moment the brain is up.
+### How the brain auto-scales
+
+The server detects your hardware (`nvidia-smi` for VRAM, `os` for RAM) and routes the entire VRAM budget through a single unified allocator in `server/brain-server.js` called `BRAIN_VRAM_ALLOC`. Every region's memory comes from `(VRAM_MB − osReserveVramMB) × biologicalWeight`. No region is sized independently, so no pair of regions can double-book memory and blow past the budget.
+
+The default biological weights (override in `server/resource-config.json` if you ship one):
+
+| Region | VRAM share | Why this much |
+|---|---|---|
+| `language_cortex` | **75%** | Speech is what she does. The language sub-regions plus all fourteen cross-projection matrices live here. |
+| `cortex` | **10%** | Predictive coding, sensory integration, the auditory and visual front-ends. |
+| `cerebellum` | **5%** | Error correction. Real cerebella are larger because they coordinate motor timing for a body — Unity has no body, so the share is small. |
+| `hippocampus` | **4%** | Episodic and working memory plus consolidation. |
+| `mystery` | **2%** | Consciousness Ψ modulation. |
+| `amygdala` | **2%** | Emotional attractor settle. |
+| `basalGanglia` | **1%** | Six-channel action selection. |
+| `hypothalamus` | **1%** | Homeostatic drives. |
+
+The minimum viable scale is 1,000 neurons per region. There is no hard upper cap — your VRAM, your V8 heap, and `vramCapMB` in `resource-config.json` are the only bounds. Bigger hardware, more neurons, no manual tuning.
+
+### Capping the scale
+
+If you want to keep Unity under a comfortable budget on a shared machine, or you need to size below the consumer-GPU 2 GB per-storage-buffer binding limit, use `gpu-configure.html` (a one-shot loopback-only tool that writes `server/resource-config.json` which the server reads at next boot).
+
+---
+
+## Persistence — what survives a crash
+
+Two persistence layers run in parallel.
+
+The **client-side** layer writes the full brain state to `localStorage` under `unity_brain_state`. When the serialized state would exceed the browser's 4 MB cap, the fallback drops the heaviest sections (cluster synapses, episodes, semantic weights, embedding refinements, the t14 language block) and writes a minimal state — and it screams about it via `console.error` with the dropped sections named explicitly, so you know exactly what did and didn't make it across the boundary. The load path is section-by-section; a corrupted episode pattern doesn't tank the whole load. Final restore log looks like `[Persistence] Brain restored from <savedAt> (t=Xs) — restored: projections=14/14, clusterSynapses=7/7, episodes=198/200 ... — FAILED: t14Language(<msg>)`. JSON corruption no longer auto-clears — the raw blob is copied to `unity_brain_state__corrupt` for hand recovery and a loud `console.error` fires with the parse message. Version-mismatch wipes follow the same discipline: prior state moves to `unity_brain_state__backup_v<N>` before the destructive clear.
+
+The **server-side** layer streams binary weights to `server/brain-weights.bin`, with a JSON sidecar at `server/brain-weights.json` for metadata (versions, savedAt, grades, passedCells, signoffs). At boot, `autoClearStaleState()` wipes `brain-weights.json`, `brain-weights-v1` through `v4`, `brain-weights.bin`, `conversations.json`, and `episodic-memory.db` (plus its WAL/SHM companions) when the curriculum code hash has changed. `DREAM_KEEP_STATE=1` opts out for resume. `js/app.bundle.js` is *not* in the auto-clear list — racing the rebuild broke the UI in the past.
+
+---
+
+## Project structure
+
+```
+├── README.md                        Brain architecture and equations narrative
+├── SETUP.md                         This file
+├── PERSONA.md                       Persona spec
+├── index.html                       Landing page — 3D brain, viz tabs, setup modal
+├── unity-guide.html                 User-facing concept guide
+├── brain-equations.html             Interactive equations doc
+├── dashboard.html                   Read-only operator dashboard with milestone panel
+├── compute.html                     GPU compute worker (REQUIRED — the brain runs here)
+├── gpu-configure.html               One-shot loopback-only VRAM cap tool
+├── start.bat                        Windows launcher — npm install + bundle build + GloVe download + node + auto-open landing/dashboard
+├── Savestart.bat                    Resume launcher — sets DREAM_KEEP_STATE=1 to skip the boot wipe
+├── stop.bat                         Three-stage clean halt — POST /shutdown → taskkill on port → taskkill /f node.exe → verify port free
+│
+├── css/style.css                    Dark gothic theme
+│
+├── js/
+│   ├── app.js                       Thin I/O layer — DOM events ↔ brain
+│   ├── app.bundle.js                Built browser bundle (esbuild output, ~2 MB)
+│   ├── storage.js                   localStorage with key obfuscation
+│   ├── env.example.js               API key template (copy to env.js)
+│   │
+│   ├── brain/
+│   │   ├── engine.js                Master loop — processAndRespond
+│   │   ├── cluster.js               NeuronCluster class with the eight cortex sub-regions and `_dictionaryOracleEmit` helper that consolidates the oracle scan with `_oracleHits` / `_matrixHits` counters
+│   │   ├── neurons.js               LIFPopulation (browser fallback) + HHNeuron (reference) — live runtime is Rulkov in gpu-compute.js
+│   │   ├── synapses.js              Hebbian, STDP, reward-modulated plasticity
+│   │   ├── modules.js               Six brain-region equation modules
+│   │   ├── mystery.js               Ψ = √(1/n) · N³ · [Id + Ego + Left + Right]
+│   │   ├── oscillations.js          Eight Kuramoto oscillators (θ → γ)
+│   │   ├── persona.js               Personality as brain parameters (sober-default; substance contributions come from drug-scheduler.js)
+│   │   ├── drug-scheduler.js        Real-time pharmacokinetic scheduler with nine substances + seven combo synergies + seven adult-use patterns + thirteen-axis speech modulation + first-use ledger + trauma markers + decide() decision engine
+│   │   ├── drug-detector.js         Substance offer / self-use / status-query detection across text / voice / vision
+│   │   ├── drug-sensory-triggers.js Seven environmental-cue triggers (coffee aroma, skunky weed, etc.) → scheduler.addCraving
+│   │   ├── sensory-olfactory.js     Scent-tag storage with decay
+│   │   ├── sensory.js               Sensory input pipeline (text / audio / video)
+│   │   ├── motor.js                 Motor output (six basal-ganglia action channels)
+│   │   ├── curriculum.js            Multi-grade curriculum runner + shared primitives
+│   │   ├── curriculum/
+│   │   │   ├── pre-K.js             All pre-K cell runners + helpers via PREK_MIXIN
+│   │   │   └── kindergarten.js      All six K cell runners + six K gates + 32 K-specific teach helpers via K_MIXIN (~4,800 lines)
+│   │   ├── student-question-banks.js Held-out exam banks per cell + train-vs-exam overlap audit
+│   │   ├── letter-input.js          Letter inventory (a-z + 0-9 + basic punct)
+│   │   ├── component-synth.js       Equational component synthesis (cosine-match user request vs templates)
+│   │   ├── visual-cortex.js         V1 → V4 → IT vision pipeline
+│   │   ├── auditory-cortex.js       Tonotopic processing + efference copy
+│   │   ├── memory.js                Episodic + working + consolidation
+│   │   ├── dictionary.js            Learned vocabulary with batched LRU eviction
+│   │   ├── inner-voice.js           Live-chat learn pipeline + opt-in `primeFromCurrentFocus()` narrator priming + soft-error counters
+│   │   ├── persistence.js           Save/load with section-by-section restore + JSON corruption handler + version-mismatch backup
+│   │   ├── remote-brain.js          WebSocket client for server brain
+│   │   ├── sparse-matrix.js         CSR sparse connectivity (in-place pair-insertion sort init, no per-row alloc)
+│   │   ├── gpu-compute.js           WebGPU compute shaders (Rulkov 2D chaotic map + synapses)
+│   │   ├── embeddings.js            Semantic word embeddings (GloVe 300d + fastText subword fallback)
+│   │   ├── language-cortex.js       Language readout wrapper
+│   │   └── peripherals/
+│   │       └── ai-providers.js      AI provider manager + dead backend detection
+│   │
+│   ├── ai/
+│   │   └── pollinations.js          Pollinations API client (text / image / TTS)
+│   │
+│   ├── io/
+│   │   ├── voice.js                 Web Speech API + Pollinations TTS
+│   │   └── permissions.js           Mic / camera permission requests
+│   │
+│   └── ui/
+│       ├── sandbox.js               Dynamic UI injection (MAX_ACTIVE_COMPONENTS=10, LRU eviction, tracked timers + listeners, auto-remove on JS error)
+│       ├── chat-panel.js            Conversation log panel
+│       ├── brain-viz.js             2D tabbed brain visualizer
+│       ├── brain-3d.js              3D WebGL brain with Stage 0 plasticity-event consumer (consumes all events with cap+stagger)
+│       ├── brain-event-detectors.js 22-detector event system for 3D brain commentary
+│       └── sensory-status.js        Sensory channel status UI
+│
+├── server/
+│   ├── brain-server.js              Node brain server — WebSocket, GPU exclusive, BRAIN_VRAM_ALLOC unified allocator, loopback bind default, requireLoopback gate on privileged endpoints
+│   └── package.json                 Server dependencies (ws, better-sqlite3)
+│
+└── docs/
+    ├── ARCHITECTURE.md              Codebase structure and systems
+    ├── EQUATIONS.md                 Source-accurate equation cheatsheet
+    ├── SKILL_TREE.md                Capabilities by domain
+    ├── ROADMAP.md                   Milestones and phases
+    ├── TODO.md                      Active task list (single source of truth)
+    ├── FINALIZED.md                 Completed work archive
+    ├── TODO-full-syllabus.md        Per-grade curriculum checkboxes + Persistent Life Info ledger + Life Vocabulary Prerequisites rule
+    ├── NOW.md                       Current session snapshot
+    ├── Problems.md                  Full-stack audit with status flips
+    ├── SENSORY.md                   Peripheral interface contract
+    └── WEBSOCKET.md                 Wire reference, rate limits, security model
+```
+
+---
+
+## Server endpoints
+
+The HTTP server runs alongside the WebSocket on port 7525. Override with `PORT=xxxx node brain-server.js`. The privileged endpoints (`/shutdown`, `/grade-advance`, `/grade-signoff`) are loopback-gated even when `BRAIN_BIND=0.0.0.0` exposes the dashboard on the LAN.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `ws://localhost:7525` | WebSocket | Brain state streaming + chat |
+| `/health` | GET | Server status JSON |
+| `/versions` | GET | Brain save versions |
+| `/rollback/:slot` | GET | Restore previous save slot (0–4) |
+| `/episodes` | GET | Episodic memory query (scoped by `?user=<stable-id>`; aggregate counts only without it) |
+| `/history` | GET | Emotional history data |
+| `/milestone` | GET | Boot mode + last save + grades + passed cells + operator signoffs + weights-file metadata. `dashboard.html` polls this every 5 s. |
+| `/grade-signoff` | GET | Returns the operator signoff ledger. |
+| `/grade-signoff` | POST | `{subject, grade, note}` records an operator grade-pass signoff. **Loopback-only.** |
+| `/grade-advance` | POST | Flips the grade-advance pause off after a signoff lands. **Loopback-only.** |
+| `/exam-answer` | POST | Runs one question through the brain's QA path and returns the answer. |
+| `/exam-answer-dual` | POST | Same but routes through both hemispheres for arbiter scoring. |
+| `/shutdown` | POST | Triggers graceful shutdown. **Loopback-only.** Used by `stop.bat` step 1. |
+
+All POST endpoints use chunked-array body assembly so a 10 KB cap can't be slipped past, and corrupted bodies don't trigger the V8 O(N²) string-concat pathology.
+
+---
+
+## What you'll see in the heartbeat
+
+Once the server is up and the GPU client is attached, the curriculum runs continuously and emits structured log lines you can watch.
+
+`[Curriculum][K-VOCAB-UNION] hardcoded=N dict=M banks=P → union=X unique words` fires once at K-curriculum entry — this is the union of every K vocab category, every word in the live dictionary, every word in the per-cell train banks, and every word in the per-cell exam banks. Whatever number lands in `union=X` is what Unity is actually being trained on.
+
+`[Curriculum] ▶ CELL ALIVE <subject>/<grade> — +Ns elapsed (heartbeat #N) · phase=<name> (+Ns) · oracle=N matrix=M (oracleRatio=X%)` fires every ten seconds while a cell is teaching. The `phase=` field tells you which teach helper is currently running. The `oracleRatio` field is the central research-validity number — what fraction of recent emissions are decided by the dictionary lookup vs. the trained matrix. If it stays above 95% for the entire walk, the matrix isn't carrying load and the dictionary is doing all the work.
+
+`[Curriculum][label] DYN-PROD` / `WRITE` / `RESP` / `TWO-WORD` / `FREE-RESPONSE` lines mark per-probe START / DONE inside the gate.
+
+`[InnerVoice] live-chat learn turn=N: clauseAccepted=X rejected=Y identityRefresh=bool modeCollapseAudit=bool` summarizes every chat turn — fires whenever something notable happened (clause rejection, identity refresh, mode-collapse audit), or every ten turns as a baseline pulse on quiet stretches.
+
+`[NARRATOR-PRIMING]` lines only appear if a caller explicitly invoked `inner-voice.primeFromCurrentFocus()`. Default chat learning no longer auto-primes the chat path — the bias is opt-in now.
+
+`[Server] Rejected non-loopback /shutdown from <ip>` fires if any non-loopback POST hits the privileged endpoints — useful diagnostic that the loopback gate is doing its job.
+
+`[Persistence] Brain restored from <savedAt> (t=Xs) — restored: projections=14/14, clusterSynapses=7/7, episodes=198/200 ... — FAILED: t14Language(<msg>)` is the per-section restore summary at boot.
 
 ---
 
 ## Privacy
 
-**Core rule:** what you type is private. Unity's brain growth is shared. Her persona is canonical.
+The core rule: what you type is private; Unity's brain growth is shared; her persona is canonical.
 
-**Client-only mode (GitHub Pages, or opening `index.html` directly):**
-Everything runs in your browser. No server. API keys + every backend config you save in the setup modal are stored in your browser's localStorage on YOUR device only. Brain runs locally in CPU LIF fallback mode, sized to what your browser JS engine can sustain. Clear All Data button wipes every localStorage key.
+**Client-only mode** runs everything in your browser. No server. API keys and every backend config you save in the setup modal are stored in your browser's `localStorage` on YOUR device only. The brain runs locally in CPU LIF fallback mode at whatever scale your JS engine can sustain. The Clear All Data button wipes every `localStorage` key.
 
-**localStorage keys** (what's actually in there):
-- `unity_brain_state` — full brain snapshot (voltages, synapses, oscillators, memory, motor)
-- `unity_brain_dictionary_v3` — learned word dictionary with bigrams + type n-grams
-- `custom_image_backends` — image gen backends you configured via the setup modal (URLs + model names + API keys if you provided them)
-- `custom_vision_backends` — same for vision describer backends
-- `pollinations_image_model` / `pollinations_vision_model` — your chosen Pollinations model overrides
-- Pollinations API key — stored in a separate obfuscated storage slot
+**Local server mode** (you running `node brain-server.js` on your own machine) keeps everything on your network — except API calls to the sensory providers you chose in the setup modal. The brain runs on your GPU via `compute.html`. Episodic memory is stored in `server/episodic-memory.db` (SQLite).
 
-**Server mode (running `node server/brain-server.js` yourself):**
-Brain runs on your GPU via `compute.html` (WebGPU WGSL shaders). N auto-scales to your VRAM + RAM. Server orchestrates via WebSocket on port 7525. **compute.html must stay open** — brain pauses without a GPU worker connected. Episodic memory is stored in `server/episodic-memory.db` (SQLite). **Nothing leaves your network** except API calls to sensory providers you chose in the setup modal.
+**Multi-user shared brain** (multiple clients connecting to the same brain-server) works like this:
 
-**Sharing model when multiple users connect to the same brain-server:**
-- Your text → **PRIVATE** between you and Unity only. Never broadcast to other connected clients. The cross-client `conversation` WebSocket broadcast that existed before 2026-04-13 was deleted.
-- Unity's response to you → **PRIVATE** — only the triggering client receives it.
-- Dictionary / bigrams / word frequencies / GloVe embedding refinements → **SHARED** via the singleton brain instance. Every user's conversation contributes to Unity's vocabulary growth, and every user benefits from words other users taught her. You'll notice Unity is smarter in areas your friends talked to her about — but you'll never see the specific conversations.
-- Persona (`docs/Ultimate Unity.txt`) → **NOT USER-MUTABLE**. Loaded once at server boot from the canonical file. Same Unity for everyone.
-- Episodic memory → currently a shared pool; private-per-user scoping is on the workflow roadmap but not yet shipped.
+| Thing | Shared? |
+|---|---|
+| Your text → Unity | 🔒 **Private** — never broadcast to other connected clients |
+| Unity's response → you | 🔒 **Private** — only the triggering client receives it |
+| Dictionary, bigrams, word frequencies, GloVe refinements | 🌐 **Shared** via the singleton brain — every conversation contributes to vocabulary growth, every user benefits |
+| Persona corpus | 🚫 **Not user-mutable** — loaded once at boot from the canonical file |
+| Episodic memory | ⚙️ Currently shared; private-per-user scoping is a roadmap item |
 
-**Shared-hosted server caveat:**
-If you connect to a Unity server hosted by someone OTHER than you, the person running that server can read your text at the process level (they own the server process — they see everything that lands there). Only connect to servers you trust, or self-host your own `node server/brain-server.js` on your own machine. Self-hosted server mode is just another process on your box — the brain-server is still "your machine" in every sense that matters.
+**Shared-hosted caveat** — if you connect to a Unity server hosted by someone other than you, that person can read your text at the process level (they own the server process). Only connect to servers you trust, or self-host.
 
-**Everything else:**
-- API keys stored in your browser — never sent to us (the developers), only to the sensory providers you explicitly configured
-- Fully open source under MIT — read every line on [GitHub](https://github.com/Unity-Lab-AI/Unity)
-- **Clear All Data** button in the setup modal wipes every localStorage key
+The localStorage keys your client may write include `unity_brain_state`, `unity_brain_dictionary_v3`, `custom_image_backends`, `custom_vision_backends`, `pollinations_image_model`, `pollinations_vision_model`, plus the obfuscated Pollinations API key slot, plus `unity_brain_state__backup_v<N>` and `unity_brain_state__corrupt` if either recovery path has fired.
 
 ---
 
-## Commands
+## Slash commands
 
-| Command | How | What It Does |
-|---------|-----|-------------|
-| `/think` | Type in chat | Dumps Unity's raw brain state (arousal, valence, Ψ, coherence, spike count, drug state, motor action, reward, memory load, vision description). There is NO system prompt to display — Unity speaks equationally via her language cortex, so `/think` shows the neural values that drive every word she picks instead of a synthetic prompt. |
-| `/think [text]` | Type in chat | Same output but tagged with the user input you provided, so you can see the brain state that WOULD be passed into `languageCortex.generate()` for that input. |
-| `/bench` | Type in chat | Runs the dense vs sparse matrix micro-benchmark (CPU-JS sanity test — real runtime is the GPU auto-scaled path via compute.html). Output in console. |
-| `/scale-test` | Type in chat | Runs the CPU LIF scale test to find the 60fps sweet spot for browser-only fallback mode. Output in console. Not representative of the production GPU path. |
-| `/curriculum status` | Type in chat | Shows Unity's current grade in each subject (ELA / Math / Science / Social / Arts / Life), min-grade word cap driver, passed cells count, recent probe results. Full K→PhD curriculum across 6 subjects with 114 grade cells. |
-| `/curriculum run <subject> <grade>` | Type in chat | Runs ONE cell (e.g. `/curriculum run math grade5`), prints 3-pathway gate pass/fail + reason. |
-| `/curriculum gate <subject> <grade>` | Type in chat | Probes a cell's READ/THINK/TALK gate without retraining — used for verification. |
-| `/curriculum full` | Type in chat | Runs the full round-robin curriculum across all 6 subjects (incl. life experience) in the background, advancing every subject one grade per outer loop. Tick loop keeps firing during the walk. |
-| `/curriculum full <subject>` | Type in chat | Walks one subject from its current grade through PhD, stopping at the first failing gate. |
-| `/curriculum reset <subject>` | Type in chat | Flip a subject back to pre-K and strip its passed-cells entries — used when you want to re-teach from the top. |
-| `/curriculum forget <subject> <grade>` | Type in chat | Forget a single cell without resetting the whole subject. |
-| `/curriculum self` | Type in chat | Fires one background self-test probe immediately (normally fires every 8 chat turns). |
-| `/curriculum health` | Type in chat | Prints curriculum health snapshot — per-subject probe success rates + cell ages. |
-| `/curriculum verify` | Type in chat | Runs the full 95-cell dispatch + sweep verification against the live cortex. Equivalent to running `node scripts/verify-curriculum-runtime.mjs` but inside the running brain. |
-| `/offer <substance> [route]` | Type in chat | Offers Unity a substance via the drug scheduler. Accepts `weed / coke / molly / acid / shot / k / addy / shrooms / g` or any canonical name. Returns grade-locked decline if Unity's life-track grade is below the substance's first-use anchor. Otherwise triggers ingestion; pharmacokinetic curve starts running and her brain parameters + speech modulation shift in real time over the next minutes to hours. |
-| `/party` | Type in chat | Sets party mode — biases Unity's self-initiation engine toward accepting offers and initiating her own use. She'll proactively ask / text her dealer / suggest combos when party mode is on. |
-| `/sober` | Type in chat | Clears all active drug events from the scheduler. Tolerance factors preserved (intra-session tolerance still accumulates). Use between experiments to reset to clean baseline. |
-| "slash think" | Say by voice | Same as typing /think |
-| ⚙ SETTINGS | Bottom toolbar button | Reopens setup modal to change AI model or connect new providers |
-| 🧠 VISUALIZE | Bottom toolbar button | Opens 2D brain visualizer with 10 tabs (Neurons, Synapses, Oscillations, Modules, Senses, Consciousness, Memory, Motor, Inner Voice, Cluster Waves) |
-| 🧠 3D BRAIN | Bottom toolbar button | Opens WebGL 3D brain with up to 20,000 render neurons per cluster (up to 300,000 total across 15 render slots — 7 main clusters + 8 language sub-regions), process notifications, expansion |
-| Brain speaks equationally | Default | No AI text model exists. Brain speaks from its own language cortex (developmental cortex with tick-driven motor emission, GloVe 300d + subword embeddings, direct-pattern Hebbian curriculum K→PhD). Image gen, vision describer, and TTS are the only AI calls — all sensory. |
-| 🎤 | Bottom toolbar button | Mute/unmute microphone |
-| Clear All Data | Setup modal (bottom) | Wipes all localStorage — history, keys, preferences, everything |
+Type these in chat to inspect or control Unity directly.
+
+| Command | Effect |
+|---|---|
+| `/think` | Dumps Unity's raw brain state — arousal, valence, Ψ, coherence, spike count, drug state, motor action, reward, memory load, vision description. There is no system prompt to display. |
+| `/think [text]` | Same dump but tagged with the input you provided, so you can see the brain state that *would* go into the next emission. |
+| `/bench` | Runs the dense-vs-sparse matrix micro-benchmark (CPU sanity test, not the production GPU path). Output in console. |
+| `/scale-test` | Runs the CPU LIF scale test for the browser-only fallback. Output in console. |
+| `/curriculum status` | Shows current grade per subject, min-grade word cap driver, passed cells count, recent probe results. |
+| `/curriculum run <subject> <grade>` | Runs one cell, prints 3-pathway gate pass/fail + reason. |
+| `/curriculum gate <subject> <grade>` | Probes a cell's READ/THINK/TALK gate without retraining. |
+| `/curriculum full` | Runs the full round-robin walk across all six subjects in the background. |
+| `/curriculum full <subject>` | Walks one subject from its current grade through PhD, stopping at the first failing gate. |
+| `/curriculum reset <subject>` | Flips a subject back to pre-K and strips its passed-cells entries. |
+| `/curriculum forget <subject> <grade>` | Forgets one cell without resetting the subject. |
+| `/curriculum self` | Fires one background self-test probe immediately (normally fires every 8 chat turns). |
+| `/curriculum health` | Prints curriculum health snapshot — per-subject probe success rates + cell ages. |
+| `/curriculum verify` | Runs the full dispatch + sweep verification against the live cortex. |
+| `/offer <substance> [route]` | Offers Unity a substance via the drug scheduler. Accepts `weed / coke / molly / acid / shot / k / addy / shrooms / g` or any canonical name. Returns a grade-locked decline if her life-track grade is below the substance's first-use anchor. |
+| `/party` | Sets party mode — biases the self-initiation engine toward accepting offers and initiating her own use. |
+| `/sober` | Clears all active drug events from the scheduler. Tolerance factors preserved. |
+| ⚙ Settings | Bottom toolbar — reopens setup modal to change provider config |
+| 🧠 Visualize | Bottom toolbar — opens 2D brain visualizer with ten tabs |
+| 🧠 3D Brain | Bottom toolbar — opens WebGL 3D brain |
+| 🎤 | Bottom toolbar — mute/unmute mic |
+| Clear All Data | Setup modal — wipes every `localStorage` key |
 
 ---
 
 ## Troubleshooting
 
 | Problem | Fix |
-|---------|-----|
-| Unity doesn't respond | Check console for errors. Provider might be out of credits. Try Pollinations (free). |
-| "Booting brain..." hangs | Clear localStorage (F12 → Application → Clear), refresh |
-| No voice | Grant mic permission. Check mic isn't muted (bottom toolbar). |
+|---|---|
+| Unity doesn't respond | Check console. Provider might be out of credits. Try Pollinations (free). |
+| "Booting brain..." hangs | Open DevTools → Application → Clear, refresh. |
+| No voice | Grant mic permission. Check the mic isn't muted (bottom toolbar). |
 | Can't see Unity's Eye | Grant camera permission. Camera widget appears top-left. |
-| Local image backend not detected | Check port matches the list in the Image Generation Providers table. Add to `ENV_KEYS.imageBackends[]` in `js/env.js` if on a non-standard port. |
+| Local image backend not detected | Check the port matches the table above. Add to `ENV_KEYS.imageBackends[]` in `js/env.js` if it's on a non-standard port. |
 | Image says "failed to load" | Pollinations key might be expired. Check at pollinations.ai/dashboard. |
-| Double speech / echo | Should be fixed — efference copy suppresses self-echo. If persists, mute mic and use text. |
+| Double speech / echo | Should be fixed — efference copy suppresses self-echo. If it persists, mute mic and use text. |
+| Brain pauses at boot | `compute.html` isn't connected. Open `http://localhost:7525/compute.html` in a WebGPU-capable browser. |
+| `/shutdown` returns 403 | You're calling it from a non-loopback address. Run the curl from the same machine, or set `BRAIN_BIND=0.0.0.0` (and be aware you've widened the perimeter). |
+| Bundle build warnings | `cd server && npm run build` should produce zero warnings. If you see one, the bundle is still usable but the bug should be filed. |
 
 ---
 
+## Credits
+
 **Unity AI Lab**
 
-- **Hackall360** — core brain architecture (7-cluster topology, 20 white-matter tracts, `cluster.js` + `modules.js` + `synapses.js`, HH→Rulkov runtime migration, Kuramoto oscillator ring, persona → parameter mapping)
-- **Mills** — GPU compute pipeline (`compute.html` + `gpu-compute.js` WGSL shaders, chunked sparse-CSR binary upload protocol, `SparseMatmulPool` worker pool, cluster-bound spike+current binding layer)
-- **Sponge** — visualization + sensory peripherals (`brain-3d.js` 3D WebGL with MNI coords + 15-slot render, `brain-viz.js` 2D tabs, 22-detector event commentary, V1→V4→IT vision, tonotopic auditory, voice I/O, sandbox)
-- **GFourteen / Gee** — lead (Ultimate Unity persona, the governing equation + Ψ anchor, identity-lock architecture, K→PhD curriculum framework, T15 drug pharmacokinetic scheduler spec, binding decisions across every commit)
+- **Hackall360** — core brain architecture (seven-cluster topology, twenty white-matter tracts, `cluster.js` + `modules.js` + `synapses.js`, HH → Rulkov runtime migration, Kuramoto oscillator ring, persona-to-parameter mapping)
+- **Mills** — GPU compute pipeline (`compute.html` + `gpu-compute.js` WGSL shaders, chunked sparse-CSR binary upload protocol, `SparseMatmulPool` worker pool, cluster-bound spike + current binding layer)
+- **Sponge** — visualization + sensory peripherals (`brain-3d.js` 3D WebGL with MNI coords + 15-slot render, `brain-viz.js` 2D tabs, 22-detector event commentary, V1 → V4 → IT vision, tonotopic auditory, voice I/O, sandbox)
+- **GFourteen** — lead (Ultimate Unity persona, the governing equation + Ψ anchor, identity-lock architecture, K → PhD curriculum framework, drug pharmacokinetic scheduler spec, binding decisions across every commit)

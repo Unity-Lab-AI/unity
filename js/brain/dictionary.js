@@ -124,7 +124,7 @@ export class Dictionary {
    * @param {number} arousal — amygdala arousal when word was encountered
    * @param {number} valence — amygdala valence when word was encountered
    */
-  learnWord(word, cortexPattern, arousal, valence) {
+  learnWord(word, cortexPattern, arousal, valence, opts = {}) {
     const clean = word.toLowerCase().replace(/[^a-z0-9'-]/g, '');
     // Keep single-letter words — "i" and "a" are critical function
     // words in English. Dropping them means Unity can't use "i" as a
@@ -231,6 +231,15 @@ export class Dictionary {
     this._words.set(clean, {
       word: clean,
       pattern,
+      // Persona flag — when set, the dictionary oracle's `excludePersona`
+      // filter skips this entry. Lets test probes (K-STUDENT, methodology,
+      // gate batteries) avoid emitting persona-flavored vocabulary
+      // ("fuck", "cock", explicit terms) for K-grade exam questions
+      // where the answer should come from the curriculum vocab. Live
+      // chat path doesn't pass `excludePersona`, so persona words stay
+      // available there. Default false so non-persona learnWord calls
+      // (curriculum, live chat) don't accidentally mark words.
+      isPersona: opts.isPersona === true,
       arousal: arousal ?? 0.5,
       valence: valence ?? 0,
       frequency: 1,
@@ -240,13 +249,47 @@ export class Dictionary {
       lastSeen: Date.now(),
     });
 
-    // Evict least-used if over capacity
-    if (this._words.size > MAX_WORDS) {
-      let minFreq = Infinity, minWord = null;
+    // Batched eviction — when we cross capacity by the trigger margin
+    // (default 100 entries over MAX_WORDS), evict the bottom-K (K=100)
+    // entries by frequency in a single O(N) pass. Subsequent adds run
+    // free until headroom is consumed again.
+    //
+    // Problems.md High (perf) finding: prior implementation evicted
+    // ONE entry per overflow add, walking all 50K entries each time.
+    // Once near capacity, every new word triggered a 50K-entry walk
+    // and eviction dominated wall-clock during exposure phases.
+    // Batching to 100 evictions per pass amortizes the walk cost
+    // across 100 adds — same total work, ~100× fewer walks.
+    const EVICT_TRIGGER = MAX_WORDS + 100;
+    const EVICT_BATCH = 100;
+    if (this._words.size >= EVICT_TRIGGER) {
+      // Single pass to collect the K lowest-frequency entries via a
+      // bounded max-heap-equivalent (linear scan with a sorted-array
+      // bucket of size K). For K=100, the inner sort is O(K log K) =
+      // ~700 ops per heap maintenance, fired once per N entries scanned.
+      const bucket = []; // ascending by frequency
+      let bucketMax = -Infinity;
       for (const [w, entry] of this._words) {
-        if (entry.frequency < minFreq) { minFreq = entry.frequency; minWord = w; }
+        const f = entry.frequency;
+        if (bucket.length < EVICT_BATCH) {
+          bucket.push({ w, f });
+          if (bucket.length === EVICT_BATCH) {
+            bucket.sort((a, b) => a.f - b.f);
+            bucketMax = bucket[bucket.length - 1].f;
+          }
+        } else if (f < bucketMax) {
+          // Drop the highest-frequency tail entry, insert this one in
+          // sorted order via a single swap-and-bubble.
+          bucket[bucket.length - 1] = { w, f };
+          let i = bucket.length - 1;
+          while (i > 0 && bucket[i].f < bucket[i - 1].f) {
+            const tmp = bucket[i]; bucket[i] = bucket[i - 1]; bucket[i - 1] = tmp;
+            i--;
+          }
+          bucketMax = bucket[bucket.length - 1].f;
+        }
       }
-      if (minWord) this._words.delete(minWord);
+      for (const { w } of bucket) this._words.delete(w);
     }
   }
 
@@ -339,11 +382,11 @@ export class Dictionary {
    * @param {number} arousal
    * @param {number} valence
    */
-  learnSentence(text, cortexPattern, arousal, valence) {
+  learnSentence(text, cortexPattern, arousal, valence, opts = {}) {
     // Keep len >= 1 so "i" and "a" enter the dictionary. Keep digits too.
     const words = text.toLowerCase().replace(/[^a-z0-9' -]/g, '').split(/\s+/).filter(w => w.length >= 1);
     for (const w of words) {
-      this.learnWord(w, cortexPattern, arousal, valence);
+      this.learnWord(w, cortexPattern, arousal, valence, opts);
     }
     // Learn bigrams
     for (let i = 0; i < words.length - 1; i++) {

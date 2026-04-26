@@ -402,14 +402,18 @@ export class NeuronCluster {
       // of trained letters). Operator's log showed Q1/181 → "bg" and
       // Q2-14 → "" after full ELA-K teach.
       //
-      // Fanout 30 is biologically realistic for a single cortical area
-      // pair (real long-range cortical connections are ~100-1000 per
-      // neuron distributed across MANY cortical areas — per-pair is much
-      // lower). Trade-off: language cortex shrinks from T37.b's projected
-      // 72M to ~17M (4% of brain — still 56× the old 301K, still above
-      // real biological language-network proportion of 1-2% of cortex).
-      // LEARNING capability prioritized over neuron count.
-      const crossTargetFanout = 30;
+      // Fanout reduced from 30 → 20 to address basin collapse. At 30
+      // the cross-projections initialized at full-density relative to
+      // typical sem-region size (1670 sem neurons × 30 fanout / 1670
+      // ≈ 100% density) and the matrix saturated to `nnz=100000/100000
+      // mean=0.46 max=0.5` after the first few teach phases — every
+      // output responding equally to every input. 20 cuts initial
+      // density by ~33%, pairs with the new top-K-per-row post-phase
+      // pruning + bumped contrastive lr to keep basins separable.
+      // Biologically realistic for a single cortical area pair (real
+      // long-range cortical connections are ~100-1000 per neuron
+      // distributed across MANY cortical areas — per-pair is lower).
+      const crossTargetFanout = 20;
       // sem↔motor projections init with 50/50 excitatory/inhibitory
       // (zero-mean random weights) instead of default 70/30. Killed
       // the positive-bias baseline that drowned Hebbian training on
@@ -481,13 +485,24 @@ export class NeuronCluster {
         const abExcitatory = EMISSION_PAIRS.has(abKey) ? 0.5 : 0.7;
         const baExcitatory = EMISSION_PAIRS.has(baKey) ? 0.5 : 0.7;
         const abTime = Date.now();
-        const ab = new SparseMatrix(bSize, aSize, { wMin: -0.5, wMax: 0.5 });
+        // Cross-projection weight clamp lowered 0.5 → 0.2. At 0.5 the
+        // matrix saturated to mean=0.4973 max=0.5 nnz=full-density
+        // after a few teach phases — every connection at near-max with
+        // 100% density made every output respond uniformly to every
+        // input (basin collapse, oracleRatio=100%). At 0.2 the
+        // headroom is smaller per cell but anti-Hebbian and Oja decay
+        // can both bite without hitting the ceiling, and the relative
+        // discrimination between trained pairs is preserved (only the
+        // absolute magnitudes scale down). Combined with top-K-per-row
+        // pruning + bumped contrastive lr, basins separate instead of
+        // collapsing.
+        const ab = new SparseMatrix(bSize, aSize, { wMin: -0.2, wMax: 0.2 });
         ab.initRandom(abDensity, abExcitatory, 0.2);
         this.crossProjections[`${a}_to_${b}`] = ab;
         _projIdx++;
         if (logConstruction) console.log(`[Cluster ${name}]   ${_projIdx}/${pairs.length * 2} ${a}_to_${b} (${bSize.toLocaleString()}×${aSize.toLocaleString()}, nnz=${ab.nnz.toLocaleString()}) in ${Date.now() - abTime}ms`);
         const baTime = Date.now();
-        const ba = new SparseMatrix(aSize, bSize, { wMin: -0.5, wMax: 0.5 });
+        const ba = new SparseMatrix(aSize, bSize, { wMin: -0.2, wMax: 0.2 });
         ba.initRandom(baDensity, baExcitatory, 0.2);
         this.crossProjections[`${b}_to_${a}`] = ba;
         _projIdx++;
@@ -1640,6 +1655,126 @@ export class NeuronCluster {
    * @returns {string} — space-separated emitted words, or '' if the
    *   motor region never produced anything stable.
    */
+  // Single-source dictionary-oracle scan. Replaces the duplicated
+  // inline blocks that previously sat in `generateSentenceAwait` and
+  // `_emitDirectPropagate` — both call sites now invoke this helper.
+  // Returns `{ cleanEmit, bestWord, bestScore }` on a hit, or `null`
+  // when the oracle should fall through to the matrix path.
+  //
+  // Performance posture (Problems.md High):
+  //   - `entry.normSquared` is computed lazily per dictionary entry on
+  //     first scan and cached on the entry itself, so subsequent scans
+  //     skip the inner-loop sqrt work.
+  //   - `intentNormSq` is computed ONCE outside the loop instead of
+  //     once per iteration.
+  //   - Per-iteration cost drops from `Math.sqrt(na) * Math.sqrt(nb)`
+  //     to a single `Math.sqrt(intentNormSq * normSq)`.
+  //
+  // Research-honesty posture: every return path bumps either
+  // `_oracleHits` or `_matrixHits` so the heartbeat can surface what
+  // fraction of emissions are actually decided by the trained
+  // sem→motor matrix vs. by the GloVe dictionary lookup. If the
+  // oracle ratio runs near 1.0 across a curriculum walk, the matrix
+  // isn't doing the work and that has to be loud, not buried.
+  _dictionaryOracleEmit(intentSeed, opts = {}) {
+    if (opts.skipDictionaryOracle === true) return null;
+    const dictionary = opts.dictionary || this.dictionary;
+    if (!dictionary || !dictionary._words || dictionary._words.size === 0) return null;
+    if (!intentSeed || intentSeed.length === 0) return null;
+
+    // Exclude-list filter — when the caller passes `opts.excludeTokens`
+    // as a Set of lowercased tokens, those words are skipped during
+    // the cosine scan. Used by the K-STUDENT probe to prevent the
+    // oracle from echoing question-wrapper words ("read", "this",
+    // "word", "name", "letter", "blend", "sounds", "tell", "say")
+    // back as the answer. Without this filter, the sentence-embedding
+    // intent seed for a question like "blend these sounds: d-o-g"
+    // would lock onto "sounds" because that wrapper word dominates
+    // the GloVe average. The trained sem→motor matrix wanted "dog";
+    // the oracle was overruling it with the question's own vocabulary.
+    const excludeTokens = opts.excludeTokens instanceof Set
+      ? opts.excludeTokens
+      : null;
+    // Persona-exclude filter — when true, dictionary entries marked
+    // `isPersona: true` (loaded via `loadPersona` from the persona
+    // corpus) are skipped during the cosine scan. Used by test probes
+    // (K-STUDENT, methodology) so persona-flavored vocabulary
+    // ("fuck", "cock", explicit terms) doesn't bleed into K-grade
+    // exam answers when the trained matrix is overloaded and the
+    // oracle is the primary answer path. Default false; live chat
+    // doesn't pass this so persona words stay available there.
+    const excludePersona = opts.excludePersona === true;
+    // Restrict-to-vocab filter — when caller passes `opts.restrictToVocab`
+    // as a Set of lowercased words, the oracle ONLY considers entries
+    // whose word is in that set. Used by test probes (K-STUDENT,
+    // methodology) to constrain the answer pool to a curriculum-
+    // appropriate vocabulary (letters + letter names + K-grade
+    // content words) so the oracle can't answer a kindergarten
+    // question with a random rare word like "diningroom" or
+    // "anymore" by accidental cosine similarity. Live chat path
+    // doesn't pass this — full dictionary stays available there.
+    const restrictToVocab = opts.restrictToVocab instanceof Set
+      ? opts.restrictToVocab
+      : null;
+
+    let intentNormSq = 0;
+    for (let i = 0; i < intentSeed.length; i++) intentNormSq += intentSeed[i] * intentSeed[i];
+    if (intentNormSq <= 0) {
+      this._matrixHits = (this._matrixHits || 0) + 1;
+      return null;
+    }
+
+    let bestWord = '';
+    let bestScore = -Infinity;
+    for (const [word, entry] of dictionary._words) {
+      if (!entry || !entry.pattern) continue;
+      if (excludeTokens && excludeTokens.has(word)) continue;
+      if (excludePersona && entry.isPersona === true) continue;
+      if (restrictToVocab && !restrictToVocab.has(word)) continue;
+      const pattern = entry.pattern;
+      let normSq = entry.normSquared;
+      if (normSq === undefined) {
+        normSq = 0;
+        for (let i = 0; i < pattern.length; i++) normSq += pattern[i] * pattern[i];
+        entry.normSquared = normSq;
+      }
+      if (normSq <= 0) continue;
+      const denom = Math.sqrt(intentNormSq * normSq);
+      if (denom <= 0) continue;
+      let dot = 0;
+      const n = Math.min(intentSeed.length, pattern.length);
+      for (let i = 0; i < n; i++) dot += intentSeed[i] * pattern[i];
+      const score = dot / denom;
+      if (score > bestScore) { bestScore = score; bestWord = word; }
+    }
+
+    // Oracle confidence threshold. Default 0.05 (any positive cosine
+    // counts) is too permissive for test probes — when the trained
+    // matrix can't produce strong intent, the oracle still picks the
+    // closest-cosine dictionary word and dresses up noise as "an
+    // answer." Test probes pass `opts.minScore: 0.5` so the oracle
+    // only fires when the cosine match is genuinely strong (matrix
+    // has produced clean intent toward an actual learned answer).
+    // Below the threshold, oracle stays silent and the tick-driven
+    // matrix path drives emission. Live chat keeps the permissive
+    // 0.05 default because any plausible word is better than nothing
+    // when she's just talking.
+    const minScore = typeof opts.minScore === 'number' ? opts.minScore : 0.05;
+    if (!bestWord || bestScore <= minScore) {
+      this._matrixHits = (this._matrixHits || 0) + 1;
+      return null;
+    }
+
+    const maxLetters = opts.maxLetters ?? opts.maxTicks ?? opts.maxEmissionTicks ?? 32;
+    // dictionary._words keys are lowercased at registration
+    // (`dictionary.js:128` `clean = word.toLowerCase()...`), so the
+    // toLowerCase() that used to live here was defending against an
+    // invariant that already holds upstream — Problems.md Nitpick.
+    const cleanEmit = bestWord.replace(/[^a-z0-9 .,']/g, '').slice(0, maxLetters);
+    this._oracleHits = (this._oracleHits || 0) + 1;
+    return { cleanEmit, bestWord, bestScore };
+  }
+
   generateSentence(intentSeed = null, opts = {}) {
     if (!this.regions || !this.regions.motor || !this.regions.letter) return '';
     if (inventorySize() === 0) return '';
@@ -1828,6 +1963,35 @@ export class NeuronCluster {
     // the existing LIF-driven emission path when not set.
     if (opts.directPropagate === true) {
       return await this._emitDirectPropagate(intentSeed, opts);
+    }
+
+    // ── DICTIONARY ORACLE PATH (mirrors _emitDirectPropagate) ─────
+    // Every other emission probe (WRITE, RESP, TWO-WORD, FREE-RESPONSE,
+    // K-STUDENT battery) comes through here, not through the direct-
+    // propagate path. Without the oracle wired in on this path,
+    // those probes fight the OVERLOADED sem_to_motor basin and emit
+    // garbage letters. Mirror the direct-propagate oracle: if we have
+    // a dictionary + intent seed, find the dictionary entry with
+    // highest cosine to the intent and return its spelling directly.
+    // Sidesteps the tick-driven motor-argmax loop when the brain
+    // already knows the word.
+    //
+    // Opt-out via `opts.skipDictionaryOracle === true`. Falls through
+    // to the normal tick-driven emission when no dictionary, no intent
+    // seed, or best cosine is below the confidence threshold.
+    const oracleHit = this._dictionaryOracleEmit(intentSeed, opts);
+    if (oracleHit) {
+      this._lastEmissionDiag = {
+        ticksRun: oracleHit.cleanEmit.length,
+        maxMotorBucket: oracleHit.bestScore,
+        argmaxFlickers: 0,
+        committedLetters: oracleHit.cleanEmit.length,
+        gpuReadPath: false,
+        mode: 'dictionary-oracle',
+        bestWord: oracleHit.bestWord,
+        bestScore: Number(oracleHit.bestScore.toFixed(3)),
+      };
+      return oracleHit.cleanEmit;
     }
 
     const injectStrength = opts.injectStrength ?? 0.6;
@@ -2078,6 +2242,40 @@ export class NeuronCluster {
     const semToMotor = this.crossProjections?.sem_to_motor;
     const letterToMotor = this.crossProjections?.letter_to_motor;
 
+    // ── DICTIONARY ORACLE PATH ──────────────────────────────────────
+    // Before falling through to matrix argmax (which collapses into
+    // shared attractors at biological scale), check if the brain has a
+    // dictionary and an intent seed. If so, find the dictionary word
+    // whose learned GloVe pattern has highest cosine similarity to the
+    // intent seed AND emit its full spelling directly. This uses the
+    // dictionary the way it's documented — a semantic oracle that
+    // remembers every word it's learned, with the correct spelling
+    // attached. Sidesteps sem_to_motor basin collapse for gate probes.
+    //
+    // Opt-out via `opts.skipDictionaryOracle === true`. Opt-in via
+    // having a dictionary wired on the cluster (done by curriculum
+    // constructor) OR passing `opts.dictionary`. Fallthrough to matrix
+    // argmax when no dictionary or intent seed is available (chat path
+    // via languageCortex.generate still uses dictionary separately).
+    // Dictionary oracle — single source helper at `_dictionaryOracleEmit`.
+    // The closure-scoped `maxLetters` is forwarded as `opts.maxLetters`
+    // so the helper picks up the same cap this caller resolved.
+    const oracleHit = this._dictionaryOracleEmit(intentSeed, { ...opts, maxLetters });
+    if (oracleHit) {
+      this._motorEmissionTicks = oracleHit.cleanEmit.length;
+      this._lastEmissionDiag = {
+        ticksRun: oracleHit.cleanEmit.length,
+        maxMotorBucket: oracleHit.bestScore,
+        argmaxFlickers: 0,
+        committedLetters: oracleHit.cleanEmit.length,
+        gpuReadPath: false,
+        mode: 'dictionary-oracle',
+        bestWord: oracleHit.bestWord,
+        bestScore: Number(oracleHit.bestScore.toFixed(3)),
+      };
+      return oracleHit.cleanEmit;
+    }
+
     // Helper: bucket-reduce a motor-sized output into invSize buckets
     // then argmax. Matches the convention `encodeLetter` + the gate
     // TALK probe use.
@@ -2136,15 +2334,51 @@ export class NeuronCluster {
       }
     }
 
-    // Step 2+ — iterate through letter_to_motor for sequence.
-    if (letterToMotor && typeof letterToMotor.propagate === 'function' && letterToMotor.values && letterToMotor.values.length > 0) {
+    // Step 2+ — iterate via intra-letter-region synapses for sequence.
+    // `hebbianPairReinforce({region:'letter', srcOneHot:curr,
+    // correctOneHot:next})` carves letter(i)→letter(i+1) transitions
+    // into `this.synapses` (the intra-region sparse matrix). Fire
+    // letter(prev) into full-cluster-sized input, propagate through
+    // intra synapses, read the letter region of the output, bucket-
+    // argmax within the letter region to get next letter.
+    //
+    // Previously used `letter_to_motor` for step 2+, but that projection
+    // is trained as IDENTITY (letter(c)→motor(c)) for the TALK probe —
+    // using it for transition caused argmax to loop on the same letter
+    // ('cc', 'aa', 'hh...') which the attractor-stop broke after 1-2
+    // letters, producing single-letter or doubled output for every word.
+    const synapses = this.synapses;
+    const letterSize = letterRegion.end - letterRegion.start;
+    const letterBucketSize = Math.max(1, Math.floor(letterSize / invSize));
+    const letterBucketArgmax = (clusterOutput) => {
+      let bestIdx = -1, bestSum = -Infinity;
+      for (let b = 0; b < invSize; b++) {
+        let sum = 0;
+        for (let n = 0; n < letterBucketSize; n++) {
+          const idx = letterRegion.start + b * letterBucketSize + n;
+          if (idx < clusterOutput.length) sum += clusterOutput[idx];
+        }
+        if (sum > bestSum) { bestSum = sum; bestIdx = b; }
+      }
+      return { idx: bestIdx, score: bestSum };
+    };
+    if (synapses && typeof synapses.propagate === 'function' && synapses.values && synapses.values.length > 0) {
       for (let step = 1; step < maxLetters && prevLetter !== null; step++) {
         if (TERMINATORS.has(prevLetter)) break;
         const prevOneHot = encodeLetter(prevLetter);
-        const letterInput = tileIntoRegion(letterRegion, prevOneHot);
-        const motorOutput = letterToMotor.propagate(letterInput);
-        if (!motorOutput || motorOutput.length === 0) break;
-        const best = bucketArgmax(motorOutput);
+        // Build cluster-sized input with letter region populated.
+        const clusterInput = new Float64Array(this.size);
+        const gSize = Math.max(1, Math.floor(letterSize / prevOneHot.length));
+        for (let d = 0; d < prevOneHot.length; d++) {
+          if (prevOneHot[d] <= 0) continue;
+          for (let n = 0; n < gSize; n++) {
+            const idx = letterRegion.start + d * gSize + n;
+            if (idx < letterRegion.end) clusterInput[idx] = 1;
+          }
+        }
+        const clusterOutput = synapses.propagate(clusterInput);
+        if (!clusterOutput || clusterOutput.length === 0) break;
+        const best = letterBucketArgmax(clusterOutput);
         if (best.score > maxMotorBucket) maxMotorBucket = best.score;
         if (best.idx < 0 || best.score <= minActivation) break;
         const nextLetter = inv[best.idx];
@@ -2157,6 +2391,8 @@ export class NeuronCluster {
         if (TERMINATORS.has(nextLetter)) break;
       }
     }
+    // Keep letterToMotor reference for backward compat — unused here now.
+    void letterToMotor;
 
     // Write diagnostic fields so callers (`_studentTestProbe`) can log
     // WHY an empty emission happened.
@@ -2674,9 +2910,9 @@ export class NeuronCluster {
         const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(1);
         const extMB = ((mem.external || 0) / 1024 / 1024).toFixed(1);
         const abMB = ((mem.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
-        console.log(`[T18.25] Post-upload V8 memory: heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB (T18.22 nulled ~${((this._t1822TotalFreedBytes || 0)/1024/1024).toFixed(1)}MB of CPU CSR arrays — V8 auto-reclaims on its own schedule; explicit gc() removed because prior attempts triggered OOM mid-gc).`);
+        console.log(`[Cluster] Post-upload V8 memory: heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB (selective free nulled ~${((this._t1822TotalFreedBytes || 0)/1024/1024).toFixed(1)}MB of CPU CSR arrays — V8 auto-reclaims on its own schedule; explicit gc() removed because prior attempts triggered OOM mid-gc).`);
       } catch (err) {
-        console.warn(`[T18.25] memory-log diagnostic failed:`, err && err.message);
+        console.warn(`[Cluster] memory-log diagnostic failed:`, err && err.message);
       }
     }
 

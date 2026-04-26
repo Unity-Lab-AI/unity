@@ -123,13 +123,26 @@ export class SparseMatrix {
         seen.add(j);
         scratchCols[count++] = j;
       }
-      // Sort the kPerRow filled slice of scratchCols. Use subarray +
-      // Array.from sort because typed-array sort is numeric ascending
-      // by default, which is what we need.
-      const sortedCols = scratchCols.subarray(0, kPerRow).slice().sort();
+      // Sort the kPerRow filled slice of scratchCols in-place. Was
+      // `subarray + .slice() + .sort()` which allocated a fresh
+      // typed array per row — at biological scale (216M cortex × density
+      // × per-row), that's millions of throwaway typed-array allocs
+      // during init alone (Problems.md Low finding). The same in-place
+      // pair-insertion sort the topographic init below uses (lines
+      // 212-223) is the right pattern, working directly against
+      // scratchCols.subarray(0, kPerRow).
+      for (let a = 1; a < kPerRow; a++) {
+        const keyCol = scratchCols[a];
+        let b = a - 1;
+        while (b >= 0 && scratchCols[b] > keyCol) {
+          scratchCols[b + 1] = scratchCols[b];
+          b--;
+        }
+        scratchCols[b + 1] = keyCol;
+      }
       // Fill final typed arrays for this row.
       for (let k = 0; k < kPerRow; k++) {
-        this.colIdx[idx] = sortedCols[k];
+        this.colIdx[idx] = scratchCols[k];
         const sign = Math.random() < excitatoryRatio ? 1 : -1;
         this.values[idx] = sign * (0.1 + Math.random() * 0.4) * strength;
         idx++;
@@ -607,6 +620,133 @@ export class SparseMatrix {
     this.rowPtr = newRowPtr;
     this.nnz = newNnz;
 
+    return oldNnz - newNnz;
+  }
+
+  /**
+   * Multiply every weight by `factor` in place. Used as a post-phase
+   * rescale to break basin collapse: when the matrix has saturated to
+   * `wMax` at near-uniform values, multiplying every weight by 0.5
+   * drops saturated values from `wMax` to `wMax/2` — giving the next
+   * phase's anti-Hebbian and positive Oja both directional headroom
+   * to bite. Discrimination between trained pairs is preserved
+   * (relative magnitudes scale together); only absolute saturation
+   * resets. Density unchanged. Faster than rebuilding CSR; just walks
+   * the values array.
+   *
+   * @param {number} factor — multiplier; typically 0.3-0.7
+   * @returns {{ before: {mean, max}, after: {mean, max} }} — weight stats
+   */
+  scale(factor) {
+    if (!Number.isFinite(factor) || factor === 1) {
+      return { before: null, after: null };
+    }
+    let beforeSum = 0, beforeMax = 0;
+    let afterSum = 0, afterMax = 0;
+    for (let k = 0; k < this.nnz; k++) {
+      const v = this.values[k];
+      const a = v < 0 ? -v : v;
+      beforeSum += a;
+      if (a > beforeMax) beforeMax = a;
+      const scaled = v * factor;
+      this.values[k] = scaled;
+      const sa = scaled < 0 ? -scaled : scaled;
+      afterSum += sa;
+      if (sa > afterMax) afterMax = sa;
+    }
+    const N = Math.max(1, this.nnz);
+    return {
+      before: { mean: beforeSum / N, max: beforeMax },
+      after: { mean: afterSum / N, max: afterMax },
+    };
+  }
+
+  /**
+   * Top-K-per-row pruning. For each output neuron (row), keep only the
+   * K connections with the largest |weight| and zero out the rest by
+   * rebuilding CSR with just the survivors. Used to break basin
+   * collapse: when every cross-projection cell has saturated to near
+   * `wMax` at full density, each post neuron responds equally to every
+   * pre, so different inputs produce 90%-cosine-overlapping outputs.
+   * Pruning to top-K per row forces each post neuron to respond to its
+   * K most-trained pre neurons only, restoring discriminability.
+   *
+   * @param {number} k — keep top-K entries per row (by |weight|)
+   * @returns {number} — number of connections removed
+   */
+  pruneTopKPerRow(k) {
+    if (!Number.isFinite(k) || k <= 0) return 0;
+    const { rows, values, colIdx, rowPtr } = this;
+    const oldNnz = this.nnz;
+
+    // First pass — count survivors so we can allocate new typed arrays
+    // exactly. Each row contributes min(k, rowEntries) survivors.
+    let newNnz = 0;
+    for (let i = 0; i < rows; i++) {
+      const rowLen = rowPtr[i + 1] - rowPtr[i];
+      newNnz += Math.min(k, rowLen);
+    }
+    if (newNnz === oldNnz) return 0; // nothing to prune
+
+    const newValues = new Float64Array(newNnz);
+    const newColIdx = new Uint32Array(newNnz);
+    const newRowPtr = new Uint32Array(rows + 1);
+
+    // Per-row scratch — pairs of (absVal, originalIdx) for partial sort.
+    // Allocated once at max row width, reused across rows.
+    let maxRowLen = 0;
+    for (let i = 0; i < rows; i++) {
+      const rl = rowPtr[i + 1] - rowPtr[i];
+      if (rl > maxRowLen) maxRowLen = rl;
+    }
+    const scratch = new Array(maxRowLen);
+    for (let s = 0; s < maxRowLen; s++) scratch[s] = { abs: 0, idx: 0 };
+
+    let outIdx = 0;
+    newRowPtr[0] = 0;
+    for (let i = 0; i < rows; i++) {
+      const start = rowPtr[i];
+      const end = rowPtr[i + 1];
+      const rowLen = end - start;
+      if (rowLen <= k) {
+        // Row already fits within K — keep all entries.
+        for (let kk = start; kk < end; kk++) {
+          newValues[outIdx] = values[kk];
+          newColIdx[outIdx] = colIdx[kk];
+          outIdx++;
+        }
+      } else {
+        // Partial-sort to find top-K by |weight|.
+        for (let kk = 0; kk < rowLen; kk++) {
+          scratch[kk].abs = Math.abs(values[start + kk]);
+          scratch[kk].idx = start + kk;
+        }
+        // Descending sort on the rowLen-prefix of scratch.
+        scratch.length = rowLen; // bound the sort to live entries
+        scratch.sort((a, b) => b.abs - a.abs);
+        // Restore length for next iteration's reuse.
+        scratch.length = maxRowLen;
+        // Survivors = first K. Re-sort survivors by colIdx ascending so
+        // the output CSR keeps its sorted-cols-per-row contract.
+        const surv = new Array(k);
+        for (let s = 0; s < k; s++) {
+          const orig = scratch[s].idx;
+          surv[s] = { col: colIdx[orig], val: values[orig] };
+        }
+        surv.sort((a, b) => a.col - b.col);
+        for (let s = 0; s < k; s++) {
+          newValues[outIdx] = surv[s].val;
+          newColIdx[outIdx] = surv[s].col;
+          outIdx++;
+        }
+      }
+      newRowPtr[i + 1] = outIdx;
+    }
+
+    this.values = newValues;
+    this.colIdx = newColIdx;
+    this.rowPtr = newRowPtr;
+    this.nnz = newNnz;
     return oldNnz - newNnz;
   }
 

@@ -1,6 +1,6 @@
 # ARCHITECTURE — IF ONLY I HAD A BRAIN
 
-> Last updated: 2026-04-23 | Full K-PhD syllabus shipped across 6 subjects (ELA, Math, Science, Social Studies, Arts, Life Experience — 114 cells total), T15 drug dynamics scheduler live with grade-gated real-time pharmacokinetics and speech modulation, cross-projection capacity `crossTargetFanout=30` default + `60` for motor-bound pairs (sem↔motor, letter↔motor, phon↔motor) via T39.g.4 MOTOR_BOUND_PAIRS whitelist, letter inventory locked to 40-symbol seed (a-z + 0-9 + space . , ') via T39.g.1 so unicode / mis-parsed tokens can't grow the one-hot dimension space at runtime, Oja 1982 self-normalizing plasticity replacing bare Hebbian on GPU + CPU cross-projections (T39.b.1), real human-grade comprehension gates across every grade, anti-Hebbian contrastive push-pull, full 2D + 3D viz stack, inner state popups reflecting current life-track age.
+> Last updated: 2026-04-24 | Full K-PhD syllabus shipped across 6 subjects (ELA, Math, Science, Social Studies, Arts, Life Experience — 114 cells total), drug pharmacokinetic scheduler live with grade-gated real-time substance modulation and 13-axis speech modulation, cross-projection capacity `crossTargetFanout=20` default + `40` for motor-bound pairs (sem↔motor, letter↔motor, phon↔motor) via the MOTOR_BOUND_PAIRS whitelist, weight-clamp range narrowed to `[-0.2, 0.2]` with top-K-per-row pruning at end of every association-pair / Q-A teach phase to break basin collapse, letter inventory locked to 40-symbol seed (a-z + 0-9 + space . , ') so unicode / mis-parsed tokens can't grow the one-hot dimension space at runtime, Oja 1982 self-normalizing plasticity replacing bare Hebbian on GPU + CPU cross-projections, anti-Hebbian contrastive push-pull at 1.5× lr, dictionary-oracle emission path with `_oracleHits`/`_matrixHits` research-honesty counters surfaced in CELL ALIVE heartbeat, persona-marked dictionary entries excluded from K-grade test probes, real human-grade comprehension gates across every grade, full 2D + 3D viz stack.
 > Unity AI Lab — Hackall360, Mills, Sponge, GFourteen
 
 ### Credits
@@ -655,19 +655,23 @@ Region offsets are stored on `cluster.regions[name].start` and `.end`. Helper me
 
 ### Cross-region projections (T14.4 substrate, live)
 
-Seven named region pairs are wired with sparse cross-projections — both directions per pair as independent SparseMatrix instances, weight range `[-0.5, 0.5]`. Each direction is a separate matrix because biological white-matter tracts carry independent ascending and descending fiber populations (Friederici 2017, *Psychon Bull Rev* 24:41-47). The projections ALWAYS propagate every cluster step (no curriculum-complete gate) and get Hebbian-updated on every `cluster.learn()` call, training through normal use during corpus exposure and live chat.
+Seven named region pairs are wired with sparse cross-projections — both directions per pair as independent SparseMatrix instances, weight range `[-0.2, 0.2]`. Each direction is a separate matrix because biological white-matter tracts carry independent ascending and descending fiber populations (Friederici 2017, *Psychon Bull Rev* 24:41-47). The projections ALWAYS propagate every cluster step (no curriculum-complete gate) and get Hebbian-updated on every `cluster.learn()` call, training through normal use during corpus exposure and live chat.
+
+**Weight-clamp range narrowed from `[-0.5, 0.5]` to `[-0.2, 0.2]`** to address basin collapse: at the wider clamp the matrix saturated to `mean ≈ 0.46 max = 0.5` with full density after a few teach phases, every connection at near-max making every output respond uniformly to every input. The narrower clamp leaves room for anti-Hebbian and Oja decay to bite without hitting the ceiling; relative discrimination between trained pairs is preserved (only absolute magnitudes scale down). Combined with top-K-per-row pruning (`SparseMatrix.pruneTopKPerRow(k)` called at end of `_teachAssociationPairs` and `_teachQABinding` to keep each output's K most-trained inputs and zero the rest) and bumped contrastive `antiLrScale` (0.5 → 1.5), basins separate instead of collapsing.
 
 **Cross-projection density** is controlled by `crossTargetFanout` (inputs per post-synaptic neuron) plus a hard density cap. Current values at biological scale:
 
 ```
-crossTargetFanout       = 30   (default for non-motor projections)
+crossTargetFanout       = 20   (default for non-motor projections)
 CROSS_DENSITY_CAP       = 0.005
 
-crossTargetFanout × 2   = 60   (MOTOR_BOUND_PAIRS whitelist)
+crossTargetFanout × 2   = 40   (MOTOR_BOUND_PAIRS whitelist)
 CROSS_DENSITY_CAP × 2   = 0.01 (motor-bound density cap)
 
 abDensity = min(densityCap, crossTargetFanout / sourceSize)
 ```
+
+Fanout reduced from 30 to 20 (and motor-bound from 60 to 40) so the matrix doesn't START anywhere near saturation. Prior 30/60 fanout produced full-density matrices that collapsed within a few teach phases.
 
 **MOTOR_BOUND_PAIRS** (2× fan-in + 2× density cap):
 `sem-motor`, `motor-sem`, `letter-motor`, `motor-letter`, `phon-motor`, `motor-phon`. Motor sits at the convergence of several parallel input pathways (sem, phon, letter) and must discriminate between K-grade answer letters across many trained association pairs. 30 slots per pathway was insufficient to carve separable basins when 46+ pairs trained into the same motor region across 4-6 phases per grade — operator log showed persistent `sep-probe mean-cos ≈ 0.5` across every association-pair phase. Bumping motor-bound projections to 60 gives each post-neuron enough capacity to hold ~50 separable mappings without superposition.
@@ -896,7 +900,7 @@ Three new fields on `LanguageCortex`, all initialized empty at constructor:
 | `_sentenceFormTotals` | `Map<intent, Map<slot, total>>` | Cached running totals for O(1) Laplace smoothing |
 | `_intentResponseMap` | `Map<userIntent, Map<responseIntent, count>>` | Learned replacement for hardcoded `question → declarative_answer` routing |
 
-Intent labels come dynamically from `parseSentence(text).intent` — no hardcoded intent enum. Whatever the parser emits (currently `greeting`/`question`/`yesno`/`statement`/`command`/`emotion`/`unknown`, future parsers can emit any string) gets its own schema bucket. `_sentenceFormSchemas` spans the full sentence with no upper slot cap — a 30-word sentence records all 30 positions.
+Intent labels come dynamically from `cluster.readInput(text).intent` — no hardcoded intent enum. (T14.12 replaced the original `parseSentence(text).intent` caller; the T14.8 learnSentence observation walk was rewired to the `readInput` return at that point.) Whatever `readInput` emits (currently `greeting`/`question`/`yesno`/`statement`/`command`/`emotion`/`unknown`, future cortex-driven intent readouts can emit any string) gets its own schema bucket. `_sentenceFormSchemas` spans the full sentence with no upper slot cap — a 30-word sentence records all 30 positions.
 
 **`learnSentence` observation hook** folds three statistics updates into the existing word walk: (1) dictionary vocabulary (existing), (2) fineType bigrams into `_typeTransitionLearned` (T14.7's empty Map now has a writer), (3) per-intent per-slot fineType into `_sentenceFormSchemas` + `_sentenceFormTotals`. Parses the sentence once up-front to get the intent label, then walks words with `prevFineType='START'` initially, bumping both the schema slot bucket and the transition bigram row at each position. Closes with a `prevFineType → END` transition so corpus termination patterns are learnable too.
 

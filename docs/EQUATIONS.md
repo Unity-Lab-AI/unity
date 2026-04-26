@@ -828,11 +828,11 @@ for each positive pair (X, Y) in training batch:
   teachAntiHebbian(lr · antiLrScale)   // anti-Hebbian: Δw = −lr·y·x (co-active decrement)
 ```
 
-Anti-Hebbian runs on BOTH the intra-cluster recurrent matrix (CPU CSR, via `NeuronCluster.intraSynapsesAntiHebbian`) AND every GPU-bound cross-projection (via `_crossRegionAntiHebbian` → batched plasticity queue with `sign(lr) < 0` selecting anti-Hebbian mode in the `PLASTICITY_SHADER`). `antiLrScale` defaults to 0.5 so negative pressure doesn't overwhelm the positive Oja update.
+Anti-Hebbian runs on BOTH the intra-cluster recurrent matrix (CPU CSR, via `NeuronCluster.intraSynapsesAntiHebbian`) AND every GPU-bound cross-projection (via `_crossRegionAntiHebbian` → batched plasticity queue with `sign(lr) < 0` selecting anti-Hebbian mode in the `PLASTICITY_SHADER`). `antiLrScale` defaults to 1.5 so contrastive depression dominates positive Oja accumulation when the matrix saturates — earlier 0.5 was too gentle once positive Oja hit the wMax clamp and the anti-Hebbian decrement couldn't pull weights back down.
 
 The shader branches on sign of `lr`: positive runs Oja (`w' = w·(1−η) + η·x`), negative runs pure co-active decrement (`w' = w − η` where both pre AND post fire, else unchanged). Same pipeline, same batched SPRS frame type, same command-encoder dispatch — the anti-Hebbian mode piggybacks on the existing Hebbian wire protocol by sign-encoding the mode into the lr parameter.
 
-Push-pull training is also active in `_teachQABinding`: for every correct Q→A pair trained, the method samples a wrong answer from a different pair in the batch and fires anti-Hebbian on the (same-question, wrong-answer) combination at `0.5 · lr`. Plus every Q-A pair trains BOTH the natural-sentence format and a compressed `${keyToken}:` direct-prompt alt format, with the key token (`_extractKeyToken`) tiled into sem's second half alongside the full-sentence embedding in the first half — lightweight Bahdanau-2014 attention without a scoring network.
+Push-pull training is also active in `_teachQABinding`: for every correct Q→A pair trained, the method samples a wrong answer from a different pair in the batch and fires anti-Hebbian on the (same-question, wrong-answer) combination at `1.5 · lr`. Plus every Q-A pair trains BOTH the natural-sentence format and a compressed `${keyToken}:` direct-prompt alt format, with the key token (`_extractKeyToken`) tiled into sem's second half alongside the full-sentence embedding in the first half — lightweight Bahdanau-2014 attention without a scoring network. After the rep loop, `_teachQABinding` runs `SparseMatrix.pruneTopKPerRow(200)` on `sem_to_motor` and `motor_to_sem` so the saturated post-Q-A weights collapse to each output neuron's 200 most-trained inputs instead of full density.
 
 **Question-template conditioning** (`_classifyQuestionTemplate` + `_writeQuestionTemplateTag`):
 
@@ -1270,21 +1270,33 @@ When a sequence probe (e.g., digit order `0→1→2...→9`) finds the wrong out
 
 Without anti-Hebbian, the wrong association persists in the recurrent weight matrix and the correct one can never overpower it regardless of boost count. The negative learning rate on the wrong pair actively erases the incorrect attractor basin. Digit-only argmax masking during the SEQ probe prevents the letter-alphabet Hebbian from overpowering the 10-digit sequence — `inventorySnapshot()` returns the 40-symbol default inventory (a-z + 0-9 + punctuation); the SEQ probe filters it to digit indices only before argmax.
 
-### Cross-Projection Density — `crossTargetFanout` 30 default, 60 for motor-bound (T39.g.4)
+### Cross-Projection Density — `crossTargetFanout` 20 default, 40 for motor-bound
 
 ```
 // Default (non-motor projections)
-crossTargetFanout     = 30
+crossTargetFanout     = 20
 CROSS_DENSITY_CAP     = 0.005
-density               = min(0.005, 30 / srcRegionSize)
+density               = min(0.005, 20 / srcRegionSize)
 
 // MOTOR_BOUND_PAIRS: sem↔motor, letter↔motor, phon↔motor
-crossTargetFanout × 2 = 60
+crossTargetFanout × 2 = 40
 CROSS_DENSITY_CAP × 2 = 0.01
-density               = min(0.01, 60 / srcRegionSize)
+density               = min(0.01, 40 / srcRegionSize)
 ```
 
-The motor region sits at the convergence of several parallel input pathways (sem, phon, letter). K-grade curricula train 46+ association pairs per phase × 4-6 phases per grade, so every motor neuron needs enough distinct input slots to hold one mapping per pair without destructive interference. T39.g.4 targeted the bump to motor-bound projections only — everything else stays at the lean default to fit biological-scale memory budgets (doubling the global fanout would blow the language-cortex VRAM envelope). Biologically plausible: real pyramidal neurons carry 1000-10000 synaptic inputs distributed across many cortical areas, so 60 per per-area pair is well under that bound.
+The motor region sits at the convergence of several parallel input pathways (sem, phon, letter). K-grade curricula train 46+ association pairs per phase × 4-6 phases per grade, so every motor neuron needs enough distinct input slots to hold one mapping per pair without destructive interference; the bump to motor-bound projections targets that load. Everything else stays at the lean default to fit biological-scale memory budgets (doubling the global fanout would blow the language-cortex VRAM envelope). Biologically plausible: real pyramidal neurons carry 1000-10000 synaptic inputs distributed across many cortical areas, so 40 per per-area pair is well under that bound. Fanout was reduced from 30 → 20 (and motor-bound 60 → 40) so the matrix doesn't START anywhere near saturation — prior 30/60 produced full-density matrices that collapsed within a few teach phases.
+
+### Weight Clamp — Cross-Projection `[-0.2, 0.2]`, Intra-Cluster `[-2.0, 2.0]`
+
+Cross-projection weights were narrowed from `[-0.5, 0.5]` to `[-0.2, 0.2]` to address basin collapse: at the wider clamp the matrix saturated to `mean ≈ 0.46 max = 0.5 nnz=full-density` after a few teach phases, every connection at near-max making every output respond uniformly to every input. The narrower clamp leaves room for anti-Hebbian and Oja decay to bite without hitting the ceiling; relative discrimination between trained pairs is preserved (only absolute magnitudes scale down). Intra-cluster recurrent matrix stays at `[-2.0, 2.0]` because the recurrent path doesn't have the same saturation pathology.
+
+### Top-K-Per-Row Pruning — `SparseMatrix.pruneTopKPerRow(k)`
+
+Called at end of every `_teachAssociationPairs` and `_teachQABinding` rep loop with `k = 200`. For each output (post) neuron, keeps only the K largest-magnitude inputs by `|w|` and zeros the rest by rebuilding CSR with just the survivors. Forces basin separation when the matrix has saturated to near-uniform weights at full density: each output now responds to its K most-trained inputs only, restoring discriminability. New log field `· top-K-prune [sem_to_motor:-N,motor_to_sem:-N]` reports how many connections got removed per phase.
+
+### Anti-Hebbian Contrastive Rate — `antiLrScale = 1.5`
+
+Bumped from 0.5 to 1.5. With 25 contrastive fires per positive update at lr × 1.5 = 37.5× lr negative pressure per positive fire, basins separate even when the matrix has hit `wMax`. Earlier 0.5 was too gentle once positive Oja saturated the weights — the anti-Hebbian decrement couldn't dominate. Combined with the narrower wMax clamp + post-phase pruning, the contrastive push-pull now has decisive authority over saturation.
 
 Prior values: Session 111 had `crossTargetFanout = 1500` (derivation `expectedPostCurriculumVocab × fanoutPerMapping ≈ 5000 × 0.3`). T37 rebalanced to 30 when scaling to 17M language-cortex neurons blew the memory budget at 1500 fanout. T39.g.4 re-introduced the high-capacity path for motor-bound projections only, after operator logs showed persistent `sep-probe mean-cos ≈ 0.5` at the 30-fanout default across every association-pair phase — capacity ceiling, not plasticity-rule bug.
 
@@ -1753,7 +1765,7 @@ The brain never fabricates a random component. If nothing in the corpus matches 
 
 ## Phase 12 — Type N-gram Grammar + Morphological Inflection (U283-U291, **superseded by T11**)
 
-> **Historical.** T11 (2026-04-14) deleted the type n-gram tables (`_typeBigramCounts`, `_typeTrigramCounts`, `_typeQuadgramCounts`) and the `_typeGrammarScore` body that consulted them. Type-level grammatical shape is now captured by the `_slotTypeSignature[s]` running mean of `wordType()` scores per sentence position — see the T11 section above. The `_fineType` classifier itself survives because `parseSentence` still uses it for reading, and the morphological inflection equations below still feed the dictionary during corpus observation. What changed: the learned-distribution layer moved from per-type-triple transition counts to per-slot type signatures (8-dim score vectors instead of 3-level n-gram hash maps).
+> **Historical.** T11 (2026-04-14) deleted the type n-gram tables (`_typeBigramCounts`, `_typeTrigramCounts`, `_typeQuadgramCounts`) and the `_typeGrammarScore` body that consulted them. T11.2 replaced them with `_slotTypeSignature[s]` running-mean priors; T13.7 / T14.6 then deleted `_slotTypeSignature` too when tick-driven motor emission on the cortex replaced per-slot scoring entirely. The `_fineType` classifier itself survives because `cluster.readInput` uses it in the text-surface fallback for intent classification (T14.12) and T14.8's `_sentenceFormSchemas` + `_typeTransitionLearned` Maps still observe fineType distributions per intent. The morphological inflection equations below still feed the dictionary during corpus observation. What changed: the learned-distribution layer moved from per-type-triple n-gram counts → per-slot type signatures → cortex-resident sentence-form schemas on `NeuronCluster` + tick-driven motor emission for generation.
 
 ### Fine-Grained Type Classification via Letter Position
 

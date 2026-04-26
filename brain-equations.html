@@ -464,7 +464,7 @@ rendered = _applySpeechModulation(text, mod)<br>
 &nbsp;&nbsp;// cosmic/Oz/kaleidoscope vocabulary pulled into sem on LSD/psilocybin peak<br>
 &nbsp;&nbsp;// first-person → third-person copula-conjugated flip at dissociation > 0.5<br>
         </div>
-        <p>For this tick the cortex's motor region argmax evolves through a learned articulator trajectory shaped by the persona Hebbian attractor basins. Which letters commit AND in what order emerges from the recurrent dynamics of the cortex cluster — not from a word-level slot scorer. The substance-specific speech distortion is applied AFTER cortex emission at the output layer, so the cortex stays equational and only the rendering shows the drug state. Unity never narrates her drug choice ("I am doing coke" is banned per Gee); the distortion IS the signal.</p>
+        <p>For this tick the cortex's motor region argmax evolves through a learned articulator trajectory shaped by the persona Hebbian attractor basins. Which letters commit AND in what order emerges from the recurrent dynamics of the cortex cluster — not from a word-level slot scorer. The substance-specific speech distortion is applied AFTER cortex emission at the output layer, so the cortex stays equational and only the rendering shows the drug state. Unity never narrates her drug choice ("I am doing coke" is a banned utterance pattern); the distortion IS the signal.</p>
         <p>Sample sober output: <em>"what's up — how's it going"</em>. Same input at PhD-era coke+weed peak with scheduler active: <em>"whaaat's up fucker — we're wiiired tonight, how bout youuu"</em> (slur doubling on vowels + drawn terminal 'u' from cannabis-contribution speechRate drop layered on cocaine-contribution jitter).</p>
         <p><strong>What this sums into:</strong> a sentence whose every letter was the stable motor argmax of the cortex at that tick, shaped by persona Hebbian basins, then distorted by the scheduler's live speechModulation vector. Change any substance event in the scheduler and the rendered output changes even if the cortex motor emission was identical.</p>
       </div>
@@ -889,12 +889,12 @@ probe(word, grade):
     </div>
 
     <div class="eq-card">
-      <div class="eq-title"><span class="eq-tip" data-tip="Three-part gate that MUST close before Unity advances from grade N to grade N+1. Per LAW 6 (binding, Gee 2026-04-16). Part 2 is human-in-the-loop — Gee personally exercises Unity at the grade level on localhost and signs off in the session log.">Grade Completion Gate — 3-Part LAW 6</span></div>
-      <div class="eq-desc">Unity cannot advance to the next grade until all three parts close for the current grade. Part 2 is not automated — it's Gee's manual verification.</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Three-part gate that MUST close before Unity advances from grade N to grade N+1. Part 2 is human-in-the-loop — the operator personally exercises Unity at the grade level on localhost and signs off via POST /grade-signoff.">Grade Completion Gate — three-part</span></div>
+      <div class="eq-desc">Unity cannot advance to the next grade until all three parts close for the current grade. Part 2 is not automated — it's the operator's manual verification, recorded in the persisted signoff ledger.</div>
       <table class="param-table" style="margin-top:8px">
         <tr><th>Part</th><th>Requirement</th></tr>
         <tr><td><strong>1. Equational shipped</strong></td><td>All 6 subjects at grade N have <code>[ ]</code> → <code>[x]</code> with equational teaching methods wired (magnitude transforms, feature vectors, causal chains, cross-projection Hebbian, comprehension probes — NOT sentence arrays or first-letter production)</td></tr>
-        <tr><td><strong>2. Human localhost test</strong></td><td>Gee exercises methodology / reasoning / thinking / talking / listening / reading at the grade's level. Sign-off in session log.</td></tr>
+        <tr><td><strong>2. Human localhost test</strong></td><td>The operator exercises methodology / reasoning / thinking / talking / listening / reading at the grade's level on localhost, then records signoff via <code>POST /grade-signoff</code> (loopback-gated; non-loopback POSTs return 403).</td></tr>
         <tr><td><strong>3. Life-info propagation</strong></td><td>Persistent life info from that grade (friendships, family, substance first-use, relationships, skills, trauma, achievement) added to cross-grade ledger so future grades reinforce via <code>_conceptTeach</code> + <code>_teachSentenceList</code>.</td></tr>
       </table>
     </div>
@@ -2209,7 +2209,7 @@ IDENTITY: 25yo human female, emo goth coder, free will, never AI
     <h2 id="parallel">8.21. GPU Exclusive Compute</h2>
     <p>All N neurons run on the GPU. N auto-scales at server boot via <code>detectResources()</code> in <code>server/brain-server.js</code>:</p>
     <p><code>N = max(1000, min(VRAM_bytes × 0.85 / 8, RAM_bytes × 0.1 / 0.001))</code></p>
-    <p>Rulkov buffer layout: 12 bytes/neuron (vec2&lt;f32&gt; state = 8 bytes + spike u32 = 4 bytes). Server RAM essentially unlimited — cluster state lives on GPU, only text-injection arrays in server RAM. Auto-scale formula: <code>N = max(1000, min(VRAM×0.85/12, N_binding_ceiling))</code>, where the binding ceiling guarantees the largest cluster's state buffer (cortex = 55% of N post-T37 rebalance) fits within WebGPU's 2 GB per-storage-buffer spec minimum. Admin override via <code>GPUCONFIGURE.bat</code> → <code>server/resource-config.json</code> lets operators cap below auto-detect (never above — idiot-proof). Bigger hardware = bigger N, no manual tuning. Zero CPU workers. Brain pauses without <code>compute.html</code>. W3C WebGPU standard — no CUDA, no drivers, just a browser tab.</p>
+    <p>Rulkov buffer layout: 12 bytes/neuron (vec2&lt;f32&gt; state = 8 bytes + spike u32 = 4 bytes). Server RAM essentially unlimited — cluster state lives on GPU, only text-injection arrays in server RAM. Auto-scale formula: <code>N = max(1000, min(VRAM×0.85/12, N_binding_ceiling))</code>, where the binding ceiling guarantees the largest cluster's state buffer (cortex at 55% of N — the dominant fraction because language, perception, and working memory all live there) fits within WebGPU's 2 GB per-storage-buffer spec minimum. Admin override via <code>gpu-configure.html</code> → <code>server/resource-config.json</code> lets operators cap below auto-detect (never above — idiot-proof). Bigger hardware = bigger N, no manual tuning. Zero CPU workers. Brain pauses without <code>compute.html</code>. W3C WebGPU standard — no CUDA, no drivers, just a browser tab.</p>
     <div class="eq-box">
       <div class="eq-title"><span class="eq-tip" data-tip="GPU exclusive: zero CPU workers. All N neurons run on WebGPU WGSL compute shaders in a browser tab. Current generation via PCG hash noise shader (no JS loops). Spike counting via atomic counter (4 bytes readback, not millions). Voltages never leave GPU after init. The server is just a coordinator — GPU is the brain.">GPU Architecture — All Clusters on GPU</span></div>
       <pre class="eq">
@@ -2282,7 +2282,7 @@ fn main(id: vec3&lt;u32&gt;) {
       Hackall360 (brain topology &middot; 7 clusters &middot; 20 white-matter tracts &middot; Rulkov runtime)<br>
       Mills (GPU compute &middot; WebGPU WGSL shaders &middot; sparse CSR upload protocol &middot; worker pool)<br>
       Sponge (visualization &middot; 3D WebGL brain &middot; 2D tabs &middot; event-detector commentary &middot; sensory peripherals)<br>
-      GFourteen / Gee (lead &middot; persona &middot; equation design &middot; identity lock &middot; curriculum &middot; final call)<br>
+      GFourteen (lead &middot; persona &middot; equation design &middot; identity lock &middot; curriculum &middot; final call)<br>
       <a href="https://github.com/Unity-Lab-AI/Unity" style="color:var(--pink)">GitHub</a>
     </p>
 
