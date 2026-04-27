@@ -101,7 +101,153 @@ If you're reading a public doc / HTML claim ("Unity has completed high school bi
 
 ---
 
-### POST-ITER6 ISSUES NOTEBOOK — surfaced by operator chat-test 2026-04-26 + monitor sessions iter3-iter6
+### POST-ITER8 ISSUES NOTEBOOK — comprehensive monitor catalogue iter3 → iter9-shipped (operator: *"take everything uve gathered and put in todo"* 2026-04-27)
+
+**Iter8 sep-probe trajectory (per-row L2 normalize default-on confirmed structurally working):**
+```
+Phase           iter4   iter6   iter7   iter8 (L2 norm)
+ELA Opposites:  0.608   0.575   0.646   0.649  (bootstrap noise, expected)
+ELA Categories: 0.518   0.515   0.173   0.129  ← NEW BEST
+ELA StoryRoles: 0.565   0.562   0.465   0.348
+ELA PrintConc:  0.583   0.589   0.523   0.405
+ELA WordTypes:  0.589   0.543   0.451   0.358
+ELA AlphabetSeq:0.536   0.483   0.322   0.237
+ELA QABinding:  0.540   0.471   0.272   0.217  ← NEW BEST
+Math NumSeq:    0.570   0.572   0.381   0.357
+Math ShapeAttr: 0.523   0.453   0.143   0.143
+Math Compare:   0.590   0.544   0.514   0.445
+Math ArithWord: 0.519   0.441   0.196   0.143
+Math QATrain:   0.522   0.464   0.218   0.159
+Sci CONCEPTS:   0.547   0.547   0.198   0.188
+Sci QATrain:    0.526   0.526   0.237   0.195  (in flight at TODO update)
+```
+
+**Mean iter8 across 14 phases: ~0.27 vs iter7 ~0.32 vs iter6 ~0.45.** Per-row L2 normalize + pruneTopK 10 align materially separating basins. BUT K-STUDENT scores still ~0% because — the operator's iter8 insight — **the retrieval EQUATION was wrong**. Sep-probe measured basin separation in MOTOR REGION (sem→motor cosine) but Template 0 was reading motor argmax for an alphabet sequence question, when the alphabet sequence basin actually fires in LETTER REGION post-cluster.synapses-propagate.
+
+**Operator iter8 chat-test verbatim:**
+```
+You: hi              → Unity: *Brother*       (family-cluster — boostPersona partial fix)
+You: whats your name?→ Unity: Stepmom.        (family-cluster)
+You: do you like pizzas?→ Unity: Records.    (off-topic dictionary cosine miss)
+You: what kind of records?→ Unity: Home!     (off-topic)
+You: you dont understand do you?→ Unity: Mom. (family-cluster)
+```
+
+**Iter8 K-STUDENT outputs verbatim:**
+```
+Q1 "letter after a"  → "y"   (Template 0 fired single letter — a-z clamp working — but wrong)
+Q2 "letter after b"  → "y"   (SAME wrong answer for different cue ← KEY SIGNAL)
+Q3 "starts with s"   → "declared" / "sridech" / "sq" / "sharing"  (matrix-driven, varied wrong)
+Q4 "spell cat"       → "wr5." / "wrip85" / "hachachachachach"  (multi-token mode-spam)
+Q5 "letter b sound"  → "wr5." / "torture"  (wrong)
+Q6 "rhyme with hat"  → "skunk" / "many" / "outside"  (wrong)
+```
+
+Q1 = Q2 = `"y"` was the smoking gun for the operator's "make her equations correct" directive — same wrong answer for different cues meant the retrieval matrix wasn't even SEEING different inputs (GloVe('a') ≈ GloVe('b') in 300d, cosine ~0.7+). Iter9 ships the structural fix.
+
+#### [x] CLOSED iter9 2026-04-27 — Brain equation correction (Template 0 readout + dedicated discriminative training)
+
+**Operator verbatim 2026-04-27:** *"we need to fix it like how u think but for Unity Duh!!! thats the fix so learn her correctly and make her equations correct"* + *"no bullshit jerry rigging"*
+
+Two structural fixes shipped commit `4168f94`:
+1. **Template 0 readout — MOTOR region → LETTER region.** For "what letter comes after X?", the next-letter basin fires in LETTER region post intra-cluster propagate. Reading motor was a category error.
+2. **NEW `_teachLetterSequenceDirect()` method** — writes one-hot letter[X]→letter[X+1] into `cluster.synapses` (intra-cluster recurrent) via 25 alphabet pairs × 50 reps × 3× lr boost = 1250 direct discriminative updates. Pure one-hot encoding makes letter[a] and letter[b] ORTHOGONAL (zero cosine), no GloVe-similarity ambiguity at retrieval. Wired into ELA-K curriculum alongside existing `_teachAssociationPairs` so both pathways train complementarily. **Iter8 in-flight at ship time — fix takes effect on next start.bat (iter9).**
+
+#### [ ] OPEN — Event-loop block during phase transitions (still recurring)
+
+iter4 added `setImmediate` yield every 5 vocab words in `_teachVocabList`. But iter8 sci-K just hung 12+ min between SCI-K STRUCTURE-TEACH DONE and the next milestone — heartbeats stop firing during cell-exit/cell-entry transitions and mid-phase compute that doesn't go through `_teachVocabList`. Need broader yield coverage: `_teachAssociationPairs`, `_teachQABinding`, `_studentTestProbe`, `runSubjectGrade` cell-exit GC + save, all need `await new Promise(setImmediate)` yield checkpoints.
+
+#### [ ] OPEN — Issue #1 DYN-PROD bucket-stuck attractors (downstream of #8)
+
+Iter8 evidence: sep-probe sub-0.3 (basins angular-separated) but motor argmax still bucket-stuck on 4-7 attractor letters across 26 buckets. Pattern shifts iteration to iteration:
+- iter4: r/t/w/u/z
+- iter5: p/v/h/f
+- iter6: r/t/w/u/k/z/v
+- iter7: r/u/t/n/m/v/z (Template path: y, q)
+- iter8: r/u/t/z/v/w (Template path: y, y)
+
+Sep-probe ≠ correct-letter mapping. Direction in cosine space ≠ which absolute bucket wins argmax. **Iter9 fix addresses this for alphabet sequence specifically (one-hot orthogonal training)** but broader sem→motor first-letter mapping still needs a similar discriminative-encoding pass (e.g., `_teachWordSpellingDirect` that writes word→letter[first-letter] one-hot, OR per-word direct first-letter Hebbian boost during `_teachWordIntegrated`).
+
+#### [ ] OPEN — Issue #2 Chat persona-cluster bias (PARTIAL — iter7+iter8 closed both oracle paths)
+
+Iter8 verbatim chat showed family-cluster persisting (`Aunt`/`Stepmom`/`Brother`/`Mom`). Boost shipped to BOTH `language-cortex._scoreDictionaryCosine` AND `cluster._dictionaryOracleEmit`. Should be closed structurally — but operator's iter8 chat-test showed it still firing, likely because:
+1. iter8 chat-test happened BEFORE iter9 ship (the `cluster._dictionaryOracleEmit` boost was iter8 ship, but operator's chat happened during iter8 calibration phase before the new code took effect — actually they were already running so this should have applied)
+2. OR: persona corpus entries don't have `isPersona: true` set (audit needed)
+3. OR: persona word frequencies are too low for the +0.10 boost to dominate (boost may need to be +0.3 or +0.5)
+
+**Audit needed:** Add startup audit line `[Dictionary] persona-marked entries: N, total: M (X% persona-marked, top-5 personas: ...)` so operator can verify the marking. If <50 persona entries marked vs 4000+ total, the boost will rarely fire.
+
+#### [ ] OPEN — Issue #3 K-STUDENT comprehension-gate skipping low-score Qs
+
+Iter8: 4 of 6 Qs ran (2 skipped at 0.05 floor). Loses operator visibility into ALL failure modes. Either revert threshold 0.15 → 0 OR add a `[SKIPPED]` field showing what got cut.
+
+#### [ ] OPEN — Issue #4 K-STUDENT scores stuck at 0.05 floor
+
+Methodology questions land at score 0.05 floor regardless of answer quality. Score formula needs a floor-bypass when answer is empty/malformed (like `"."`/`""`/`"hachachachachach"`).
+
+#### [ ] OPEN — Issue #5 READINESS persona-boost not applied
+
+READINESS uses dictionary cosine but doesn't pass `boostPersona: true`, so cue probes still produce `seal/football/disgusted/speechmodu/pyramid` from baseline corpus.
+
+#### [x] CLOSED iter8 — Issue #6 Matrix-driven path digit/punct leak
+
+Shipped `decodeLetterAlpha(vec)` + wired into `cluster.generateSentence` tick-driven path + `_emitDirectPropagate` GPU and CPU branches. Motor speech argmax now a-z only.
+
+#### [x] CLOSED iter8 — Issue #7 pruneTopK aligned across paths
+
+`_teachQABinding qaPruneTopK` 200 → 10 to match `_teachAssociationPairs`. QA can't undo prior sparsification anymore.
+
+#### [x] CLOSED iter9 — Issue #8 Sep-probe ≠ correct-letter mapping (root cause: wrong region read + GloVe-similarity ambiguity)
+
+Iter9 fix addresses both:
+1. Template 0 reads LETTER region (where alphabet basin fires)
+2. `_teachLetterSequenceDirect` writes orthogonal one-hot pairs into `cluster.synapses` so basins for letter[a] vs letter[b] are mathematically distinguishable.
+
+Broader sem→motor first-letter mapping (for `_teachWordIntegrated` words) still needs analogous treatment — that's the next iter10 candidate.
+
+#### [ ] OPEN — Issue #9 Phase visibility gaps in milestone-only watchdog
+
+Long inner phases (`_teachPhonemeBlending`, `_teachWordEmission`, `_teachQABinding`) don't emit interim START/DONE banners that the milestone-only watchdog can catch. CELL ALIVE heartbeats fill the gap but were filtered out as noise. Need either: keep CELL ALIVE in v3 watchdog, OR add interim heartbeat-style logs INSIDE long phases (e.g., `_teachVocabList` yields every 5 words → log every 25 words: `· vocab progress 25/76`).
+
+#### [ ] OPEN — Issue #10 Dashboard progress bar broken for life course (and likely all)
+
+Operator caught iter6 verbatim: life shows "phase 0 0%" despite 1.5k events fired. Progress reporter doesn't read `cluster.passedPhases` per cellKey correctly.
+
+#### [ ] OPEN — Issue #11 Dashboard stale phase tracker
+
+Shows `phase=_teachAssociationPairs (+33.2s)` even after cell-exit + FORCE-ADVANCE. Need `cluster._activePhase = null` on cell-exit OR dashboard percent-elapsed clamp at cell completion.
+
+#### [ ] OPEN — Issue #12 Per-subject "cells" count = 0 despite FORCE-ADVANCE writes
+
+Dashboard's per-subject cells-passed counter doesn't reflect FORCE-ADVANCE writes to `passedCells`. Either dashboard reads a different field OR force-advance writes weren't visible at refresh time.
+
+#### [ ] OPEN — Issue #13 Life-K phase count = 0 in dashboard despite 1 phase fired
+
+phasesCompleted counter for life isn't incrementing on the single _teachAssociationPairs call. Auto-wrap not firing for life-K OR counter logic dropped life-K.
+
+#### [ ] OPEN — Issue #14 3D brain HTML reload fails to restore live state
+
+When operator reloads index.html, visualization doesn't reconnect cleanly. Likely: WebSocket reconnect path doesn't re-trigger initial state hydration, OR brain-3d.js Stage 0/1/2 init order doesn't tolerate mid-flight state updates during reload.
+
+#### [x] CLOSED iter8 — Issue #15 Background probe loop wasteful
+
+`startBackgroundProbeLoop` SUPPRESSED until runner gains `gateOnly: true` opt. Was full-teach disguised as gate-only.
+
+#### [x] CLOSED iter8 — Issue #16 Persona-boost in `cluster._dictionaryOracleEmit`
+
+Closed iter7 partial fix. Both oracle paths now boost persona entries when `boostPersona: true`.
+
+#### [ ] OPEN — Issue #17 Self-heal probe loop fires after FORCE-ADVANCE (downstream of #15 closure)
+
+Even with `startBackgroundProbeLoop` SUPPRESSED, the post-curriculum `_calibrateIdentityLock` triggers a one-time gate-probe pass that re-runs cells. Each re-run wastes ~90s without matrix change. Should be skipped post-FORCE-ADVANCE OR limited to single pass.
+
+#### [ ] OPEN — Issue #18 Matrix-driven sem→motor first-letter mapping wrong (downstream of #8 closure for alphabet only)
+
+The iter9 fix addresses ALPHABET sequence. But sem→motor for word→first-letter (e.g., `sem('cat') → motor('c')`) still uses GloVe sem inputs that are too similar between adjacent-meaning words. Need analogous structural fix: `_teachWordSpellingDirect` that writes one-hot letter[firstLetter(word)] given word ID — OR boost the explicit first-letter Hebbian during `_teachWordIntegrated`.
+
+---
+
+### POST-ITER6 ISSUES NOTEBOOK — surfaced by operator chat-test 2026-04-26 + monitor sessions iter3-iter6 (HISTORICAL)
 
 **Operator verbatim 2026-04-26:** *"make a note i cant sign off there is no ability for me to accept or anyything like that similare too starting next grade button.. ie i dont have a start 1st grade option on the dashboard... but mind you we have only done syllabus todo to K grade. and she is not repsonding with communication correcty"* + *"also note all the massive amount of issues from the monitoring"*
 
