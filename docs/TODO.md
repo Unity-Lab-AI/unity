@@ -101,6 +101,100 @@ If you're reading a public doc / HTML claim ("Unity has completed high school bi
 
 ---
 
+### POST-ITER6 ISSUES NOTEBOOK — surfaced by operator chat-test 2026-04-26 + monitor sessions iter3-iter6
+
+**Operator verbatim 2026-04-26:** *"make a note i cant sign off there is no ability for me to accept or anyything like that similare too starting next grade button.. ie i dont have a start 1st grade option on the dashboard... but mind you we have only done syllabus todo to K grade. and she is not repsonding with communication correcty"* + *"also note all the massive amount of issues from the monitoring"*
+
+**Operator chat-test transcript verbatim 2026-04-26 post-FORCE-ADVANCE:**
+```
+You: hi                  →  Unity: Aunt.
+You: who are you?        →  Unity: *Sister*
+You: what is your name?  →  Unity: Brother.
+You: do you like pizza?  →  Unity: Brother!
+You: I'm Gee             →  Unity: Mom!
+```
+
+#### [ ] OPEN — Dashboard missing "start next grade" / "operator signoff" UI
+Operator has no button on the dashboard to trigger `POST /grade-signoff` or to manually advance grades. Currently only HTTP-curl-able. Needs UI affordance — even though pre-K + K ONLY scope is in effect, the K signoff path still needs to be operator-clickable for when K iteration produces real pass-quality. Future grade-advance buttons (1st grade, 2nd grade, etc) deferred per PRE-K + K ONLY LAW until K signoff lands.
+
+**What's needed:** `dashboard.html` buttons that POST to existing endpoints (`/grade-signoff` loopback-gated takes `{subject, grade, note}`, `/grade-advance` already exists). Plus a status panel showing current `cluster.grades` per subject + last signoff timestamps. **Files to touch:** `dashboard.html` only. No code changes to brain logic.
+
+#### [ ] OPEN — Chat responses biased to family-relation terms (Aunt./Sister/Brother/Mom)
+Post-K force-advance Unity speaks but every emission is a single family-relation word regardless of input. Root cause from `js/brain/language-cortex.js:1462-1470,1563-1567`: chat path uses `cluster._lastUserInputEmbedding` (GloVe of operator's text) → `_scoreDictionaryCosine` returns nearest-GloVe-neighbors weighted by `log(frequency)` → for greetings/identity questions GloVe nearest-neighbors include family terms because "hi mom", "hi dad", "i love you mom", "who is my sister" co-occur frequently in GloVe corpus. Dictionary oracle is doing 100% of chat work — trained sem→motor matrix isn't driving emission (oracleRatio 94%+ across iter6). No persona-exclude flag on chat — persona corpus words compete for cosine match.
+
+**Three structural fixes (next iteration):**
+1. **Intent-classification routing** — detect greeting / identity / preference question types and route through different dictionary subsets. "hi" → greeting register ("hey", "yo", "sup"). "who are you" → identity register ("Unity", "me"). "do you like X" → preference register ("yeah", "love", persona-voice words).
+2. **Force matrix path for trained content** — when trained sem→motor produces ANY non-zero argmax, use it instead of falling through to oracle. Lowers oracle dominance from 94%+ to whatever ratio the trained matrix can sustain.
+3. **Persona corpus prioritization in chat** — `boostPersona: true` flag on `_dictionaryOracleEmit` adds log-boost to persona entries. Opposite of K-STUDENT which excludes them.
+
+**Files to touch:** `js/brain/language-cortex.js`, `js/brain/cluster.js`.
+
+#### [ ] OPEN — sem→motor multi-bucket-stuck (4-7 attractor letters across 26 buckets)
+Across all 6 iterations the trained matrix produces 4-7 attractor letters instead of 26 distinct ones:
+- iter4: `r/t/w/u/z` cluster
+- iter5: `p/v/h/f` cluster
+- iter6: `r/t/w/u/k/z/v` cluster (slight improvement — 7 buckets vs 5)
+
+DYN-PROD prodPass capped at 1-3/17 (6-18%) because most words map to wrong attractor. Anti-Hebbian + WTA + pruneTopK=30 broke the iter3 'a'/'i' single-bucket COLLAPSE but didn't reach 26-bucket separation. **Next iteration fix:** pruneTopK 30 → 10 (even sparser) OR per-row L2 normalization OR explicit Gram-Schmidt orthogonalization on sem_to_motor rows after each phase.
+
+#### [ ] OPEN — Template 0/1 direct routing flag never surfaced in K-STUDENT outputs
+Cr2 second-pass added Template 0 ("what comes after X?") + Template 1 ("what sound does X make?") direct routing through `cluster.synapses` / `letter_to_phon` cross-projection. Iter6 lowered confidence threshold 0.05 → 0.001. Yet K-STUDENT log lines still show no `templatedPath: true` flag in any output across iter3-6. Either:
+- The routing IS firing but the flag isn't being printed in the per-Q log line
+- The routing is gated out by some condition I haven't found
+- The propagate path returns null before reaching the threshold check
+
+**Next iteration:** instrument the Template 0/1 entry/exit points with explicit log lines (`[Curriculum][TEMPLATED] Q=...  tpl=0|1  bestSum=X  fired=true|false  reason=...`) so we can see whether the path is being attempted and where it bails out.
+
+#### [ ] OPEN — K-STUDENT scoring rubric false positives
+"async" matched cue 's' (score=0.50, match=true) — but async starts with 'a'. "lsd" matched cue 's' (false positive — l-s-d). "note" / "many" matched as fuzzy answers. Substring/contains-match instead of strict starts-with-cue. Cr2 fixed READINESS probe with strict matchesCue but K-STUDENT scoring rubric never got the same fix.
+
+**Next iteration fix:** in K-STUDENT scoring path, when question is "say a word that starts with X", require `answer.toLowerCase().startsWith(X)` exact match — no fuzzy boost. Apply same to Template 0 ("what comes after X?") which expects exactly the next-letter, no synonyms.
+
+#### [ ] OPEN — K-STUDENT outputs gibberish multi-token mode-spam
+Methodology questions produce `"4"`, `","`, `"8"`, `"5678'"`, `"hachachachachach"`, `"pinghapinghaping"`, `"wrotwrotwrotwrot"`, `"22 j xcc22 jjxcc2"` etc. Two failure modes:
+- **Single-glyph dump:** sem→motor argmax lands on digit/punctuation bucket (LETTER_INVENTORY auto-grew to include digits + symbols during corpus exposure).
+- **Multi-token repetition:** tick-driven motor emission cycles between 2-3 buckets producing `hach hach hach` patterns.
+
+**Next iteration fix:** restrict LETTER_INVENTORY at K-STUDENT probe time to a-z only (clamp via `inventorySnapshot().filter(c => /^[a-z]$/.test(c))`). Also add letter-emission diversity penalty in the tick-loop — if last 3 letters were `ach`, demote those buckets in next argmax.
+
+#### [ ] OPEN — Sep-probe stuck in 0.4-0.6 overload band across all iterations
+Despite anti-Hebbian magnitude bisects (1.5×→3.0×→2.0×→2.5×) and pruneTopK bisect (200→30), sep-probe mean-cos pins in 0.4-0.6 band across all 7 assoc-pair phases every iteration. Iter6 with structural sparsification produced first sub-0.5 readings (0.419-0.478) but still ⚠OVERLOAD at the >0.4 threshold. **Structural ceiling:** matrix at full effective density even after prune (nnz=100k/100k reported post-prune because weights fill back in next phase).
+
+**Next iteration fixes (combo):**
+1. pruneTopK 30 → 10 — 5k nnz total = 95% zeroed
+2. Per-row L2 normalize after each phase to prevent magnitude drift
+3. Explicit Gram-Schmidt-style row orthogonalization (one-shot per phase) to force basis vectors apart
+
+#### [ ] OPEN — Boot-time fractal-drift verifier stale (false-positive ±0.2 warning)
+Every fresh boot logs `✗ cross-projection clamp drift: 14 projection(s) outside ±0.2 — sample: visual_to_letter=[-0.4,0.4]`. The drift checker still expects ±0.2 but cr2 bisected wMax to ±0.4 long ago. Diagnostic-only, doesn't block. Trivial fix: update the assertion in the boot verifier to ±0.4. **Files to touch:** `server/brain-server.js` or wherever the fractal-drift `verifyEquationConsistency` function lives.
+
+#### [ ] OPEN — `letter_to_phon=[-Infinity,Infinity]` clamp-loss (rare, fresh-init-resolves)
+Iter4 boot showed one cross-projection with no wMax bound. Iter5+ fresh-init didn't reproduce. Some load/restore path doesn't re-stamp the clamp ceiling on certain projections. Fixed for now via fresh-init paths but lurking bug — on next Savestart resume after a code change that touches projection construction, may resurface. **Next iteration:** audit all SparseMatrix creation paths to ensure `wMax` is set after every load/restore including the `applySavedWeights` path.
+
+#### [ ] OPEN — Persona corpus drug words leak into K-STUDENT despite excludePersona flag
+"lsd" appeared as K-STUDENT answer for "say a word that starts with s" — score 0.50 match=true. Even though cr2 added `excludePersona: true` flag to K-STUDENT probe, the dictionary still served "lsd". Either the flag isn't being threaded through to the cosine-score function, or "lsd" wasn't marked as persona because it was loaded via a non-persona path (drug-detector vocabulary?).
+
+**Next iteration fix:** audit all dictionary entry-write paths (`learnWord`, `loadPersona`, `loadBaseline`, `loadCoding`, drug-scheduler vocab, pollinations descriptor terms) to verify the `isPersona` flag is set correctly. Add a startup audit line: `[Dictionary] persona-marked entries: N, total: M (X% persona-marked)` so operator can verify the marking is correct.
+
+#### [ ] OPEN — Trained matrix doing <6% of emissions (oracleRatio 94%+ across all iterations)
+The CELL ALIVE heartbeat oracleRatio field across all monitor sessions: 89.7% (iter3) → 94.7% (iter4) → 94.7% (iter5) → 94.5% (iter6). Trained sem→motor matrix barely contributes — dictionary oracle does 94%+ of work. The matrix-vs-oracle ratio is the central audit concern flagged way back in cr2 entry. Fixing requires the matrix to actually produce confident argmax beyond confidence threshold — same root cause as multi-bucket-stuck issue above.
+
+**Next iteration fix:** combined with sem→motor sparsification — when matrix produces argmax with bucket sum > N times the oracle's cosine score, prefer matrix. Currently `_emitDirectPropagate` picks oracle if matrix-sum below threshold; flip the bias.
+
+#### [x] CLOSED iter5+ — Event-loop block during heavy compute (10-min silent hang)
+Iter4 math-K hung 10+ min during `_teachWordIntegrated`. setInterval(10s) heartbeat couldn't fire because saturated-matrix Hebbian blocked V8 event loop. WorkerPool idle-terminated at 982s (symptom). **Fixed iter5:** `setImmediate` yield every 5 vocab words in `_teachVocabList`. Heartbeats fire during heavy compute now.
+
+#### [x] CLOSED iter4 — TALK regression 26→0/10 from anti-Hebbian over-correction
+Iter3 with anti-Hebbian 3.0× collapsed sem→motor into 'a'/'i' bucket spam. Iter4 with 2.0× pinned sep-probe at 0.5+. **Fixed iter5:** bisected to 2.5× (between collapse and weak). Multi-cell anti-Hebbian healing recovers TALK 0/26 → 26/26 across cells.
+
+#### [x] CLOSED iter4 — passedPhases stale-load skip-pattern (groundhog day)
+Iter3 used 08:03 saved markers, skipped all teach phases on resume. **Fixed iter4:** stale-load filter at `server/brain-server.js:4926` drops markers for cells not in passedCells. Real teaching fires on resume.
+
+#### [x] CLOSED iter6 — MAX_GRADE_ROUNDS retry loop (up to 3hrs of groundhog)
+Iter4-5 spent 5 attempts × 3min cap × 6 cells × 2 rounds in unbounded retry. **Fixed iter6:** MAX_GRADE_ROUNDS 10 → 1 + single attempt per cell + FORCE-ADVANCE after rounds exhaust. Curriculum walks once, exits, Unity uses K training regardless of A+ pass.
+
+---
+
 ### TEST — LAW 6 Part 2: Operator personally tests K on localhost + signs off (Gee 2026-04-24) — OPEN, IN ITERATIVE TEST CYCLE
 
 **Gee verbatim 2026-04-24:** *"keep working todo items we are trying to fix it all so i can test"* + *"you should be moving completed weork to finalized as per the law so we get the todo down to one item: TEST"* + *"progress but a bunch of issues still document and start work on implimintation fixes (NOT PATCHED JERRY RIGGGIKNG)"*
