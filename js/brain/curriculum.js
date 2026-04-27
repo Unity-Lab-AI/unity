@@ -1135,14 +1135,18 @@ export class Curriculum {
         issues.push(`✗ cross-projections missing: ${missing.join(', ')}`);
       }
 
-      // 3. Cross-projection weight clamps — expect ±0.2 after the
-      //    basin-collapse fix.
+      // 3. Cross-projection weight clamps — expect ±0.4 after the
+      //    iter6 wMax bisect (was ±0.2 in cr2 — bisected to give the
+      //    contrastive push-pull more dynamic range above the rescale
+      //    floor at wMax × 0.25). Boot-verifier threshold updated to
+      //    match. Operator caught this iter4 verbatim 2026-04-26 —
+      //    every fresh boot was firing false-positive ±0.2 warning.
       let clampOk = 0, clampBad = 0;
       const sampleBad = [];
       for (const [name, proj] of Object.entries(cluster.crossProjections)) {
         const wMax = Number(proj.wMax);
         const wMin = Number(proj.wMin);
-        if (Math.abs(wMax - 0.2) < 0.01 && Math.abs(wMin - (-0.2)) < 0.01) {
+        if (Math.abs(wMax - 0.4) < 0.01 && Math.abs(wMin - (-0.4)) < 0.01) {
           clampOk++;
         } else {
           clampBad++;
@@ -1150,9 +1154,9 @@ export class Curriculum {
         }
       }
       if (clampBad === 0) {
-        checks.push(`✓ cross-projection weight clamps: ${clampOk}/${clampOk + clampBad} at ±0.2`);
+        checks.push(`✓ cross-projection weight clamps: ${clampOk}/${clampOk + clampBad} at ±0.4`);
       } else {
-        issues.push(`✗ cross-projection clamp drift: ${clampBad} projection(s) outside ±0.2 — sample: ${sampleBad.join(', ')}`);
+        issues.push(`✗ cross-projection clamp drift: ${clampBad} projection(s) outside ±0.4 — sample: ${sampleBad.join(', ')}`);
       }
 
       // 4. Average fanout per row across all cross-projections (sanity
@@ -1996,8 +2000,27 @@ export class Curriculum {
                   if (clusterOutput && clusterOutput.length > 0) {
                     const motorSize = motorRegion.end - motorRegion.start;
                     const bucketSize = Math.max(1, Math.floor(motorSize / invSize));
+                    // Inventory clamp to a-z ONLY for Template 0
+                    // (letter sequence questions). LETTER_INVENTORY
+                    // auto-grew during corpus exposure to include
+                    // digits + punctuation (' . , 0-9), so motor
+                    // argmax over the full inventory could land on
+                    // bucket-for-'4' or bucket-for-',' producing
+                    // K-STUDENT outputs like "what letter comes after
+                    // a?" → "4" or "," (operator caught iter3-5).
+                    // Filter `inv` to a-z + record their original
+                    // indices so the argmax loop only considers
+                    // alphabetical buckets.
+                    const invAll = (typeof inventorySnapshot === 'function') ? inventorySnapshot() : null;
+                    const azIndices = [];
+                    if (invAll) {
+                      for (let i = 0; i < invAll.length; i++) {
+                        const ch = invAll[i];
+                        if (ch && /^[a-z]$/.test(ch)) azIndices.push(i);
+                      }
+                    }
                     let bestIdx = -1, bestSum = -Infinity;
-                    for (let b = 0; b < invSize; b++) {
+                    for (const b of azIndices) {
                       let sum = 0;
                       for (let n = 0; n < bucketSize; n++) {
                         const idx = motorRegion.start + b * bucketSize + n;
@@ -2005,19 +2028,12 @@ export class Curriculum {
                       }
                       if (sum > bestSum) { bestSum = sum; bestIdx = b; }
                     }
-                    // Threshold lowered 0.05 → 0.001. Saturated dense
-                    // matrix produces tiny per-bucket sums that
-                    // never cleared 0.05, so templatedPath never
-                    // fired across iter3-5 (no `templatedPath: true`
-                    // ever appeared in K-STUDENT logs). With pruneTopK
-                    // bisected to 30 the matrix becomes sparse and
-                    // bucket sums climb, but 0.001 is conservative
-                    // enough to fire on any meaningful activation
-                    // while still rejecting pure-zero output.
+                    // Threshold lowered 0.05 → 0.001 in iter6 — let
+                    // sparser matrix's tiny bucket sums fire the
+                    // routing instead of being gated out.
                     if (bestIdx >= 0 && bestSum > 0.001) {
-                      const inv = (typeof inventorySnapshot === 'function') ? inventorySnapshot() : null;
-                      if (inv && bestIdx < inv.length) {
-                        const nextLetter = inv[bestIdx];
+                      if (invAll && bestIdx < invAll.length) {
+                        const nextLetter = invAll[bestIdx];
                         if (nextLetter && nextLetter !== keyTok) {
                           templatedAnswer = nextLetter;
                         }
@@ -2057,12 +2073,21 @@ export class Curriculum {
                   }
                   const phonOutput = letterToPhon.propagate(letterInput);
                   if (phonOutput && phonOutput.length > 0) {
-                    // Argmax over phon region buckets — same convention
-                    // as motor decode but in phon space. The phon basin
-                    // that fires hardest IS the learned letter sound.
+                    // Same a-z inventory clamp as Template 0 — phon
+                    // basins should map to letter sounds, not digits
+                    // or punctuation. Filter argmax to alphabetical
+                    // buckets only.
+                    const invAll = (typeof inventorySnapshot === 'function') ? inventorySnapshot() : null;
+                    const azIndices = [];
+                    if (invAll) {
+                      for (let i = 0; i < invAll.length; i++) {
+                        const ch = invAll[i];
+                        if (ch && /^[a-z]$/.test(ch)) azIndices.push(i);
+                      }
+                    }
                     const bucketSize = Math.max(1, Math.floor(phonOutput.length / invSize));
                     let bestIdx = -1, bestSum = -Infinity;
-                    for (let b = 0; b < invSize; b++) {
+                    for (const b of azIndices) {
                       let sum = 0;
                       for (let n = 0; n < bucketSize; n++) {
                         const idx = b * bucketSize + n;
@@ -2070,17 +2095,13 @@ export class Curriculum {
                       }
                       if (sum > bestSum) { bestSum = sum; bestIdx = b; }
                     }
-                    // Same 0.001 threshold as Template 0 above —
-                    // saturated dense matrix produced tiny phon
-                    // bucket sums that never cleared 0.05.
                     if (bestIdx >= 0 && bestSum > 0.001) {
-                      const inv = (typeof inventorySnapshot === 'function') ? inventorySnapshot() : null;
-                      if (inv && bestIdx < inv.length) {
+                      if (invAll && bestIdx < invAll.length) {
                         // Phonetic spelling: return the letter name +
                         // sound. For 'b' the answer "buh" or "b" both
                         // accept against expectedVariants. Use the bare
                         // letter (matches "b" exact + "buh" startsWith).
-                        templatedAnswer = inv[bestIdx];
+                        templatedAnswer = invAll[bestIdx];
                       }
                     }
                   }
@@ -2165,6 +2186,14 @@ export class Curriculum {
     out.logic = answer.length > 0 && /[a-z]/.test(answer);
 
     // Scoring — match expected answer variants via multiple criteria.
+    // Strict cue match: skip the substring `contains` check for
+    // single-character variants (letter-cue questions like "say a
+    // word that starts with s"). Without this gate, answer "lsd"
+    // false-positive matched cue 's' because 'lsd'.includes('s')
+    // returns true. Operator caught this iter5 verbatim 2026-04-26:
+    // *"async" matched cue 's'* / *"lsd" matched cue 's'*. Strict
+    // gate: 1-char variants require exact OR startsWith only — no
+    // substring-anywhere fuzzy match.
     let anyMatch = false;
     for (const v of expectedVariants) {
       if (answer === v) { out.match.exact = true; anyMatch = true; break; }
@@ -2176,6 +2205,10 @@ export class Curriculum {
     }
     if (!anyMatch) {
       for (const v of expectedVariants) {
+        // Skip contains check for single-char variants — strict cue
+        // discipline (letter-cue questions need starts-with, not
+        // anywhere-in-answer substring).
+        if (v.length <= 1) continue;
         if (answer.includes(v)) { out.match.contains = true; anyMatch = true; break; }
       }
     }
@@ -8739,17 +8772,25 @@ export class Curriculum {
     // Top-K-per-row pruning at end of phase. Keeps only the K largest-
     // magnitude inputs per output neuron and zeros the rest. Forces
     // basin separation when the matrix has collapsed to near-uniform
-    // weights at full density (`mean=0.46 max=0.5 nnz=100000/100000`).
-    // Was 200 — kept matrix at FULL density (200 × 500 rows = 100k
-    // nnz total). Iterations 4+5 monitor evidence: sep-probe pinned
-    // at 0.5+ across all 7 phases regardless of anti-Hebbian magnitude
-    // (1.5× / 2.0× / 2.5× / 3.0× all produced same overload band)
-    // because dense matrix means basin overlap is structural, not
-    // dynamic. Bisecting to 30 forces real sparsity (30 × 500 = 15k
-    // nnz total = 85% of weights zeroed each phase) so individual
-    // basins can finally differentiate. Operator directive: "answers
-    // are wrong" → likely root cause is dense matrix, not magnitude.
-    const pruneTopK = opts.pruneTopK ?? 30;
+    // weights at full density. Bisect history:
+    //   200 (cr2) — kept matrix at FULL density (200 × 500 = 100k nnz
+    //               total). Iterations 4+5 evidence: sep-probe pinned
+    //               at 0.5+ across all 7 phases regardless of anti-
+    //               Hebbian magnitude (1.5×/2.0×/2.5×/3.0× all
+    //               produced same overload band).
+    //   30 (iter6) — first sub-0.5 readings (Categories 0.449,
+    //                ARITH-WORDS 0.441, ELA QABinding 0.471). 30 ×
+    //                500 = 15k nnz total = 85% zeroed. Confirmed
+    //                structural sparsification beats magnitude tuning.
+    //   10 (iter7) — 10 × 500 = 5k nnz = 95% zeroed. iter6 still saw
+    //                multi-bucket-stuck (4-7 attractors instead of 26)
+    //                because basins with 30 inputs each still overlap
+    //                in semantically-similar token clusters. 10 forces
+    //                each motor neuron to discriminate among only its
+    //                10 strongest sem inputs — biologically plausible
+    //                because real cortex per-neuron fanout is ~10-100
+    //                even at thousands-of-input-targets in vivo.
+    const pruneTopK = opts.pruneTopK ?? 10;
     // Winner-take-all motor sparsification (Maass 2000 — WTA circuits
     // are computationally universal with sparse active sets). GloVe
     // embeddings tiled across motor fire ~15-25% of the region; keeping
