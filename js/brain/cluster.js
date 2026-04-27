@@ -485,24 +485,26 @@ export class NeuronCluster {
         const abExcitatory = EMISSION_PAIRS.has(abKey) ? 0.5 : 0.7;
         const baExcitatory = EMISSION_PAIRS.has(baKey) ? 0.5 : 0.7;
         const abTime = Date.now();
-        // Cross-projection weight clamp lowered 0.5 → 0.2. At 0.5 the
-        // matrix saturated to mean=0.4973 max=0.5 nnz=full-density
-        // after a few teach phases — every connection at near-max with
-        // 100% density made every output respond uniformly to every
-        // input (basin collapse, oracleRatio=100%). At 0.2 the
-        // headroom is smaller per cell but anti-Hebbian and Oja decay
-        // can both bite without hitting the ceiling, and the relative
-        // discrimination between trained pairs is preserved (only the
-        // absolute magnitudes scale down). Combined with top-K-per-row
-        // pruning + bumped contrastive lr, basins separate instead of
-        // collapsing.
-        const ab = new SparseMatrix(bSize, aSize, { wMin: -0.2, wMax: 0.2 });
+        // Cross-projection weight clamp BISECTED 0.2 → 0.4. Prior history:
+        // 0.5 saturated to uniform full-density basins (oracleRatio=100%);
+        // 0.2 + auto-rescale-on-overload halved values every basin-collapse
+        // phase down to 0.003 across 7 phases, drowning trained signal
+        // below random-init weight bias (motor argmax fell to whichever
+        // bucket got the largest init noise — bucket-stuck 'z' for that
+        // seed). 0.4 gives 4× more dynamic range above the floor than 0.2
+        // did, while staying well below the 0.5 saturation ceiling. Init
+        // strength stays at 0.2 so random-init bias remains small (±0.02-
+        // 0.10 per weight via `sign × (0.1 + 0.4×rand) × strength`); only
+        // the trained-signal headroom doubles. Paired with the rescale
+        // FLOOR at wMax × 0.25 = 0.1 added to `_teachAssociationPairs` +
+        // `_teachQABinding` so rescale stops before trained signal drowns.
+        const ab = new SparseMatrix(bSize, aSize, { wMin: -0.4, wMax: 0.4 });
         ab.initRandom(abDensity, abExcitatory, 0.2);
         this.crossProjections[`${a}_to_${b}`] = ab;
         _projIdx++;
         if (logConstruction) console.log(`[Cluster ${name}]   ${_projIdx}/${pairs.length * 2} ${a}_to_${b} (${bSize.toLocaleString()}×${aSize.toLocaleString()}, nnz=${ab.nnz.toLocaleString()}) in ${Date.now() - abTime}ms`);
         const baTime = Date.now();
-        const ba = new SparseMatrix(aSize, bSize, { wMin: -0.2, wMax: 0.2 });
+        const ba = new SparseMatrix(aSize, bSize, { wMin: -0.4, wMax: 0.4 });
         ba.initRandom(baDensity, baExcitatory, 0.2);
         this.crossProjections[`${b}_to_${a}`] = ba;
         _projIdx++;

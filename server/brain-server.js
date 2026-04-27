@@ -4923,7 +4923,28 @@ class ServerBrain {
         // Phase-level resume markers — so Savestart.bat can skip phases
         // whose _phaseDone already fired in a prior run. Weights live on
         // disk via brain-weights.bin, markers live here.
-        if (Array.isArray(pending.passedPhases)) cortex.passedPhases = [...pending.passedPhases];
+        // STALE-LOAD FILTER: only restore phase markers for cells that are
+        // already in passedCells. In-progress cells (cell didn't finish
+        // last run) get their phase markers DROPPED so the next run
+        // re-trains them from scratch instead of skipping every phase
+        // and producing groundhog-day failed-attempts on stale weights.
+        // The bug this fixes: code-hash matches across boots → state
+        // preserved → ELA-K phase markers from a prior partial run get
+        // loaded → auto-wrap skips every K teach phase → cell "runs" in
+        // 36s with zero teaching, fails the gate, retries identical, fails
+        // identical, times out. Math/Sci/etc cells whose markers weren't
+        // saved still trained — but ELA-K never could.
+        if (Array.isArray(pending.passedPhases)) {
+          const passedCellSet = new Set(pending.passedCells || []);
+          cortex.passedPhases = pending.passedPhases.filter((phaseKey) => {
+            const cellKey = String(phaseKey).split(':')[0];
+            return passedCellSet.has(cellKey);
+          });
+          const dropped = pending.passedPhases.length - cortex.passedPhases.length;
+          if (dropped > 0) {
+            console.log(`[Brain] passedPhases stale-load filter: dropped ${dropped} marker(s) for in-progress cells (kept ${cortex.passedPhases.length} for fully-passed cells) — re-train will fire on next curriculum walk`);
+          }
+        }
         if (pending.probeHistory && typeof pending.probeHistory === 'object') {
           cortex.probeHistory = { ...pending.probeHistory };
         }
