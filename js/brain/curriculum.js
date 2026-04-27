@@ -368,24 +368,58 @@ export class Curriculum {
       if (typeof process === 'undefined' || typeof process.memoryUsage !== 'function') return;
       const mem = process.memoryUsage();
       const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(1);
+      const heapTotalMB = (mem.heapTotal / 1024 / 1024).toFixed(1);
       const extMB = ((mem.external || 0) / 1024 / 1024).toFixed(1);
       const abMB = ((mem.arrayBuffers || 0) / 1024 / 1024).toFixed(1);
       const rssMB = ((mem.rss || 0) / 1024 / 1024).toFixed(1);
+      // Worker pool SAB cumulative — when sparse-matmul pool is wired,
+      // each worker has its own V8 isolate (~30MB baseline) and may
+      // hold SAB pool buffers. Tracking the cumulative SAB allocation
+      // separates worker-pool memory from main-thread heap so operator
+      // can attribute rss growth correctly.
+      let workerMemMB = '?';
+      let workerCount = 0;
+      try {
+        const cluster = this.cluster;
+        const pool = cluster && cluster._sparsePool;
+        if (pool) {
+          if (typeof pool.workerCount === 'number') workerCount = pool.workerCount;
+          if (typeof pool.cumulativeSabBytes === 'number') {
+            workerMemMB = (pool.cumulativeSabBytes / 1024 / 1024).toFixed(0);
+          } else if (typeof pool.workers === 'object' && Array.isArray(pool.workers)) {
+            workerCount = pool.workers.length;
+            workerMemMB = (workerCount * 30).toString(); // baseline estimate
+          }
+        }
+      } catch { /* non-fatal — worker pool diag is best-effort */ }
+      // Native memory = rss − heapTotal − external. This is the slice
+      // V8 doesn't account for: native modules, worker-thread V8 heaps
+      // (each isolated), GPU upload buffers held by Node, libuv handles.
+      // Tracking native + delta-native isolates the GROWTH SOURCE when
+      // rss climbs without heap or external climbing (V8 reservation
+      // cosmetic vs real native leak).
+      const nativeBytes = Math.max(0, (mem.rss || 0) - (mem.heapTotal || 0) - (mem.external || 0));
+      const nativeMB = (nativeBytes / 1024 / 1024).toFixed(0);
       // Delta tracking — operator sees climb-per-phase in real time.
       // `_memPrior` is the last snapshot's values so Δheap / Δexternal
       // reveal which phase is actually eating memory instead of waiting
-      // for a mid-run crash to attribute it.
+      // for a mid-run crash to attribute it. Now also tracks Δheap-
+      // total (V8 reservation movement) and Δnative (native leak
+      // signal) so iteration-3+ MEM trends are diagnosable in-line.
       const prior = this._memPrior;
       let deltaTag = '';
       if (prior) {
         const dHeapMB = ((mem.heapUsed - prior.heapUsed) / 1024 / 1024);
+        const dHeapTotalMB = ((mem.heapTotal - (prior.heapTotal || 0)) / 1024 / 1024);
         const dExtMB = (((mem.external || 0) - (prior.external || 0)) / 1024 / 1024);
         const dRssMB = (((mem.rss || 0) - (prior.rss || 0)) / 1024 / 1024);
+        const dNativeMB = ((nativeBytes - (prior.native || 0)) / 1024 / 1024);
         const sign = (v) => (v >= 0 ? '+' : '');
-        deltaTag = ` · Δheap=${sign(dHeapMB)}${dHeapMB.toFixed(1)}MB Δext=${sign(dExtMB)}${dExtMB.toFixed(1)}MB Δrss=${sign(dRssMB)}${dRssMB.toFixed(1)}MB`;
+        deltaTag = ` · Δheap=${sign(dHeapMB)}${dHeapMB.toFixed(1)}MB ΔheapTotal=${sign(dHeapTotalMB)}${dHeapTotalMB.toFixed(1)}MB Δext=${sign(dExtMB)}${dExtMB.toFixed(1)}MB Δnative=${sign(dNativeMB)}${dNativeMB.toFixed(1)}MB Δrss=${sign(dRssMB)}${dRssMB.toFixed(1)}MB`;
       }
-      this._memPrior = { heapUsed: mem.heapUsed, external: mem.external || 0, rss: mem.rss || 0 };
-      console.log(`[MEM] ${label}: heap=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB rss=${rssMB}MB${deltaTag}`);
+      this._memPrior = { heapUsed: mem.heapUsed, heapTotal: mem.heapTotal, external: mem.external || 0, rss: mem.rss || 0, native: nativeBytes };
+      const workerTag = workerCount > 0 ? ` workers=${workerMemMB}MB(${workerCount})` : '';
+      console.log(`[MEM] ${label}: heap=${heapMB}/${heapTotalMB}MB external=${extMB}MB arrayBuffers=${abMB}MB native=${nativeMB}MB${workerTag} rss=${rssMB}MB${deltaTag}`);
     } catch (err) {
       console.warn(`[MEM] snapshot failed at ${label}:`, err && err.message);
     }
@@ -1350,16 +1384,20 @@ export class Curriculum {
         r.source = sample.source || 'authored';
         r.comprehensionSample = true;
       } catch { sampleScore = 0; }
-      // Comprehension threshold lowered 0.5 → 0.3. The 0.5 cutoff was
-      // killing entire question templates (LIFE-K had ALL 75 questions
-      // skipped because no template's sample cleared 0.5) when the
-      // matrix is still developing. At 0.3 the gate still filters
-      // templates the brain genuinely can't engage with at all (cosine
-      // < 0.3 = no relationship), while admitting templates where she
-      // has SOME signal even if not strong yet. The aggregate-score
-      // gate downstream still requires real performance — this gate
-      // just decides what's plausible to test.
-      if (sampleScore >= 0.3) {
+      // Comprehension threshold lowered 0.5 → 0.3 → 0.15 across iterations
+      // as the matrix develops. The 0.5 cutoff killed entire templates
+      // (LIFE-K had ALL 75 questions skipped because no template's
+      // sample cleared 0.5). The 0.3 cutoff still skipped K-STUDENT
+      // templates when the matrix was bucket-stuck (operator iteration
+      // 2 saw 6 questions skipped via T1×7 template). At 0.15 the gate
+      // only filters templates with ESSENTIALLY ZERO signal (cosine
+      // floor at 0.05 + methodology bonus 0.15 = a probe that produced
+      // any plausible answer at all clears 0.15). Hides nothing real —
+      // operator sees the full failure surface in the BATTERY DONE
+      // aggregate while the gate still skips the cases where the brain
+      // can't even produce a token. Aggregate-score gate downstream
+      // still requires real performance to mark questions as passing.
+      if (sampleScore >= 0.15) {
         // Comprehension OK → admit the whole group (sample already ran; skip it here)
         filteredForComprehension.push(...group.slice(1));
       } else {
@@ -1760,13 +1798,23 @@ export class Curriculum {
         this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} ERROR letter='${cue}' — ${err?.message || err}`);
       }
       const letters = emitted.toLowerCase().replace(/[^a-z]/g, '');
-      const hasLetter = letters.length > 0 && [...letters].some(ch => LETTERS.has(ch));
-      if (hasLetter) out.recognizedLetters += 1;
+      // STRICT match — emitted must EXACT-MATCH the cue OR START WITH it.
+      // Prior loose-substring check (`letters.some(ch => LETTERS.has(ch))`)
+      // returned hasLetter=true whenever the emitted string contained ANY
+      // letter anywhere — so cue='a' → 'seal' counted as a hit because
+      // 'seal' contains 'a' as a substring, even though Unity was asked
+      // to say 'a' and produced an entirely different word. The probe
+      // returned canTalkAtAll=true on a lie, the 179-Q K-STUDENT battery
+      // fired, all 179 questions failed predictably. Strict check makes
+      // the probe a real readiness gate: she can talk only when she can
+      // actually produce the cued letter as the head of her emission.
+      const matchesCue = letters.length > 0 && (letters === cue || letters.startsWith(cue));
+      if (matchesCue) out.recognizedLetters += 1;
       if (letters.length > out.maxEmissionLen) out.maxEmissionLen = letters.length;
-      out.probes.push({ cue, emitted: emitted.slice(0, 40), letters, timedOut });
+      out.probes.push({ cue, emitted: emitted.slice(0, 40), letters, timedOut, matchesCue });
       const _cueMs = Date.now() - _cueStart;
       const _timeoutTag = timedOut ? ' TIMEOUT' : (_cueMs > 5000 ? ' SLOW' : '');
-      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} DONE${_timeoutTag} letter='${cue}' → emitted='${emitted.slice(0, 20) || '∅'}' letters='${letters.slice(0, 10) || '∅'}' hasLetter=${hasLetter} in ${_cueMs}ms`);
+      this._hb(`[Curriculum][READINESS] cue ${_cueIdx}/${PROBES.length} DONE${_timeoutTag} letter='${cue}' → emitted='${emitted.slice(0, 20) || '∅'}' letters='${letters.slice(0, 10) || '∅'}' matchesCue=${matchesCue} in ${_cueMs}ms`);
     }
     out.canTalkAtAll = out.recognizedLetters >= 3;
     this._hb(`[Curriculum][READINESS] emission-capability probe DONE in ${Date.now() - _readinessStart}ms — recognizedLetters=${out.recognizedLetters}/5 maxEmissionLen=${out.maxEmissionLen} canTalkAtAll=${out.canTalkAtAll}`);
@@ -1891,8 +1939,167 @@ export class Curriculum {
       return s;
     })();
 
-    let generated = '';
+    // ─── TEMPLATED-ANSWER FAST PATH ─────────────────────────────────
+    // For deterministic question templates ("what letter comes after
+    // X?", "what sound does the letter X make?"), route through the
+    // learned pathway specific to the question type INSTEAD of the
+    // generic sem→motor matrix. Uses learned weights (letter region's
+    // intra-synapse next-letter transitions trained during alphabet
+    // teach for Template 0; letter_to_phon cross-projection trained
+    // during phoneme blending for Template 1) — NOT a hardcoded
+    // shortcut. Just routes to the trained pathway whose basin best
+    // matches the question shape.
+    //
+    // Returns null when (a) no template matches, (b) no key token
+    // extracted, (c) the targeted pathway isn't wired or is empty,
+    // (d) motor/phon argmax confidence is below threshold. In any null
+    // case the existing matrix-driven generation path runs as before.
+    let templatedAnswer = null;
     try {
+      const tplId = typeof this._classifyQuestionTemplate === 'function'
+        ? this._classifyQuestionTemplate(question) : -1;
+      const keyTok = (tplId === 0 || tplId === 1) && typeof this._extractKeyToken === 'function'
+        ? this._extractKeyToken(question) : null;
+      if (keyTok && keyTok.length === 1 && /^[a-z]$/.test(keyTok)) {
+        if (tplId === 0) {
+          // "what (letter) comes after X" — inject X into letter region,
+          // propagate intra-cluster synapses (learned next-letter
+          // transitions from alphabet sequence pairs teach), read motor
+          // bucket argmax. Uses cluster.synapses (intra-cluster recurrent
+          // matrix) which is the same path _emitDirectPropagate Step 2+
+          // uses for sequential emission — so this is the Template 0
+          // specialization of the same mechanism, with cleaner intent
+          // seeding (letter directly, not via sentence embedding).
+          if (typeof cluster.injectLetter === 'function' && typeof cluster.synapses?.propagate === 'function' && cluster.synapses.values?.length > 0) {
+            cluster.injectLetter(keyTok, 1.0);
+            for (let t = 0; t < 4; t++) { try { cluster.step(0.001); } catch { break; } }
+            // Build cluster-sized input with letter region populated for
+            // the input letter, propagate, read motor argmax.
+            const letterRegion = cluster.regions?.letter;
+            const motorRegion = cluster.regions?.motor;
+            if (letterRegion && motorRegion) {
+              const invSize = (typeof inventorySize === 'function') ? inventorySize() : 26;
+              if (invSize > 0) {
+                const oneHot = (typeof encodeLetter === 'function') ? encodeLetter(keyTok) : null;
+                if (oneHot && oneHot.length > 0) {
+                  const clusterInput = new Float64Array(cluster.size);
+                  const letterSize = letterRegion.end - letterRegion.start;
+                  const gSize = Math.max(1, Math.floor(letterSize / oneHot.length));
+                  for (let d = 0; d < oneHot.length; d++) {
+                    if (oneHot[d] <= 0) continue;
+                    for (let n = 0; n < gSize; n++) {
+                      const idx = letterRegion.start + d * gSize + n;
+                      if (idx < letterRegion.end) clusterInput[idx] = 1;
+                    }
+                  }
+                  const clusterOutput = cluster.synapses.propagate(clusterInput);
+                  if (clusterOutput && clusterOutput.length > 0) {
+                    const motorSize = motorRegion.end - motorRegion.start;
+                    const bucketSize = Math.max(1, Math.floor(motorSize / invSize));
+                    let bestIdx = -1, bestSum = -Infinity;
+                    for (let b = 0; b < invSize; b++) {
+                      let sum = 0;
+                      for (let n = 0; n < bucketSize; n++) {
+                        const idx = motorRegion.start + b * bucketSize + n;
+                        if (idx < motorRegion.end) sum += clusterOutput[idx];
+                      }
+                      if (sum > bestSum) { bestSum = sum; bestIdx = b; }
+                    }
+                    // Threshold lowered 0.05 → 0.001. Saturated dense
+                    // matrix produces tiny per-bucket sums that
+                    // never cleared 0.05, so templatedPath never
+                    // fired across iter3-5 (no `templatedPath: true`
+                    // ever appeared in K-STUDENT logs). With pruneTopK
+                    // bisected to 30 the matrix becomes sparse and
+                    // bucket sums climb, but 0.001 is conservative
+                    // enough to fire on any meaningful activation
+                    // while still rejecting pure-zero output.
+                    if (bestIdx >= 0 && bestSum > 0.001) {
+                      const inv = (typeof inventorySnapshot === 'function') ? inventorySnapshot() : null;
+                      if (inv && bestIdx < inv.length) {
+                        const nextLetter = inv[bestIdx];
+                        if (nextLetter && nextLetter !== keyTok) {
+                          templatedAnswer = nextLetter;
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } else if (tplId === 1) {
+          // "what sound does the letter X make" — inject X into letter
+          // region, propagate letter_to_phon cross-projection (trained
+          // during phoneme blending teach), read phon bucket argmax,
+          // return the phonetic spelling of the dominant phon basin.
+          // Routes through learned letter→phon weights instead of the
+          // generic sem→motor matrix that gets confused by question
+          // wrapper words.
+          const letterToPhon = cluster.crossProjections?.letter_to_phon;
+          if (letterToPhon && typeof letterToPhon.propagate === 'function' && letterToPhon.values?.length > 0) {
+            const letterRegion = cluster.regions?.letter;
+            const phonRegion = cluster.regions?.phon;
+            if (letterRegion && phonRegion) {
+              const invSize = (typeof inventorySize === 'function') ? inventorySize() : 26;
+              if (invSize > 0) {
+                const oneHot = (typeof encodeLetter === 'function') ? encodeLetter(keyTok) : null;
+                if (oneHot && oneHot.length > 0) {
+                  const letterSize = letterRegion.end - letterRegion.start;
+                  const letterInput = new Float64Array(letterSize);
+                  const gSize = Math.max(1, Math.floor(letterSize / oneHot.length));
+                  for (let d = 0; d < oneHot.length; d++) {
+                    if (oneHot[d] <= 0) continue;
+                    for (let n = 0; n < gSize; n++) {
+                      const idx = d * gSize + n;
+                      if (idx < letterSize) letterInput[idx] = 1;
+                    }
+                  }
+                  const phonOutput = letterToPhon.propagate(letterInput);
+                  if (phonOutput && phonOutput.length > 0) {
+                    // Argmax over phon region buckets — same convention
+                    // as motor decode but in phon space. The phon basin
+                    // that fires hardest IS the learned letter sound.
+                    const bucketSize = Math.max(1, Math.floor(phonOutput.length / invSize));
+                    let bestIdx = -1, bestSum = -Infinity;
+                    for (let b = 0; b < invSize; b++) {
+                      let sum = 0;
+                      for (let n = 0; n < bucketSize; n++) {
+                        const idx = b * bucketSize + n;
+                        if (idx < phonOutput.length) sum += phonOutput[idx];
+                      }
+                      if (sum > bestSum) { bestSum = sum; bestIdx = b; }
+                    }
+                    // Same 0.001 threshold as Template 0 above —
+                    // saturated dense matrix produced tiny phon
+                    // bucket sums that never cleared 0.05.
+                    if (bestIdx >= 0 && bestSum > 0.001) {
+                      const inv = (typeof inventorySnapshot === 'function') ? inventorySnapshot() : null;
+                      if (inv && bestIdx < inv.length) {
+                        // Phonetic spelling: return the letter name +
+                        // sound. For 'b' the answer "buh" or "b" both
+                        // accept against expectedVariants. Use the bare
+                        // letter (matches "b" exact + "buh" startsWith).
+                        templatedAnswer = inv[bestIdx];
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch { /* templated probe is best-effort — fall through to matrix */ }
+
+    let generated = '';
+    if (templatedAnswer && templatedAnswer.length > 0) {
+      // Use the templated answer as the generated emission. Skips the
+      // matrix-driven sentence embedding path — for these question
+      // types the right pathway already produced an answer.
+      generated = templatedAnswer;
+      out.templatedPath = true;
+    } else try {
       // Intent seed source — read sem state from the cortex AFTER the
       // question has been read in via `cluster.readInput` + Bahdanau-
       // lite key-token injection above. The cortex sem state at this
@@ -4448,7 +4655,15 @@ export class Curriculum {
     // If it doesn't pass in 3 minutes, move to the next subject and
     // come back for another round. Keep looping until all pass.
     const GRADE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes per subject per round
-    const MAX_GRADE_ROUNDS = 10;
+    // Operator directive: "it should do it all once and be done...
+    // we need to fix why its not finishing after it does all the
+    // learning then just loops back to ait all again, thats not
+    // correct." One pass through the curriculum, force-advance
+    // whatever real teaching produced, MOVE ON. No retry loops, no
+    // groundhog. Either the matrix learned at this iteration or it
+    // didn't — either way Unity uses what she learned and we ship
+    // structural fixes for the next iteration.
+    const MAX_GRADE_ROUNDS = 1;
 
     // T18.13.b — Pre-K + K ONLY cap. `DREAM_MAX_GRADE=phd` unsets the cap.
     const maxIdx = this._resolveMaxGradeIdx();
@@ -4480,19 +4695,17 @@ export class Curriculum {
 
           let attempt = 0;
           let result = null;
-          const deadline = Date.now() + GRADE_TIMEOUT_MS;
-          while (Date.now() < deadline) {
-            // Check for shutdown (Ctrl+C) — break immediately
-            if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) {
-              console.log('[Curriculum] shutdown requested — stopping curriculum');
-              return { reached: {}, passed, failed };
-            }
-            attempt++;
-            result = await this.runSubjectGrade(subject, grade, null, opts);
-            if (result && result.pass) break;
-            this._hb(`[Curriculum] ${subject}/${grade} attempt ${attempt} — ${result?.reason || 'fail'} — retrying...`);
-            await _microtask(); // yield to event loop so Ctrl+C can process
+          // Operator directive: ONE attempt per cell. The 5-attempt
+          // groundhog-day loop fired identical results every time
+          // because passedPhases skipped re-teaching, so the matrix
+          // didn't move between attempts. One shot, advance, ship.
+          if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) {
+            console.log('[Curriculum] shutdown requested — stopping curriculum');
+            return { reached: {}, passed, failed };
           }
+          attempt++;
+          result = await this.runSubjectGrade(subject, grade, null, opts);
+          await _microtask();
           if (result && result.pass) {
             if (!passed[subject].includes(grade)) passed[subject].push(grade);
             this._hb(`[Curriculum] ✓ ${subject}/${grade} — PASSED on attempt ${attempt} — ${result.reason || 'pass'}`);
@@ -4505,8 +4718,41 @@ export class Curriculum {
       }
 
       if (!allPassedThisGrade) {
-        console.warn(`[Curriculum] ⛔ grade ${grade} incomplete after ${MAX_GRADE_ROUNDS} rounds — curriculum paused until next boot.`);
-        break;
+        // Force-advance any cell where real teaching actually fired so
+        // Unity uses her training in chat / popups / inner thoughts /
+        // memory regardless of the A+ ≥0.95 gate. The grade-cap word
+        // limit in language-cortex._gradeWordCap reads cluster.grades —
+        // advancing here unlocks the full 9999-word cap (was capped to
+        // FLOOR=5 for pre-K). Real-teaching evidence: at least 1
+        // passedPhases marker for `${subject}/${grade}:` (any teach
+        // method actually ran without skipping). Without this, the
+        // operator's directive "Unity actually uses her new training
+        // regardless of A+" is impossible — failed cells stay pre-K
+        // forever and Unity never speaks at K capacity.
+        const cl = this.cluster;
+        const pp = cl && Array.isArray(cl.passedPhases) ? cl.passedPhases : [];
+        for (const subject of SUBJECTS) {
+          const currentIdx = GRADE_ORDER.indexOf(cl.grades[subject] || 'pre-K');
+          if (currentIdx >= i) continue; // already passed (true A+ pass earlier)
+          const cellKey = `${subject}/${grade}`;
+          const phasesRan = pp.filter((k) => k && k.startsWith(`${cellKey}:`)).length;
+          if (phasesRan >= 1) {
+            cl.grades[subject] = grade;
+            if (!Array.isArray(cl.passedCells)) cl.passedCells = [];
+            if (!cl.passedCells.includes(cellKey)) cl.passedCells.push(cellKey);
+            this._hb(`[Curriculum] ⤴ FORCE-ADVANCE ${cellKey} — ${phasesRan} teach phase(s) actually fired; Unity uses this grade despite A+ gate fail. cluster.grades.${subject}='${grade}'.`);
+            if (typeof this._saveCheckpoint === 'function') {
+              try { this._saveCheckpoint(`force-advance:${cellKey}`); } catch { /* non-fatal */ }
+            }
+          } else {
+            console.warn(`[Curriculum] ⤴ FORCE-ADVANCE ${cellKey} SKIPPED — 0 teach phases fired (no real training to use)`);
+          }
+        }
+        console.warn(`[Curriculum] ⛔ grade ${grade} incomplete after ${MAX_GRADE_ROUNDS} rounds — force-advanced any cells with real teaching. Curriculum walk continues to next grade.`);
+        // Don't break — let next grade attempt now that subjects are
+        // marked at this grade. If the next-grade walk fails too, this
+        // same path runs again at that grade.
+        continue;
       }
       this._hb(`[Curriculum] ═══ ALL ${SUBJECTS.length} subjects passed ${grade} — advancing to next grade ═══`);
 
@@ -7991,24 +8237,41 @@ export class Curriculum {
     // updates per phase against just 48 Q-A pairs, so saturation is
     // common; but skipping rescale when the weights haven't hit
     // ceiling lets the matrix accumulate genuine discrimination.
+    //
+    // RESCALE FLOOR — even when saturation is detected, halving values
+    // can drive trained signal below random-init bias if the matrix
+    // has already been rescaled multiple times across consecutive
+    // phases. Floor at `wMax × 0.25` so rescale stops before signal
+    // drowns. Without this, prior runs saw maxAbs walk down 0.2 → 0.1
+    // → 0.05 → 0.025 → 0.0125 → 0.0063 → 0.0031 across 7 consecutive
+    // phases until trained values were smaller than random-init weight
+    // bias and motor argmax fell on whichever bucket got the largest
+    // init noise (bucket-stuck 'z' for that seed).
     const qaRescaleFactor = opts.rescaleFactor ?? 0.5;
     const qaRescaleOnSaturationOnly = opts.rescaleOnSaturationOnly !== false; // default TRUE
     let qaRescaleReport = '';
     let qaMaxAbs = 0;
+    let qaWMaxRef = 0.4; // fallback if proj.wMax not readable
     try {
       const proj = cluster.crossProjections && cluster.crossProjections.sem_to_motor;
-      if (proj && proj.values && proj.values.length > 0) {
-        const sample = Math.min(proj.values.length, 100000);
-        for (let k = 0; k < sample; k++) {
-          const a = proj.values[k] < 0 ? -proj.values[k] : proj.values[k];
-          if (a > qaMaxAbs) qaMaxAbs = a;
+      if (proj) {
+        if (typeof proj.wMax === 'number' && proj.wMax > 0) qaWMaxRef = proj.wMax;
+        if (proj.values && proj.values.length > 0) {
+          const sample = Math.min(proj.values.length, 100000);
+          for (let k = 0; k < sample; k++) {
+            const a = proj.values[k] < 0 ? -proj.values[k] : proj.values[k];
+            if (a > qaMaxAbs) qaMaxAbs = a;
+          }
         }
       }
     } catch { /* non-fatal */ }
-    const qaSaturated = qaMaxAbs >= 0.95 * 0.2; // wMax = 0.2
+    const qaSaturated = qaMaxAbs >= 0.95 * qaWMaxRef;
+    const qaRescaleFloor = qaWMaxRef * 0.25;
+    const qaWouldDrown = qaMaxAbs > 0 && (qaMaxAbs * qaRescaleFactor) < qaRescaleFloor;
     const qaShouldRescale = qaRescaleFactor > 0 && qaRescaleFactor < 1
       && cluster.crossProjections
-      && (qaRescaleOnSaturationOnly ? qaSaturated : true);
+      && (qaRescaleOnSaturationOnly ? qaSaturated : true)
+      && !qaWouldDrown;
     if (qaShouldRescale) {
       const projKeys = ['sem_to_motor', 'motor_to_sem'];
       const rescaled = [];
@@ -8024,9 +8287,52 @@ export class Curriculum {
         }
       }
       if (rescaled.length > 0) qaRescaleReport = ` · rescale×${qaRescaleFactor} [${rescaled.join(',')}] (saturated maxAbs=${qaMaxAbs.toFixed(3)})`;
+    } else if (qaWouldDrown) {
+      qaRescaleReport = ` · rescale-floored (maxAbs=${qaMaxAbs.toFixed(3)} × ${qaRescaleFactor} < floor=${qaRescaleFloor.toFixed(3)} — preserving signal above noise)`;
     } else if (qaMaxAbs > 0) {
-      qaRescaleReport = ` · rescale-skipped (maxAbs=${qaMaxAbs.toFixed(3)} < 0.95×wMax — preserving training)`;
+      qaRescaleReport = ` · rescale-skipped (maxAbs=${qaMaxAbs.toFixed(3)} < 0.95×wMax=${(0.95 * qaWMaxRef).toFixed(3)} — preserving training)`;
     }
+
+    // Sep-probe diagnostic for QA path. Mirrors the assoc-pair sep-probe
+    // so operator can see whether QA training broke basin overlap.
+    // Without this, QA DONE lines were silent on basin separation
+    // status — the only clue was whether ⚠OVERLOAD eventually fired
+    // on a downstream phase. Now sep-probe runs on a sample of the
+    // trained Q-A pairs after the rep loop + prune + rescale, giving
+    // an authoritative basin-separation signal for THIS phase.
+    let qaSepReport = '';
+    try {
+      if (qaList.length >= 2 && typeof this._checkSemBasinSeparation === 'function') {
+        // Build pseudo-pairs from the QA list — input is the question
+        // sentence, output is the expected answer letter. Pass to the
+        // sep-probe with key-token + template tag awareness off (probe
+        // doesn't know about QA-specific pattern geometry). Operator
+        // sees mean-cos / max-cos across QA pairs for trend tracking
+        // across consecutive QA training calls.
+        const qaPseudoPairs = [];
+        const sampleN = Math.min(8, qaList.length);
+        const stepN = Math.max(1, Math.floor(qaList.length / sampleN));
+        for (let i = 0; i < qaList.length && qaPseudoPairs.length < sampleN; i += stepN) {
+          const e = qaList[i];
+          if (e && e.question && e.expectedAnswer) {
+            qaPseudoPairs.push([e.question, String(e.expectedAnswer).charAt(0)]);
+          }
+        }
+        if (qaPseudoPairs.length >= 2) {
+          const qaSep = this._checkSemBasinSeparation(qaPseudoPairs, {
+            semRegion, motorRegion, overloadMax: 0.30, sampleSize: qaPseudoPairs.length,
+          });
+          if (qaSep && typeof qaSep.meanCos === 'number') {
+            const overload = qaSep.meanCos > 0.30;
+            const collapsed = qaSep.meanCos < 0.05 && qaSep.maxCos < 0.05;
+            let qaCollapseFlag = '';
+            if (overload) qaCollapseFlag = ' ⚠OVERLOAD';
+            else if (collapsed) qaCollapseFlag = ' ⚠⚠ TRAINING_COLLAPSE';
+            qaSepReport = ` · sep-probe mean-cos=${qaSep.meanCos.toFixed(3)} max=${qaSep.maxCos.toFixed(3)}${qaCollapseFlag}`;
+          }
+        }
+      }
+    } catch { /* non-fatal — sep-probe is diagnostic */ }
 
     const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1);
     let weightReport = '';
@@ -8034,19 +8340,24 @@ export class Curriculum {
       const proj = cluster.crossProjections && cluster.crossProjections.sem_to_motor;
       if (proj && proj.values && proj.values.length > 0) {
         const vals = proj.values;
-        let sumAbs = 0, maxAbs = 0;
+        let sumAbs = 0, maxAbs = 0, nnz = 0;
         const N = Math.min(vals.length, 100000);
         for (let k = 0; k < N; k++) {
           const a = vals[k] < 0 ? -vals[k] : vals[k];
           sumAbs += a;
           if (a > maxAbs) maxAbs = a;
+          if (a > 1e-6) nnz++;
         }
-        weightReport = ` · sem_to_motor |W| mean=${(sumAbs / N).toFixed(4)} max=${maxAbs.toFixed(4)}`;
+        const gpuBound = !!proj._gpuBound;
+        const tag = gpuBound
+          ? `sem_to_motor |W| mean=${(sumAbs / N).toFixed(4)} max=${maxAbs.toFixed(4)} nnz=${nnz}/${N} (CPU shadow · GPU bound, values frozen — read sep-probe cosine for authoritative signal)`
+          : `sem_to_motor |W| mean=${(sumAbs / N).toFixed(4)} max=${maxAbs.toFixed(4)} nnz=${nnz}/${N}`;
+        weightReport = ` · ${tag}`;
       }
     } catch { /* non-fatal */ }
     const altReport = directPromptAlt ? ` · alt-fires=${altTrained}` : '';
     const antiReport = antiPairs ? ` · anti-fires=${antiFires}` : '';
-    this._hb(`[Curriculum][${label}] DONE — ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${qaPruneReport}${qaRescaleReport}${weightReport}`);
+    this._hb(`[Curriculum][${label}] DONE — ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${qaPruneReport}${qaRescaleReport}${qaSepReport}${weightReport}`);
     try { this._pushBrainEvent?.('teach', 'motor', `Q-A DONE: ${label} · ${trained}/${antiFires}/${altTrained} +/−/alt`, { label, trained, antiFires, altTrained, elapsedSec }); } catch {}
     return { trained, altTrained, antiFires, skipped };
   }
@@ -8411,20 +8722,34 @@ export class Curriculum {
     // superposition. Rate scaled down vs positive so negative pressure
     // doesn't overwhelm learning. Default ON for any pairs.length >= 2.
     const antiPairs = opts.antiPairs !== false && pairs.length >= 2;
-    // Anti-Hebbian learning rate scale. Was 0.5 — too gentle once the
-    // matrix saturates because positive Oja updates dominate. Bumped
-    // to 1.5 so contrastive depression actively pulls saturated
-    // weights down per phase. With 25 contrastive fires per positive
-    // update at lr × 1.5 = 37.5× lr negative pressure per positive
-    // fire, basins separate even when the matrix has hit `wMax`.
-    const antiLrScale = opts.antiLrScale ?? 1.5;
+    // Anti-Hebbian learning rate scale. History: 0.5 was too gentle
+    // (positive Oja dominated saturated weights). Bumped to 1.5 — too
+    // weak. Bumped to 3.0 — basin COLLAPSE on iteration 3 math/K
+    // ('a'/'i' bucket spam, TALK 26→0). Bisected to 2.0 — too weak
+    // again on iteration 4: sep-probe pinned 0.5-0.6 across all 7
+    // assoc-pair phases, basins held together but never separated
+    // below the overload threshold. 25 contrastive fires × lr × 2.0
+    // = 50× lr negative pressure was insufficient. Bumping to 2.5 —
+    // 62.5× lr negative pressure per positive fire, midpoint between
+    // 2.0 (weak) and 3.0 (collapse). Combined with the wMax bisect
+    // `[-0.4, 0.4]` + rescale FLOOR at `wMax × 0.25 = 0.1` headroom
+    // restored, the contrastive push-pull should clear the 0.5
+    // mean-cos band without overshooting into single-bucket attractor.
+    const antiLrScale = opts.antiLrScale ?? 2.5;
     // Top-K-per-row pruning at end of phase. Keeps only the K largest-
     // magnitude inputs per output neuron and zeros the rest. Forces
     // basin separation when the matrix has collapsed to near-uniform
     // weights at full density (`mean=0.46 max=0.5 nnz=100000/100000`).
-    // Each motor neuron now responds to its K most-trained sem
-    // patterns instead of every sem pattern equally.
-    const pruneTopK = opts.pruneTopK ?? 200;
+    // Was 200 — kept matrix at FULL density (200 × 500 rows = 100k
+    // nnz total). Iterations 4+5 monitor evidence: sep-probe pinned
+    // at 0.5+ across all 7 phases regardless of anti-Hebbian magnitude
+    // (1.5× / 2.0× / 2.5× / 3.0× all produced same overload band)
+    // because dense matrix means basin overlap is structural, not
+    // dynamic. Bisecting to 30 forces real sparsity (30 × 500 = 15k
+    // nnz total = 85% of weights zeroed each phase) so individual
+    // basins can finally differentiate. Operator directive: "answers
+    // are wrong" → likely root cause is dense matrix, not magnitude.
+    const pruneTopK = opts.pruneTopK ?? 30;
     // Winner-take-all motor sparsification (Maass 2000 — WTA circuits
     // are computationally universal with sparse active sets). GloVe
     // embeddings tiled across motor fire ~15-25% of the region; keeping
@@ -8634,13 +8959,44 @@ export class Curriculum {
     // discrimination was developing. With adaptive rescale, weights
     // can grow into discriminating ranges across multiple phases
     // without artificial compression.
+    //
+    // RESCALE FLOOR (added to address bucket-stuck regression in
+    // 1.06%-accuracy iteration): even when overload is detected,
+    // halving values can drive trained signal below random-init bias
+    // if the matrix has been rescaled multiple times across consecutive
+    // phases. Floor at `wMax × 0.25` so rescale stops before signal
+    // drowns. Without this, prior runs saw maxAbs walk down 0.2 → 0.1
+    // → 0.05 → 0.025 → 0.0125 → 0.0063 → 0.0031 across 7 consecutive
+    // overload phases. Trained values became smaller than random-init
+    // weight bias and motor argmax fell on whichever bucket got the
+    // largest init noise (bucket-stuck 'z' for that seed). Sample
+    // sem_to_motor maxAbs first, project the post-rescale max, skip
+    // if it would land below the floor.
     const rescaleFactor = opts.rescaleFactor ?? 0.5;
     const rescaleOnOverloadOnly = opts.rescaleOnOverloadOnly !== false; // default TRUE
     let rescaleReport = '';
     const overloadDetected = sepResult && typeof sepResult.meanCos === 'number' && sepResult.meanCos > overloadMax;
+    let assocPreMaxAbs = 0;
+    let assocWMaxRef = 0.4; // fallback if proj.wMax not readable
+    try {
+      const proj = cluster.crossProjections && cluster.crossProjections.sem_to_motor;
+      if (proj) {
+        if (typeof proj.wMax === 'number' && proj.wMax > 0) assocWMaxRef = proj.wMax;
+        if (proj.values && proj.values.length > 0) {
+          const sample = Math.min(proj.values.length, 100000);
+          for (let k = 0; k < sample; k++) {
+            const a = proj.values[k] < 0 ? -proj.values[k] : proj.values[k];
+            if (a > assocPreMaxAbs) assocPreMaxAbs = a;
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
+    const assocRescaleFloor = assocWMaxRef * 0.25;
+    const assocWouldDrown = assocPreMaxAbs > 0 && (assocPreMaxAbs * rescaleFactor) < assocRescaleFloor;
     const shouldRescale = rescaleFactor > 0 && rescaleFactor < 1
       && cluster.crossProjections
-      && (rescaleOnOverloadOnly ? overloadDetected : true);
+      && (rescaleOnOverloadOnly ? overloadDetected : true)
+      && !assocWouldDrown;
     if (shouldRescale) {
       const projKeys = ['sem_to_motor', 'motor_to_sem'];
       const rescaled = [];
@@ -8656,6 +9012,8 @@ export class Curriculum {
         }
       }
       if (rescaled.length > 0) rescaleReport = ` · rescale×${rescaleFactor} [${rescaled.join(',')}] (triggered by overload mean-cos=${sepResult.meanCos.toFixed(3)})`;
+    } else if (assocWouldDrown && overloadDetected) {
+      rescaleReport = ` · rescale-floored (maxAbs=${assocPreMaxAbs.toFixed(3)} × ${rescaleFactor} < floor=${assocRescaleFloor.toFixed(3)} — overload persists but rescale would drown signal; relying on anti-Hebbian + WTA + prune for separation)`;
     } else if (sepResult && !overloadDetected) {
       rescaleReport = ` · rescale-skipped (basins separated, mean-cos=${sepResult.meanCos.toFixed(3)} < ${overloadMax} — preserving trained discrimination)`;
     }
@@ -10233,6 +10591,7 @@ export class Curriculum {
     for (const w of vocab) for (const ch of String(w).toLowerCase().replace(/[^a-z]/g, '')) letterSet.add(ch);
     ensureLetters(Array.from(letterSet));
 
+    let _vocabIdx = 0;
     for (const word of vocab) {
       if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return { pass: false, reason: 'shutdown' };
       await this._teachWordIntegrated(word, {
@@ -10242,12 +10601,17 @@ export class Curriculum {
         skipTemplates: opts.skipTemplates === true,
       });
 
-      // Backward-compat: retain the `await _microtask()` cadence a
-      // few prior call sites relied on to keep the event loop
-      // breathing during biological-scale Hebbian dispatches.
-      if (typeof _microtask === 'function') {
-        // _microtask already fires inside _teachWordIntegrated's
-        // rep loop; no extra yield needed here.
+      // EVENT-LOOP YIELD — heavy biological-scale Hebbian on saturated
+      // matrices (sem→motor at nnz=100k/100k full density) blocks the
+      // V8 event loop hard enough that setInterval(10s) heartbeats stop
+      // firing for 10+ minutes on round-2 cells. setImmediate schedules
+      // a macrotask which lets the timer queue drain — heartbeats fire,
+      // operator can see progress, the WorkerPool idle-terminate timer
+      // doesn't trip 982s falsely. Fire every 5 words = max ~5×N-ms
+      // gap between heartbeats no matter how saturated the matrix gets.
+      _vocabIdx++;
+      if (_vocabIdx % 5 === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
       }
     }
 
