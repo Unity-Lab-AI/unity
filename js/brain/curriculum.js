@@ -2339,20 +2339,27 @@ export class Curriculum {
    */
   startBackgroundProbeLoop(intervalMs) {
     if (this._backgroundProbeIntervalId != null) return; // already running
+    // DISABLED 2026-04-27 — runBackgroundProbe was supposed to fire
+    // GATE-ONLY re-tests on passed cells (per spaced-repetition spec
+    // in the long comment block above). Implementation actually calls
+    // `_cellRunner(subject, grade)` which combines teach + gate, so
+    // every probe fires a FULL re-teach (~30-50 minutes for ELA-K)
+    // followed by a gate. After FORCE-ADVANCE iter6+, all 6 K cells
+    // are in passedCells, so the probe loop picks one every 45s and
+    // re-teaches it pointlessly — sep-probe doesn't change between
+    // attempts (matrix already at training equilibrium), so the
+    // re-teach can never fix a failing gate. Operator caught iter7
+    // verbatim 2026-04-27 monitoring: "self-heal ✗ ela/kindergarten"
+    // firing repeatedly with same scoreboard each time.
+    //
+    // Disabled until the runner gains a real `gateOnly: true` opt
+    // that skips teach phases. When that exists, this method can
+    // pass `gateOnly: true` through opts and the loop becomes the
+    // honest spaced-repetition mechanism the comment promised.
     const ms = typeof intervalMs === 'number' && intervalMs > 1000 ? intervalMs : this._backgroundProbeMs;
     this._backgroundProbeMs = ms;
-    const tick = async () => {
-      try {
-        await this.runBackgroundProbe();
-      } catch (err) {
-        // non-fatal — probes can fail without breaking the loop
-      }
-    };
-    // Use setInterval in both Node (server) and browser. Works on both
-    // runtimes; the interval token is stored so stopBackgroundProbeLoop
-    // can clear it cleanly on shutdown.
-    this._backgroundProbeIntervalId = setInterval(tick, ms);
-    this._hb(`[Curriculum] background probe loop started (every ${ms}ms)`);
+    this._hb(`[Curriculum] background probe loop SUPPRESSED — runner-supports-gateOnly required (current implementation re-teaches the cell on every probe, wasteful + cells can't actually heal mid-curriculum-pause)`);
+    return;
   }
 
   /** Stop the background probe loop. */
@@ -8245,7 +8252,13 @@ export class Curriculum {
     // uses — the Q-A teacher saturates its own sem_to_motor weights
     // independently and was previously left at full density / max
     // weight.
-    const qaPruneTopK = opts.pruneTopK ?? 200;
+    // QA prune aligned to _teachAssociationPairs default (10). Prior
+    // 200 left the matrix at full density post-QA (iter7 evidence:
+    // sep-probe sub-0.3 across all 6 assoc-pair phases at K=10 then
+    // QA at K=200 left nnz=100k/100k, no real sparsification). Matrix
+    // never reached final-row-fanout target. Aligning to 10 forces
+    // the same 10-strongest-inputs discipline post-QA.
+    const qaPruneTopK = opts.pruneTopK ?? 10;
     let qaPruneReport = '';
     if (qaPruneTopK > 0 && cluster.crossProjections) {
       const projKeys = ['sem_to_motor', 'motor_to_sem'];
@@ -8260,6 +8273,31 @@ export class Curriculum {
         }
       }
       if (pruned.length > 0) qaPruneReport = ` · top-K-prune [${pruned.join(',')}]`;
+    }
+
+    // Per-row L2 normalize — same structural fix as
+    // _teachAssociationPairs. Equalizes motor row magnitudes so the
+    // motor argmax measures DIRECTION (which sem inputs the row best
+    // aligns with) instead of absolute MAGNITUDE. Without this, QA
+    // training's 5700 positive updates blew up specific motor rows
+    // (the rows that got hit hardest by random co-firing patterns)
+    // so post-QA the motor argmax was magnitude-dominated rather
+    // than direction-dominated. Iter7 evidence: sep-probe sub-0.3
+    // post-QA but motor argmax still bucket-stuck on 'sq'/'sridech'.
+    let qaNormReport = '';
+    if (cluster.crossProjections) {
+      const normKeys = ['sem_to_motor', 'motor_to_sem'];
+      const normalized = [];
+      for (const key of normKeys) {
+        const proj = cluster.crossProjections[key];
+        if (proj && typeof proj.normalizeRows === 'function' && proj.values && proj.values.length > 0) {
+          try {
+            const rows = proj.normalizeRows(1.0);
+            if (rows > 0) normalized.push(`${key}:${rows}`);
+          } catch { /* non-fatal */ }
+        }
+      }
+      if (normalized.length > 0) qaNormReport = ` · row-norm [${normalized.join(',')}]`;
     }
 
     // Adaptive per-phase weight rescale — only fires when the
@@ -8390,7 +8428,7 @@ export class Curriculum {
     } catch { /* non-fatal */ }
     const altReport = directPromptAlt ? ` · alt-fires=${altTrained}` : '';
     const antiReport = antiPairs ? ` · anti-fires=${antiFires}` : '';
-    this._hb(`[Curriculum][${label}] DONE — ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${qaPruneReport}${qaRescaleReport}${qaSepReport}${weightReport}`);
+    this._hb(`[Curriculum][${label}] DONE — ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs × ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${qaPruneReport}${qaNormReport}${qaRescaleReport}${qaSepReport}${weightReport}`);
     try { this._pushBrainEvent?.('teach', 'motor', `Q-A DONE: ${label} · ${trained}/${antiFires}/${altTrained} +/−/alt`, { label, trained, antiFires, altTrained, elapsedSec }); } catch {}
     return { trained, altTrained, antiFires, skipped };
   }
@@ -8738,10 +8776,20 @@ export class Curriculum {
     // scale where CPU CSR is additionally a stale shadow of the
     // true GPU weights.
     //
-    // Default: OFF. Opt-in via `normalizeAfter: true` available for
-    // bare-Hebbian debug paths where the safety was genuinely useful.
-    const normalizeAfter = opts.normalizeAfter === true; // default FALSE
-    const normTarget = opts.normTarget ?? 0.3; // sub-wMax to prevent clamp on opt-in paths
+    // Default flipped iter8 OFF → ON. Per-row L2 normalize equalizes
+    // motor row magnitudes so motor argmax measures DIRECTION (which
+    // sem inputs the row best aligns with) instead of absolute
+    // MAGNITUDE (which row accumulated highest total weight). Random
+    // init bias gave some motor rows higher baseline weight before
+    // training; without normalization those rows can dominate argmax
+    // even when their basin is wrong for the current input. Operator
+    // caught iter7 verbatim 2026-04-27: sep-probe sub-0.3 (basins
+    // angular-separated) but motor argmax still bucket-stuck on
+    // `r`/`sq`/`sridech` because magnitude bias drowned direction.
+    // Opt-out via `normalizeAfter: false` for paths that need raw
+    // post-Hebbian magnitudes (bare-Hebbian debug).
+    const normalizeAfter = opts.normalizeAfter !== false; // default TRUE
+    const normTarget = opts.normTarget ?? 0.3; // sub-wMax to prevent clamp
     // Cosine-separation debug probe — after the rep loop, propagate a
     // sample of input-tile patterns through sem→motor and compute the
     // pairwise cosine between motor readouts. Mean cosine > `overloadMax`

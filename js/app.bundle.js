@@ -1591,6 +1591,31 @@ function decodeLetter(vec) {
   }
   return null;
 }
+function decodeLetterAlpha(vec) {
+  if (!vec || vec.length === 0 || LETTER_INVENTORY.size === 0) return null;
+  const limit = Math.min(vec.length, LETTER_INVENTORY.size);
+  let best = -Infinity;
+  let bestIdx = -1;
+  let idx = 0;
+  for (const l of LETTER_INVENTORY) {
+    if (idx >= limit) break;
+    if (l && /^[a-z]$/.test(l)) {
+      const v = vec[idx];
+      if (v > best) {
+        best = v;
+        bestIdx = idx;
+      }
+    }
+    idx++;
+  }
+  if (bestIdx < 0) return null;
+  let i = 0;
+  for (const l of LETTER_INVENTORY) {
+    if (i === bestIdx) return l;
+    i++;
+  }
+  return null;
+}
 function serializeInventory() {
   return Array.from(LETTER_INVENTORY);
 }
@@ -2775,6 +2800,8 @@ var NeuronCluster = class {
     if (!intentSeed || intentSeed.length === 0) return null;
     const excludeTokens = opts.excludeTokens instanceof Set ? opts.excludeTokens : null;
     const excludePersona = opts.excludePersona === true;
+    const boostPersona = opts.boostPersona === true;
+    const personaBoost = typeof opts.personaBoost === "number" ? opts.personaBoost : 0.1;
     const restrictToVocab = opts.restrictToVocab instanceof Set ? opts.restrictToVocab : null;
     let intentNormSq = 0;
     for (let i = 0; i < intentSeed.length; i++) intentNormSq += intentSeed[i] * intentSeed[i];
@@ -2802,7 +2829,8 @@ var NeuronCluster = class {
       let dot = 0;
       const n = Math.min(intentSeed.length, pattern.length);
       for (let i = 0; i < n; i++) dot += intentSeed[i] * pattern[i];
-      const score = dot / denom;
+      let score = dot / denom;
+      if (boostPersona && entry.isPersona === true) score += personaBoost;
       if (score > bestScore) {
         bestScore = score;
         bestWord = word;
@@ -2848,7 +2876,7 @@ var NeuronCluster = class {
       const invSize = inventorySize();
       if (invSize === 0) break;
       const motorVec = this.regionReadout("motor", invSize);
-      const activeLetter = decodeLetter(motorVec);
+      const activeLetter = decodeLetterAlpha(motorVec);
       if (activeLetter === lastMotorLetter && activeLetter !== null) {
         stableTicks++;
       } else {
@@ -2971,18 +2999,20 @@ var NeuronCluster = class {
           const readLen = bucketSize * invSize;
           const counts = await this._gpuProxy.readbackLetterBuckets("motor", invSize, readLen, 0);
           if (counts && counts.length === invSize) {
-            let bestIdx = 0;
-            let bestCount = counts[0];
-            for (let b = 1; b < invSize; b++) {
+            const inv = inventorySnapshot();
+            let bestIdx = -1;
+            let bestCount = -Infinity;
+            for (let b = 0; b < invSize; b++) {
+              const ch = inv[b];
+              if (!ch || !/^[a-z]$/.test(ch)) continue;
               if (counts[b] > bestCount) {
                 bestCount = counts[b];
                 bestIdx = b;
               }
             }
-            if (bestCount > maxMotorBucket) maxMotorBucket = bestCount;
-            if (bestCount > 0) {
-              const inv = inventorySnapshot();
-              if (bestIdx >= 0 && bestIdx < inv.length) activeLetter = inv[bestIdx];
+            if (bestIdx >= 0 && bestCount > maxMotorBucket) maxMotorBucket = bestCount;
+            if (bestIdx >= 0 && bestCount > 0) {
+              activeLetter = inv[bestIdx];
             }
           }
         } catch {
@@ -2990,7 +3020,7 @@ var NeuronCluster = class {
       }
       if (activeLetter === null) {
         const motorVec = this.regionReadout("motor", invSize);
-        activeLetter = decodeLetter(motorVec);
+        activeLetter = decodeLetterAlpha(motorVec);
       }
       if (activeLetter === lastMotorLetter && activeLetter !== null) {
         stableTicks++;
@@ -7593,10 +7623,12 @@ var LanguageCortex = class {
       } else {
         const _liveExclude = _buildLiveChatExclude(cluster._lastUserInputText);
         cluster._lastUserInputText = null;
+        const _isChatPath = !opts._internalThought;
         const raw = cluster.generateSentence(intentSeed, {
           injectStrength: 0.6,
           suppressNoise: opts._internalThought === true,
-          excludeTokens: _liveExclude
+          excludeTokens: _liveExclude,
+          boostPersona: _isChatPath
         });
         words = raw ? raw.split(/\s+/).filter(Boolean) : [];
       }
@@ -7842,10 +7874,12 @@ var LanguageCortex = class {
         }
         try {
           const _liveExcludeAsync = _buildLiveChatExclude(cluster._lastUserInputText);
+          const _isChatPathAsync = !opts._internalThought;
           const raw = await cluster.generateSentenceAwait(intentSeed, {
             injectStrength: 0.6,
             suppressNoise: opts._internalThought === true,
-            excludeTokens: _liveExcludeAsync
+            excludeTokens: _liveExcludeAsync,
+            boostPersona: _isChatPathAsync
           });
           preEmittedWords = raw ? raw.split(/\s+/).filter(Boolean) : [];
         } catch (err) {
@@ -19733,14 +19767,8 @@ var Curriculum = class _Curriculum {
     if (this._backgroundProbeIntervalId != null) return;
     const ms = typeof intervalMs === "number" && intervalMs > 1e3 ? intervalMs : this._backgroundProbeMs;
     this._backgroundProbeMs = ms;
-    const tick = async () => {
-      try {
-        await this.runBackgroundProbe();
-      } catch (err) {
-      }
-    };
-    this._backgroundProbeIntervalId = setInterval(tick, ms);
-    this._hb(`[Curriculum] background probe loop started (every ${ms}ms)`);
+    this._hb(`[Curriculum] background probe loop SUPPRESSED \u2014 runner-supports-gateOnly required (current implementation re-teaches the cell on every probe, wasteful + cells can't actually heal mid-curriculum-pause)`);
+    return;
   }
   /** Stop the background probe loop. */
   stopBackgroundProbeLoop() {
@@ -24906,7 +24934,7 @@ var Curriculum = class _Curriculum {
       }
       await _microtask();
     }
-    const qaPruneTopK = opts.pruneTopK ?? 200;
+    const qaPruneTopK = opts.pruneTopK ?? 10;
     let qaPruneReport = "";
     if (qaPruneTopK > 0 && cluster.crossProjections) {
       const projKeys = ["sem_to_motor", "motor_to_sem"];
@@ -24922,6 +24950,22 @@ var Curriculum = class _Curriculum {
         }
       }
       if (pruned.length > 0) qaPruneReport = ` \xB7 top-K-prune [${pruned.join(",")}]`;
+    }
+    let qaNormReport = "";
+    if (cluster.crossProjections) {
+      const normKeys = ["sem_to_motor", "motor_to_sem"];
+      const normalized = [];
+      for (const key of normKeys) {
+        const proj = cluster.crossProjections[key];
+        if (proj && typeof proj.normalizeRows === "function" && proj.values && proj.values.length > 0) {
+          try {
+            const rows = proj.normalizeRows(1);
+            if (rows > 0) normalized.push(`${key}:${rows}`);
+          } catch {
+          }
+        }
+      }
+      if (normalized.length > 0) qaNormReport = ` \xB7 row-norm [${normalized.join(",")}]`;
     }
     const qaRescaleFactor = opts.rescaleFactor ?? 0.5;
     const qaRescaleOnSaturationOnly = opts.rescaleOnSaturationOnly !== false;
@@ -25020,7 +25064,7 @@ var Curriculum = class _Curriculum {
     }
     const altReport = directPromptAlt ? ` \xB7 alt-fires=${altTrained}` : "";
     const antiReport = antiPairs ? ` \xB7 anti-fires=${antiFires}` : "";
-    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${qaPruneReport}${qaRescaleReport}${qaSepReport}${weightReport}`);
+    this._hb(`[Curriculum][${label}] DONE \u2014 ${trained} positive + ${altTrained} alt + ${antiFires} anti across ${qaList.length} pairs \xD7 ${reps} reps in ${elapsedSec}s (skipped ${skipped})${altReport}${antiReport}${qaPruneReport}${qaNormReport}${qaRescaleReport}${qaSepReport}${weightReport}`);
     try {
       this._pushBrainEvent?.("teach", "motor", `Q-A DONE: ${label} \xB7 ${trained}/${antiFires}/${altTrained} +/\u2212/alt`, { label, trained, antiFires, altTrained, elapsedSec });
     } catch {
@@ -25320,7 +25364,7 @@ var Curriculum = class _Curriculum {
     }
     const relationTagId = typeof opts.relationTagId === "number" ? opts.relationTagId : null;
     const binarize = opts.binarize === true;
-    const normalizeAfter = opts.normalizeAfter === true;
+    const normalizeAfter = opts.normalizeAfter !== false;
     const normTarget = opts.normTarget ?? 0.3;
     const runSeparationProbe = opts.separationProbe !== false;
     const overloadMax = opts.overloadMax ?? 0.3;

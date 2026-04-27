@@ -1534,10 +1534,17 @@ export class LanguageCortex {
         // function-word stoplist the K-STUDENT vocab filter uses.
         const _liveExclude = _buildLiveChatExclude(cluster._lastUserInputText);
         cluster._lastUserInputText = null; // consume
+        // boostPersona on chat path (not internal-thought / popup) so
+        // tick-driven emission's dictionary-oracle fallback inside
+        // cluster.generateSentence picks persona corpus words over
+        // generic Common-Crawl family-cluster terms. Mirror of the
+        // language-cortex dictionary fallback boostPersona below.
+        const _isChatPath = !opts._internalThought;
         const raw = cluster.generateSentence(intentSeed, {
           injectStrength: 0.6,
           suppressNoise: opts._internalThought === true,
           excludeTokens: _liveExclude,
+          boostPersona: _isChatPath,
         });
         words = raw ? raw.split(/\s+/).filter(Boolean) : [];
       }
@@ -1894,10 +1901,12 @@ export class LanguageCortex {
           // Note: don't consume `_lastUserInputText` here — the sync
           // generate() path that runs after this consumes it once and
           // both paths read the same field.
+          const _isChatPathAsync = !opts._internalThought;
           const raw = await cluster.generateSentenceAwait(intentSeed, {
             injectStrength: 0.6,
             suppressNoise: opts._internalThought === true,
             excludeTokens: _liveExcludeAsync,
+            boostPersona: _isChatPathAsync,
           });
           preEmittedWords = raw ? raw.split(/\s+/).filter(Boolean) : [];
         } catch (err) {

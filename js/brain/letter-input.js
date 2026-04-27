@@ -242,6 +242,48 @@ export function decodeLetter(vec) {
 }
 
 /**
+ * Argmax restricted to ALPHABETICAL inventory entries (^[a-z]$). Used
+ * by the tick-driven motor emission path for SPEECH output where Unity
+ * should produce letters, not digit or punctuation tokens. Inventory
+ * auto-grows during corpus exposure to include digits + punctuation
+ * (`'`, `.`, `,`, `0-9`) which are legitimately needed for visual
+ * reading + math curriculum input paths, but motor speech output
+ * should never emit those buckets.
+ *
+ * Operator caught iter6/iter7 verbatim 2026-04-26: K-STUDENT outputs
+ * dumping "4"/","/"5678'"/"88883tt2" because tick-driven motor argmax
+ * landed on digit + punct buckets. Template 0/1 fast paths got an a-z
+ * clamp in iter7; this is the SAME structural fix for the matrix-
+ * driven generation path that fires when no template matches.
+ *
+ * Returns the strongest a-z bucket regardless of how many non-alpha
+ * entries the inventory contains. If the inventory has zero a-z
+ * entries (early boot pre-curriculum), returns null.
+ */
+export function decodeLetterAlpha(vec) {
+  if (!vec || vec.length === 0 || LETTER_INVENTORY.size === 0) return null;
+  const limit = Math.min(vec.length, LETTER_INVENTORY.size);
+  let best = -Infinity;
+  let bestIdx = -1;
+  let idx = 0;
+  for (const l of LETTER_INVENTORY) {
+    if (idx >= limit) break;
+    if (l && /^[a-z]$/.test(l)) {
+      const v = vec[idx];
+      if (v > best) { best = v; bestIdx = idx; }
+    }
+    idx++;
+  }
+  if (bestIdx < 0) return null;
+  let i = 0;
+  for (const l of LETTER_INVENTORY) {
+    if (i === bestIdx) return l;
+    i++;
+  }
+  return null;
+}
+
+/**
  * Serialize the inventory for persistence. Returns a plain array in
  * insertion order, which is the order that defines the one-hot dimensions.
  * Persistence layer (T14.16) stores this alongside the cortex cluster

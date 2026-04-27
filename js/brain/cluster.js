@@ -105,7 +105,7 @@ import { sharedEmbeddings } from './embeddings.js';
 // T14.6 — `decodeLetter` + `inventorySize` power the tick-driven motor
 // emission loop in `cluster.generateSentence` — motor-region spike
 // patterns get decoded to letters via argmax over the inventory.
-import { encodeLetter, decodeLetter, inventorySize, inventorySnapshot } from './letter-input.js';
+import { encodeLetter, decodeLetter, decodeLetterAlpha, inventorySize, inventorySnapshot } from './letter-input.js';
 
 // Question key-token extraction + fractional-offset region injection.
 // Duplicated here (vs importing from curriculum.js) so `readInput` stays
@@ -1706,6 +1706,21 @@ export class NeuronCluster {
     // oracle is the primary answer path. Default false; live chat
     // doesn't pass this so persona words stay available there.
     const excludePersona = opts.excludePersona === true;
+    // Persona-boost flag — chat path (live user input or popup) sets
+    // boostPersona=true so persona-marked dictionary entries (Unity's
+    // actual voice corpus, loaded via loadPersona with isPersona=true)
+    // get an additive cosine boost. Operator caught iter6/iter7
+    // verbatim 2026-04-26: chat replied with family-cluster terms
+    // ("Aunt", "Stepmom", "Brother", "Mom") for greetings/identity
+    // questions because raw cosine + frequency dominated and persona
+    // corpus words got overwhelmed by Common-Crawl high-frequency
+    // family vocabulary. Adding boost here in the cluster oracle path
+    // (mirror of the language-cortex.js _scoreDictionaryCosine boost)
+    // closes the gap — the SAME persona-mark signal already exists on
+    // entries from the loadPersona corpus, just wasn't being read in
+    // this oracle scan.
+    const boostPersona = opts.boostPersona === true;
+    const personaBoost = typeof opts.personaBoost === 'number' ? opts.personaBoost : 0.10;
     // Restrict-to-vocab filter — when caller passes `opts.restrictToVocab`
     // as a Set of lowercased words, the oracle ONLY considers entries
     // whose word is in that set. Used by test probes (K-STUDENT,
@@ -1746,7 +1761,8 @@ export class NeuronCluster {
       let dot = 0;
       const n = Math.min(intentSeed.length, pattern.length);
       for (let i = 0; i < n; i++) dot += intentSeed[i] * pattern[i];
-      const score = dot / denom;
+      let score = dot / denom;
+      if (boostPersona && entry.isPersona === true) score += personaBoost;
       if (score > bestScore) { bestScore = score; bestWord = word; }
     }
 
@@ -1840,7 +1856,15 @@ export class NeuronCluster {
       const invSize = inventorySize();
       if (invSize === 0) break;
       const motorVec = this.regionReadout('motor', invSize);
-      const activeLetter = decodeLetter(motorVec);
+      // Use a-z-only argmax for SPEECH output. Inventory grew during
+      // corpus exposure to include digits + punctuation; motor speech
+      // emission must never produce those buckets. Operator caught
+      // iter6/iter7 verbatim 2026-04-26: K-STUDENT outputs "4"/","/
+      // "5678'"/"88883tt2" because tick-driven motor argmax landed on
+      // digit + punct buckets. Same structural fix the Template 0/1
+      // fast-path got in iter7, applied to the matrix-driven
+      // generation path.
+      const activeLetter = decodeLetterAlpha(motorVec);
 
       // STEP 2b — Temporal stability — a letter "commits" when the
       // motor region has held the same argmax for STABLE_TICK_THRESHOLD
@@ -2110,26 +2134,29 @@ export class NeuronCluster {
           const readLen = bucketSize * invSize;  // trim remainder
           const counts = await this._gpuProxy.readbackLetterBuckets('motor', invSize, readLen, 0);
           if (counts && counts.length === invSize) {
-            // Argmax over bucket counts. Mirrors decodeLetter's
-            // argmax-over-activation semantics — highest-firing
-            // letter wins. Ties broken by first-index, matching
-            // decodeLetter behavior on equal magnitudes.
-            let bestIdx = 0;
-            let bestCount = counts[0];
-            for (let b = 1; b < invSize; b++) {
+            // Argmax over bucket counts, A-Z ONLY. Inventory contains
+            // digits + punctuation seeded by corpus exposure but
+            // motor speech emission must only produce alphabetical
+            // letters. Iterate inventory in order, track best bucket
+            // among a-z entries, ignore digits + punctuation buckets.
+            const inv = inventorySnapshot();
+            let bestIdx = -1;
+            let bestCount = -Infinity;
+            for (let b = 0; b < invSize; b++) {
+              const ch = inv[b];
+              if (!ch || !/^[a-z]$/.test(ch)) continue;
               if (counts[b] > bestCount) { bestCount = counts[b]; bestIdx = b; }
             }
-            if (bestCount > maxMotorBucket) maxMotorBucket = bestCount;
-            if (bestCount > 0) {
-              const inv = inventorySnapshot();
-              if (bestIdx >= 0 && bestIdx < inv.length) activeLetter = inv[bestIdx];
+            if (bestIdx >= 0 && bestCount > maxMotorBucket) maxMotorBucket = bestCount;
+            if (bestIdx >= 0 && bestCount > 0) {
+              activeLetter = inv[bestIdx];
             }
           }
         } catch { /* non-fatal — fall through to CPU readout */ }
       }
       if (activeLetter === null) {
         const motorVec = this.regionReadout('motor', invSize);
-        activeLetter = decodeLetter(motorVec);
+        activeLetter = decodeLetterAlpha(motorVec);
       }
 
       if (activeLetter === lastMotorLetter && activeLetter !== null) {
