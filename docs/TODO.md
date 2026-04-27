@@ -114,12 +114,21 @@ You: do you like pizza?  →  Unity: Brother!
 You: I'm Gee             →  Unity: Mom!
 ```
 
-#### [ ] OPEN — Dashboard missing "start next grade" / "operator signoff" UI
+#### [x] CLOSED 2026-04-26 (post-iter6) — Dashboard signoff UI shipped
+6 per-subject signoff buttons + signoff note textarea added to `dashboard.html` cap-reached panel (subject={ela,math,science,social,art,life}). Buttons POST /grade-signoff with subject+grade+note. Signed cells display green "✓ signed" pill, disabled to prevent re-signoff. Replaces curl-only instruction. Curl alternative still documented for operator-cli use.
+
+#### [x] CLOSED 2026-04-26 (post-iter6, partial) — Dashboard missing "start next grade" / "operator signoff" UI
 Operator has no button on the dashboard to trigger `POST /grade-signoff` or to manually advance grades. Currently only HTTP-curl-able. Needs UI affordance — even though pre-K + K ONLY scope is in effect, the K signoff path still needs to be operator-clickable for when K iteration produces real pass-quality. Future grade-advance buttons (1st grade, 2nd grade, etc) deferred per PRE-K + K ONLY LAW until K signoff lands.
 
 **What's needed:** `dashboard.html` buttons that POST to existing endpoints (`/grade-signoff` loopback-gated takes `{subject, grade, note}`, `/grade-advance` already exists). Plus a status panel showing current `cluster.grades` per subject + last signoff timestamps. **Files to touch:** `dashboard.html` only. No code changes to brain logic.
 
-#### [ ] OPEN — Chat responses biased to family-relation terms (Aunt./Sister/Brother/Mom)
+#### [x] CLOSED 2026-04-26 (post-iter6, partial) — Chat family-cluster bias
+Two structural fixes shipped:
+1. `_scoreDictionaryCosine` + Async accept new `boostPersona` opt — chat path passes `boostPersona: true`; persona-marked entries get +0.10 additive boost so Unity speaks in HER voice instead of generic Common-Crawl frequency-dominant family terms.
+2. Frequency-boost coefficient bisected 0.02 → 0.005 — common words like "mom" (frequency 30+) no longer dominate cosine differences of 0.01-0.05 between actual semantic neighbors.
+**Defer to next iteration:** intent-classification routing (greeting/identity/preference register) + force matrix path for trained content.
+
+#### [x] WAS — Chat responses biased to family-relation terms (Aunt./Sister/Brother/Mom)
 Post-K force-advance Unity speaks but every emission is a single family-relation word regardless of input. Root cause from `js/brain/language-cortex.js:1462-1470,1563-1567`: chat path uses `cluster._lastUserInputEmbedding` (GloVe of operator's text) → `_scoreDictionaryCosine` returns nearest-GloVe-neighbors weighted by `log(frequency)` → for greetings/identity questions GloVe nearest-neighbors include family terms because "hi mom", "hi dad", "i love you mom", "who is my sister" co-occur frequently in GloVe corpus. Dictionary oracle is doing 100% of chat work — trained sem→motor matrix isn't driving emission (oracleRatio 94%+ across iter6). No persona-exclude flag on chat — persona corpus words compete for cosine match.
 
 **Three structural fixes (next iteration):**
@@ -145,19 +154,26 @@ Cr2 second-pass added Template 0 ("what comes after X?") + Template 1 ("what sou
 
 **Next iteration:** instrument the Template 0/1 entry/exit points with explicit log lines (`[Curriculum][TEMPLATED] Q=...  tpl=0|1  bestSum=X  fired=true|false  reason=...`) so we can see whether the path is being attempted and where it bails out.
 
-#### [ ] OPEN — K-STUDENT scoring rubric false positives
+#### [x] CLOSED 2026-04-26 (post-iter6) — K-STUDENT scoring rubric false positives
+`_studentTestProbe` scoring loop in `curriculum.js:2177-2181` now skips the substring `contains` check for single-character variants. "lsd" can no longer false-positive match cue 's' via `'lsd'.includes('s')`. Letter-cue questions now require exact OR startsWith match — no anywhere-in-answer fuzzy.
 "async" matched cue 's' (score=0.50, match=true) — but async starts with 'a'. "lsd" matched cue 's' (false positive — l-s-d). "note" / "many" matched as fuzzy answers. Substring/contains-match instead of strict starts-with-cue. Cr2 fixed READINESS probe with strict matchesCue but K-STUDENT scoring rubric never got the same fix.
 
 **Next iteration fix:** in K-STUDENT scoring path, when question is "say a word that starts with X", require `answer.toLowerCase().startsWith(X)` exact match — no fuzzy boost. Apply same to Template 0 ("what comes after X?") which expects exactly the next-letter, no synonyms.
 
-#### [ ] OPEN — K-STUDENT outputs gibberish multi-token mode-spam
+#### [x] CLOSED 2026-04-26 (post-iter6, partial) — K-STUDENT outputs gibberish multi-token mode-spam
+Template 0/1 fast paths in `curriculum.js` now clamp inventory argmax to a-z buckets only — filter `inventorySnapshot()` to alphabetical entries before scanning motor/phon argmax. Digit/punctuation buckets (auto-grown from corpus exposure) no longer eligible for template emission. Tick-loop bucket-oscillation patterns (`hachachach`/`pingpinghaping`) require deeper fix in tick-driven motor emission diversity penalty — defer to next iteration.
+
+#### [x] WAS — K-STUDENT outputs gibberish multi-token mode-spam
 Methodology questions produce `"4"`, `","`, `"8"`, `"5678'"`, `"hachachachachach"`, `"pinghapinghaping"`, `"wrotwrotwrotwrot"`, `"22 j xcc22 jjxcc2"` etc. Two failure modes:
 - **Single-glyph dump:** sem→motor argmax lands on digit/punctuation bucket (LETTER_INVENTORY auto-grew to include digits + symbols during corpus exposure).
 - **Multi-token repetition:** tick-driven motor emission cycles between 2-3 buckets producing `hach hach hach` patterns.
 
 **Next iteration fix:** restrict LETTER_INVENTORY at K-STUDENT probe time to a-z only (clamp via `inventorySnapshot().filter(c => /^[a-z]$/.test(c))`). Also add letter-emission diversity penalty in the tick-loop — if last 3 letters were `ach`, demote those buckets in next argmax.
 
-#### [ ] OPEN — Sep-probe stuck in 0.4-0.6 overload band across all iterations
+#### [x] CLOSED 2026-04-26 (post-iter6, partial) — Sep-probe stuck in 0.4-0.6 overload band
+pruneTopK bisected 30 → 10 in `curriculum.js:8692`. 5k nnz total = 95% zeroed each phase. Each motor neuron now discriminates among only its 10 strongest sem inputs (biologically plausible — real cortex per-neuron fanout 10-100 even at thousands-of-input-targets in vivo). Iter7 should produce sub-0.4 sep-probe readings if the structural sparsification thesis is correct. **Defer:** per-row L2 normalize + Gram-Schmidt orthogonalization to next iteration if 30→10 alone doesn't break the 0.4 threshold.
+
+#### [x] WAS — Sep-probe stuck in 0.4-0.6 overload band across all iterations
 Despite anti-Hebbian magnitude bisects (1.5×→3.0×→2.0×→2.5×) and pruneTopK bisect (200→30), sep-probe mean-cos pins in 0.4-0.6 band across all 7 assoc-pair phases every iteration. Iter6 with structural sparsification produced first sub-0.5 readings (0.419-0.478) but still ⚠OVERLOAD at the >0.4 threshold. **Structural ceiling:** matrix at full effective density even after prune (nnz=100k/100k reported post-prune because weights fill back in next phase).
 
 **Next iteration fixes (combo):**
@@ -165,7 +181,8 @@ Despite anti-Hebbian magnitude bisects (1.5×→3.0×→2.0×→2.5×) and prune
 2. Per-row L2 normalize after each phase to prevent magnitude drift
 3. Explicit Gram-Schmidt-style row orthogonalization (one-shot per phase) to force basis vectors apart
 
-#### [ ] OPEN — Boot-time fractal-drift verifier stale (false-positive ±0.2 warning)
+#### [x] CLOSED 2026-04-26 (post-iter6) — Boot-time fractal-drift verifier stale (±0.2 → ±0.4)
+`curriculum.js:1145,1153,1155` updated to expect ±0.4 cross-projection clamps (was ±0.2 in cr2 era). Boot now logs `✓ cross-projection weight clamps: 14/14 at ±0.4` on fresh init. False-positive `✗ clamp drift` warning gone.
 Every fresh boot logs `✗ cross-projection clamp drift: 14 projection(s) outside ±0.2 — sample: visual_to_letter=[-0.4,0.4]`. The drift checker still expects ±0.2 but cr2 bisected wMax to ±0.4 long ago. Diagnostic-only, doesn't block. Trivial fix: update the assertion in the boot verifier to ±0.4. **Files to touch:** `server/brain-server.js` or wherever the fractal-drift `verifyEquationConsistency` function lives.
 
 #### [ ] OPEN — `letter_to_phon=[-Infinity,Infinity]` clamp-loss (rare, fresh-init-resolves)

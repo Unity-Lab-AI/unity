@@ -7606,7 +7606,10 @@ var LanguageCortex = class {
       const target = intentSeed || (typeof cluster.getSemanticReadout === "function" ? cluster.getSemanticReadout(sharedEmbeddings) : null);
       if (!scored && dictionary && dictionary._words && dictionary._words.size > 0 && target && target.length > 0) {
         try {
-          scored = this._scoreDictionaryCosine(dictionary, target, this._recentOutputWords);
+          const isChatPath = !opts._internalThought;
+          scored = this._scoreDictionaryCosine(dictionary, target, this._recentOutputWords, {
+            boostPersona: isChatPath
+          });
         } catch (err) {
           scored = null;
         }
@@ -7708,7 +7711,10 @@ var LanguageCortex = class {
    * (_scoreDictionaryCosineAsync) can share exactly one body and only
    * diverge on the yield-point check.
    */
-  _scoreDictionaryCosine(dictionary, target, recentWords) {
+  _scoreDictionaryCosine(dictionary, target, recentWords, opts = {}) {
+    const boostPersona = opts.boostPersona === true;
+    const freqBoost = typeof opts.freqBoost === "number" ? opts.freqBoost : 5e-3;
+    const personaBoost = typeof opts.personaBoost === "number" ? opts.personaBoost : 0.1;
     const scored = [];
     for (const [word, entry] of dictionary._words) {
       if (!entry || !entry.pattern) continue;
@@ -7722,7 +7728,8 @@ var LanguageCortex = class {
       }
       const denom = Math.sqrt(nt) * Math.sqrt(nw);
       const cos = denom > 0 ? dot / denom : 0;
-      const score = cos + Math.log(1 + (entry.frequency || 1)) * 0.02;
+      let score = cos + Math.log(1 + (entry.frequency || 1)) * freqBoost;
+      if (boostPersona && entry.isPersona) score += personaBoost;
       scored.push({ word, score });
     }
     scored.sort((a, b) => b.score - a.score);
@@ -7761,8 +7768,11 @@ var LanguageCortex = class {
    * per ~2-4ms of scoring work, which is ~3-5% overhead and still
    * leaves the broadcast ample opportunity to fire every 100ms).
    */
-  async _scoreDictionaryCosineAsync(dictionary, target, recentWords) {
+  async _scoreDictionaryCosineAsync(dictionary, target, recentWords, opts = {}) {
     const YIELD_EVERY = 500;
+    const boostPersona = opts.boostPersona === true;
+    const freqBoost = typeof opts.freqBoost === "number" ? opts.freqBoost : 5e-3;
+    const personaBoost = typeof opts.personaBoost === "number" ? opts.personaBoost : 0.1;
     const scored = [];
     let i = 0;
     for (const [word, entry] of dictionary._words) {
@@ -7783,7 +7793,8 @@ var LanguageCortex = class {
       }
       const denom = Math.sqrt(nt) * Math.sqrt(nw);
       const cos = denom > 0 ? dot / denom : 0;
-      const score = cos + Math.log(1 + (entry.frequency || 1)) * 0.02;
+      let score = cos + Math.log(1 + (entry.frequency || 1)) * freqBoost;
+      if (boostPersona && entry.isPersona) score += personaBoost;
       scored.push({ word, score });
       i++;
       if ((i & YIELD_EVERY - 1) === 0) {
@@ -7851,10 +7862,14 @@ var LanguageCortex = class {
         }
         if (target && target.length > 0) {
           try {
+            const isChatPath = !opts._internalThought;
             precomputedScores = await this._scoreDictionaryCosineAsync(
               dictionary,
               target,
-              this._recentOutputWords
+              this._recentOutputWords,
+              {
+                boostPersona: isChatPath
+              }
             );
           } catch (err) {
             precomputedScores = null;
@@ -18774,7 +18789,7 @@ var Curriculum = class _Curriculum {
       for (const [name, proj] of Object.entries(cluster.crossProjections)) {
         const wMax = Number(proj.wMax);
         const wMin = Number(proj.wMin);
-        if (Math.abs(wMax - 0.2) < 0.01 && Math.abs(wMin - -0.2) < 0.01) {
+        if (Math.abs(wMax - 0.4) < 0.01 && Math.abs(wMin - -0.4) < 0.01) {
           clampOk++;
         } else {
           clampBad++;
@@ -18782,9 +18797,9 @@ var Curriculum = class _Curriculum {
         }
       }
       if (clampBad === 0) {
-        checks.push(`\u2713 cross-projection weight clamps: ${clampOk}/${clampOk + clampBad} at \xB10.2`);
+        checks.push(`\u2713 cross-projection weight clamps: ${clampOk}/${clampOk + clampBad} at \xB10.4`);
       } else {
-        issues.push(`\u2717 cross-projection clamp drift: ${clampBad} projection(s) outside \xB10.2 \u2014 sample: ${sampleBad.join(", ")}`);
+        issues.push(`\u2717 cross-projection clamp drift: ${clampBad} projection(s) outside \xB10.4 \u2014 sample: ${sampleBad.join(", ")}`);
       }
       let totalFanout = 0;
       let totalProj = 0;
@@ -19445,8 +19460,16 @@ var Curriculum = class _Curriculum {
                   if (clusterOutput && clusterOutput.length > 0) {
                     const motorSize = motorRegion.end - motorRegion.start;
                     const bucketSize = Math.max(1, Math.floor(motorSize / invSize));
+                    const invAll = typeof inventorySnapshot === "function" ? inventorySnapshot() : null;
+                    const azIndices = [];
+                    if (invAll) {
+                      for (let i = 0; i < invAll.length; i++) {
+                        const ch = invAll[i];
+                        if (ch && /^[a-z]$/.test(ch)) azIndices.push(i);
+                      }
+                    }
                     let bestIdx = -1, bestSum = -Infinity;
-                    for (let b = 0; b < invSize; b++) {
+                    for (const b of azIndices) {
                       let sum = 0;
                       for (let n = 0; n < bucketSize; n++) {
                         const idx = motorRegion.start + b * bucketSize + n;
@@ -19458,9 +19481,8 @@ var Curriculum = class _Curriculum {
                       }
                     }
                     if (bestIdx >= 0 && bestSum > 1e-3) {
-                      const inv = typeof inventorySnapshot === "function" ? inventorySnapshot() : null;
-                      if (inv && bestIdx < inv.length) {
-                        const nextLetter = inv[bestIdx];
+                      if (invAll && bestIdx < invAll.length) {
+                        const nextLetter = invAll[bestIdx];
                         if (nextLetter && nextLetter !== keyTok) {
                           templatedAnswer = nextLetter;
                         }
@@ -19493,9 +19515,17 @@ var Curriculum = class _Curriculum {
                   }
                   const phonOutput = letterToPhon.propagate(letterInput);
                   if (phonOutput && phonOutput.length > 0) {
+                    const invAll = typeof inventorySnapshot === "function" ? inventorySnapshot() : null;
+                    const azIndices = [];
+                    if (invAll) {
+                      for (let i = 0; i < invAll.length; i++) {
+                        const ch = invAll[i];
+                        if (ch && /^[a-z]$/.test(ch)) azIndices.push(i);
+                      }
+                    }
                     const bucketSize = Math.max(1, Math.floor(phonOutput.length / invSize));
                     let bestIdx = -1, bestSum = -Infinity;
-                    for (let b = 0; b < invSize; b++) {
+                    for (const b of azIndices) {
                       let sum = 0;
                       for (let n = 0; n < bucketSize; n++) {
                         const idx = b * bucketSize + n;
@@ -19507,9 +19537,8 @@ var Curriculum = class _Curriculum {
                       }
                     }
                     if (bestIdx >= 0 && bestSum > 1e-3) {
-                      const inv = typeof inventorySnapshot === "function" ? inventorySnapshot() : null;
-                      if (inv && bestIdx < inv.length) {
-                        templatedAnswer = inv[bestIdx];
+                      if (invAll && bestIdx < invAll.length) {
+                        templatedAnswer = invAll[bestIdx];
                       }
                     }
                   }
@@ -19591,6 +19620,7 @@ var Curriculum = class _Curriculum {
     }
     if (!anyMatch) {
       for (const v of expectedVariants) {
+        if (v.length <= 1) continue;
         if (answer.includes(v)) {
           out.match.contains = true;
           anyMatch = true;
@@ -25296,7 +25326,7 @@ var Curriculum = class _Curriculum {
     const overloadMax = opts.overloadMax ?? 0.3;
     const antiPairs = opts.antiPairs !== false && pairs.length >= 2;
     const antiLrScale = opts.antiLrScale ?? 2.5;
-    const pruneTopK = opts.pruneTopK ?? 30;
+    const pruneTopK = opts.pruneTopK ?? 10;
     const motorWTA = opts.motorWTA !== false && !binarize;
     const motorTopK = opts.motorTopK ?? 15;
     const semWTA = opts.semWTA !== false && !binarize;

@@ -1564,7 +1564,17 @@ export class LanguageCortex {
         ? cluster.getSemanticReadout(sharedEmbeddings) : null);
       if (!scored && dictionary && dictionary._words && dictionary._words.size > 0 && target && target.length > 0) {
         try {
-          scored = this._scoreDictionaryCosine(dictionary, target, this._recentOutputWords);
+          // Chat path (live user input or popup) gets persona-boosted
+          // dictionary scoring so Unity speaks in her voice. Internal
+          // thoughts and curriculum probes pass plain (no boost) by
+          // not setting the flag. Operator-test directive: chat replies
+          // were dumping family terms (Aunt/Sister/Brother/Mom) because
+          // raw cosine + log-frequency dominated and persona corpus
+          // words got overwhelmed by Common-Crawl high-frequency noise.
+          const isChatPath = !opts._internalThought;
+          scored = this._scoreDictionaryCosine(dictionary, target, this._recentOutputWords, {
+            boostPersona: isChatPath,
+          });
         } catch (err) {
           scored = null;
         }
@@ -1706,7 +1716,23 @@ export class LanguageCortex {
    * (_scoreDictionaryCosineAsync) can share exactly one body and only
    * diverge on the yield-point check.
    */
-  _scoreDictionaryCosine(dictionary, target, recentWords) {
+  _scoreDictionaryCosine(dictionary, target, recentWords, opts = {}) {
+    const boostPersona = opts.boostPersona === true;
+    // Frequency boost: was 0.02 — too high. Common baseline-corpus
+    // words like "mom"/"dad"/"sister" have 30+ frequency in K vocab,
+    // so log(31) × 0.02 = 0.069 boost dominated cosine differences
+    // of 0.01-0.05 between actual semantic neighbors. Result: chat
+    // path produced family terms for every greeting/identity input
+    // (operator caught iter6 post-FORCE-ADVANCE: "hi" → "Aunt", "who
+    // are you" → "Sister"). 0.005 puts boost in 0.01-0.02 range
+    // where it's a tiebreaker rather than a dominator.
+    const freqBoost = typeof opts.freqBoost === 'number' ? opts.freqBoost : 0.005;
+    // Persona-corpus boost: when chat path passes boostPersona=true,
+    // persona-marked entries (Unity's actual voice corpus) get an
+    // additive boost so Unity speaks in HER words instead of
+    // generic Common-Crawl vocabulary. K-STUDENT path keeps this
+    // off (or excludePersona=true). Default 0.10 = decisive boost.
+    const personaBoost = typeof opts.personaBoost === 'number' ? opts.personaBoost : 0.10;
     const scored = [];
     for (const [word, entry] of dictionary._words) {
       if (!entry || !entry.pattern) continue;
@@ -1720,7 +1746,8 @@ export class LanguageCortex {
       }
       const denom = Math.sqrt(nt) * Math.sqrt(nw);
       const cos = denom > 0 ? dot / denom : 0;
-      const score = cos + Math.log(1 + (entry.frequency || 1)) * 0.02;
+      let score = cos + Math.log(1 + (entry.frequency || 1)) * freqBoost;
+      if (boostPersona && entry.isPersona) score += personaBoost;
       scored.push({ word, score });
     }
     scored.sort((a, b) => b.score - a.score);
@@ -1760,8 +1787,11 @@ export class LanguageCortex {
    * per ~2-4ms of scoring work, which is ~3-5% overhead and still
    * leaves the broadcast ample opportunity to fire every 100ms).
    */
-  async _scoreDictionaryCosineAsync(dictionary, target, recentWords) {
+  async _scoreDictionaryCosineAsync(dictionary, target, recentWords, opts = {}) {
     const YIELD_EVERY = 500;
+    const boostPersona = opts.boostPersona === true;
+    const freqBoost = typeof opts.freqBoost === 'number' ? opts.freqBoost : 0.005;
+    const personaBoost = typeof opts.personaBoost === 'number' ? opts.personaBoost : 0.10;
     const scored = [];
     let i = 0;
     for (const [word, entry] of dictionary._words) {
@@ -1776,7 +1806,8 @@ export class LanguageCortex {
       }
       const denom = Math.sqrt(nt) * Math.sqrt(nw);
       const cos = denom > 0 ? dot / denom : 0;
-      const score = cos + Math.log(1 + (entry.frequency || 1)) * 0.02;
+      let score = cos + Math.log(1 + (entry.frequency || 1)) * freqBoost;
+      if (boostPersona && entry.isPersona) score += personaBoost;
       scored.push({ word, score });
       i++;
       if ((i & (YIELD_EVERY - 1)) === 0) {
@@ -1886,8 +1917,15 @@ export class LanguageCortex {
         } catch {}
         if (target && target.length > 0) {
           try {
+            // Same persona-boost path as the sync chat scorer above.
+            // Internal-thought / popup paths skip the boost; live
+            // chat boosts persona corpus to fix the family-cluster
+            // bias operator caught (Aunt/Sister/Brother/Mom).
+            const isChatPath = !opts._internalThought;
             precomputedScores = await this._scoreDictionaryCosineAsync(
-              dictionary, target, this._recentOutputWords
+              dictionary, target, this._recentOutputWords, {
+                boostPersona: isChatPath,
+              }
             );
           } catch (err) {
             precomputedScores = null;

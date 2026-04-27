@@ -797,15 +797,74 @@
                 };
               }
             } else {
+              // Operator-clickable signoff panel — one button per subject.
+              // POSTs to /grade-signoff (loopback-gated) with subject +
+              // grade + a default note. Operator can paste a custom note
+              // in the textarea before clicking. Replaces the prior
+              // curl-only instruction operator caught iter6 verbatim
+              // 2026-04-26: "i cant sign off there is no ability for me
+              // to accept or anyything like that similare too starting
+              // next grade button.. ie i dont have a start 1st grade
+              // option on the dashboard".
+              const subjects = ['ela', 'math', 'science', 'social', 'art', 'life'];
+              const so = m.gradeSignoffs || {};
+              const buttons = subjects.map((sub) => {
+                const key = `${sub}/${pausedGrade}`;
+                const signed = !!so[key];
+                const bg = signed ? '#14532d' : '#1f2937';
+                const fg = signed ? '#22c55e' : '#e5e7eb';
+                const bd = signed ? '#22c55e' : '#4b5563';
+                const label = signed ? `✓ ${sub.toUpperCase()} signed` : `✓ Sign off ${sub.toUpperCase()}`;
+                return `<button class="d-ms-signoff-btn" data-subject="${sub}" data-grade="${pausedGrade}" ${signed ? 'disabled' : ''} style="background:${bg};color:${fg};border:1px solid ${bd};border-radius:4px;padding:6px 10px;margin:3px;font-family:monospace;font-size:10px;font-weight:700;cursor:${signed ? 'default' : 'pointer'};${signed ? 'opacity:0.7;' : ''}">${label}</button>`;
+              }).join('');
               advEl.innerHTML = `
                 <div style="background:#0f1a1f;border:1px solid #22c55e;border-radius:6px;padding:10px;">
                   <div style="color:#22c55e;font-size:11px;font-weight:700;margin-bottom:6px;">✓ GRADE CAP REACHED — '${pausedGrade.toUpperCase()}' PASSED</div>
-                  <div style="color:#aaa;font-size:10px;line-height:1.6;">
-                    No next grade content exists yet (PRE-K + K ONLY SCOPE LAW). Record LAW 6 Part 2 signoff via:<br>
-                    <code style="color:#00e5ff;">curl -X POST http://localhost:7525/grade-signoff -H "Content-Type: application/json" -d '{"subject":"ela","grade":"${pausedGrade}","note":"methodology + reasoning + thinking + talking + listening + reading all verified"}'</code>
+                  <div style="color:#aaa;font-size:10px;line-height:1.6;margin-bottom:8px;">
+                    Per subject signoff — click each subject after operator-localhost verification (LAW 6 Part 2). Signed cells appear green-checked.
                   </div>
+                  <textarea id="d-ms-signoff-note" placeholder="signoff note (optional, e.g. 'methodology + reasoning + thinking + talking + listening + reading all verified on localhost')" rows="2" style="width:100%;background:#0a0f12;color:#e5e7eb;border:1px solid #374151;border-radius:4px;padding:6px;font-family:monospace;font-size:10px;margin-bottom:6px;"></textarea>
+                  <div style="display:flex;flex-wrap:wrap;">${buttons}</div>
+                  <div style="color:#6b7280;font-size:9px;margin-top:6px;">Endpoint: POST /grade-signoff (loopback-gated). Curl alternative: <code style="color:#00e5ff;">curl -X POST http://localhost:7525/grade-signoff -H "Content-Type: application/json" -d '{"subject":"&lt;sub&gt;","grade":"${pausedGrade}","note":"..."}'</code></div>
                 </div>
               `;
+              // Wire all signoff buttons.
+              const signoffBtns = document.querySelectorAll('.d-ms-signoff-btn');
+              signoffBtns.forEach((btn) => {
+                btn.onclick = async () => {
+                  if (btn.disabled) return;
+                  const subject = btn.dataset.subject;
+                  const grade = btn.dataset.grade;
+                  const noteEl = document.getElementById('d-ms-signoff-note');
+                  const note = (noteEl?.value || '').trim() || `${subject}/${grade} signed off via dashboard`;
+                  btn.disabled = true;
+                  btn.textContent = 'signing...';
+                  btn.style.opacity = '0.5';
+                  try {
+                    const scheme3 = location.protocol === 'https:' ? 'https:' : 'http:';
+                    const host3 = location.hostname || 'localhost';
+                    const res = await fetch(`${scheme3}//${host3}:7525/grade-signoff`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subject, grade, note }),
+                    });
+                    if (!res.ok) {
+                      btn.textContent = `✗ failed ${res.status}`;
+                      btn.style.background = '#7f1d1d';
+                      btn.style.color = '#fca5a5';
+                      setTimeout(() => { btn.disabled = false; btn.style.opacity = '1'; refreshMilestone(); }, 2000);
+                      return;
+                    }
+                  } catch (e) {
+                    btn.textContent = '✗ network error';
+                    btn.style.background = '#7f1d1d';
+                    btn.style.color = '#fca5a5';
+                    setTimeout(() => { btn.disabled = false; btn.style.opacity = '1'; }, 2000);
+                    return;
+                  }
+                  setTimeout(refreshMilestone, 1000);
+                };
+              });
             }
           }
         }
