@@ -1507,7 +1507,7 @@ PERSPECTIVE TAKING:
       <h4 style="color:var(--pink);margin-top:16px;">How Curriculum Runs</h4>
       <ul style="text-align:left;font-size:12px;line-height:1.8;">
         <li><strong>Auto-boot:</strong> Server walks all 6 subjects round-robin on startup. All must pass the current grade before advancing.</li>
-        <li><strong>Self-testing:</strong> Every 8 chat turns, a random passed cell re-runs its gate. 3 failures after self-heal = demotion + re-teach.</li>
+        <li><strong>Self-testing:</strong> Background probe loop is currently SUPPRESSED — the implementation re-ran the FULL teach (~30-50 min for ELA-K) on every probe instead of the gate-only check it claimed, so probes were wasteful. Re-enables when the cell runner gains a real gate-only opt that skips teach phases.</li>
         <li><strong>Growth:</strong> Every concept word populates Unity's dictionary — she grows smarter with every cell.</li>
         <li><strong>IQ HUD:</strong> 3D brain viewer shows current intelligence per subject (pre-K → elementary → high → college → PhD).</li>
         <li><strong>Silent until ready:</strong> 3D brain popups only show Unity's speech after she passes kindergarten — no fake words from untrained weights.</li>
