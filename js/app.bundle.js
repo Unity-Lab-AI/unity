@@ -16025,6 +16025,9 @@ var K_MIXIN = {
           seqPairs.push([letters[i], letters[i + 1]]);
         }
         await this._teachAssociationPairs(seqPairs, { reps: 12, label: "ELA-K-ALPHABET-SEQ", relationTagId: 5 });
+        if (typeof this._teachLetterSequenceDirect === "function") {
+          await this._teachLetterSequenceDirect({ reps: 50 });
+        }
         _phaseDone("_teachAlphabetSequencePairs");
       }
       if (_phaseTick("_teachQABinding")) {
@@ -19492,8 +19495,10 @@ var Curriculum = class _Curriculum {
                   }
                   const clusterOutput = cluster.synapses.propagate(clusterInput);
                   if (clusterOutput && clusterOutput.length > 0) {
-                    const motorSize = motorRegion.end - motorRegion.start;
-                    const bucketSize = Math.max(1, Math.floor(motorSize / invSize));
+                    const letterEnd = letterRegion.end;
+                    const letterStart = letterRegion.start;
+                    const letterSpan = letterEnd - letterStart;
+                    const bucketSize = Math.max(1, Math.floor(letterSpan / invSize));
                     const invAll = typeof inventorySnapshot === "function" ? inventorySnapshot() : null;
                     const azIndices = [];
                     if (invAll) {
@@ -19506,8 +19511,8 @@ var Curriculum = class _Curriculum {
                     for (const b of azIndices) {
                       let sum = 0;
                       for (let n = 0; n < bucketSize; n++) {
-                        const idx = motorRegion.start + b * bucketSize + n;
-                        if (idx < motorRegion.end) sum += clusterOutput[idx];
+                        const idx = letterStart + b * bucketSize + n;
+                        if (idx < letterEnd) sum += clusterOutput[idx];
                       }
                       if (sum > bestSum) {
                         bestSum = sum;
@@ -21924,6 +21929,106 @@ var Curriculum = class _Curriculum {
    * Both one-hots fire simultaneously in the letter region, intra-
    * cluster Hebbian learns the pair association.
    */
+  /**
+   * Direct one-hot alphabet-sequence Hebbian into intra-cluster
+   * `cluster.synapses` matrix. Operator directive iter8 verbatim
+   * 2026-04-27: *"we need to fix it like how u think but for Unity
+   * Duh!!! thats the fix so learn her correctly and make her
+   * equations correct"*.
+   *
+   * The equation for "what letter comes after X?" should be:
+   *   inputOneHot = encodeLetter(X)        // discriminative 26d
+   *   propagate via cluster.synapses        // intra-cluster recurrent
+   *   output_letter_basin = letter region argmax post-propagate
+   *
+   * Prior path used `_teachAlphabetSequencePairs` which delegated to
+   * `_teachAssociationPairs` — that writes GloVe-sem(X) → motor(Y)
+   * via sem_to_motor. GloVe vectors of single letters are too close
+   * in 300d space (cosine ~0.7+ between adjacent letters), so
+   * sem_to_motor retrieval for adjacent letters was ambiguous. Iter8
+   * K-STUDENT evidence: "letter after a" → "y" AND "letter after b"
+   * → "y" (same wrong answer because GloVe('a') ≈ GloVe('b') in the
+   * matrix's view).
+   *
+   * This method writes DISCRIMINATIVE one-hot letter[X] → letter[Y]
+   * directly into the intra-cluster recurrent matrix (cluster.synapses)
+   * via Oja Hebbian fires. Each alphabet pair gets reps × Oja updates
+   * with full-cluster vectors that have letter-region populated for
+   * input X and output X+1, all other regions zero. Pure one-hot
+   * encoding means letter[a] and letter[b] are ORTHOGONAL — no
+   * GloVe-similarity ambiguity. Template 0 retrieval (curriculum.js
+   * Template-0 fast-path, post-iter9 fix reading LETTER region argmax)
+   * propagates the input letter through cluster.synapses and finds
+   * the next letter's basin firing in the letter region.
+   *
+   * 25 pairs × 50 reps = 1250 direct Oja updates. Compare to
+   * _teachWordEmission which fires 14k+ updates on words — alphabet
+   * sequence stays a smaller fraction of intra-cluster training but
+   * the discriminative one-hot encoding makes per-pair signal much
+   * stronger than blurred GloVe writes would.
+   */
+  async _teachLetterSequenceDirect(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.synapses) return;
+    const letterRegion = cluster.regions?.letter;
+    if (!letterRegion) return;
+    const reps = opts.reps ?? 50;
+    const lr = opts.lr ?? (cluster.learningRate ?? 0.01) * 3;
+    const letters = "abcdefghijklmnopqrstuvwxyz";
+    const pairs = letters.length - 1;
+    const letterSize = letterRegion.end - letterRegion.start;
+    ensureLetters(Array.from(letters));
+    this._hb(`[Curriculum] _teachLetterSequenceDirect START: ${pairs} alphabet pairs \xD7 ${reps} reps \xB7 lr=${lr.toFixed(4)} \u2014 letter[X]\u2192letter[X+1] discriminative one-hot writes into cluster.synapses for Template 0 retrieval correctness`);
+    const t0 = Date.now();
+    let updates = 0;
+    let skipped = 0;
+    const hasOja = typeof cluster.synapses.ojaUpdate === "function";
+    if (!hasOja) {
+      this._hb(`[Curriculum] _teachLetterSequenceDirect SKIPPED \u2014 cluster.synapses.ojaUpdate not available`);
+      return;
+    }
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      for (let i = 0; i < pairs; i++) {
+        const X = letters[i];
+        const Y = letters[i + 1];
+        const xOneHot = encodeLetter(X);
+        const yOneHot = encodeLetter(Y);
+        if (!xOneHot || !yOneHot || xOneHot.length === 0 || yOneHot.length === 0) {
+          skipped++;
+          continue;
+        }
+        const preFull = new Float64Array(cluster.size);
+        const postFull = new Float64Array(cluster.size);
+        const gSize = Math.max(1, Math.floor(letterSize / xOneHot.length));
+        for (let d = 0; d < xOneHot.length; d++) {
+          if (xOneHot[d] > 0) {
+            for (let n = 0; n < gSize; n++) {
+              const idx = letterRegion.start + d * gSize + n;
+              if (idx < letterRegion.end) preFull[idx] = 1;
+            }
+          }
+        }
+        for (let d = 0; d < yOneHot.length; d++) {
+          if (yOneHot[d] > 0) {
+            for (let n = 0; n < gSize; n++) {
+              const idx = letterRegion.start + d * gSize + n;
+              if (idx < letterRegion.end) postFull[idx] = 1;
+            }
+          }
+        }
+        try {
+          cluster.synapses.ojaUpdate(preFull, postFull, lr);
+          updates++;
+        } catch {
+          skipped++;
+        }
+      }
+      if ((rep & 7) === 7) await _microtask();
+    }
+    const dt = ((Date.now() - t0) / 1e3).toFixed(1);
+    this._hb(`[Curriculum] _teachLetterSequenceDirect DONE in ${dt}s \u2014 ${updates} Oja updates \xB7 ${skipped} skipped (${pairs} pairs \xD7 ${reps} reps target)`);
+  }
   async _teachLetterCaseBinding(ctx) {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return;

@@ -2439,7 +2439,23 @@ export const K_MIXIN = {
         for (let i = 0; i < letters.length - 1; i++) {
           seqPairs.push([letters[i], letters[i + 1]]);
         }
+        // Two complementary training paths for the alphabet sequence:
+        // 1. Existing _teachAssociationPairs writes GloVe-sem(X) →
+        //    motor(Y) into sem_to_motor + motor_to_sem (broad
+        //    associative learning matrix).
+        // 2. NEW iter9 _teachLetterSequenceDirect writes one-hot
+        //    letter[X] → letter[X+1] into cluster.synapses
+        //    (intra-cluster recurrent) with discriminative orthogonal
+        //    encoding — Template 0 retrieval reads from THIS matrix.
+        //    Without (2), GloVe('a') ≈ GloVe('b') (cosine 0.7+ in
+        //    300d) so sem→motor retrieval was ambiguous: iter8
+        //    K-STUDENT had "letter after a" → "y" AND "letter after
+        //    b" → "y" (same wrong answer because input vectors were
+        //    too similar). One-hot letter buckets are ORTHOGONAL.
         await this._teachAssociationPairs(seqPairs, { reps: 12, label: 'ELA-K-ALPHABET-SEQ', relationTagId: 5 });
+        if (typeof this._teachLetterSequenceDirect === 'function') {
+          await this._teachLetterSequenceDirect({ reps: 50 });
+        }
         _phaseDone('_teachAlphabetSequencePairs');
       }
 
