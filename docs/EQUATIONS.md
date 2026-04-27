@@ -1296,13 +1296,35 @@ Intra-cluster recurrent matrix stays at `[-2.0, 2.0]` — the recurrent path doe
 
 ### Top-K-Per-Row Pruning — `SparseMatrix.pruneTopKPerRow(k)`
 
-Called at end of every `_teachAssociationPairs` and `_teachQABinding` rep loop with `k = 200`. For each output (post) neuron, keeps only the K largest-magnitude inputs by `|w|` and zeros the rest by rebuilding CSR with just the survivors. Forces basin separation when the matrix has saturated to near-uniform weights at full density: each output now responds to its K most-trained inputs only, restoring discriminability. New log field `· top-K-prune [sem_to_motor:-N,motor_to_sem:-N]` reports how many connections got removed per phase.
+Called at end of every `_teachAssociationPairs` and `_teachQABinding` rep loop. Bisect history: `200 (cr2) → 30 (iter6) → 10 (iter7)`. At 200 the matrix stayed full-density (200 × 500 rows = 100k nnz), iterations 4-5 saw sep-probe pinned at 0.5+ across all 7 phases regardless of anti-Hebbian magnitude — basin overlap structural, not dynamic. Bisecting to 30 cut nnz to 15k (85% zeroed) and produced first sub-0.5 readings (Categories 0.449, ELA QABinding 0.471). Bisecting to 10 (current) cuts nnz to 5k (95% zeroed) so each motor neuron discriminates among only its 10 strongest sem inputs — biologically plausible per-neuron fanout (real cortex 10-100 even at thousands-of-input-targets in vivo). New log field `· top-K-prune [sem_to_motor:-N,motor_to_sem:-N]` reports how many connections got removed per phase.
 
-### Anti-Hebbian Contrastive Rate — `antiLrScale = 1.5`
+### Anti-Hebbian Contrastive Rate — `antiLrScale = 2.5`
 
-Bumped from 0.5 to 1.5. With 25 contrastive fires per positive update at lr × 1.5 = 37.5× lr negative pressure per positive fire, basins separate even when the matrix has hit `wMax`. Earlier 0.5 was too gentle once positive Oja saturated the weights — the anti-Hebbian decrement couldn't dominate. Combined with the narrower wMax clamp + post-phase pruning, the contrastive push-pull now has decisive authority over saturation.
+Bisect history: `0.5 (orig) → 1.5 (cr2) → 3.0 (iter3, basin-collapse 'a'/'i' bucket spam) → 2.0 (iter4, too weak — sep-probe 0.5+ pinned) → 2.5 (iter5+ current)`. With 25 contrastive fires per positive update at lr × 2.5 = 62.5× lr negative pressure per positive fire, basins separate without overshooting into single-bucket attractor collapse. Combined with the wMax `[-0.4, 0.4]` bisect + rescale floor + pruneTopK 10, the contrastive push-pull has decisive authority over saturation while preserving signal magnitude above the rescale floor. Magnitude is NOT the bottleneck — iter4 with 2.0× and iter5 with 2.5× produced effectively identical sep-probe trajectories (delta ±0.005 across 7 phases). Structural sparsification (pruneTopK 30→10) is the load-bearing fix; magnitude tuning is fine adjustment around the structural one.
 
 Prior values: Session 111 had `crossTargetFanout = 1500` (derivation `expectedPostCurriculumVocab × fanoutPerMapping ≈ 5000 × 0.3`). T37 rebalanced to 30 when scaling to 17M language-cortex neurons blew the memory budget at 1500 fanout. T39.g.4 re-introduced the high-capacity path for motor-bound projections only, after operator logs showed persistent `sep-probe mean-cos ≈ 0.5` at the 30-fanout default across every association-pair phase — capacity ceiling, not plasticity-rule bug.
+
+### Curriculum Round Loop — `MAX_GRADE_ROUNDS = 1`, single attempt per cell
+
+Bisect history: `10 (orig) → 2 (iter5) → 1 (iter6+ current)`. Operator directive iter6 verbatim 2026-04-26: *"what is this round 2 stuff? keep monitoring.. it should do it all once and be done and then Unitys brain is at that level"*. One pass through all 6 K subjects, one attempt per cell (no while-deadline retry loop within the 3-min cap), then FORCE-ADVANCE for cells with real teaching evidence. Eliminates the 5-attempt × 3-min × 6-subject × 10-round = up to 15-hour groundhog-day retry where passedPhases skipped re-teaching between attempts so identical results fired forever.
+
+### FORCE-ADVANCE — Unity uses K training regardless of A+ pass
+
+Operator directive iter6 verbatim: *"Unity should use her knowledge and training once it finally cioompletes so her kindergarden understanding is loaded in and used for here conversations, popups, thinking, and logic ,and memory, and abilities to communicate"*. After `MAX_GRADE_ROUNDS` exhausts a grade without A+ pass, walks every subject. For cells where `cluster.passedPhases.filter(k => k.startsWith(cellKey + ':')).length >= 1` (real teaching evidence), sets `cluster.grades[subject] = grade` and adds to `cluster.passedCells` regardless of A+ pass. Logs `⤴ FORCE-ADVANCE` per cell. Unlocks the language-cortex word cap from FLOOR=5 to 9999, so Unity speaks freely in chat / popups / inner thoughts / memory using everything she actually learned. LAW 6 Part 2 operator-signoff ledger untouched (separate path via `POST /grade-signoff`).
+
+### Chat Path Persona Boost — `_scoreDictionaryCosine({ boostPersona: true })`
+
+Operator directive post-FORCE-ADVANCE 2026-04-26 verbatim: *"she is not repsonding with communication correcty"* — chat replies dumped family-relation terms (`Aunt./Sister/Brother/Mom`) for every greeting/identity question because dictionary cosine of GloVe('hi') returned high-frequency Common-Crawl family terms in top-K (`hi mom`/`hi dad` co-occurrence). Two structural fixes:
+- **Frequency-boost coefficient bisect 0.02 → 0.005.** At 0.02, common words like `mom` (frequency 30+ in K corpus) got log(31)×0.02 = 0.069 boost — dominated cosine differences of 0.01-0.05 between actual semantic neighbors. At 0.005 the boost stays a tiebreaker rather than a dominator.
+- **`boostPersona: true` flag on chat path.** Persona-marked dictionary entries (`entry.isPersona === true` set during `loadPersona` corpus load) get +0.10 additive boost when `boostPersona: true`. Unity speaks in HER voice (persona corpus vocabulary) instead of generic Common-Crawl frequency-dominant words. Chat path passes `boostPersona: true` (via `!opts._internalThought`); K-STUDENT path keeps the flag off (or opts.excludePersona=true) so probe answers don't contaminate with persona voice.
+
+### K-STUDENT Strict Cue Match — Skip Substring Contains for 1-Char Variants
+
+Operator caught iter5 verbatim: `"async" matched cue 's'` and `"lsd" matched cue 's'` — `_studentTestProbe` scoring loop's substring `contains` check fired `'lsd'.includes('s') → true` because variant `'s'` is a single character, anywhere-in-answer counts. Fixed at `curriculum.js:2177-2181` by skipping the contains check entirely when `v.length <= 1` — letter-cue questions now require exact OR startsWith match only. Multi-char variant fuzzy matching (e.g. `'cat'.includes('cat')`) preserved.
+
+### Template 0/1 Inventory Clamp — a-z buckets only
+
+Auto-grown `LETTER_INVENTORY` includes digits + punctuation (`'`, `.`, `,`, `0-9`) seeded by corpus exposure. Template 0 ("what letter comes after X?") and Template 1 ("what sound does the letter X make?") direct routing in `_studentTestProbe` previously argmaxed over the FULL inventory, so motor/phon argmax could land on bucket-for-`'4'` or bucket-for-`','` producing K-STUDENT outputs like `→ "4"` or `→ ","`. Fixed by filtering inventory snapshot to `^[a-z]$` entries before bucket scan — only alphabetical buckets compete for argmax. Confidence threshold also lowered 0.05 → 0.001 so sparser-matrix tiny bucket sums fire the routing instead of being gated out.
 
 ### Comprehension Gate Equation (Session 111)
 
