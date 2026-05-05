@@ -7706,12 +7706,18 @@ var LanguageCortex = class {
       } else {
         const _liveExclude = _buildLiveChatExclude(cluster._lastUserInputText);
         cluster._lastUserInputText = null;
-        const _isChatPath = !opts._internalThought;
+        if (cluster.tier3Store && typeof cluster.tier3Store.injectIdentityBaseline === "function") {
+          try {
+            cluster.tier3Store.injectIdentityBaseline(0.15);
+          } catch {
+          }
+        }
         const raw = cluster.generateSentence(intentSeed, {
           injectStrength: 0.6,
           suppressNoise: opts._internalThought === true,
           excludeTokens: _liveExclude,
-          boostPersona: _isChatPath
+          boostPersona: true
+          // iter14-C — always on, popups need persona too
         });
         words = raw ? raw.split(/\s+/).filter(Boolean) : [];
       }
@@ -7957,12 +7963,18 @@ var LanguageCortex = class {
         }
         try {
           const _liveExcludeAsync = _buildLiveChatExclude(cluster._lastUserInputText);
-          const _isChatPathAsync = !opts._internalThought;
+          if (cluster.tier3Store && typeof cluster.tier3Store.injectIdentityBaseline === "function") {
+            try {
+              cluster.tier3Store.injectIdentityBaseline(0.15);
+            } catch {
+            }
+          }
           const raw = await cluster.generateSentenceAwait(intentSeed, {
             injectStrength: 0.6,
             suppressNoise: opts._internalThought === true,
             excludeTokens: _liveExcludeAsync,
-            boostPersona: _isChatPathAsync
+            boostPersona: true
+            // iter14-C — always on, popups need persona too
           });
           preEmittedWords = raw ? raw.split(/\s+/).filter(Boolean) : [];
         } catch (err) {
