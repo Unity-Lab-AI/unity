@@ -689,8 +689,11 @@ function renderLandingTab(tab, s) {
       const recentOutput = lc?._recentOutputWords?.length ?? 0;
       const usageTyped = lc?._usageTypes?.size ?? 0;
 
+      // iter17 — operator: "unity has a whole life ahead not eroonous limits
+      // to dumb her down". cap=null signals unbounded; UI renders without
+      // arbitrary denominator.
       const workingItems = working.items ?? (Array.isArray(mem.workingMemoryItems) ? mem.workingMemoryItems.length : (mem.workingCount ?? 0));
-      const workingCap = working.cap ?? 7;
+      const workingCap = working.cap; // may be null = unbounded
       const totalEpisodes = tier1.totalEpisodes ?? growth.totalEpisodes ?? mem.episodeCount ?? 0;
       const recentSal = tier1.recentSalienceAvg ?? 0;
       const freqMerged = tier1.freqMergedCount ?? 0;
@@ -718,10 +721,15 @@ function renderLandingTab(tab, s) {
           + (tier3.identities.length > 8 ? `<div style="font-size:9px;color:#666;padding:2px 0;">... +${tier3.identities.length - 8} more</div>` : '')
         : '<div style="margin-top:6px;font-size:10px;color:#666;">No identity anchors — fresh boot will seed from IDENTITY_SEED_LIST.</div>';
 
+      // iter17 cap rendering helpers — null cap = unbounded, no denominator
+      // bar shown. Per operator: "unity has a whole life ahead".
+      const fmtItems = (n, cap) => cap == null ? n.toLocaleString() + ' (unbounded)' : n.toLocaleString() + ' / ' + cap.toLocaleString();
+      const wcDisplay = workingCap == null ? workingItems.toLocaleString() + ' items (unbounded)' : workingItems + ' / ' + workingCap + ' slots';
+
       el.innerHTML =
         card('Working Memory (Tier 0)', `
-          ${metric('Items', workingItems + ' / ' + workingCap + ' slots', '#00e5ff')}
-          ${bar((workingItems / Math.max(1, workingCap)) * 100, '#00e5ff')}
+          ${metric('Items', wcDisplay, '#00e5ff')}
+          ${workingCap == null ? '' : bar((workingItems / Math.max(1, workingCap)) * 100, '#00e5ff')}
         `) +
         card('Tier 1 — Episodic (SQLite)', `
           ${metric('Total Episodes', totalEpisodes.toLocaleString(), '#a855f7')}
@@ -732,15 +740,13 @@ function renderLandingTab(tab, s) {
           ${metric('Interactions', interactions.toLocaleString(), '#555')}
         `) +
         card('Tier 2 — Schematic Memory', `
-          ${metric('Schemas', (tier2.schemaCount ?? 0).toLocaleString() + ' / ' + (tier2.hardCap ?? 1000), '#a855f7')}
-          ${bar(((tier2.schemaCount ?? 0) / Math.max(1, tier2.hardCap ?? 1000)) * 100, '#a855f7')}
+          ${metric('Schemas', fmtItems(tier2.schemaCount ?? 0, tier2.hardCap), '#a855f7')}
           ${metric('Avg Consolidation Strength', (tier2.avgConsolidationStrength ?? 0).toFixed(3), '#ff4d9a')}
           ${metric('Total Retrievals', (tier2.totalRetrievals ?? 0).toLocaleString(), '#22c55e')}
           ${tier2TopHtml}
         `) +
         card('Tier 3 — Identity-Bound (Permanent)', `
-          ${metric('Identity Anchors', (tier3.identityCount ?? 0).toLocaleString() + ' / ' + (tier3.hardCap ?? 50), '#ff4d9a')}
-          ${bar(((tier3.identityCount ?? 0) / Math.max(1, tier3.hardCap ?? 50)) * 100, '#ff4d9a')}
+          ${metric('Identity Anchors', fmtItems(tier3.identityCount ?? 0, tier3.hardCap), '#ff4d9a')}
           ${metric('Last Identity Inject', fmtAge(tier3.lastInjectedAt), tier3.lastInjectedAt ? '#22c55e' : '#888')}
           ${tier3TopHtml}
         `) +

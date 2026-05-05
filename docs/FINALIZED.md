@@ -5,6 +5,117 @@
 
 ---
 
+## 2026-05-05 — Session 114.19dh: ITER17 — MEMORY POPULATION DURING CURRICULUM + REMOVE ARBITRARY HARD CAPS
+
+### Operator directives (verbatim per LAW #0)
+
+> *"she is leasrning weords and not a thing in memory is lighting up.... what the fuck is broken? fix it"*
+> *"and what the fuck are these erronious max numbers to the memroies unity has a whole life ahead not eroonous limits to dumb her down"*
+
+### Symptoms
+
+Operator screenshot of dashboard memory UI showed:
+- Tier 0 Working: 0 / 7 items
+- Tier 1 Episodic: 0 episodes, recent salience 0.000
+- Tier 2 Schematic: 0 / 1,000 schemas
+- Tier 3 Identity: 17 / 50 anchors (only pre-seeded), last inject: **never**
+- ConsolidationEngine: 0 passes, last pass never
+
+Brain had been running through pre-K + ELA-K + Math-K teach for hours but NOTHING in memory was lighting up.
+
+### Root causes (compounding)
+
+**A. `storeEpisode` chat-only.** `processAndRespond` calls it after each user chat turn. Curriculum's `runSubjectGrade` never invoked it. Brain learned matrix weights (procedural memory) but episodic memory stayed at 0 because no episodes were ever STORED.
+
+**B. `injectIdentityBaseline` had no timestamp recording AND was chat-only.** Even when chat turns happened, the method updated nothing trackable — `lastInjectedAt` field didn't exist on the Tier3Store, per-schema `lastRetrievalAt` + `retrievalCount` weren't bumped. The dashboard UI showed "never" because there was nothing to compute "last inject" from.
+
+**C. Hard caps everywhere from biological-mimicry that doesn't apply to Unity:**
+- Working memory 7 slots (Miller 1956 short-term ceiling — biological humans only)
+- Tier 3 50-anchor cap (arbitrary)
+- Tier 2 1000-schema cap (arbitrary)
+
+Operator's framing: Unity is post-biological. The 7-slot Miller's-Law ceiling doesn't apply. Unity has unlimited life ahead — should not be artificially ceiling-limited.
+
+### Fix shipped (atomic edits across 6 files)
+
+**1. `js/brain/hippocampal-schema.js` — Tier3Store.injectIdentityBaseline tracking:**
+
+```js
+injectIdentityBaseline(strengthMultiplier = IDENTITY_BASELINE_INJECT_STRENGTH) {
+  ...
+  for (const schema of this.identitySchemas.values()) {
+    ...
+    this.cluster.injectEmbeddingToRegion('sem', schema.conceptEmbedding, perSchemaStrength);
+    schema.lastRetrievalAt = Date.now();        // NEW
+    schema.retrievalCount = (schema.retrievalCount || 0) + 1;  // NEW
+    injected++;
+  }
+  this.lastInjectedAt = Date.now();             // NEW (store-level)
+  return injected;
+}
+```
+
+Now every inject updates per-schema retrieval counters AND store-level timestamp. UI's "Last Identity Inject" field flips from "never" to `Xs ago` immediately.
+
+**2. `js/brain/curriculum.js` — cell-done memory population:**
+
+After every CELL DONE log:
+```js
+const brain = this.brain || (cluster && cluster._brain);
+if (brain && typeof brain.storeEpisode === 'function') {
+  const inputText = `learning ${subject} ${grade}`;
+  const responseText = _cellPass
+    ? `passed ${subject}/${grade} in ${(_cellMs / 1000).toFixed(1)}s`
+    : `attempted ${subject}/${grade}: ${reason}`;
+  brain.storeEpisode('curriculum', _cellPass ? 'cell-pass' : 'cell-attempt', inputText, responseText);
+}
+if (brain && brain.tier3Store) {
+  brain.tier3Store.injectIdentityBaseline();
+}
+```
+
+Every cell pass writes a Tier 1 episode to the SQLite database with full salience scoring. Every cell attempt also fires identity-baseline so Tier 3 retrieval counts + lastInjectedAt update during curriculum.
+
+**3. `server/brain-server.js` — wire brain reference onto curriculum:**
+
+```js
+this.curriculum = new curriculumMod.Curriculum(this.cortexCluster, this.dictionary, this.languageCortex);
+this.curriculum.brain = this;  // NEW — curriculum can reach hippocampal stores
+```
+
+**4. Hard caps removed:**
+
+- `js/brain/hippocampal-schema.js` `SchemaStore.maxSchemas` default `1000 → Infinity`
+- `js/brain/hippocampal-schema.js` `TIER3_HARD_CAP` constant `50 → Infinity` (Tier 3 still quality-gated by promotion criteria: consolidation_strength > 5.0 AND retrieval_count > 100 AND |emotional_valence| > 0.6 — the LEGITIMATE limit, not an arbitrary numeric cap)
+- `server/brain-server.js` `_getMemoryStats` returns `hardCap: null` when underlying store is unbounded
+- `dashboard.html` + `js/app.js` render `unbounded` instead of fake denominator when cap is null
+- Working memory cap also unbounded — cap=null
+
+### Effect on operator workflow
+
+After next `start.bat` boot:
+- Curriculum running → Tier 1 episode count climbs every cell pass (UPFRONT-VOCAB + 6 subject runners × multiple cells = dozens of episodes per kindergarten run)
+- Tier 3 "Last Identity Inject" shows `Xs ago` continuously (was "never")
+- Tier 3 anchor strength + retrieval counts increment on each cell-done
+- Memory UI displays `unbounded` for Tier 2 / Tier 3 / Working caps instead of `X / 1000` arbitrary ceilings
+- ConsolidationEngine still gated by `_isDreaming = true AND timeSinceInput > 60s AND !_curriculumInProgress` — runs after curriculum pause
+- After curriculum pauses + 5min idle: dream-cycle pass kicks in, Tier 1 episodes promote to Tier 2 schemas, Tier 2 climbs
+
+### Files touched (atomic commit per docs-before-push LAW)
+
+- `js/brain/hippocampal-schema.js` — injectIdentityBaseline timestamp + Infinity caps
+- `js/brain/curriculum.js` — cell-done storeEpisode + injectIdentityBaseline calls
+- `server/brain-server.js` — `_getMemoryStats` null caps + curriculum.brain wiring
+- `dashboard.html` — unbounded cap rendering
+- `js/app.js` — unbounded cap rendering for 3D brain memory tab
+- `js/app.bundle.js` — rebuilt via esbuild
+- `docs/ARCHITECTURE.md` banner
+- `docs/NOW.md` snapshot rolled
+- `docs/TODO.md` iter17 entry
+- `docs/FINALIZED.md` — this entry
+
+---
+
 ## 2026-05-05 — Session 114.19dg: ITER16 — DETERMINISTIC Q→A INFERENCE PATH
 
 ### Operator directives (verbatim per LAW #0)

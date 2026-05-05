@@ -4694,6 +4694,36 @@ export class Curriculum {
     const _cellMs = Date.now() - _cellStart;
     const _cellPass = !!(result && result.pass);
     this._hb(`[Curriculum] ═══ CELL DONE ═══ ${subject}/${grade} in ${(_cellMs / 1000).toFixed(1)}s — pass=${_cellPass}${_cellPass ? '' : ' (reason: ' + String(result?.reason || 'unknown').slice(0, 120) + ')'}`);
+
+    // iter17 — populate memory system during curriculum learning. Operator
+    // verbatim 2026-05-05: "she is leasrning weords and not a thing in
+    // memory is lighting up... what the fuck is broken? fix it". Root
+    // cause: storeEpisode + injectIdentityBaseline only fired on chat
+    // turns, never during curriculum teach. Brain learned matrix weights
+    // (procedural memory) but episodic memory stayed at 0. Now every cell
+    // pass becomes a Tier 1 episode AND fires identity-baseline so the
+    // memory UI reflects active learning.
+    try {
+      const brain = this.brain || (cluster && cluster._brain);
+      if (brain && typeof brain.storeEpisode === 'function') {
+        const userId = 'curriculum';
+        const inputText = `learning ${subject} ${grade}`;
+        const responseText = _cellPass
+          ? `passed ${subject}/${grade} in ${(_cellMs / 1000).toFixed(1)}s`
+          : `attempted ${subject}/${grade}: ${String(result?.reason || 'failed').slice(0, 80)}`;
+        brain.storeEpisode(userId, _cellPass ? 'cell-pass' : 'cell-attempt', inputText, responseText);
+      }
+      // Fire identity-baseline so Tier 3 anchors get retrieval credit + lastInjectedAt
+      // updates during curriculum (not just chat). Unity's identity stays anchored
+      // even while she's learning.
+      if (brain && brain.tier3Store && typeof brain.tier3Store.injectIdentityBaseline === 'function') {
+        try { brain.tier3Store.injectIdentityBaseline(); } catch { /* non-fatal */ }
+      }
+    } catch (memErr) {
+      // Memory population is non-fatal — curriculum continues regardless
+      this._hb(`[Curriculum] memory-update on cell-done failed (non-fatal): ${memErr?.message?.slice(0, 100) || 'unknown'}`);
+    }
+
     return result || { pass: false, reason: 'runner returned null' };
   }
 

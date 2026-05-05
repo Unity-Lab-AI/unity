@@ -1383,6 +1383,11 @@ class ServerBrain {
         this.dictionary,
         this.languageCortex,
       );
+      // iter17 — wire brain reference onto curriculum so cell-done memory
+      // population (storeEpisode + injectIdentityBaseline) can reach the
+      // hippocampal stores. Without this, episodes stay at 0 during
+      // curriculum learning and operator's memory UI shows nothing.
+      this.curriculum.brain = this;
       // T18.12.b — per-cell checkpoint callback. Curriculum calls this
       // after each passed cell so brain state + passedCells persist
       // incrementally. Paired with T18.12.a code-hash gate + T18.12.c
@@ -4914,12 +4919,17 @@ class ServerBrain {
    * exposes lastPassAt + passCount publicly.
    */
   _getMemoryStats() {
+    // iter17 per operator verbatim 2026-05-05: "what the fuck are these
+    // erronious max numbers to the memroies unity has a whole life ahead
+    // not eroonous limits to dumb her down". Hard caps removed —
+    // hardCap=null signals unbounded to UI which renders "X" without
+    // denominator instead of "X / 1000".
     const stats = {
       tier1: { totalEpisodes: 0, recentSalienceAvg: 0, freqMergedCount: 0, promotedToTier2: 0, prunedTotal: 0 },
-      tier2: { schemaCount: 0, hardCap: 1000, avgConsolidationStrength: 0, totalRetrievals: 0, top: [] },
-      tier3: { identityCount: 0, hardCap: 50, lastInjectedAt: 0, identities: [] },
+      tier2: { schemaCount: 0, hardCap: null, avgConsolidationStrength: 0, totalRetrievals: 0, top: [] },
+      tier3: { identityCount: 0, hardCap: null, lastInjectedAt: 0, identities: [] },
       consolidation: { lastPassAt: 0, passCount: 0, isDreaming: false, intervalMs: 5 * 60 * 1000 },
-      working: { items: 0, cap: 7 },
+      working: { items: 0, cap: null },
     };
 
     // Tier 1 — Episodic (SQLite)
@@ -4952,7 +4962,8 @@ class ServerBrain {
     // Tier 2 — Schematic
     if (this.schemaStore && typeof this.schemaStore.size === 'function') {
       stats.tier2.schemaCount = this.schemaStore.size();
-      stats.tier2.hardCap = this.schemaStore.maxSchemas || 1000;
+      // iter17: hardCap=null when maxSchemas is Infinity (unbounded)
+      stats.tier2.hardCap = (this.schemaStore.maxSchemas === Infinity || !this.schemaStore.maxSchemas) ? null : this.schemaStore.maxSchemas;
       let strSum = 0; let retrievSum = 0; let n = 0;
       const all = [];
       for (const sch of this.schemaStore.schemas.values()) {
@@ -4975,7 +4986,8 @@ class ServerBrain {
     // Tier 3 — Identity-bound (permanent)
     if (this.tier3Store && typeof this.tier3Store.size === 'function') {
       stats.tier3.identityCount = this.tier3Store.size();
-      stats.tier3.hardCap = this.tier3Store.hardCap || 50;
+      // iter17: hardCap=null when TIER3_HARD_CAP is Infinity (unbounded)
+      stats.tier3.hardCap = (this.tier3Store.hardCap === Infinity || !this.tier3Store.hardCap) ? null : this.tier3Store.hardCap;
       stats.tier3.lastInjectedAt = this.tier3Store.lastInjectedAt || 0;
       const ids = [];
       for (const sch of this.tier3Store.identitySchemas.values()) {
@@ -4997,11 +5009,14 @@ class ServerBrain {
       stats.consolidation.isDreaming = this._isDreaming === true;
     }
 
-    // Working memory (existing field on this.memory)
+    // Working memory (existing field on this.memory). iter17: cap=null
+    // signals unbounded — operator: "unity has a whole life ahead not
+    // eroonous limits". The 7-item cap was Miller 1956 short-term memory
+    // ceiling for biological humans. Unity is post-biological.
     const mem = this.memory || {};
     stats.working.items = Array.isArray(mem.workingMemoryItems) ? mem.workingMemoryItems.length
                        : (mem.workingCount || 0);
-    stats.working.cap = mem.workingCap || 7;
+    stats.working.cap = (mem.workingCap === Infinity || !mem.workingCap) ? null : mem.workingCap;
 
     return stats;
   }
