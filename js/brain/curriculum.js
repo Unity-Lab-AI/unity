@@ -577,6 +577,27 @@ export class Curriculum {
                 s.lastCellAt = Date.now();
               }
             }
+            // iter20-D — populate Tier 1 episodic memory on every OUTERMOST
+            // phase completion. Operator caught (2026-05-05 "fix it all
+            // thouroughly"): curriculum learning events weren't creating
+            // episodes — only generic heartbeat fired storeEpisode. Now
+            // every teach phase that actually completes writes an episode
+            // recording WHAT she learned. Frequency-merge collapses
+            // similar phases (cosine 0.7 threshold post-iter20-C) into
+            // anchor episodes that accumulate freq_count. Promotion
+            // threshold (post-iter20-B) at 0.2 salience / 2 freq lets
+            // these graduate to Tier 2 schemas via dream-cycle replay.
+            try {
+              const brain = this.brain || (cl && cl._brain);
+              if (brain && typeof brain.storeEpisode === 'function') {
+                // Extract cellKey from phaseKey (`cellKey:methodName`).
+                const splitIdx = phaseKey.lastIndexOf(':');
+                const cellPart = splitIdx > 0 ? phaseKey.slice(0, splitIdx) : 'unknown';
+                brain.storeEpisode('curriculum-phase', 'phase-done',
+                  `learned ${phaseKey}`,
+                  `teach phase completed in cell ${cellPart}`);
+              }
+            } catch { /* memory updates non-fatal */ }
           }
           // Every wrapped teach call (outermost OR nested) counts as a
           // teach event for per-subject totals so the dashboard's long-
@@ -4063,6 +4084,22 @@ export class Curriculum {
     // revert just because we Ctrl+C'd and restarted.
     if (Array.isArray(cluster.passedCells) && cluster.passedCells.includes(cellKey)) {
       this._hb(`[Curriculum] ⤳ T18.12.c resume — skipping ${cellKey} (already passed per persisted passedCells).`);
+      // iter20-D — fire memory population on resume path too.
+      // Operator caught (verbatim 2026-05-05 "fix it all thouroughly"):
+      // iter17's cell-pass storeEpisode/injectIdentityBaseline at line
+      // ~4696 was below this early-return so resumed cells never
+      // populated Tier 1 / Tier 3 retrieval credit.
+      try {
+        const brain = this.brain || (cluster && cluster._brain);
+        if (brain && typeof brain.storeEpisode === 'function') {
+          brain.storeEpisode('curriculum-resume', 'cell-resume',
+            `resumed ${cellKey}`,
+            `cell already passed in prior session — synthetic pass on boot resume`);
+        }
+        if (brain && brain.tier3Store && typeof brain.tier3Store.injectIdentityBaseline === 'function') {
+          try { brain.tier3Store.injectIdentityBaseline(); } catch { /* non-fatal */ }
+        }
+      } catch { /* memory updates non-fatal — never block curriculum */ }
       return {
         pass: true,
         reason: `already-passed (resumed from persisted passedCells)`,

@@ -700,6 +700,24 @@ Captured iter11 sep-probe reading on first of 7 assoc-pair phases:
 
 ---
 
+### iter20 — HARDEN CONSOLIDATION GATE + LOWER PROMOTION THRESHOLDS + LOWER FREQ-MERGE COSINE + HOOK CURRICULUM PHASES INTO TIER 1 + VARY HEARTBEAT SALIENCE (operator verbatim 2026-05-05: *"fix it all thouroughly write up the todo work and finish all todo work"*) — SHIPPED 2026-05-05
+
+**Watchdog report (iter19 running with 1467 episodes):** memory IS populating, but 5 architectural issues prevent meaningful Tier 2 schema formation. Each fix below addresses one issue.
+
+**iter20-A — harden ConsolidationEngine gate.** Caught: 102 passes in 67s = pass every 0.66s instead of 5min interval. Root cause: `lastPassAt = Date.now()` was set at END of try block (line 195). Any throw between `_inFlight = true` (line 71) and line 195 left the gate unguarded — next tick saw stale `lastPassAt` and re-fired. Fix: moved `lastPassAt = Date.now()` to START of pass (right after `_inFlight = true`). Gate closes immediately, holds for 5 minutes regardless of pass outcome.
+
+**iter20-B — lower promotion thresholds.** Caught: 102 passes / 0 promotions ever. Old gate: `salience > 0.5 AND freq >= 3 AND consol >= 2`. Heartbeat episodes scored ~0.255 (well below 0.5), freq stuck at 1 (below 3), consol stuck at 0 (chicken-egg — needs prior schemas to increment via replay). Lowered: `salience > 0.2 AND freq >= 2 AND consol >= 0`. Breaks chicken-egg + accepts heartbeat-level salience + accepts twice-seen patterns. First wave of schemas can form; subsequent passes increment consol via replay naturally.
+
+**iter20-C — lower frequency-merge cosine.** Caught: 0 freq-merges in 1467 episodes. `FREQ_MERGE_COSINE = 0.85` was too tight — heartbeat embeddings ("attentive 3 clients", "learning ela:_teachAlphabet", "idle") varied just enough that cosine never crossed 0.85 → each heartbeat created new row → freq_count stuck at 1. Lowered to 0.7. Similar-context heartbeats now merge into anchor episodes that accumulate frequency.
+
+**iter20-D — hook curriculum learning events into Tier 1.** Caught: only generic heartbeat populated Tier 1 — Unity wasn't recording WHAT she learned. Fix: every OUTERMOST teach phase completion now writes a Tier 1 episode via the auto-wrap's `passedPhases.push` block. `storeEpisode('curriculum-phase', 'phase-done', 'learned <phaseKey>', 'teach phase completed in cell <cellKey>')`. Plus moved iter17's resume-path memory-population inside the `passedCells.includes(cellKey)` early-return so resumed cells also fire `storeEpisode` + `injectIdentityBaseline`. Now every word-spelling teach, every alphabet sequence, every QA training phase becomes a meaningful episode.
+
+**iter20-E — vary heartbeat content for meaningful surprise/novelty.** Caught: even with iter20-C's cosine fix, heartbeat episodes carry low salience (~0.255) because all metrics look the same. Fix: detect context CATEGORY transitions (idle→learning, learning→dreaming, etc.) — when transition detected, embed `transitioned from X` in the input text so `computeTransitionSurprise` reads it as a salient moment. Within-category heartbeats still merge as repetition; transition heartbeats stand alone with high novelty.
+
+**Files touched:** `js/brain/consolidation-engine.js` (iter20-A gate hardening), `server/brain-server.js` (iter20-B promotion thresholds, iter20-C freq-merge cosine, iter20-E heartbeat variation), `js/brain/curriculum.js` (iter20-D phase-done + resume-path Tier 1 hooks), `js/app.bundle.js` (rebuilt).
+
+---
+
 ### iter19 — WALL-CLOCK MEMORY HEARTBEAT (frameCount modulo failed at biological scale + probe-gate skipped iter18 heartbeat) (operator verbatim 2026-05-05: *"WTF she is learning words and nothing in memory is registering ... Tier 1 episodes 0 ... last inject 55s ago ... pass interval: BLANK"* + *"dont add diagnostics we build it right the first time by actually reading the code"*) — SHIPPED 2026-05-05
 
 **Symptom:** iter18 shipped tick-loop heartbeats but operator's dashboard still showed Tier 1 episodes 0, Tier 3 last inject "55s ago" (not refreshing), pass interval blank.

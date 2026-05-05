@@ -4719,7 +4719,16 @@ class ServerBrain {
     // Skip insert. Returns true if merged.
     if (inputEmbedding && inputEmbedding.length > 0) {
       const FREQ_MERGE_WINDOW_MS = 48 * 60 * 60 * 1000;
-      const FREQ_MERGE_COSINE = 0.85;
+      // iter20-C per operator 2026-05-05 "fix it all thouroughly":
+      // 0.85 was too strict — heartbeat / curriculum-thinking
+      // episodes vary slightly in their bag-of-words ("learning
+      // ela/kindergarten:_teachAlphabet" vs "learning math/
+      // kindergarten:_teachNumbers") so cosine never crossed 0.85
+      // threshold. Each heartbeat created a new row, freq_count
+      // stayed at 1, never reached promotion. Lowered to 0.7 so
+      // similar-context heartbeats merge into anchor episodes that
+      // accumulate frequency_count meaningfully.
+      const FREQ_MERGE_COSINE = 0.7;
       const cutoff = Date.now() - FREQ_MERGE_WINDOW_MS;
       const recent = this._stmtFindRecentForMerge.all(userId || null, cutoff);
       let bestId = -1, bestCos = -Infinity;
@@ -4850,13 +4859,32 @@ class ServerBrain {
   }
 
   // iter13 T13.4 — Promotion candidates: episodes ready to consolidate
-  // into Tier 2 schemas. Criteria: effective_salience > 0.5,
-  // frequency_count >= 3, consolidation_count >= 2 (replayed at least
-  // 2× during dream cycles), not yet promoted.
+  // into Tier 2 schemas.
+  //
+  // iter20-B per operator 2026-05-05 "fix it all thouroughly":
+  // original thresholds (0.5 salience / 3 freq / 2 consol) were too
+  // strict — heartbeat episodes scored 0.255 salience (well under 0.5),
+  // freq stuck at 1 (couldn't reach 3), consol stuck at 0 (chicken-egg
+  // — needs prior schemas to increment via replay). Result: 1467
+  // episodes accumulated, ZERO promotions in 102 consolidation passes.
+  //
+  // Lowered thresholds:
+  // - PROMOTION_THRESHOLD 0.5 → 0.2 — accepts heartbeat-level salience
+  //   AND high-arousal moments. Episodes from gate passes / strong
+  //   emotional turns still rank above this floor; pure low-arousal
+  //   idle still fails.
+  // - FREQ_THRESHOLD 3 → 2 — twice-seen counts as a meaningful pattern
+  //   instead of requiring 3 replicates.
+  // - CONSOL_THRESHOLD 2 → 0 — breaks the chicken-egg. First wave of
+  //   schemas can form from un-replayed episodes; subsequent
+  //   ConsolidationEngine passes increment consolidation_count via
+  //   schema replays naturally so this gate's intent (only promote
+  //   episodes that actually entered replay) gets fulfilled organically
+  //   once schemas exist.
   findPromotionCandidates(limit = 20) {
-    const PROMOTION_THRESHOLD = 0.5;
-    const FREQ_THRESHOLD = 3;
-    const CONSOL_THRESHOLD = 2;
+    const PROMOTION_THRESHOLD = 0.2;
+    const FREQ_THRESHOLD = 2;
+    const CONSOL_THRESHOLD = 0;
     try {
       return this._stmtFindPromotionCandidates.all(
         PROMOTION_THRESHOLD, FREQ_THRESHOLD, CONSOL_THRESHOLD, limit
@@ -4961,19 +4989,40 @@ class ServerBrain {
       this._lastTier1HbAt = now;
       try {
         let context = 'idle';
+        let contextCategory = 'idle';
         if (this._curriculumInProgress) {
           const phase = this.cortexCluster?._activePhase?.name || 'teach';
           const cellKey = this.cortexCluster?._currentCellKey || 'unknown';
           context = `learning ${cellKey}:${phase}`;
+          contextCategory = `learning:${cellKey}`;
         } else if (this._isDreaming) {
           context = 'dreaming (idle consolidation window)';
+          contextCategory = 'dreaming';
         } else if (this.clients && this.clients.size > 0) {
           context = `attentive (${this.clients.size} client${this.clients.size === 1 ? '' : 's'} connected)`;
+          contextCategory = 'attentive';
         }
         const arousal = (this.arousal || 0).toFixed(2);
         const valence = (this.valence || 0).toFixed(2);
         const psi = (this.psi || 0).toFixed(3);
         const spikes = this.totalSpikes || 0;
+        // iter20-E — vary heartbeat content for meaningful surprise/novelty.
+        // Operator caught (verbatim 2026-05-05 "fix it all thouroughly"):
+        // heartbeat episodes had homogeneous bag-of-words ("attentive"
+        // always similar) → cosine all > 0.7 → frequency_count climbed
+        // on one anchor episode → salience score still ~0.255 (low
+        // arousal, zero valence, zero surprise/novelty since text was
+        // identical). Now phase-change moments produce DIFFERENT
+        // contextCategory strings → cosine drops on category transition
+        // → fresh episode with high novelty. Within-category heartbeats
+        // still merge as repetition.
+        if (this._lastHbContext && this._lastHbContext !== contextCategory) {
+          // Context just changed — this is a salient transition moment.
+          // Embed transition info in the input text so it scores high
+          // surprise when computeTransitionSurprise reads it.
+          context = `${contextCategory} (transitioned from ${this._lastHbContext}) :: ${context}`;
+        }
+        this._lastHbContext = contextCategory;
         this.storeEpisode('brain-heartbeat', 'thinking', context, `arousal=${arousal} valence=${valence} psi=${psi} spikes=${spikes}`);
       } catch (err) {
         // Surface the failure once so operator sees what's broken if
