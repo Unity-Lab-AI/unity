@@ -242,15 +242,44 @@ let landingBrainSource = null; // RemoteBrain or null
     });
   });
 
-  // Update viz panel every 2 seconds — skip if user has text selected
+  // DASH-bug fix per operator 2026-05-04 verbatim:
+  //   "the %'s never change even though the bars chaqnge frequently
+  //    the numbers and %'sd never update"
+  //
+  // Two bugs in the prior 2000ms interval:
+  //   1. 2-second update felt static next to the 3D viz's RAF-driven
+  //      bars — operator saw the bars animate frequently while the
+  //      Neuron Population / Firing rate / Rate % / Cluster Activity
+  //      numbers stayed stale for full seconds at a time.
+  //   2. The selection guard (`window.getSelection().toString().length > 0`)
+  //      blocked updates whenever ANY text on the page was selected,
+  //      not just text inside the viz panel itself. A user reading the
+  //      panel had to actively click off the page to see fresh numbers.
+  //
+  // Fix: 500ms interval (5× faster, feels live) + scope the selection
+  // guard to ONLY the viz panel container — selecting brain-event log
+  // text or anything else on the page no longer freezes the metrics.
+  const _vizPanel = document.getElementById('landing-viz-panel');
   setInterval(() => {
     if (activeTab !== '3d' && _landingState) {
-      // Don't re-render if user is selecting text (would clear their selection)
-      const selection = window.getSelection();
-      if (selection && selection.toString().length > 0) return;
+      // Only skip re-render when user is selecting text INSIDE the viz
+      // panel (preserves their selection while they read). Selection
+      // anywhere else on the page (chat log, brain events, body text)
+      // no longer blocks the update.
+      try {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && _vizPanel) {
+          const range = sel.getRangeAt(0);
+          if (sel.toString().length > 0
+              && range.commonAncestorContainer
+              && _vizPanel.contains(range.commonAncestorContainer)) {
+            return;
+          }
+        }
+      } catch { /* selection API unavailable — proceed with render */ }
       renderLandingTab(activeTab, _landingState);
     }
-  }, 2000);
+  }, 500);
 
   // R15 — both entry points (TALK TO UNITY button in the landing
   // overlay AND the Unity bubble in the bottom-right) open the setup

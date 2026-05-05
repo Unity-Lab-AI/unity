@@ -48934,13 +48934,22 @@ var landingBrainSource = null;
       }
     });
   });
+  const _vizPanel = document.getElementById("landing-viz-panel");
   setInterval(() => {
     if (activeTab !== "3d" && _landingState) {
-      const selection = window.getSelection();
-      if (selection && selection.toString().length > 0) return;
+      try {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && _vizPanel) {
+          const range = sel.getRangeAt(0);
+          if (sel.toString().length > 0 && range.commonAncestorContainer && _vizPanel.contains(range.commonAncestorContainer)) {
+            return;
+          }
+        }
+      } catch {
+      }
       renderLandingTab(activeTab, _landingState);
     }
-  }, 2e3);
+  }, 500);
   const openSetupModal = () => {
     const modal = document.getElementById("setup-modal");
     if (modal) {
