@@ -5636,11 +5636,21 @@ export class Curriculum {
     const semRegion = cluster.regions?.sem;
     const wordMotorRegion = cluster.regions?.word_motor;
     if (!semRegion || !wordMotorRegion) return;
-    if (typeof semToWordMotor.scale !== 'function' || typeof semToWordMotor.ojaUpdate !== 'function') return;
+    if (typeof semToWordMotor.ojaUpdate !== 'function') return;
 
     const reps = opts.reps ?? 8;
     const lr = (cluster.learningRate ?? 0.01) * 5;
     const subject = opts.subject || 'all';
+
+    // iter21-B — subject-band routing. Each subject writes to its own
+    // word_motor sub-band so cross-subject teach doesn't overwrite
+    // (scale(0) wipe was operator's "we cant have ciriculum overriding
+    // other learned ciriculim" — fixed by scoping wipes to subject's
+    // own band only).
+    const SUBJ_MAP = { ela: 'word_motor_ela', math: 'word_motor_math', science: 'word_motor_sci',
+                       social: 'word_motor_soc', art: 'word_motor_art', life: 'word_motor_life' };
+    const subjectBandName = SUBJ_MAP[subject] || null;
+    const subjectBand = subjectBandName ? cluster.regions[subjectBandName] : null;
 
     let words = Array.isArray(opts.words) ? opts.words : null;
     if (!words && this.dictionary && this.dictionary._words?.entries) {
@@ -5651,6 +5661,8 @@ export class Curriculum {
         if (!entry || !entry.pattern || !entry.pattern.length) continue;
         if (entry.isPersona) continue;
         words.push(w);
+        // Tag word with subject so emitWordDirect can route bucket lookup
+        if (subject !== 'all' && !entry.subject) entry.subject = subject;
       }
     }
     if (!words || words.length === 0) {
@@ -5658,17 +5670,18 @@ export class Curriculum {
       return;
     }
 
-    this._hb(`[Curriculum] _teachWordEmissionDirect START: ${words.length} K words × ${reps} reps · lr=${lr.toFixed(4)} (subject=${subject}) — single-tick word emission via sem_to_word_motor`);
-
-    semToWordMotor.scale(0);
-    this._hb(`[Curriculum] _teachWordEmissionDirect — wiped prior sem_to_word_motor weights`);
+    this._hb(`[Curriculum] _teachWordEmissionDirect START: ${words.length} K words × ${reps} reps · lr=${lr.toFixed(4)} (subject=${subject} band=${subjectBandName || 'umbrella word_motor'}) — single-tick word emission via sem_to_word_motor`);
 
     const t0 = Date.now();
     let updates = 0, skipped = 0;
 
     const semSize = semRegion.end - semRegion.start;
     const wmSize = wordMotorRegion.end - wordMotorRegion.start;
-    const bucketSize = Math.max(1, Math.floor(wmSize / words.length));
+    // If subject-band is available, target writes to that slice of word_motor
+    const bandStart = subjectBand ? (subjectBand.start - wordMotorRegion.start) : 0;
+    const bandEnd = subjectBand ? (subjectBand.end - wordMotorRegion.start) : wmSize;
+    const bandSize = bandEnd - bandStart;
+    const bucketSize = Math.max(1, Math.floor(bandSize / words.length));
 
     const buildSem = (pattern) => {
       const vec = new Float64Array(semSize);
@@ -5693,10 +5706,10 @@ export class Curriculum {
         const entry = this.dictionary._words.get(word);
         if (!entry || !entry.pattern) { skipped++; continue; }
         const preSem = buildSem(entry.pattern);
-        // Post: word_motor with this word's bucket lit (one-hot)
+        // Post: word_motor with this word's bucket lit ONLY in subject's sub-band
         const postWM = new Float64Array(wmSize);
-        const bStart = wi * bucketSize;
-        const bEnd = Math.min(wmSize, bStart + bucketSize);
+        const bStart = bandStart + wi * bucketSize;
+        const bEnd = Math.min(bandEnd, bStart + bucketSize);
         for (let n = bStart; n < bEnd; n++) postWM[n] = 1;
         try {
           semToWordMotor.ojaUpdate(preSem, postWM, lr);
@@ -5708,7 +5721,7 @@ export class Curriculum {
     }
 
     const dt = ((Date.now() - t0) / 1000).toFixed(1);
-    this._hb(`[Curriculum] _teachWordEmissionDirect DONE in ${dt}s — ${updates} Oja updates · ${skipped} skipped (${words.length} words × ${reps} reps target)`);
+    this._hb(`[Curriculum] _teachWordEmissionDirect DONE in ${dt}s — ${updates} Oja updates · ${skipped} skipped (${words.length} words × ${reps} reps target · band=${subjectBandName || 'umbrella'})`);
   }
 
   // iter15-A — Direct sem→motor word→firstChar identity write that

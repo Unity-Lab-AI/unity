@@ -351,16 +351,26 @@ export class NeuronCluster {
       //   sem_soc   0.8125 - 0.8333 (1/6)
       //   sem_art   0.8333 - 0.8542 (1/6)
       //   sem_life  0.8542 - 0.875 (1/6)
+      // iter21-B — sem region carved into 6 subject sub-bands.
+      // iter21-B/word — word_motor ALSO carved into 6 subject sub-bands
+      // so each subject's _teachWordEmissionDirect writes to its own
+      // slice. Prevents cross-subject overwrite — ELA-K word vocabulary
+      // doesn't get wiped when math-K trains its words. emitWordDirect
+      // concatenates all sub-bands and argmaxes globally so any
+      // subject's trained word can win.
       const semStart = Math.floor(s * 0.750);
       const semEnd = Math.floor(s * 0.875);
       const semBand = Math.floor((semEnd - semStart) / 6);
+      const wmStart = Math.floor(s * 0.940);
+      const wmEnd = s;
+      const wmBand = Math.floor((wmEnd - wmStart) / 6);
       this.regions = {
         auditory:   { start: 0,                          end: Math.floor(s * 0.083) },
         visual:     { start: Math.floor(s * 0.083),      end: Math.floor(s * 0.250) },
         free:       { start: Math.floor(s * 0.250),      end: Math.floor(s * 0.500) },
         letter:     { start: Math.floor(s * 0.500),      end: Math.floor(s * 0.550) },
         phon:       { start: Math.floor(s * 0.550),      end: Math.floor(s * 0.750) },
-        sem:        { start: semStart,                   end: semEnd }, // umbrella region kept for backward-compat reads
+        sem:        { start: semStart,                   end: semEnd },
         sem_ela:    { start: semStart + 0 * semBand,     end: semStart + 1 * semBand },
         sem_math:   { start: semStart + 1 * semBand,     end: semStart + 2 * semBand },
         sem_sci:    { start: semStart + 2 * semBand,     end: semStart + 3 * semBand },
@@ -369,7 +379,13 @@ export class NeuronCluster {
         sem_life:   { start: semStart + 5 * semBand,     end: semEnd },
         fineType:   { start: Math.floor(s * 0.875),      end: Math.floor(s * 0.917) },
         motor:      { start: Math.floor(s * 0.917),      end: Math.floor(s * 0.940) },
-        word_motor: { start: Math.floor(s * 0.940),      end: s },
+        word_motor:      { start: wmStart,                end: wmEnd },
+        word_motor_ela:  { start: wmStart + 0 * wmBand,   end: wmStart + 1 * wmBand },
+        word_motor_math: { start: wmStart + 1 * wmBand,   end: wmStart + 2 * wmBand },
+        word_motor_sci:  { start: wmStart + 2 * wmBand,   end: wmStart + 3 * wmBand },
+        word_motor_soc:  { start: wmStart + 3 * wmBand,   end: wmStart + 4 * wmBand },
+        word_motor_art:  { start: wmStart + 4 * wmBand,   end: wmStart + 5 * wmBand },
+        word_motor_life: { start: wmStart + 5 * wmBand,   end: wmEnd },
       };
 
       // T14.4 — Seven pairs of cross-region projections (14 total — both
@@ -2178,30 +2194,48 @@ export class NeuronCluster {
     catch { return ''; }
     if (!wmOut || wmOut.length === 0) return '';
 
-    // Vocabulary bucketing: each K-vocab word gets a contiguous slice of
-    // word_motor. Bucket index = hash(word) mod numBuckets. We compute
-    // word→bucket on the fly using the same hash so teach + emit agree.
-    const words = [];
+    // iter21-B — argmax across ALL 6 subject sub-bands. Each subject's
+    // teach wrote its words into its own sub-band so they don't
+    // cross-corrupt. Here we scan every sub-band's word buckets and
+    // pick the global highest-signal word regardless of subject.
+    const SUBJECTS = ['ela', 'math', 'sci', 'soc', 'art', 'life'];
+    const subjectVocabs = new Map();
+    for (const subj of SUBJECTS) subjectVocabs.set(subj, []);
+    const seenAll = [];
     for (const [w, entry] of this.dictionary._words.entries()) {
       if (typeof w !== 'string' || w.length === 0) continue;
       if (!/^[a-z]+$/.test(w)) continue;
       if (entry?.isPersona) continue;
-      words.push(w);
+      const subj = entry?.subject;
+      if (SUBJECTS.includes(subj)) subjectVocabs.get(subj).push(w);
+      else seenAll.push(w); // unsubjected words searchable everywhere
     }
-    if (words.length === 0) return '';
 
-    const bucketSize = Math.max(1, Math.floor(wmSize / words.length));
-    let bestIdx = -1, bestSum = -Infinity;
-    for (let b = 0; b < words.length; b++) {
-      let sum = 0;
-      const bStart = b * bucketSize;
-      const bEnd = Math.min(wmSize, bStart + bucketSize);
-      for (let n = bStart; n < bEnd; n++) sum += wmOut[n];
-      if (sum > bestSum) { bestSum = sum; bestIdx = b; }
+    let bestWord = null, bestSum = -Infinity;
+    for (const subj of SUBJECTS) {
+      const subjectRegion = this.regions[`word_motor_${subj}`];
+      if (!subjectRegion) continue;
+      const subjStart = subjectRegion.start - wordMotor.start;
+      const subjEnd = subjectRegion.end - wordMotor.start;
+      const subjSize = subjEnd - subjStart;
+      if (subjSize <= 0) continue;
+      const words = subjectVocabs.get(subj);
+      // Combine subject-tagged words + global unsubjected words for this band
+      const combined = words.concat(seenAll);
+      if (combined.length === 0) continue;
+      const bucketSize = Math.max(1, Math.floor(subjSize / combined.length));
+      for (let b = 0; b < combined.length; b++) {
+        let sum = 0;
+        const bStart = subjStart + b * bucketSize;
+        const bEnd = Math.min(subjEnd, bStart + bucketSize);
+        for (let n = bStart; n < bEnd; n++) sum += wmOut[n];
+        if (sum > bestSum) { bestSum = sum; bestWord = combined[b]; }
+      }
     }
+
     const minSignal = opts.minSignal ?? 0.001;
-    if (bestIdx < 0 || bestSum < minSignal) return '';
-    return words[bestIdx];
+    if (!bestWord || bestSum < minSignal) return '';
+    return bestWord;
   }
 
   async generateSentenceAwait(intentSeed = null, opts = {}) {
