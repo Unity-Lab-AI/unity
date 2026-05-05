@@ -1777,6 +1777,9 @@ var NeuronCluster = class {
       const semStart = Math.floor(s * 0.75);
       const semEnd = Math.floor(s * 0.875);
       const semBand = Math.floor((semEnd - semStart) / 6);
+      const wmStart = Math.floor(s * 0.94);
+      const wmEnd = s;
+      const wmBand = Math.floor((wmEnd - wmStart) / 6);
       this.regions = {
         auditory: { start: 0, end: Math.floor(s * 0.083) },
         visual: { start: Math.floor(s * 0.083), end: Math.floor(s * 0.25) },
@@ -1784,7 +1787,6 @@ var NeuronCluster = class {
         letter: { start: Math.floor(s * 0.5), end: Math.floor(s * 0.55) },
         phon: { start: Math.floor(s * 0.55), end: Math.floor(s * 0.75) },
         sem: { start: semStart, end: semEnd },
-        // umbrella region kept for backward-compat reads
         sem_ela: { start: semStart + 0 * semBand, end: semStart + 1 * semBand },
         sem_math: { start: semStart + 1 * semBand, end: semStart + 2 * semBand },
         sem_sci: { start: semStart + 2 * semBand, end: semStart + 3 * semBand },
@@ -1793,7 +1795,13 @@ var NeuronCluster = class {
         sem_life: { start: semStart + 5 * semBand, end: semEnd },
         fineType: { start: Math.floor(s * 0.875), end: Math.floor(s * 0.917) },
         motor: { start: Math.floor(s * 0.917), end: Math.floor(s * 0.94) },
-        word_motor: { start: Math.floor(s * 0.94), end: s }
+        word_motor: { start: wmStart, end: wmEnd },
+        word_motor_ela: { start: wmStart + 0 * wmBand, end: wmStart + 1 * wmBand },
+        word_motor_math: { start: wmStart + 1 * wmBand, end: wmStart + 2 * wmBand },
+        word_motor_sci: { start: wmStart + 2 * wmBand, end: wmStart + 3 * wmBand },
+        word_motor_soc: { start: wmStart + 3 * wmBand, end: wmStart + 4 * wmBand },
+        word_motor_art: { start: wmStart + 4 * wmBand, end: wmStart + 5 * wmBand },
+        word_motor_life: { start: wmStart + 5 * wmBand, end: wmEnd }
       };
       this.crossProjections = {};
       const pairs = [
@@ -3064,29 +3072,44 @@ var NeuronCluster = class {
       return "";
     }
     if (!wmOut || wmOut.length === 0) return "";
-    const words = [];
+    const SUBJECTS2 = ["ela", "math", "sci", "soc", "art", "life"];
+    const subjectVocabs = /* @__PURE__ */ new Map();
+    for (const subj of SUBJECTS2) subjectVocabs.set(subj, []);
+    const seenAll = [];
     for (const [w, entry] of this.dictionary._words.entries()) {
       if (typeof w !== "string" || w.length === 0) continue;
       if (!/^[a-z]+$/.test(w)) continue;
       if (entry?.isPersona) continue;
-      words.push(w);
+      const subj = entry?.subject;
+      if (SUBJECTS2.includes(subj)) subjectVocabs.get(subj).push(w);
+      else seenAll.push(w);
     }
-    if (words.length === 0) return "";
-    const bucketSize = Math.max(1, Math.floor(wmSize / words.length));
-    let bestIdx = -1, bestSum = -Infinity;
-    for (let b = 0; b < words.length; b++) {
-      let sum = 0;
-      const bStart = b * bucketSize;
-      const bEnd = Math.min(wmSize, bStart + bucketSize);
-      for (let n = bStart; n < bEnd; n++) sum += wmOut[n];
-      if (sum > bestSum) {
-        bestSum = sum;
-        bestIdx = b;
+    let bestWord = null, bestSum = -Infinity;
+    for (const subj of SUBJECTS2) {
+      const subjectRegion = this.regions[`word_motor_${subj}`];
+      if (!subjectRegion) continue;
+      const subjStart = subjectRegion.start - wordMotor.start;
+      const subjEnd = subjectRegion.end - wordMotor.start;
+      const subjSize = subjEnd - subjStart;
+      if (subjSize <= 0) continue;
+      const words = subjectVocabs.get(subj);
+      const combined = words.concat(seenAll);
+      if (combined.length === 0) continue;
+      const bucketSize = Math.max(1, Math.floor(subjSize / combined.length));
+      for (let b = 0; b < combined.length; b++) {
+        let sum = 0;
+        const bStart = subjStart + b * bucketSize;
+        const bEnd = Math.min(subjEnd, bStart + bucketSize);
+        for (let n = bStart; n < bEnd; n++) sum += wmOut[n];
+        if (sum > bestSum) {
+          bestSum = sum;
+          bestWord = combined[b];
+        }
       }
     }
     const minSignal = opts.minSignal ?? 1e-3;
-    if (bestIdx < 0 || bestSum < minSignal) return "";
-    return words[bestIdx];
+    if (!bestWord || bestSum < minSignal) return "";
+    return bestWord;
   }
   async generateSentenceAwait(intentSeed = null, opts = {}) {
     if (!this.regions || !this.regions.motor || !this.regions.letter) return "";
@@ -22602,10 +22625,20 @@ var Curriculum = class _Curriculum {
     const semRegion = cluster.regions?.sem;
     const wordMotorRegion = cluster.regions?.word_motor;
     if (!semRegion || !wordMotorRegion) return;
-    if (typeof semToWordMotor.scale !== "function" || typeof semToWordMotor.ojaUpdate !== "function") return;
+    if (typeof semToWordMotor.ojaUpdate !== "function") return;
     const reps = opts.reps ?? 8;
     const lr = (cluster.learningRate ?? 0.01) * 5;
     const subject = opts.subject || "all";
+    const SUBJ_MAP = {
+      ela: "word_motor_ela",
+      math: "word_motor_math",
+      science: "word_motor_sci",
+      social: "word_motor_soc",
+      art: "word_motor_art",
+      life: "word_motor_life"
+    };
+    const subjectBandName = SUBJ_MAP[subject] || null;
+    const subjectBand = subjectBandName ? cluster.regions[subjectBandName] : null;
     let words = Array.isArray(opts.words) ? opts.words : null;
     if (!words && this.dictionary && this.dictionary._words?.entries) {
       words = [];
@@ -22615,20 +22648,22 @@ var Curriculum = class _Curriculum {
         if (!entry || !entry.pattern || !entry.pattern.length) continue;
         if (entry.isPersona) continue;
         words.push(w);
+        if (subject !== "all" && !entry.subject) entry.subject = subject;
       }
     }
     if (!words || words.length === 0) {
       this._hb(`[Curriculum] _teachWordEmissionDirect SKIPPED \u2014 no K vocab found (subject=${subject})`);
       return;
     }
-    this._hb(`[Curriculum] _teachWordEmissionDirect START: ${words.length} K words \xD7 ${reps} reps \xB7 lr=${lr.toFixed(4)} (subject=${subject}) \u2014 single-tick word emission via sem_to_word_motor`);
-    semToWordMotor.scale(0);
-    this._hb(`[Curriculum] _teachWordEmissionDirect \u2014 wiped prior sem_to_word_motor weights`);
+    this._hb(`[Curriculum] _teachWordEmissionDirect START: ${words.length} K words \xD7 ${reps} reps \xB7 lr=${lr.toFixed(4)} (subject=${subject} band=${subjectBandName || "umbrella word_motor"}) \u2014 single-tick word emission via sem_to_word_motor`);
     const t0 = Date.now();
     let updates = 0, skipped = 0;
     const semSize = semRegion.end - semRegion.start;
     const wmSize = wordMotorRegion.end - wordMotorRegion.start;
-    const bucketSize = Math.max(1, Math.floor(wmSize / words.length));
+    const bandStart = subjectBand ? subjectBand.start - wordMotorRegion.start : 0;
+    const bandEnd = subjectBand ? subjectBand.end - wordMotorRegion.start : wmSize;
+    const bandSize = bandEnd - bandStart;
+    const bucketSize = Math.max(1, Math.floor(bandSize / words.length));
     const buildSem = (pattern) => {
       const vec = new Float64Array(semSize);
       if (!pattern || pattern.length === 0) return vec;
@@ -22655,8 +22690,8 @@ var Curriculum = class _Curriculum {
         }
         const preSem = buildSem(entry.pattern);
         const postWM = new Float64Array(wmSize);
-        const bStart = wi * bucketSize;
-        const bEnd = Math.min(wmSize, bStart + bucketSize);
+        const bStart = bandStart + wi * bucketSize;
+        const bEnd = Math.min(bandEnd, bStart + bucketSize);
         for (let n = bStart; n < bEnd; n++) postWM[n] = 1;
         try {
           semToWordMotor.ojaUpdate(preSem, postWM, lr);
@@ -22669,7 +22704,7 @@ var Curriculum = class _Curriculum {
       await _microtask();
     }
     const dt = ((Date.now() - t0) / 1e3).toFixed(1);
-    this._hb(`[Curriculum] _teachWordEmissionDirect DONE in ${dt}s \u2014 ${updates} Oja updates \xB7 ${skipped} skipped (${words.length} words \xD7 ${reps} reps target)`);
+    this._hb(`[Curriculum] _teachWordEmissionDirect DONE in ${dt}s \u2014 ${updates} Oja updates \xB7 ${skipped} skipped (${words.length} words \xD7 ${reps} reps target \xB7 band=${subjectBandName || "umbrella"})`);
   }
   // iter15-A — Direct sem→motor word→firstChar identity write that
   // bypasses cross-region Hebbian. Mirror of iter14-A pattern but on
