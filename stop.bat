@@ -62,6 +62,19 @@ if %ERRORLEVEL% EQU 0 (
 )
 
 echo.
+echo [stop] bonus step: closing Chrome processes attached to the isolated
+echo   UnityBrain-WebGPU-Profile so subsequent start.bat boots clean
+echo   (prior Chrome compute.html windows would otherwise auto-reconnect
+echo   on next boot and the server would skip the auto-launch — operator
+echo   ends up with no visible compute.html).
+REM iter15-D — kill Chrome processes that have UnityBrain-WebGPU-Profile
+REM in their command line. PowerShell + Get-CimInstance is the modern
+REM replacement for the deprecated WMIC. Only kills Chrome processes
+REM attached to OUR isolated profile — operator's regular Chrome stays
+REM alive.
+powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^chrome\.exe$|^msedge\.exe$' -and $_.CommandLine -like '*UnityBrain-WebGPU-Profile*' } | ForEach-Object { Write-Host '   killing Chrome PID' $_.ProcessId; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" 2>nul
+
+echo.
 echo   Brain server stopped.
 echo   Remember to close any browser tabs on http://localhost:7525 -
 echo   compute.html keeps the WebGPU loop running even without the

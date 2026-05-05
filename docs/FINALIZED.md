@@ -5,6 +5,51 @@
 
 ---
 
+## 2026-05-05 — Session 114.19df: ITER15-D PART 2 — STALE-CHROME-PROCESS KILL (T18.11 guard was blocking fresh spawn)
+
+### Operator log evidence (verbatim from server.log on this run)
+
+> `[Server] GPU compute client already connected from prior session — skipping auto-launch. Open 7525/compute.html manually if needed.`
+
+### Root cause (the real one — Part 1's lockfile fix didn't catch this)
+
+Part 1 (Session 114.19de earlier) fixed Chrome's stale Singleton lockfile + spawn() array-form. Operator ran start.bat. Compute.html STILL didn't open. Log shows the actual culprit: a Chrome window from a PRIOR session was still alive (operator's stop.bat killed node but NOT the isolated Chrome window). When the new server booted, that lingering Chrome's WebSocket auto-reconnect (`exponential-backoff post-T18.11, starting at 3 s` per the code comment) picked up the new server within the 3.5s spawn-delay window. Server saw `brain._gpuClient.readyState === 1` and the T18.11 OOM-prevention guard skipped the auto-launch. Operator couldn't see compute.html because the lingering Chrome was minimized / hidden / on another virtual desktop.
+
+### Fix shipped (Part 2 — augments Part 1)
+
+**A. `_spawnGpuClient` now kills stale Chrome processes BEFORE the T18.11 guard fires.**
+
+Added pre-guard step that runs PowerShell `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*UnityBrain-WebGPU-Profile*' } | Stop-Process -Force`. This kills ONLY Chrome / Edge processes attached to OUR isolated profile — operator's regular browser stays alive. Then force-clears `brain._gpuClient = null` so the T18.11 guard sees no client and proceeds with a fresh spawn.
+
+**B. `stop.bat` gains symmetric kill step.**
+
+After the existing 3-stage node-kill pipeline, stop.bat now runs the same PowerShell command to kill Chrome / Edge attached to UnityBrain-WebGPU-Profile. So subsequent start.bat boots with a clean slate — no lingering Chrome to reconnect.
+
+The two halves work together: stop.bat cleans up cleanly when operator stops the server. _spawnGpuClient also cleans up at boot as belt-and-suspenders for crashed-server scenarios where stop.bat never ran.
+
+### Files touched
+
+- `server/brain-server.js` — `_spawnGpuClient` pre-guard stale-Chrome kill
+- `stop.bat` — bonus step to kill UnityBrain-WebGPU-Profile Chrome processes
+- `docs/ARCHITECTURE.md` banner
+- `docs/NOW.md` snapshot
+- `docs/TODO.md` iter15-D entry expanded
+- `docs/FINALIZED.md` — this entry
+
+### Effect on operator workflow
+
+Next `start.bat` boot:
+- Pre-spawn: kills any Chrome / Edge attached to UnityBrain-WebGPU-Profile (covers crashed-server scenario)
+- Clears stale Singleton lockfiles
+- Spawns fresh Chrome with `--enable-unsafe-webgpu` + Dawn flags
+- 30s watchdog falls back to default browser if Chrome still fails
+
+Next `stop.bat`:
+- 3-stage node-kill pipeline (existing)
+- New bonus step: kills isolated Chrome window so it doesn't linger
+
+---
+
 ## 2026-05-05 — Session 114.19de: ITER15-D — COMPUTE.HTML AUTO-LAUNCH FIX (stale Chrome lockfile + spawn() switch)
 
 ### Operator directives (verbatim per LAW #0)

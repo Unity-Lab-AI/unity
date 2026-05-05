@@ -700,23 +700,32 @@ Captured iter11 sep-probe reading on first of 7 assoc-pair phases:
 
 ---
 
-### iter15-D — COMPUTE.HTML AUTO-LAUNCH BROKEN (operator verbatim 2026-05-05: *"the compute html is not opening correclty the dangerous skip one"* + *"i use to open it in my open browedr with the others, but after the unsafe update it was opening in its own window browser but now its not opening at all"* + *"just dashboard and 3D brain is opening"*) — SHIPPED 2026-05-05
+### iter15-D — COMPUTE.HTML AUTO-LAUNCH BROKEN (operator verbatim 2026-05-05: *"the compute html is not opening correclty the dangerous skip one"* + *"i use to open it in my open browedr with the others, but after the unsafe update it was opening in its own window browser but now its not opening at all"* + *"just dashboard and 3D brain is opening"* + log evidence *"[Server] GPU compute client already connected from prior session — skipping auto-launch"*) — SHIPPED 2026-05-05
 
-**Symptom:** dashboard.html + index.html (3D brain) open via `start ""` from start.bat, but compute.html which was supposed to auto-launch via brain-server's `_spawnGpuClient()` (with `--enable-unsafe-webgpu` flag) stopped opening at all. Era 1 (pre-iter14-E): opened in default browser alongside other tabs. Era 2 (iter14-E): opened in isolated Chrome window with --enable-unsafe-webgpu. Era 3 (current): not opening at all.
+**Symptom:** dashboard.html + index.html (3D brain) open via `start ""` from start.bat, but compute.html which was supposed to auto-launch via brain-server's `_spawnGpuClient()` stopped opening at all.
 
-**Root cause:** stale Chrome singleton lockfile (`SingletonLock`, `SingletonCookie`, `SingletonSocket`, `lockfile`) in `~/AppData/Local/UnityBrain-WebGPU-Profile/` from a prior Chrome instance that didn't shut down cleanly (e.g. operator killed brain-server while compute.html was still open). Chrome detects the lock, silently exits without spawning a window. Plus `child_process.exec` with nested-quote command string was fragile on Windows — exec returned success even when Chrome failed silently.
+**Root causes (compounding — TWO architecturally distinct bugs):**
+
+1. **Stale Chrome Singleton lockfile.** `SingletonLock` / `SingletonCookie` / `SingletonSocket` / `lockfile` files in `~/AppData/Local/UnityBrain-WebGPU-Profile/` from a prior Chrome that didn't shut down cleanly. Chrome detects locks, silently exits without spawning.
+
+2. **Stale Chrome process from prior session reconnects via WebSocket auto-reconnect, hits the T18.11 early-return guard, blocks new auto-launch.** Operator's stop.bat killed the node server but NOT the isolated Chrome window holding compute.html. On next start.bat, that lingering Chrome's WebSocket auto-reconnect picked up the new server BEFORE this auto-launch ran. Server saw `brain._gpuClient.readyState === 1` and skipped the spawn per T18.11 OOM-prevention guard. Operator ended up with no visible compute.html because the prior Chrome window was hidden / minimized / on another virtual desktop. Log evidence: `[Server] GPU compute client already connected from prior session — skipping auto-launch`.
 
 **Fix shipped:**
-- Switched `exec(cmdString)` → `spawn(exePath, [args])` with array form (Node handles per-argument quoting)
-- Stale lockfile cleanup before spawn — `SingletonLock` / `SingletonCookie` / `SingletonSocket` / `lockfile` deleted from user-data-dir
-- Verbose diagnostic logging — every Chrome path checked is logged with ✓/✗, full spawn args printed
-- 30s watchdog — if no GPU client connects after Chrome spawn, fall back to `start ""` default browser (operator gets compute.html open, capped at 2GB binding without flag, but at least functional instead of broken)
-- Added Chrome SxS / Beta / Canary detection paths
-- Added Edge LOCALAPPDATA path
-- Added `--enable-dawn-features=allow_unsafe_apis,disable_robustness` (Chrome 120+ moved some unsafe APIs behind separate Dawn flag)
-- Added `--no-first-run --no-default-browser-check --disable-extensions` so isolated profile boots clean
 
-**Files touched:** `server/brain-server.js` (`_spawnGpuClient` rewrite).
+A. `server/brain-server.js` `_spawnGpuClient`:
+- Switched `exec(cmdString)` → `spawn(exePath, [args])` with array form (Node handles per-arg quoting)
+- Stale Singleton lockfile cleanup before spawn (`SingletonLock` / `SingletonCookie` / `SingletonSocket` / `lockfile` unlinked from user-data-dir)
+- **Stale Chrome process kill before spawn** via PowerShell `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*UnityBrain-WebGPU-Profile*' } | Stop-Process -Force` — only kills Chrome / Edge attached to OUR isolated profile, operator's regular Chrome stays alive
+- Force-clear `brain._gpuClient = null` after the kill so the T18.11 guard sees no client and proceeds with fresh spawn
+- 30s watchdog — falls back to `start "" "${url}"` if no GPU client connects after Chrome spawn
+- Verbose diagnostic logging (✓/✗ every Chrome path checked, full spawn args printed)
+- Added Chrome SxS / Beta paths + Edge LOCALAPPDATA
+- Added `--enable-dawn-features=allow_unsafe_apis,disable_robustness` (Chrome 120+ Dawn-level flag) + `--enable-features=Vulkan` + `--no-first-run --no-default-browser-check --disable-extensions`
+
+B. `stop.bat`:
+- New bonus step: kills Chrome / Edge processes attached to UnityBrain-WebGPU-Profile so subsequent start.bat boots clean (prior Chrome compute.html windows would otherwise auto-reconnect on next boot)
+
+**Files touched:** `server/brain-server.js`, `stop.bat`.
 
 ---
 

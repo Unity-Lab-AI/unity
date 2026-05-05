@@ -6851,6 +6851,46 @@ function _spawnGpuClient(port) {
     console.log(`[Server] DREAM_NO_AUTO_GPU=1 — skipping browser auto-launch. Open http://localhost:${port}/compute.html manually to start GPU compute.`);
     return;
   }
+  // iter15-D — kill any Chrome process attached to the isolated
+  // UnityBrain-WebGPU-Profile BEFORE checking the existing-client guard.
+  // Operator caught (verbatim 2026-05-05 "the compute html is not
+  // opening correclty the dangerous skip one ... just dashboard and 3D
+  // brain is opening"): stop.bat killed the node server but NOT the
+  // isolated Chrome window holding compute.html. On next start.bat,
+  // that lingering Chrome's WebSocket auto-reconnect picked up the
+  // new server BEFORE this auto-launch ran — the T18.11 guard below
+  // saw "already connected" and skipped the spawn. Operator ended up
+  // with no visible compute.html because the prior Chrome window was
+  // hidden / minimized / on another virtual desktop. Fix: kill any
+  // Chrome processes whose command line contains
+  // UnityBrain-WebGPU-Profile so the guard sees no client and the
+  // auto-launch proceeds with a fresh window the operator can see.
+  if (process.platform === 'win32') {
+    try {
+      const { execSync } = require('child_process');
+      // PowerShell Get-CimInstance is the modern WMIC replacement.
+      // Only kills Chrome / Edge attached to OUR isolated profile —
+      // operator's regular Chrome stays alive.
+      execSync(
+        'powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -match \'^chrome\\.exe$|^msedge\\.exe$\' -and $_.CommandLine -like \'*UnityBrain-WebGPU-Profile*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"',
+        { stdio: 'ignore', timeout: 5000 }
+      );
+      // Force-clear the GPU client reference so the guard below sees no
+      // client. The killed Chrome's WebSocket close event will eventually
+      // fire async and re-clear state (idempotent). Without this, the
+      // event loop hasn't yet processed the disconnect when the guard
+      // checks readyState — guard fires, spawn skips, operator ends up
+      // with no compute.html again.
+      if (brain) {
+        brain._gpuClient = null;
+        brain._gpuConnected = false;
+      }
+      console.log(`[Server] Stale-Chrome cleanup: killed any Chrome / Edge attached to UnityBrain-WebGPU-Profile (operator's regular browser unaffected).`);
+    } catch (err) {
+      console.warn(`[Server] Stale-Chrome cleanup warning: ${err.message} (proceeding anyway)`);
+    }
+  }
+
   // T18.11 — skip auto-launch when a GPU client is already connected.
   // The scenario: operator restarts the server without closing the
   // prior compute.html tab. That tab's ws.onclose auto-reconnect
@@ -6863,9 +6903,12 @@ function _spawnGpuClient(port) {
   // driver combos the cascade reaches NDIS/WinSock kernel paths →
   // whole PC loses internet → hard reset. Spawn-delay at the call
   // site (3.5 s post-T18.11) gives the pre-existing tab time to
-  // reconnect before this check runs.
+  // reconnect before this check runs. iter15-D pre-kills any stale
+  // Chrome (above) so this guard now only fires when there's a
+  // GENUINE concurrent compute.html in some non-isolated browser
+  // (which is the legitimate concurrent-instance case to skip).
   if (brain && brain._gpuClient && brain._gpuClient.readyState === 1) {
-    console.log(`[Server] GPU compute client already connected from prior session — skipping auto-launch. Open ${port}/compute.html manually if needed.`);
+    console.log(`[Server] GPU compute client already connected from a non-isolated browser — skipping auto-launch. Open ${port}/compute.html manually in the same browser if needed, OR close that tab and rerun start.bat to get the isolated --enable-unsafe-webgpu Chrome window.`);
     return;
   }
   const url = `http://localhost:${port}/compute.html`;
