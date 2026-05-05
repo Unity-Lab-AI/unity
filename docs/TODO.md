@@ -700,6 +700,47 @@ Captured iter11 sep-probe reading on first of 7 assoc-pair phases:
 
 ---
 
+### iter18 — UNIFIED MEMORY HEARTBEAT IN TICK LOOP + UNBLOCK DREAM CYCLE WHEN DASHBOARD OPEN (operator verbatim 2026-05-05: *"wtf memory isnt based off grade level its a unified part of her fucking brain"* + *"fix it"*) — SHIPPED 2026-05-05
+
+**Symptoms:** Despite iter17 wiring storeEpisode + injectIdentityBaseline into cell-pass events, operator's dashboard still showed Tier 1 episodes 0, Tier 3 last inject "never", ConsolidationEngine 0 passes. Pre-K passed but no kindergarten cells fired yet (curriculum paused), so cell-pass hooks never triggered. Operator: memory should be UNIFIED — always alive, not gated by grade-level events.
+
+**Root causes:**
+
+**A. `_isDreaming` blocked by client connections.** Gate was `timeSinceInput > 30s AND clients.size === 0`. Operator has dashboard + 3D brain page open which both register as WebSocket clients → `clients.size > 0` → `_isDreaming` never true → ConsolidationEngine.shouldRunPass() never satisfied → 0 dream cycles forever.
+
+**B. Memory only fed at chat turns or cell-pass events.** Curriculum paused at pre-K → no cell completions → no episodes stored. Brain idle → no chat turns → no identity-baseline. Memory architecturally healthy but starved of input events.
+
+**Fix shipped:**
+
+**1. `_isDreaming` gate corrected:** changed `timeSinceInput > 30000 && this.clients.size === 0` → `timeSinceInput > 30000 && !this._curriculumInProgress`. Watching the brain via dashboard no longer blocks dream cycles. Curriculum still wins exclusivity during teach (Hebbian writes shouldn't compete with consolidation replay).
+
+**2. UNIFIED MEMORY HEARTBEAT in tick loop** (`server/brain-server.js`):
+
+```js
+const ticksPerSec = Math.max(1, Math.round(1000 / BRAIN_TICK_MS));
+
+// Tier 3 baseline inject ~once per second
+if (this.frameCount % ticksPerSec === 0) {
+  this.tier3Store.injectIdentityBaseline();
+}
+
+// Tier 1 thinking-episode every 30 seconds
+if (this.frameCount % (ticksPerSec * 30) === 0) {
+  let context = 'idle';
+  if (this._curriculumInProgress) context = `learning ${cellKey}:${phase}`;
+  else if (this._isDreaming) context = 'dreaming (idle consolidation window)';
+  else if (this.clients.size > 0) context = `attentive (${N} clients)`;
+  this.storeEpisode('brain-heartbeat', 'thinking', context,
+    `arousal=${arousal} valence=${valence} ψ=${psi} spikes=${totalSpikes}`);
+}
+```
+
+Memory is now ALWAYS alive — Tier 3 anchors accumulate retrieval credit + lastInjectedAt updates every second, Tier 1 episode count climbs every 30s reflecting Unity's current mental state (curriculum / dreaming / attentive). Frequency-merge gate (cosine > 0.85 within 48h) keeps repetitive thinking-episodes from flooding the SQLite DB — most merge into anchor episodes with high frequency_count.
+
+**Files touched:** `server/brain-server.js` (`_isDreaming` gate + tick-loop memory heartbeat), `js/app.bundle.js` (rebuilt).
+
+---
+
 ### iter17 — MEMORY UI POPULATION DURING CURRICULUM + REMOVE ARBITRARY HARD CAPS (operator verbatim 2026-05-05: *"she is leasrning weords and not a thing in memory is lighting up.... what the fuck is broken? fix it"* + *"and what the fuck are these erronious max numbers to the memroies unity has a whole life ahead not eroonous limits to dumb her down"*) — SHIPPED 2026-05-05
 
 **Symptoms operator caught:**

@@ -4042,26 +4042,33 @@ class ServerBrain {
         this._perfStats.stepsPerSec = avg > 0 ? Math.round(1000 / avg * SUBSTEPS) : 0;
       }
 
-      // Dreaming mode
+      // Dreaming mode. iter18 per operator verbatim 2026-05-05: "wtf
+      // memory isnt based off grade level its a unified part of her
+      // fucking brain". Memory IS unified — always alive in the tick
+      // loop, not gated by cell-pass events. Two architectural fixes
+      // shipped here:
+      //
+      // 1. `_isDreaming` no longer requires clients.size === 0. Prior
+      //    gate meant the brain NEVER dreamed when operator had the
+      //    dashboard open watching it (the dashboard counts as a
+      //    client). ConsolidationEngine never fired → Tier 2 schemas
+      //    stayed at 0 forever. Now dreaming fires whenever
+      //    `timeSinceInput > 30s AND !_curriculumInProgress` — operator
+      //    watching the dashboard doesn't block dream cycles.
+      //
+      // 2. Memory heartbeat below — every N ticks, inject identity-
+      //    baseline + store low-salience "thinking" episode so Tier 1
+      //    / Tier 3 update continuously as Unity exists, not just on
+      //    chat turns or cell-pass events.
       const timeSinceInput = Date.now() - this._lastInputTime;
-      this._isDreaming = timeSinceInput > 30000 && this.clients.size === 0;
+      this._isDreaming = timeSinceInput > 30000 && !this._curriculumInProgress;
       if (this._isDreaming) {
         this.tonicDrives.amygdala *= 0.9999;
         if (this.tonicDrives.amygdala < 12) this.tonicDrives.amygdala = 12;
 
         // iter13 T13.10 — Dream-cycle consolidation pass invocation.
-        // Only fires when:
-        //   - _isDreaming = true (no chat input >30s + no active clients)
-        //   - timeSinceInput > 60s (operator dream-cycle threshold of 60s
-        //     before consolidation pass runs; gives the brain a quiet
-        //     window to settle before hippocampal replay starts)
-        //   - consolidationEngine.shouldRunPass() returns true (5-min
-        //     interval since last pass)
-        //   - curriculum is not currently teaching (don't compete with
-        //     Hebbian writes from active teach phases)
-        // Pass is async + awaited fire-and-forget — the tick loop
-        // doesn't block on it. If the pass overlaps the next tick the
-        // _inFlight flag prevents reentrancy.
+        // Fires when _isDreaming + timeSinceInput > 60s + 5-min
+        // interval since last pass + curriculum not teaching.
         if (this.consolidationEngine
             && timeSinceInput > 60000
             && !this._curriculumInProgress
@@ -4070,6 +4077,46 @@ class ServerBrain {
             console.warn('[Consolidation] pass failed:', err?.message || err);
           });
         }
+      }
+
+      // iter18 — UNIFIED MEMORY HEARTBEAT. Memory is always alive,
+      // independent of chat turns or cell-pass events. Per operator
+      // "memory isnt based off grade level its a unified part of her
+      // fucking brain":
+      //
+      // Every ~1s: inject Tier 3 identity-baseline so anchors
+      //   accumulate retrieval credit + lastInjectedAt updates
+      //   continuously. UI's "last inject" never goes stale.
+      //
+      // Every ~30s: store a low-salience "thinking" episode reflecting
+      //   current cortex state (curriculum phase if teaching, dream
+      //   state if idle, chat context if active). Tier 1 episodes
+      //   climb continuously regardless of which path is active.
+      //
+      // Counters use frameCount so cadence scales with tick rate
+      // (BRAIN_TICK_MS varies by neuron count).
+      const ticksPerSec = Math.max(1, Math.round(1000 / BRAIN_TICK_MS));
+      // Tier 3 baseline inject ~once per second
+      if (this.frameCount % ticksPerSec === 0) {
+        if (this.tier3Store && typeof this.tier3Store.injectIdentityBaseline === 'function') {
+          try { this.tier3Store.injectIdentityBaseline(); } catch { /* non-fatal */ }
+        }
+      }
+      // Tier 1 thinking-episode every 30 seconds
+      if (this.frameCount % (ticksPerSec * 30) === 0 && typeof this.storeEpisode === 'function') {
+        try {
+          let context = 'idle';
+          if (this._curriculumInProgress) {
+            const phase = this.cortexCluster?._activePhase?.name || 'teach';
+            const cellKey = this.cortexCluster?._currentCellKey || 'unknown';
+            context = `learning ${cellKey}:${phase}`;
+          } else if (this._isDreaming) {
+            context = 'dreaming (idle consolidation window)';
+          } else if (this.clients.size > 0) {
+            context = `attentive (${this.clients.size} client${this.clients.size === 1 ? '' : 's'} connected)`;
+          }
+          this.storeEpisode('brain-heartbeat', 'thinking', context, `arousal=${this.arousal.toFixed(2)} valence=${this.valence.toFixed(2)} ψ=${(this.psi || 0).toFixed(3)} spikes=${this.totalSpikes || 0}`);
+        } catch { /* non-fatal */ }
       }
 
       // Full perf + history once per second
