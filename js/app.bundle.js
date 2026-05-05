@@ -958,7 +958,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "5a4f85f0-8db6";
+var BUILD = "a0cd2d0f-26b7";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js

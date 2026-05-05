@@ -700,6 +700,48 @@ Captured iter11 sep-probe reading on first of 7 assoc-pair phases:
 
 ---
 
+### iter19 — WALL-CLOCK MEMORY HEARTBEAT (frameCount modulo failed at biological scale + probe-gate skipped iter18 heartbeat) (operator verbatim 2026-05-05: *"WTF she is learning words and nothing in memory is registering ... Tier 1 episodes 0 ... last inject 55s ago ... pass interval: BLANK"* + *"dont add diagnostics we build it right the first time by actually reading the code"*) — SHIPPED 2026-05-05
+
+**Symptom:** iter18 shipped tick-loop heartbeats but operator's dashboard still showed Tier 1 episodes 0, Tier 3 last inject "55s ago" (not refreshing), pass interval blank.
+
+**Root causes (read directly from the code, not diagnostics):**
+
+**A. iter18 used `frameCount % ticksPerSec === 0` for heartbeat cadence.** `frameCount++` lives in `_updateDerivedState()` which is called once per tick. Tick rate is supposed to be 1 / `BRAIN_TICK_MS` = 10/sec. **BUT at biological scale, `compute_batch` on 357M neurons takes seconds per dispatch.** Tick is async-await on the GPU response, so frameCount only advances when GPU returns. If a tick takes 5 seconds, frameCount lags 50× behind real time. modulo on stale frameCount rarely hits 0 → heartbeat barely fires.
+
+**B. iter18 heartbeat was AFTER the probe-gate early-return.** Line 3936 has `return` when `cortexCluster._probeGateActive` is true (curriculum probe windows can hold the gate for 30+ seconds). All code below that return — including iter18 heartbeat at line ~4082 — gets skipped during gate probes. Tier 3 inject doesn't fire, Tier 1 thinking-episode doesn't fire.
+
+**C. iter17 cell-pass memory population at line ~4696 sits BELOW the `passedCells` early-return at line 4064-4070.** Resume path (cell already in `passedCells` from prior boot) returns synthetic `pass: true` without running the teach OR my iter17 memory-population block. Pre-K cells that resume from disk never hit the cell-done memory hooks.
+
+**Fix shipped (atomic edit on `server/brain-server.js`):**
+
+**1. `_memoryHeartbeat()` method** — wall-clock-driven (NOT frameCount):
+```js
+_memoryHeartbeat() {
+  const now = Date.now();
+  if (now - this._lastTier3HbAt >= 1000) {
+    this._lastTier3HbAt = now;
+    this.tier3Store?.injectIdentityBaseline();
+  }
+  if (now - this._lastTier1HbAt >= 30000) {
+    this._lastTier1HbAt = now;
+    // context auto-classifies: learning <cell>:<phase> / dreaming / attentive / idle
+    this.storeEpisode('brain-heartbeat', 'thinking', context, metrics);
+  }
+}
+```
+
+Robust regardless of tick rate. Even if a single tick takes 10 seconds, heartbeat fires on the next tick whose entry is more than 1s after the last fire.
+
+**2. Heartbeat invocation moved to TOP of tick body.** Now runs BEFORE the probe-gate early-return at line 3936. Tier 3 inject + Tier 1 episode fire even during gate probes (which is correct — the brain is still alive, still has identity, still has thoughts during probes).
+
+**3. First storeEpisode failure logs once.** Silent catch that hid an entire fix failing in iter18 now surfaces the error message on first failure (subsequent fires stay silent so the log doesn't spam). Belt-and-suspenders for diagnostic.
+
+**Note on browser cache:** if dashboard's "pass interval" still shows blank after restart, hard-refresh (Ctrl+Shift+R) — browser may have cached an older dashboard.html that doesn't have the iter17 interval setter.
+
+**Files touched:** `server/brain-server.js` (`_memoryHeartbeat()` method + invocation at top of tick), `js/app.bundle.js` (rebuilt).
+
+---
+
 ### iter18 — UNIFIED MEMORY HEARTBEAT IN TICK LOOP + UNBLOCK DREAM CYCLE WHEN DASHBOARD OPEN (operator verbatim 2026-05-05: *"wtf memory isnt based off grade level its a unified part of her fucking brain"* + *"fix it"*) — SHIPPED 2026-05-05
 
 **Symptoms:** Despite iter17 wiring storeEpisode + injectIdentityBaseline into cell-pass events, operator's dashboard still showed Tier 1 episodes 0, Tier 3 last inject "never", ConsolidationEngine 0 passes. Pre-K passed but no kindergarten cells fired yet (curriculum paused), so cell-pass hooks never triggered. Operator: memory should be UNIFIED — always alive, not gated by grade-level events.

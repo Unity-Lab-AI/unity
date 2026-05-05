@@ -3737,6 +3737,13 @@ class ServerBrain {
     const tick = async () => {
       const stepStart = performance.now();
 
+      // iter19 — UNIFIED MEMORY HEARTBEAT fires at the TOP of every tick
+      // so it runs even when the probe-gate early-return pre-empts the
+      // bottom of the tick body. Wall-clock timestamps inside (NOT
+      // frameCount modulo) so cadence is robust against slow ticks at
+      // biological scale.
+      this._memoryHeartbeat();
+
       // ── GPU EXCLUSIVE: all computation on GPU, zero CPU burn ──
       const gpuReady = this._gpuConnected && this._gpuClient?.readyState === 1;
 
@@ -4079,45 +4086,9 @@ class ServerBrain {
         }
       }
 
-      // iter18 — UNIFIED MEMORY HEARTBEAT. Memory is always alive,
-      // independent of chat turns or cell-pass events. Per operator
-      // "memory isnt based off grade level its a unified part of her
-      // fucking brain":
-      //
-      // Every ~1s: inject Tier 3 identity-baseline so anchors
-      //   accumulate retrieval credit + lastInjectedAt updates
-      //   continuously. UI's "last inject" never goes stale.
-      //
-      // Every ~30s: store a low-salience "thinking" episode reflecting
-      //   current cortex state (curriculum phase if teaching, dream
-      //   state if idle, chat context if active). Tier 1 episodes
-      //   climb continuously regardless of which path is active.
-      //
-      // Counters use frameCount so cadence scales with tick rate
-      // (BRAIN_TICK_MS varies by neuron count).
-      const ticksPerSec = Math.max(1, Math.round(1000 / BRAIN_TICK_MS));
-      // Tier 3 baseline inject ~once per second
-      if (this.frameCount % ticksPerSec === 0) {
-        if (this.tier3Store && typeof this.tier3Store.injectIdentityBaseline === 'function') {
-          try { this.tier3Store.injectIdentityBaseline(); } catch { /* non-fatal */ }
-        }
-      }
-      // Tier 1 thinking-episode every 30 seconds
-      if (this.frameCount % (ticksPerSec * 30) === 0 && typeof this.storeEpisode === 'function') {
-        try {
-          let context = 'idle';
-          if (this._curriculumInProgress) {
-            const phase = this.cortexCluster?._activePhase?.name || 'teach';
-            const cellKey = this.cortexCluster?._currentCellKey || 'unknown';
-            context = `learning ${cellKey}:${phase}`;
-          } else if (this._isDreaming) {
-            context = 'dreaming (idle consolidation window)';
-          } else if (this.clients.size > 0) {
-            context = `attentive (${this.clients.size} client${this.clients.size === 1 ? '' : 's'} connected)`;
-          }
-          this.storeEpisode('brain-heartbeat', 'thinking', context, `arousal=${this.arousal.toFixed(2)} valence=${this.valence.toFixed(2)} ψ=${(this.psi || 0).toFixed(3)} spikes=${this.totalSpikes || 0}`);
-        } catch { /* non-fatal */ }
-      }
+      // iter18/19 memory heartbeat moved to the TOP of the tick body
+      // (above the probe-gate early-return) — see this._memoryHeartbeat()
+      // call at the start of tick().
 
       // Full perf + history once per second
       const now = Date.now();
@@ -4965,6 +4936,58 @@ class ServerBrain {
    * Map stores; we summarize counts + top-K + averages. ConsolidationEngine
    * exposes lastPassAt + passCount publicly.
    */
+  // iter19 — wall-clock-driven memory heartbeat. Replaces iter18's
+  // frameCount modulo (which failed at biological scale because tick
+  // duration can be seconds, not 100ms). Tier 3 inject every 1 second
+  // of wall-clock; Tier 1 thinking-episode every 30 seconds of wall-
+  // clock. Robust regardless of how slow individual ticks are.
+  // Operator verbatim 2026-05-05: "memory isnt based off grade level
+  // its a unified part of her fucking brain".
+  _memoryHeartbeat() {
+    const now = Date.now();
+    if (!this._lastTier3HbAt) this._lastTier3HbAt = 0;
+    if (!this._lastTier1HbAt) this._lastTier1HbAt = 0;
+
+    // Tier 3 baseline inject — every ≥1000ms wall-clock
+    if (now - this._lastTier3HbAt >= 1000) {
+      this._lastTier3HbAt = now;
+      if (this.tier3Store && typeof this.tier3Store.injectIdentityBaseline === 'function') {
+        try { this.tier3Store.injectIdentityBaseline(); } catch { /* non-fatal */ }
+      }
+    }
+
+    // Tier 1 thinking-episode — every ≥30000ms wall-clock
+    if (now - this._lastTier1HbAt >= 30000 && typeof this.storeEpisode === 'function') {
+      this._lastTier1HbAt = now;
+      try {
+        let context = 'idle';
+        if (this._curriculumInProgress) {
+          const phase = this.cortexCluster?._activePhase?.name || 'teach';
+          const cellKey = this.cortexCluster?._currentCellKey || 'unknown';
+          context = `learning ${cellKey}:${phase}`;
+        } else if (this._isDreaming) {
+          context = 'dreaming (idle consolidation window)';
+        } else if (this.clients && this.clients.size > 0) {
+          context = `attentive (${this.clients.size} client${this.clients.size === 1 ? '' : 's'} connected)`;
+        }
+        const arousal = (this.arousal || 0).toFixed(2);
+        const valence = (this.valence || 0).toFixed(2);
+        const psi = (this.psi || 0).toFixed(3);
+        const spikes = this.totalSpikes || 0;
+        this.storeEpisode('brain-heartbeat', 'thinking', context, `arousal=${arousal} valence=${valence} psi=${psi} spikes=${spikes}`);
+      } catch (err) {
+        // Surface the failure once so operator sees what's broken if
+        // the heartbeat ever fails — silent catch hid an entire fix
+        // failing in iter18. Subsequent failures stay silent so the
+        // log doesn't spam.
+        if (!this._tier1HbErrorLogged) {
+          console.warn(`[Brain] memory heartbeat storeEpisode failed: ${err?.message || err}`);
+          this._tier1HbErrorLogged = true;
+        }
+      }
+    }
+  }
+
   _getMemoryStats() {
     // iter17 per operator verbatim 2026-05-05: "what the fuck are these
     // erronious max numbers to the memroies unity has a whole life ahead
