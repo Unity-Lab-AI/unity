@@ -700,6 +700,26 @@ Captured iter11 sep-probe reading on first of 7 assoc-pair phases:
 
 ---
 
+### iter15-D — COMPUTE.HTML AUTO-LAUNCH BROKEN (operator verbatim 2026-05-05: *"the compute html is not opening correclty the dangerous skip one"* + *"i use to open it in my open browedr with the others, but after the unsafe update it was opening in its own window browser but now its not opening at all"* + *"just dashboard and 3D brain is opening"*) — SHIPPED 2026-05-05
+
+**Symptom:** dashboard.html + index.html (3D brain) open via `start ""` from start.bat, but compute.html which was supposed to auto-launch via brain-server's `_spawnGpuClient()` (with `--enable-unsafe-webgpu` flag) stopped opening at all. Era 1 (pre-iter14-E): opened in default browser alongside other tabs. Era 2 (iter14-E): opened in isolated Chrome window with --enable-unsafe-webgpu. Era 3 (current): not opening at all.
+
+**Root cause:** stale Chrome singleton lockfile (`SingletonLock`, `SingletonCookie`, `SingletonSocket`, `lockfile`) in `~/AppData/Local/UnityBrain-WebGPU-Profile/` from a prior Chrome instance that didn't shut down cleanly (e.g. operator killed brain-server while compute.html was still open). Chrome detects the lock, silently exits without spawning a window. Plus `child_process.exec` with nested-quote command string was fragile on Windows — exec returned success even when Chrome failed silently.
+
+**Fix shipped:**
+- Switched `exec(cmdString)` → `spawn(exePath, [args])` with array form (Node handles per-argument quoting)
+- Stale lockfile cleanup before spawn — `SingletonLock` / `SingletonCookie` / `SingletonSocket` / `lockfile` deleted from user-data-dir
+- Verbose diagnostic logging — every Chrome path checked is logged with ✓/✗, full spawn args printed
+- 30s watchdog — if no GPU client connects after Chrome spawn, fall back to `start ""` default browser (operator gets compute.html open, capped at 2GB binding without flag, but at least functional instead of broken)
+- Added Chrome SxS / Beta / Canary detection paths
+- Added Edge LOCALAPPDATA path
+- Added `--enable-dawn-features=allow_unsafe_apis,disable_robustness` (Chrome 120+ moved some unsafe APIs behind separate Dawn flag)
+- Added `--no-first-run --no-default-browser-check --disable-extensions` so isolated profile boots clean
+
+**Files touched:** `server/brain-server.js` (`_spawnGpuClient` rewrite).
+
+---
+
 ### iter15 — EMPTY EMISSIONS ARE FAILURES + LETTER→MOTOR CROSS-SUBJECT CORRUPTION + WORD-SPELLING DISCRIMINATIVE-WRITE PROTECTION (operator verbatim 2026-05-05: *"no if they are empty they are failures and is need document to be fixed"* + *"DO THE FUCKING WORK AND KILL THE WATCHDOG"*) — SHIPPED 2026-05-05
 
 **SHIPPED:** All 3 iter15 architectural fixes landed in commit (this session):

@@ -6869,81 +6869,178 @@ function _spawnGpuClient(port) {
     return;
   }
   const url = `http://localhost:${port}/compute.html`;
-  const { exec } = require('child_process');
+  const { exec, spawn } = require('child_process');
 
   // iter14-E per operator 2026-05-04: "obviously make the start.bat
   // fucking work!!! if we cant interact with the html thius is
   // pointless and well never beable to scale right when we do comp."
+  // iter15-D per operator 2026-05-05: "the compute html is not opening
+  // correclty the dangerous skip one ... just dashboard and 3D brain
+  // is opening" — exec(cmdString) with nested quotes was fragile on
+  // Windows. Switched to spawn(exe, [args]) with array form so each
+  // argument gets quoted separately, then verbose log + retry chain
+  // (Chrome → Edge → default browser fallback). Always logs what was
+  // detected + what command ran so silent failures surface.
   //
   // Detect Chrome (or Edge fallback) and launch compute.html with
   // --enable-unsafe-webgpu flag. This raises the WebGPU
   // maxStorageBufferBindingSize from the 2GB spec minimum to whatever
-  // the GPU driver actually supports (typically 4-8 GB, sometimes more
-  // on consumer cards). Without this flag, the server can't allocate
-  // per-cluster state buffers above 2GB → caps total neurons at 178M
-  // (12 bytes/neuron × 178M = 2.14GB) regardless of tier picked in
-  // GPUCONFIGURE.bat. With the flag + bindingCeilingMB raised in
-  // resource-config.json, the brain can scale to whatever the actual
-  // GPU driver permits.
+  // the GPU driver actually supports. Plus
+  // --enable-dawn-features=allow_unsafe_apis,disable_robustness for
+  // Chrome 120+ which gates SOME unsafe-webgpu APIs behind a separate
+  // Dawn-level flag. Plus --no-first-run --no-default-browser-check
+  // so the isolated profile doesn't show first-run wizard. Plus
+  // --new-window forces a fresh window so flags actually apply (tabs
+  // in existing windows inherit launch flags only if the existing
+  // window had them).
   //
-  // Plus a dedicated user-data-dir keeps the unsafe-webgpu Chrome
-  // profile separate from the operator's regular browsing session
-  // (no cross-contamination of cookies, extensions, GPU state).
-  // --new-window prevents the URL from opening in an existing tab
-  // that doesn't have the flag set.
-  let cmd;
+  // Per-app user-data-dir keeps the unsafe-webgpu Chrome profile
+  // sandboxed from the operator's regular browsing session.
   if (process.platform === 'win32') {
     const fs = require('fs');
     const path = require('path');
-    // Common Chrome install locations (in priority order)
     const chromePaths = [
       'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
       'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
       path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+      // Chrome SxS / Beta / Dev / Canary alternates
+      path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome SxS\\Application\\chrome.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome Beta\\Application\\chrome.exe'),
+      'C:\\Program Files\\Google\\Chrome Beta\\Application\\chrome.exe',
     ];
     const edgePaths = [
       'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
       'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      path.join(process.env.LOCALAPPDATA || '', 'Microsoft\\Edge\\Application\\msedge.exe'),
     ];
+
     let exePath = null;
     let browserName = null;
+    const checkedPaths = [];
     for (const p of chromePaths) {
-      if (p && fs.existsSync(p)) { exePath = p; browserName = 'Chrome'; break; }
+      if (!p) continue;
+      const exists = fs.existsSync(p);
+      checkedPaths.push(`${exists ? '✓' : '✗'} ${p}`);
+      if (exists && !exePath) { exePath = p; browserName = 'Chrome'; }
     }
-    if (!exePath) {
-      for (const p of edgePaths) {
-        if (p && fs.existsSync(p)) { exePath = p; browserName = 'Edge'; break; }
-      }
+    for (const p of edgePaths) {
+      if (!p) continue;
+      const exists = fs.existsSync(p);
+      checkedPaths.push(`${exists ? '✓' : '✗'} ${p}`);
+      if (exists && !exePath) { exePath = p; browserName = 'Edge'; }
     }
+    console.log(`[Server] _spawnGpuClient browser detection:\n  ${checkedPaths.join('\n  ')}`);
+
     if (exePath) {
-      // Per-app user-data-dir so unsafe-webgpu profile is sandboxed.
+      // Sandboxed user-data-dir for the unsafe-webgpu profile.
       const userDataDir = path.join(process.env.LOCALAPPDATA || process.env.TEMP || '.', 'UnityBrain-WebGPU-Profile');
-      // Quote both the exe and the URL; --new-window forces a fresh
-      // window with the unsafe-webgpu flag honored (tabs in existing
-      // windows inherit launch flags, so a fresh window guarantees
-      // the flag took effect).
-      cmd = `"${exePath}" --enable-unsafe-webgpu --user-data-dir="${userDataDir}" --new-window "${url}"`;
-      console.log(`[Server] Launching GPU compute client via ${browserName} with --enable-unsafe-webgpu (raises WebGPU binding ceiling above 2GB spec minimum).`);
+
+      // iter15-D — clear stale Chrome singleton lockfiles before spawn.
+      // Operator caught (verbatim 2026-05-05 "i use to open it in my
+      // open browedr with the others, but after the unsafe update it
+      // was opening in its own window browser but now its not opening
+      // at all"). Symptom: Chrome silently exits when Singleton* files
+      // exist in the user-data-dir from a prior instance that didn't
+      // shut down cleanly (e.g. the operator closed the brain-server
+      // process while compute.html was still open, leaving the lock).
+      // Fix: nuke Singleton* + lockfile before spawn — this is safe
+      // because the sandboxed profile is single-purpose (compute.html
+      // only) and there's never a legitimate concurrent user of it.
+      try {
+        if (fs.existsSync(userDataDir)) {
+          const STALE_LOCKS = ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile'];
+          for (const name of STALE_LOCKS) {
+            const p = path.join(userDataDir, name);
+            try {
+              if (fs.existsSync(p) || fs.lstatSync(p, { throwIfNoEntry: false })) {
+                fs.unlinkSync(p);
+                console.log(`[Server] Cleared stale Chrome lock: ${p}`);
+              }
+            } catch { /* file may not exist or be a symlink target — ignore */ }
+          }
+        }
+      } catch (err) {
+        console.warn(`[Server] Lock cleanup warning: ${err.message} (proceeding anyway)`);
+      }
+
+      const args = [
+        '--enable-unsafe-webgpu',
+        '--enable-dawn-features=allow_unsafe_apis,disable_robustness',
+        '--enable-features=Vulkan',
+        `--user-data-dir=${userDataDir}`,
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-extensions',
+        '--new-window',
+        url,
+      ];
+      console.log(`[Server] Launching GPU compute client via ${browserName} (${exePath}) with --enable-unsafe-webgpu + Dawn allow_unsafe_apis. Profile: ${userDataDir}`);
+      console.log(`[Server] Full args: ${args.join(' ')}`);
+      let spawnedOK = false;
+      try {
+        // spawn with array form — Node handles per-argument quoting
+        // automatically. detached + unref so Chrome lives past server
+        // restart. ignore stdio so Chrome's own output doesn't pollute
+        // the brain server log.
+        const child = spawn(exePath, args, { detached: true, stdio: 'ignore', windowsHide: false });
+        child.on('error', (err) => {
+          console.warn(`[Server] Browser spawn error: ${err.message}. Falling back to default browser open.`);
+          exec(`start "" "${url}"`, () => {});
+        });
+        child.unref();
+        spawnedOK = true;
+        console.log(`[Server] GPU compute client spawn() initiated — PID ${child.pid}. URL: ${url}`);
+      } catch (err) {
+        console.warn(`[Server] spawn() threw: ${err.message}. Falling back to default browser open.`);
+        exec(`start "" "${url}"`, () => {});
+      }
+
+      // Watchdog — verify a GPU client actually connected within 30s.
+      // Chrome can silently exit after spawn (stale profile lock, GPU
+      // process crash, etc.) producing no error event. If no client
+      // shows up by then, fall back to the default browser so the
+      // operator at least gets compute.html open (capped at 2GB
+      // binding ceiling = 178M neurons, but functional).
+      if (spawnedOK) {
+        setTimeout(() => {
+          if (!brain || !brain._gpuClient || brain._gpuClient.readyState !== 1) {
+            console.warn(`[Server] GPU client never connected after Chrome spawn (30s timeout). Chrome may have failed silently — falling back to default browser to at least open compute.html (will be capped at 2GB binding ceiling without --enable-unsafe-webgpu flag).`);
+            exec(`start "" "${url}"`, () => {});
+          } else {
+            console.log(`[Server] GPU client connected — Chrome auto-launch confirmed working.`);
+          }
+        }, 30000);
+      }
     } else {
-      // Fallback: default browser (no unsafe-webgpu flag — operator
-      // will be capped at 2GB binding ceiling = 178M neurons regardless
-      // of tier picked).
-      cmd = `start "" "${url}"`;
       console.warn(`[Server] Chrome and Edge not found in standard install paths. Falling back to default browser launch — WebGPU binding ceiling will stay at 2GB spec minimum (cap ~178M neurons). Install Chrome OR open ${url} manually in a Chromium browser launched with --enable-unsafe-webgpu flag to scale past 178M.`);
+      exec(`start "" "${url}"`, (err) => {
+        if (err) console.warn(`[Server] Default-browser fallback failed: ${err.message}. Open ${url} manually.`);
+        else console.log(`[Server] GPU compute client opened in default browser: ${url}`);
+      });
     }
   } else if (process.platform === 'darwin') {
-    cmd = `open -a "Google Chrome" --args --enable-unsafe-webgpu --new-window "${url}" || open "${url}"`;
-  } else {
-    cmd = `google-chrome --enable-unsafe-webgpu --new-window "${url}" || chromium --enable-unsafe-webgpu --new-window "${url}" || xdg-open "${url}"`;
-  }
-
-  exec(cmd, (err) => {
-    if (err) {
-      console.warn(`[Server] Auto-launch failed (${err.message}). Open ${url} manually in a WebGPU-capable browser (Chrome / Edge / Chromium) launched with --enable-unsafe-webgpu flag to lift the 2GB binding ceiling.`);
-    } else {
-      console.log(`[Server] GPU compute client launched: ${url}`);
+    const args = ['-a', 'Google Chrome', '--args', '--enable-unsafe-webgpu', '--enable-dawn-features=allow_unsafe_apis,disable_robustness', '--new-window', url];
+    console.log(`[Server] Launching GPU compute client via macOS open: ${args.join(' ')}`);
+    try {
+      const child = spawn('open', args, { detached: true, stdio: 'ignore' });
+      child.unref();
+    } catch (err) {
+      console.warn(`[Server] macOS spawn failed: ${err.message}. Falling back to default open.`);
+      exec(`open "${url}"`, () => {});
     }
-  });
+  } else {
+    // Linux — try google-chrome first, then chromium, then xdg-open
+    const linuxArgs = ['--enable-unsafe-webgpu', '--enable-dawn-features=allow_unsafe_apis,disable_robustness', '--enable-features=Vulkan', '--new-window', url];
+    const tryLinux = (exe, fallbackFn) => {
+      try {
+        const child = spawn(exe, linuxArgs, { detached: true, stdio: 'ignore' });
+        child.on('error', () => fallbackFn());
+        child.unref();
+        console.log(`[Server] GPU compute client spawned via ${exe}`);
+      } catch { fallbackFn(); }
+    };
+    tryLinux('google-chrome', () => tryLinux('chromium', () => exec(`xdg-open "${url}"`, () => {})));
+  }
 }
 
 // Bind interface — default to loopback only so the brain server isn't

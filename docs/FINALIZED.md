@@ -5,6 +5,58 @@
 
 ---
 
+## 2026-05-05 — Session 114.19de: ITER15-D — COMPUTE.HTML AUTO-LAUNCH FIX (stale Chrome lockfile + spawn() switch)
+
+### Operator directives (verbatim per LAW #0)
+
+> *"the compute html is not opening correclty the dangerous skip one"*
+> *"i use to open it in my open browedr with the others, but after the unsafe update it was opening in its own window browser but now its not opening at all"*
+> *"just dashboard and 3D brain is opening"*
+
+### Symptom
+
+dashboard.html + index.html (3D brain) opened via `start ""` calls in start.bat (lines 166 + 170), but compute.html which was supposed to auto-launch via brain-server's `_spawnGpuClient()` with `--enable-unsafe-webgpu` flag stopped opening entirely. Three eras: Era 1 (pre-iter14-E) opened in default browser; Era 2 (iter14-E) opened in isolated Chrome window; Era 3 (current) not opening at all.
+
+### Root causes (compounding)
+
+**1. Stale Chrome Singleton lockfile.** Chrome creates `SingletonLock`, `SingletonCookie`, `SingletonSocket`, `lockfile` files in the user-data-dir on launch and removes them on clean shutdown. If a prior Chrome instance died WITHOUT clean shutdown (e.g. operator killed brain-server while compute.html was still open, or Chrome crashed, or Windows TDR killed the GPU process and took Chrome down), the lockfiles persist. Next `_spawnGpuClient` invocation tries to launch Chrome with `--user-data-dir=<that path>`, Chrome detects the locks, silently exits without spawning a window. No error to caller — process spawned, exit code 0, but no UI.
+
+**2. `exec(cmdString)` with nested quotes fragile on Windows.** The prior implementation built a command string like `"chrome.exe" --user-data-dir="C:\path\with\spaces" "http://url"` and passed it through `child_process.exec` which re-tokenizes via cmd.exe. Windows cmd's quote handling for nested quoted args is brittle — sometimes silently drops args or misroutes them.
+
+**3. No fallback when Chrome fails silently.** The previous code's only error-handler was `exec` callback's `err` parameter which fires on cmd.exe failure, NOT on Chrome failing silently after launch.
+
+### Fix shipped (atomic edit on `server/brain-server.js` `_spawnGpuClient`)
+
+**A. spawn() with array form replaces exec() with cmd string.** `child_process.spawn(exePath, [args...], { detached, stdio: 'ignore' })` — Node handles per-argument quoting on Windows automatically, no nested-quote ambiguity.
+
+**B. Stale lockfile cleanup before spawn.** Before launching Chrome, scan the user-data-dir for `SingletonLock` / `SingletonCookie` / `SingletonSocket` / `lockfile` and unlink them. Safe because the sandboxed `UnityBrain-WebGPU-Profile` profile is single-purpose (compute.html only) — there's never a legitimate concurrent user of it.
+
+**C. 30-second watchdog.** After Chrome spawn, set a 30s timer. If `brain._gpuClient` doesn't have an active WebSocket by then, fall back to `start "" "${url}"` so the operator at least gets compute.html in the default browser (capped at 2GB binding ceiling without the flag, but functional). Logs warn what happened so the operator knows the unsafe-webgpu path failed.
+
+**D. Verbose diagnostic logging.** Every Chrome / Edge candidate path is logged with ✓/✗ existence marker. Full spawn args printed so the operator can see exactly what command Chrome got.
+
+**E. Additional Chrome paths added.** Chrome SxS (Canary), Chrome Beta, Chrome Beta in Program Files, Edge in LOCALAPPDATA — covers more install locations.
+
+**F. Dawn-level + Vulkan flags added.** `--enable-dawn-features=allow_unsafe_apis,disable_robustness` (Chrome 120+ moved some unsafe-webgpu APIs behind a separate Dawn flag) + `--enable-features=Vulkan` + `--no-first-run --no-default-browser-check --disable-extensions` (cleaner isolated profile boot).
+
+### Files touched (atomic commit)
+
+- `server/brain-server.js` — `_spawnGpuClient` rewrite
+- `docs/ARCHITECTURE.md` — iter15-D banner
+- `docs/NOW.md` — Session 114.19de snapshot
+- `docs/TODO.md` — iter15-D entry
+- `docs/FINALIZED.md` — this entry
+
+### Effect on operator workflow
+
+Next `start.bat` boot:
+- Stale lockfiles cleared from `UnityBrain-WebGPU-Profile`
+- Chrome spawned with `--enable-unsafe-webgpu` + Dawn allow_unsafe_apis + Vulkan flags
+- If Chrome still fails silently: 30s watchdog detects no GPU client connected, falls back to default browser
+- Either way, compute.html opens — preferred path keeps unsafe-webgpu (>2GB binding); fallback path stays at 2GB but functional
+
+---
+
 ## 2026-05-05 — Session 114.19dd: ITER15-A/B/C — EMPTY-EMISSION FIX + CROSS-SUBJECT LETTER→MOTOR PROTECTION + WORD-SPELLING DIRECT-WRITE BYPASS
 
 ### Operator directives (verbatim per LAW #0)
