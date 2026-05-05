@@ -197,6 +197,10 @@ export const K_MIXIN = {
       if (typeof this._teachWordSpellingDirectFinal === 'function') {
         await this._phasedTeach('LIFE-K-WORD-SPELL-FINAL', () => this._teachWordSpellingDirectFinal({ reps: 8, subject: 'life' }));
       }
+      // iter21-A — Word-level emission training
+      if (typeof this._teachWordEmissionDirect === 'function') {
+        await this._phasedTeach('LIFE-K-WORD-EMISSION-DIRECT', () => this._teachWordEmissionDirect({ reps: 8, subject: 'life' }));
+      }
 
       this._lifeKRemakeDone = true;
     }
@@ -313,6 +317,10 @@ export const K_MIXIN = {
       // iter15-A — Direct sem→motor wipe-and-rewrite. MUST RUN LAST.
       if (typeof this._teachWordSpellingDirectFinal === 'function') {
         await this._phasedTeach('ART-K-WORD-SPELL-FINAL', () => this._teachWordSpellingDirectFinal({ reps: 8, subject: 'art' }));
+      }
+      // iter21-A — Word-level emission training
+      if (typeof this._teachWordEmissionDirect === 'function') {
+        await this._phasedTeach('ART-K-WORD-EMISSION-DIRECT', () => this._teachWordEmissionDirect({ reps: 8, subject: 'art' }));
       }
 
       this._artKRemakeDone = true;
@@ -484,6 +492,10 @@ export const K_MIXIN = {
       if (typeof this._teachWordSpellingDirectFinal === 'function') {
         await this._phasedTeach('SOC-K-WORD-SPELL-FINAL', () => this._teachWordSpellingDirectFinal({ reps: 8, subject: 'social' }));
       }
+      // iter21-A — Word-level emission training
+      if (typeof this._teachWordEmissionDirect === 'function') {
+        await this._phasedTeach('SOC-K-WORD-EMISSION-DIRECT', () => this._teachWordEmissionDirect({ reps: 8, subject: 'social' }));
+      }
 
       this._socKRemakeDone = true;
     }
@@ -644,6 +656,10 @@ export const K_MIXIN = {
       // iter15-A — Direct sem→motor wipe-and-rewrite. MUST RUN LAST.
       if (typeof this._teachWordSpellingDirectFinal === 'function') {
         await this._phasedTeach('SCI-K-WORD-SPELL-FINAL', () => this._teachWordSpellingDirectFinal({ reps: 8, subject: 'science' }));
+      }
+      // iter21-A — Word-level emission training
+      if (typeof this._teachWordEmissionDirect === 'function') {
+        await this._phasedTeach('SCI-K-WORD-EMISSION-DIRECT', () => this._teachWordEmissionDirect({ reps: 8, subject: 'science' }));
       }
 
       this._sciKRemakeDone = true;
@@ -991,6 +1007,10 @@ export const K_MIXIN = {
       // iter15-A — Direct sem→motor wipe-and-rewrite. MUST RUN LAST.
       if (typeof this._teachWordSpellingDirectFinal === 'function') {
         await this._phasedTeach('MATH-K-WORD-SPELL-FINAL', () => this._teachWordSpellingDirectFinal({ reps: 8, subject: 'math' }));
+      }
+      // iter21-A — Word-level emission training
+      if (typeof this._teachWordEmissionDirect === 'function') {
+        await this._phasedTeach('MATH-K-WORD-EMISSION-DIRECT', () => this._teachWordEmissionDirect({ reps: 8, subject: 'math' }));
       }
 
       this._mathKTransformsDone = true;
@@ -2625,6 +2645,14 @@ export const K_MIXIN = {
       if (typeof this._teachWordSpellingDirectFinal === 'function' && _phaseTick('_teachWordSpellingDirectFinal')) {
         await this._teachWordSpellingDirectFinal({ reps: 8, subject: 'ela' });
         _phaseDone('_teachWordSpellingDirectFinal');
+      }
+
+      // iter21-A — Word-level emission training. Single-tick word emission
+      // via sem_to_word_motor. Replaces letter-by-letter motor argmax for
+      // production. NO FALLBACK.
+      if (typeof this._teachWordEmissionDirect === 'function' && _phaseTick('_teachWordEmissionDirect')) {
+        await this._teachWordEmissionDirect({ reps: 8, subject: 'ela' });
+        _phaseDone('_teachWordEmissionDirect');
       }
 
       this._elaKRemakeDone = true;

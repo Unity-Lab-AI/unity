@@ -327,24 +327,49 @@ export class NeuronCluster {
     this.regions = {};
     if (name === 'cortex') {
       const s = size;
-      // Fractions match the T14.4 spec in docs/COMP-todo.md:
-      //   auditory  0.000 - 0.083  (T14.11 — auditory phoneme recognition)
-      //   visual    0.083 - 0.250  (T14.10 — visual letter recognition)
-      //   free      0.250 - 0.500  (inter-cluster projection sink + working mem)
-      //   letter    0.500 - 0.550  (T14.1 — letter input one-hot region)
-      //   phon      0.550 - 0.750  (T14.1+T14.2 — phonological attractor basins)
-      //   sem       0.750 - 0.917  (T14.0 — semantic GloVe target)
-      //   fineType  0.917 - 0.967  (T14.7 — grammatical/syntactic region)
-      //   motor     0.967 - 1.000  (T14.12 — generation feedback / motor output)
+      // Fractions per T14.4 spec PLUS iter21 architectural redesign per
+      // operator 2026-05-05 "motor argmax is fucked if it ever just relplies
+      // with letters and not words" — added word_motor as PRIMARY emission
+      // region (production path), keeping letter motor for letter-recognition
+      // probes (READ, TALK). NO FALLBACK between them — each has distinct
+      // purpose, neither is a backup for the other.
+      //
+      //   auditory   0.000 - 0.083   auditory phoneme recognition
+      //   visual     0.083 - 0.250   visual letter recognition
+      //   free       0.250 - 0.500   inter-cluster projection sink + working mem
+      //   letter     0.500 - 0.550   letter input one-hot region (READ/TALK probe input)
+      //   phon       0.550 - 0.750   phonological attractor basins
+      //   sem        0.750 - 0.875   semantic GloVe target (iter21-B carved into 6 sub-bands)
+      //   fineType   0.875 - 0.917   grammatical/syntactic region
+      //   motor      0.917 - 0.940   letter motor (TALK probe output — letter identity)
+      //   word_motor 0.940 - 1.000   iter21-A WORD motor (production output — word identity)
+      //
+      // sem region split into per-subject sub-bands for iter21-B isolation:
+      //   sem_ela   0.750 - 0.7708 (1/6)
+      //   sem_math  0.7708 - 0.7917 (1/6)
+      //   sem_sci   0.7917 - 0.8125 (1/6)
+      //   sem_soc   0.8125 - 0.8333 (1/6)
+      //   sem_art   0.8333 - 0.8542 (1/6)
+      //   sem_life  0.8542 - 0.875 (1/6)
+      const semStart = Math.floor(s * 0.750);
+      const semEnd = Math.floor(s * 0.875);
+      const semBand = Math.floor((semEnd - semStart) / 6);
       this.regions = {
-        auditory: { start: 0,                          end: Math.floor(s * 0.083) },
-        visual:   { start: Math.floor(s * 0.083),      end: Math.floor(s * 0.250) },
-        free:     { start: Math.floor(s * 0.250),      end: Math.floor(s * 0.500) },
-        letter:   { start: Math.floor(s * 0.500),      end: Math.floor(s * 0.550) },
-        phon:     { start: Math.floor(s * 0.550),      end: Math.floor(s * 0.750) },
-        sem:      { start: Math.floor(s * 0.750),      end: Math.floor(s * 0.917) },
-        fineType: { start: Math.floor(s * 0.917),      end: Math.floor(s * 0.967) },
-        motor:    { start: Math.floor(s * 0.967),      end: s },
+        auditory:   { start: 0,                          end: Math.floor(s * 0.083) },
+        visual:     { start: Math.floor(s * 0.083),      end: Math.floor(s * 0.250) },
+        free:       { start: Math.floor(s * 0.250),      end: Math.floor(s * 0.500) },
+        letter:     { start: Math.floor(s * 0.500),      end: Math.floor(s * 0.550) },
+        phon:       { start: Math.floor(s * 0.550),      end: Math.floor(s * 0.750) },
+        sem:        { start: semStart,                   end: semEnd }, // umbrella region kept for backward-compat reads
+        sem_ela:    { start: semStart + 0 * semBand,     end: semStart + 1 * semBand },
+        sem_math:   { start: semStart + 1 * semBand,     end: semStart + 2 * semBand },
+        sem_sci:    { start: semStart + 2 * semBand,     end: semStart + 3 * semBand },
+        sem_soc:    { start: semStart + 3 * semBand,     end: semStart + 4 * semBand },
+        sem_art:    { start: semStart + 4 * semBand,     end: semStart + 5 * semBand },
+        sem_life:   { start: semStart + 5 * semBand,     end: semEnd },
+        fineType:   { start: Math.floor(s * 0.875),      end: Math.floor(s * 0.917) },
+        motor:      { start: Math.floor(s * 0.917),      end: Math.floor(s * 0.940) },
+        word_motor: { start: Math.floor(s * 0.940),      end: s },
       };
 
       // T14.4 — Seven pairs of cross-region projections (14 total — both
@@ -374,6 +399,12 @@ export class NeuronCluster {
         ['sem',      'motor'],
         ['motor',    'letter'],
         ['auditory', 'phon'],
+        // iter21-A — sem → word_motor for word-level production. Operator
+        // 2026-05-05 "motor argmax is fucked if it ever just relplies with
+        // letters and not words". This is the PRIMARY production path —
+        // single-tick word emission via argmax over word vocabulary
+        // buckets. NO FALLBACK to letter motor.
+        ['sem',      'word_motor'],
       ];
       // T14.19 — cross-projection density also scales inversely with
       // the projection's source region size, same biological-fanout
@@ -2112,6 +2143,67 @@ export class NeuronCluster {
    * @param {object} opts — same as `generateSentence`
    * @returns {Promise<string>}
    */
+  // iter21-A — single-tick word-level emission. Replaces letter-by-
+  // letter motor argmax for word production. Operator 2026-05-05
+  // "motor argmax is fucked if it ever just relplies with letters and
+  // not words". Propagate sem → word_motor, argmax over word vocabulary
+  // buckets, return word string. NO LETTER CHAIN. NO FALLBACK.
+  //
+  // Contract: caller injects intent into sem region (e.g. via
+  // injectEmbeddingToRegion('sem', conceptEmb, 1.0)) before calling.
+  // Returns the word string for the highest-scoring word bucket, or
+  // empty string if word_motor projection / region missing or no
+  // signal above noise floor.
+  emitWordDirect(opts = {}) {
+    if (!this.regions || !this.regions.word_motor || !this.regions.sem) return '';
+    if (!this.crossProjections?.sem_to_word_motor) return '';
+    if (!this.dictionary || !this.dictionary._words) return '';
+
+    const proj = this.crossProjections.sem_to_word_motor;
+    if (typeof proj.propagate !== 'function') return '';
+
+    const sem = this.regions.sem;
+    const wordMotor = this.regions.word_motor;
+    const semSize = sem.end - sem.start;
+    const wmSize = wordMotor.end - wordMotor.start;
+
+    // Build sem-region input from current cluster spike state
+    const preSem = new Float64Array(semSize);
+    for (let i = 0; i < semSize; i++) {
+      preSem[i] = this.lastSpikes[sem.start + i] || 0;
+    }
+
+    let wmOut;
+    try { wmOut = proj.propagate(preSem); }
+    catch { return ''; }
+    if (!wmOut || wmOut.length === 0) return '';
+
+    // Vocabulary bucketing: each K-vocab word gets a contiguous slice of
+    // word_motor. Bucket index = hash(word) mod numBuckets. We compute
+    // word→bucket on the fly using the same hash so teach + emit agree.
+    const words = [];
+    for (const [w, entry] of this.dictionary._words.entries()) {
+      if (typeof w !== 'string' || w.length === 0) continue;
+      if (!/^[a-z]+$/.test(w)) continue;
+      if (entry?.isPersona) continue;
+      words.push(w);
+    }
+    if (words.length === 0) return '';
+
+    const bucketSize = Math.max(1, Math.floor(wmSize / words.length));
+    let bestIdx = -1, bestSum = -Infinity;
+    for (let b = 0; b < words.length; b++) {
+      let sum = 0;
+      const bStart = b * bucketSize;
+      const bEnd = Math.min(wmSize, bStart + bucketSize);
+      for (let n = bStart; n < bEnd; n++) sum += wmOut[n];
+      if (sum > bestSum) { bestSum = sum; bestIdx = b; }
+    }
+    const minSignal = opts.minSignal ?? 0.001;
+    if (bestIdx < 0 || bestSum < minSignal) return '';
+    return words[bestIdx];
+  }
+
   async generateSentenceAwait(intentSeed = null, opts = {}) {
     if (!this.regions || !this.regions.motor || !this.regions.letter) return '';
     if (inventorySize() === 0) return '';
