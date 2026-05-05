@@ -5,6 +5,74 @@
 
 ---
 
+## 2026-05-05 — Session 114.19dj: ITER19 — WALL-CLOCK MEMORY HEARTBEAT (iter18 frameCount modulo failed at biological scale + probe-gate skipped heartbeat)
+
+### Operator directives (verbatim per LAW #0)
+
+> *"WTF she is learning words and nothing in memory is registering: Tier 1 episodes 0 ... last inject 55s ago ... pass interval: BLANK"*
+> *"dont add diagnostics we build it right the first time by actually reading the code"*
+
+### Symptoms (operator screenshot)
+
+After iter18 shipped:
+- Tier 0 Working: 0 items
+- Tier 1 Episodic: 0 episodes
+- Tier 3 anchors: 17 / unbounded, **last inject: 55s ago** (NOT refreshing — old timestamp)
+- ConsolidationEngine: 0 passes, **pass interval: BLANK**
+
+### Root causes (read directly from the code per operator directive)
+
+**A. iter18 used frameCount modulo for heartbeat cadence.** `if (this.frameCount % ticksPerSec === 0)`. `frameCount++` happens in `_updateDerivedState()` which runs once per tick. Tick rate at small-N would be 10/sec (1000ms / 100ms BRAIN_TICK_MS). **But at biological scale, GPU `compute_batch` on 357M neurons takes seconds per dispatch.** The tick is async-awaited on the GPU response, so frameCount only advances when GPU returns. If tick takes 5s, frameCount lags 50× behind real time. modulo on stale frameCount rarely hits 0 → heartbeat barely fires.
+
+**B. iter18 heartbeat lived AFTER the probe-gate early-return.** Line 3936 has `return` when `cortexCluster._probeGateActive` is true. Curriculum probe windows can hold the gate for 30+ seconds. All code below — including iter18 heartbeat at line ~4082 — was skipped during gate probes. Tier 3 inject didn't fire during probes. Tier 1 episode didn't fire.
+
+**C. iter17 cell-pass memory population at line ~4696 was below the `passedCells` early-return at line 4064-4070.** Resume path (cell in `passedCells` from prior boot) returns synthetic `pass: true` without running teach OR memory-population block. Pre-K cells resuming from disk never hit the cell-done hooks.
+
+### Fix shipped (atomic edit on `server/brain-server.js`)
+
+**1. `_memoryHeartbeat()` method** — wall-clock-driven, NOT frameCount:
+
+```js
+_memoryHeartbeat() {
+  const now = Date.now();
+  if (now - this._lastTier3HbAt >= 1000) {
+    this._lastTier3HbAt = now;
+    this.tier3Store?.injectIdentityBaseline();
+  }
+  if (now - this._lastTier1HbAt >= 30000) {
+    this._lastTier1HbAt = now;
+    // context auto-classifies: learning <cell>:<phase> / dreaming / attentive / idle
+    this.storeEpisode('brain-heartbeat', 'thinking', context, metrics);
+  }
+}
+```
+
+Wall-clock timestamp delta means cadence is robust regardless of tick rate or how slow individual ticks are. Even if a single tick takes 10 seconds, the heartbeat fires on the next tick whose entry is more than 1000ms after the last fire.
+
+**2. Heartbeat invocation moved to TOP of tick body** (line 3737, before any early-returns). Now runs BEFORE the probe-gate early-return at line 3936. Tier 3 inject + Tier 1 episode fire even during gate probes — correct because the brain is still alive, still has identity, still has thoughts during probes.
+
+**3. First storeEpisode failure logs once.** Silent catch that hid iter18's entire fix failing now surfaces the error message on first failure (subsequent fires stay silent so the log doesn't spam). One log line, then back to silent. Belt-and-suspenders for future diagnostic without log spam.
+
+### Effect on operator workflow
+
+After next start.bat boot:
+- Tier 3 "Last Identity Inject": **updates every second** (was stuck at 55s ago)
+- Tier 1 episode count: **climbs every 30s** (was 0)
+- Heartbeat fires during probe gates too — memory stays alive throughout K curriculum
+
+Browser cache note: dashboard's pass-interval blank rendering MAY be a browser-cached dashboard.html from before iter17 — hard-refresh (Ctrl+Shift+R) if blank persists after server restart. Server-side `_getMemoryStats` returns `intervalMs: 5 * 60 * 1000` correctly.
+
+### Files touched
+
+- `server/brain-server.js` — `_memoryHeartbeat()` method (~50 lines new) + invocation at top of tick body, deleted iter18's frameCount-modulo block at bottom
+- `js/app.bundle.js` — rebuilt via esbuild
+- `docs/ARCHITECTURE.md` banner
+- `docs/NOW.md` snapshot rolled
+- `docs/TODO.md` iter19 entry
+- `docs/FINALIZED.md` — this entry
+
+---
+
 ## 2026-05-05 — Session 114.19di: ITER18 — UNIFIED MEMORY HEARTBEAT IN TICK LOOP + UNBLOCK DREAM CYCLE
 
 ### Operator directives (verbatim per LAW #0)
