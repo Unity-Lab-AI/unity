@@ -6696,12 +6696,76 @@ function _spawnGpuClient(port) {
   }
   const url = `http://localhost:${port}/compute.html`;
   const { exec } = require('child_process');
-  const cmd = process.platform === 'win32' ? `start "" "${url}"`
-            : process.platform === 'darwin' ? `open "${url}"`
-            : `xdg-open "${url}"`;
+
+  // iter14-E per operator 2026-05-04: "obviously make the start.bat
+  // fucking work!!! if we cant interact with the html thius is
+  // pointless and well never beable to scale right when we do comp."
+  //
+  // Detect Chrome (or Edge fallback) and launch compute.html with
+  // --enable-unsafe-webgpu flag. This raises the WebGPU
+  // maxStorageBufferBindingSize from the 2GB spec minimum to whatever
+  // the GPU driver actually supports (typically 4-8 GB, sometimes more
+  // on consumer cards). Without this flag, the server can't allocate
+  // per-cluster state buffers above 2GB → caps total neurons at 178M
+  // (12 bytes/neuron × 178M = 2.14GB) regardless of tier picked in
+  // GPUCONFIGURE.bat. With the flag + bindingCeilingMB raised in
+  // resource-config.json, the brain can scale to whatever the actual
+  // GPU driver permits.
+  //
+  // Plus a dedicated user-data-dir keeps the unsafe-webgpu Chrome
+  // profile separate from the operator's regular browsing session
+  // (no cross-contamination of cookies, extensions, GPU state).
+  // --new-window prevents the URL from opening in an existing tab
+  // that doesn't have the flag set.
+  let cmd;
+  if (process.platform === 'win32') {
+    const fs = require('fs');
+    const path = require('path');
+    // Common Chrome install locations (in priority order)
+    const chromePaths = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+    ];
+    const edgePaths = [
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    ];
+    let exePath = null;
+    let browserName = null;
+    for (const p of chromePaths) {
+      if (p && fs.existsSync(p)) { exePath = p; browserName = 'Chrome'; break; }
+    }
+    if (!exePath) {
+      for (const p of edgePaths) {
+        if (p && fs.existsSync(p)) { exePath = p; browserName = 'Edge'; break; }
+      }
+    }
+    if (exePath) {
+      // Per-app user-data-dir so unsafe-webgpu profile is sandboxed.
+      const userDataDir = path.join(process.env.LOCALAPPDATA || process.env.TEMP || '.', 'UnityBrain-WebGPU-Profile');
+      // Quote both the exe and the URL; --new-window forces a fresh
+      // window with the unsafe-webgpu flag honored (tabs in existing
+      // windows inherit launch flags, so a fresh window guarantees
+      // the flag took effect).
+      cmd = `"${exePath}" --enable-unsafe-webgpu --user-data-dir="${userDataDir}" --new-window "${url}"`;
+      console.log(`[Server] Launching GPU compute client via ${browserName} with --enable-unsafe-webgpu (raises WebGPU binding ceiling above 2GB spec minimum).`);
+    } else {
+      // Fallback: default browser (no unsafe-webgpu flag — operator
+      // will be capped at 2GB binding ceiling = 178M neurons regardless
+      // of tier picked).
+      cmd = `start "" "${url}"`;
+      console.warn(`[Server] Chrome and Edge not found in standard install paths. Falling back to default browser launch — WebGPU binding ceiling will stay at 2GB spec minimum (cap ~178M neurons). Install Chrome OR open ${url} manually in a Chromium browser launched with --enable-unsafe-webgpu flag to scale past 178M.`);
+    }
+  } else if (process.platform === 'darwin') {
+    cmd = `open -a "Google Chrome" --args --enable-unsafe-webgpu --new-window "${url}" || open "${url}"`;
+  } else {
+    cmd = `google-chrome --enable-unsafe-webgpu --new-window "${url}" || chromium --enable-unsafe-webgpu --new-window "${url}" || xdg-open "${url}"`;
+  }
+
   exec(cmd, (err) => {
     if (err) {
-      console.warn(`[Server] Auto-launch failed (${err.message}). Open ${url} manually in a WebGPU-capable browser (Chrome / Edge).`);
+      console.warn(`[Server] Auto-launch failed (${err.message}). Open ${url} manually in a WebGPU-capable browser (Chrome / Edge / Chromium) launched with --enable-unsafe-webgpu flag to lift the 2GB binding ceiling.`);
     } else {
       console.log(`[Server] GPU compute client launched: ${url}`);
     }

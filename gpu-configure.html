@@ -555,6 +555,35 @@ document.getElementById('btn-save').addEventListener('click', async () => {
       vramCapMB: selectedTier.vramMB,
       notes: selectedTier.name,
     };
+    // iter14-E per operator 2026-05-04: "obviously make the start.bat
+    // fucking work!!! ... well never beable to scale right when we do
+    // comp." — tiers above the 2GB binding ceiling default need
+    // bindingCeilingMB SET so the server-side scaler honors the larger
+    // limit. Pair with the start.bat Chrome --enable-unsafe-webgpu
+    // launch which raises the WebGPU maxStorageBufferBindingSize at
+    // the browser end. Both must be in place for tiers above 671M to
+    // actually deliver their labeled neuron count.
+    //
+    // 11264MB (12GB tier) and above: write bindingCeilingMB = 4096
+    // (4GB ceiling — typical for consumer GPUs with --enable-unsafe-webgpu).
+    // 23552MB (24GB tier) and above: write bindingCeilingMB = 6144 (6GB).
+    // 48128MB (workstation): write bindingCeilingMB = 8192 (8GB).
+    // Datacenter tiers don't need this — they're already small-N tuned.
+    const tierId = selectedTier.id;
+    const vramMB = selectedTier.vramMB;
+    let bindingCeilingMB = null;
+    if (tierId === 'prosumer') {
+      bindingCeilingMB = 8192;          // 48GB workstation card → 8GB binding
+    } else if (tierId === 'high-end') {
+      bindingCeilingMB = 6144;          // 24GB consumer flagship → 6GB binding
+    } else if (vramMB >= 11264) {
+      bindingCeilingMB = 4096;          // 12GB+ enthusiast tiers → 4GB binding
+    }
+    // Datacenter tiers don't include bindingCeilingMB — they're already
+    // small-N tuned for tensor-core HBM workloads, not single-buffer scaling.
+    if (bindingCeilingMB !== null) {
+      payload.bindingCeilingMB = bindingCeilingMB;
+    }
   }
 
   try {
