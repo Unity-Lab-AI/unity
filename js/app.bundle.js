@@ -958,7 +958,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "49802930-e62d";
+var BUILD = "0a6eebba-6cd5";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -18460,8 +18460,19 @@ var Curriculum = class _Curriculum {
                   `learned ${phaseKey}`,
                   `teach phase completed in cell ${cellPart}`
                 );
+                if (!this._iter20DFireLogged) {
+                  this._iter20DFireLogged = true;
+                  console.log(`[Curriculum] iter20-D first phase-done episode FIRED \u2014 phaseKey=${phaseKey} cellPart=${cellPart} brainSource=${this.brain ? "this.brain" : "cl._brain"}`);
+                }
+              } else if (!this._iter20DBrainNullLogged) {
+                this._iter20DBrainNullLogged = true;
+                console.warn(`[Curriculum] iter20-D phase-done SKIPPED \u2014 brain ref null. this.brain=${typeof this.brain} cl._brain=${typeof (cl && cl._brain)} phaseKey=${phaseKey}`);
               }
-            } catch {
+            } catch (err) {
+              if (!this._iter20DErrorLogged) {
+                this._iter20DErrorLogged = true;
+                console.warn(`[Curriculum] iter20-D phase-done THREW: ${err?.message || err}`);
+              }
             }
           }
           if (this._currentSubject && this._perSubjectStats) {

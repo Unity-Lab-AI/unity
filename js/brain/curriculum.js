@@ -596,8 +596,28 @@ export class Curriculum {
                 brain.storeEpisode('curriculum-phase', 'phase-done',
                   `learned ${phaseKey}`,
                   `teach phase completed in cell ${cellPart}`);
+                // iter20-G first-fire diagnostic: log ONCE so operator
+                // can confirm the hook is reaching storeEpisode. After
+                // first successful fire, set a flag to suppress further
+                // logs (no spam). If this never logs, hook is blocked
+                // before the call.
+                if (!this._iter20DFireLogged) {
+                  this._iter20DFireLogged = true;
+                  console.log(`[Curriculum] iter20-D first phase-done episode FIRED — phaseKey=${phaseKey} cellPart=${cellPart} brainSource=${this.brain ? 'this.brain' : 'cl._brain'}`);
+                }
+              } else if (!this._iter20DBrainNullLogged) {
+                // Symmetric — log ONCE if brain reference can't be found.
+                // Tells operator iter20-D is reaching the gate but failing
+                // the brain lookup.
+                this._iter20DBrainNullLogged = true;
+                console.warn(`[Curriculum] iter20-D phase-done SKIPPED — brain ref null. this.brain=${typeof this.brain} cl._brain=${typeof (cl && cl._brain)} phaseKey=${phaseKey}`);
               }
-            } catch { /* memory updates non-fatal */ }
+            } catch (err) {
+              if (!this._iter20DErrorLogged) {
+                this._iter20DErrorLogged = true;
+                console.warn(`[Curriculum] iter20-D phase-done THREW: ${err?.message || err}`);
+              }
+            }
           }
           // Every wrapped teach call (outermost OR nested) counts as a
           // teach event for per-subject totals so the dashboard's long-
