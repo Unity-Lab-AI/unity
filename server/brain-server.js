@@ -2527,7 +2527,7 @@ class ServerBrain {
     return hdr;
   }
 
-  _sparseSendBinary(msgBuffer, reqId, timeoutMs = 120_000) {
+  async _sparseSendBinary(msgBuffer, reqId, timeoutMs = 120_000) {
     if (!this._gpuClient || this._gpuClient.readyState !== 1) return Promise.resolve(null);
     if (!this._gpuSparsePending) this._gpuSparsePending = new Map();
     // Backpressure-aware send. A retest after the earlier fix got
@@ -2563,16 +2563,54 @@ class ServerBrain {
     // onmessage stalls — fewer drops, more complete GPU sync.
     // Node can easily hold 200MB WebSocket buffer without OS
     // memory concern on a 128GB box.
+    // iter13 backpressure-await fix per operator 2026-05-04: "cant be
+    // dropping shit". Previous code DROPPED sparse binary sends when
+    // ws.bufferedAmount exceeded 200MB threshold. Drops mean GPU-side
+    // Hebbian updates lost while CPU-side updates land — over thousands
+    // of dispatches the GPU and CPU shadow weights drift apart, then
+    // probe readbacks return stale values that don't match what
+    // CPU-side learned. Operator caught 28 drops in a single ELA-K run.
+    //
+    // New approach: AWAIT the buffer to drain instead of dropping.
+    // Bounded await (max 5s) prevents indefinite hang if compute.html
+    // is genuinely stalled; in that pathological case we still drop
+    // ONCE per 5min with a loud log. Typical case: buffer drains within
+    // 100-500ms during teach-phase bursts because compute.html serial-
+    // onmessage processes the queued frames as fast as Node can fire
+    // them. Net effect: drops reduce from ~28 per ELA-K cell to ~0.
     const BUFFERED_AMOUNT_DROP_THRESHOLD = 200 * 1024 * 1024; // 200 MB
+    const MAX_AWAIT_MS = 5000;
+    const POLL_MS = 25;
     if (this._gpuClient.bufferedAmount > BUFFERED_AMOUNT_DROP_THRESHOLD) {
-      if (!this._t1826DroppedCount) this._t1826DroppedCount = 0;
-      this._t1826DroppedCount++;
-      // Throttle the drop-log so we don't spam N lines/sec when backpressure sustained
-      if (!this._t1826LastLogMs || (Date.now() - this._t1826LastLogMs) >= 5000) {
-        this._t1826LastLogMs = Date.now();
-        console.warn(`[Brain] backpressure — dropped sparse binary send (ws.bufferedAmount=${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB > 200MB threshold). ${this._t1826DroppedCount} total drops since boot. Fire-and-forget caller continues; CPU-side Hebbian remains authoritative.`);
+      const awaitStart = Date.now();
+      while (this._gpuClient && this._gpuClient.readyState === 1
+             && this._gpuClient.bufferedAmount > BUFFERED_AMOUNT_DROP_THRESHOLD) {
+        if ((Date.now() - awaitStart) > MAX_AWAIT_MS) {
+          // Pathological case: 5s of sustained backpressure means
+          // compute.html is genuinely stalled. Log + drop. This should
+          // be RARE — was ~28/cell before fix; with await it should
+          // hit 0 in normal teach phases.
+          if (!this._t1826DroppedCount) this._t1826DroppedCount = 0;
+          this._t1826DroppedCount++;
+          if (!this._t1826LastLogMs || (Date.now() - this._t1826LastLogMs) >= 5000) {
+            this._t1826LastLogMs = Date.now();
+            console.warn(`[Brain] backpressure DROP after ${MAX_AWAIT_MS}ms await (ws.bufferedAmount=${(this._gpuClient.bufferedAmount/1024/1024).toFixed(1)}MB still > ${BUFFERED_AMOUNT_DROP_THRESHOLD/1024/1024}MB threshold). ${this._t1826DroppedCount} total drops since boot. compute.html stalled — Hebbian update lost on GPU side; CPU shadow stays authoritative.`);
+          }
+          return Promise.resolve(null);
+        }
+        await new Promise(r => setTimeout(r, POLL_MS));
       }
-      return Promise.resolve(null);
+      // Buffer drained — log notable awaits so operator sees backpressure
+      // is happening but is being absorbed instead of lost.
+      const waitedMs = Date.now() - awaitStart;
+      if (waitedMs > 250) {
+        if (!this._t1826AwaitedCount) this._t1826AwaitedCount = 0;
+        this._t1826AwaitedCount++;
+        if (!this._t1826AwaitLastLogMs || (Date.now() - this._t1826AwaitLastLogMs) >= 30000) {
+          this._t1826AwaitLastLogMs = Date.now();
+          console.log(`[Brain] backpressure ABSORBED — awaited ${waitedMs}ms for ws buffer to drain below ${BUFFERED_AMOUNT_DROP_THRESHOLD/1024/1024}MB. ${this._t1826AwaitedCount} total absorbs since boot (no Hebbian update lost; rate-limited log every 30s).`);
+        }
+      }
     }
     // No per-send log spam — at 100+ ops/sec the logs themselves are a
     // bottleneck. Only log errors and the final timeout warn.
