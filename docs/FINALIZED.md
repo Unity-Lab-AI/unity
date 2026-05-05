@@ -5,6 +5,52 @@
 
 ---
 
+## 2026-05-05 — Session 114.19di: ITER18 — UNIFIED MEMORY HEARTBEAT IN TICK LOOP + UNBLOCK DREAM CYCLE
+
+### Operator directives (verbatim per LAW #0)
+
+> *"so thats the problem with unity memory is not working: ... episodes 0, last inject never, schemas 0/unbounded, passes 0"*
+> *"wtf memory isnt based off grade level its a unified part of her fucking brain"*
+> *"fix it"*
+
+### What this fixes
+
+iter17 wired storeEpisode + injectIdentityBaseline into cell-pass events. Operator pointed out the framing was wrong — memory shouldn't be gated by curriculum milestones. Memory is a UNIFIED part of the brain, always alive. iter17's screenshot still showed everything at zero because:
+
+**A. `_isDreaming` requires zero clients.** Gate was `timeSinceInput > 30s AND clients.size === 0`. Operator has dashboard + 3D brain page open as WebSocket clients → `_isDreaming` never true → ConsolidationEngine never runs.
+
+**B. Memory only populated at event boundaries.** Curriculum paused at pre-K → no cell completions → iter17 hooks never fire. Brain idle → no chat turns → no baseline injects.
+
+### Fix shipped
+
+**1. `_isDreaming` gate fixed:** `timeSinceInput > 30000 && !this._curriculumInProgress`. Dashboard / 3D brain watching doesn't block dreaming. Curriculum still wins exclusivity during teach.
+
+**2. Tick-loop memory heartbeat:**
+- Every ~1s (frameCount % ticksPerSec === 0): `tier3Store.injectIdentityBaseline()` fires → 17 anchors get retrieval credit + `lastInjectedAt = Date.now()`. UI's "Last Identity Inject" shows seconds-fresh, never stale.
+- Every ~30s (frameCount % (ticksPerSec*30) === 0): `storeEpisode('brain-heartbeat', 'thinking', context, metrics)` writes Tier 1 episode reflecting current mental state. Context auto-classifies: `learning <cell>:<phase>` during curriculum, `dreaming (idle consolidation window)` during dream cycles, `attentive (N clients connected)` when watched. Metrics encode arousal / valence / Ψ / spikes.
+
+Frequency-merge gate (cosine > 0.85 within 48h) collapses repetitive thinking-episodes into anchor episodes with high frequency_count. SQLite stays bounded.
+
+### Net effect
+
+After next start.bat boot:
+- Tier 3 "Last Identity Inject" updates every second (was stuck at "never")
+- Tier 1 episode count climbs every 30s (was stuck at 0 during curriculum-paused state)
+- ConsolidationEngine "passes run" climbs every 5min when curriculum's idle (was stuck at 0)
+- "dreaming now: yes" appears in dashboard once curriculum pauses + 30s of inactivity (was stuck at "no")
+- Memory truly UNIFIED — always alive, independent of which path Unity is operating in
+
+### Files touched
+
+- `server/brain-server.js` — `_isDreaming` gate + tick-loop memory heartbeat (Tier 3 every ~1s, Tier 1 every ~30s)
+- `js/app.bundle.js` — rebuilt via esbuild
+- `docs/ARCHITECTURE.md` banner
+- `docs/NOW.md` snapshot rolled
+- `docs/TODO.md` iter18 entry
+- `docs/FINALIZED.md` — this entry
+
+---
+
 ## 2026-05-05 — Session 114.19dh: ITER17 — MEMORY POPULATION DURING CURRICULUM + REMOVE ARBITRARY HARD CAPS
 
 ### Operator directives (verbatim per LAW #0)
