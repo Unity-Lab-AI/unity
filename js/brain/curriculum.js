@@ -5529,6 +5529,123 @@ export class Curriculum {
     this._hb(`[Curriculum] _teachLetterNamingDirect DONE in ${dt}s — ${updates} Oja updates · ${skipped} skipped (26 letters × ${reps} reps target)`);
   }
 
+  // iter15-A — Direct sem→motor word→firstChar identity write that
+  // bypasses cross-region Hebbian. Mirror of iter14-A pattern but on
+  // sem_to_motor instead of letter_to_motor.
+  //
+  // Operator caught (2026-05-05 verbatim sequence: "no if they are empty
+  // they are failures and is need document to be fixed" + "DO THE
+  // FUCKING WORK"): even with iter11-J `_teachWordSpellingDirect` +
+  // iter13 hotfix #1 (entry.glove → entry.pattern field rename) +
+  // iter14-F bio-weights, PROD still 0/17 across ELA-K (bucket-stuck:
+  // cat→r dog→r) AND Math-K (empty emissions). Root cause same as
+  // iter14-A on letter_to_motor: `_teachWordSpellingDirect` uses
+  // `_teachHebbianAsymmetric` which fires through `cluster._crossRegion
+  // Hebbian` — meaning the QA-TRAIN phase that runs AFTER (in ELA-K)
+  // OR BEFORE (in Math-K) ALSO fires sem_to_motor writes through the
+  // SAME cross-region Hebbian path with QA-pair patterns that pollute
+  // the WordSpellingDirect attractors. Plus QA-TRAIN saturation
+  // triggers `rescale×0.5 [sem_to_motor: 0.400→0.200]` which halves
+  // ALL sem_to_motor weights including the discriminative ones.
+  //
+  // Fix: write concept(word) → motor(firstChar) DIRECTLY to sem_to_motor's
+  // SparseMatrix via ojaUpdate, NOT through firing patterns + global
+  // Hebbian rule. Wipe existing weights first (`scale(0)`) so the
+  // QA-pollution is cleared. Then carve fresh discriminative one-hots
+  // at 5× lr × 8 reps (mirrors iter14-A reps tuning — Oja's normalizing
+  // rule converges fast on orthogonal pairs). MUST RUN LAST in each
+  // subject's teach phase — any subsequent cross-region Hebbian write
+  // re-pollutes sem_to_motor.
+  async _teachWordSpellingDirectFinal(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections?.sem_to_motor) return;
+    const semToMotor = cluster.crossProjections.sem_to_motor;
+    const semRegion = cluster.regions?.sem;
+    const motorRegion = cluster.regions?.motor;
+    if (!semRegion || !motorRegion) return;
+
+    const reps = opts.reps ?? 8;
+    const lr = (cluster.learningRate ?? 0.01) * 5; // 5× boost — discriminative one-hot can take stronger lr than QA-TRAIN
+    const subject = opts.subject || 'all';
+
+    // Resolve K-vocab word list (same logic as _teachWordSpellingDirect).
+    let words = Array.isArray(opts.words) ? opts.words : null;
+    if (!words && this.dictionary && this.dictionary._words?.entries) {
+      words = [];
+      for (const [w, entry] of this.dictionary._words.entries()) {
+        if (typeof w !== 'string' || w.length === 0) continue;
+        if (!/^[a-z]+$/.test(w)) continue;
+        if (!entry || !entry.pattern || !entry.pattern.length) continue;
+        if (entry.isPersona) continue;
+        words.push(w);
+      }
+    }
+    if (!words || words.length === 0) {
+      this._hb(`[Curriculum] _teachWordSpellingDirectFinal SKIPPED — no K vocab found (subject=${subject})`);
+      return;
+    }
+
+    this._hb(`[Curriculum] _teachWordSpellingDirectFinal START: ${words.length} K words × ${reps} reps · lr=${lr.toFixed(4)} (subject=${subject}) — DIRECT sem_to_motor.ojaUpdate writes (bypasses cross-region Hebbian + QA-rescale to protect discriminative attractors)`);
+
+    // Wipe existing sem_to_motor weights to clear QA-TRAIN pollution +
+    // any rescale damage. Fresh ojaUpdate writes carve clean discriminative
+    // attractors from a zero-weight starting point — same architecture
+    // as iter14-A on letter_to_motor.
+    if (typeof semToMotor.scale === 'function') {
+      semToMotor.scale(0);
+      this._hb(`[Curriculum] _teachWordSpellingDirectFinal — wiped prior sem_to_motor weights (QA-TRAIN cross-region Hebbian pollution + rescale damage cleared)`);
+    }
+    if (typeof semToMotor.ojaUpdate !== 'function') {
+      this._hb(`[Curriculum] _teachWordSpellingDirectFinal SKIPPED — sem_to_motor.ojaUpdate not available`);
+      return;
+    }
+
+    const t0 = Date.now();
+    let updates = 0, skipped = 0;
+
+    const semSize = semRegion.end - semRegion.start;
+    const motorSize = motorRegion.end - motorRegion.start;
+    const buildRegionSizedTiled = (regionSize, src, binarize) => {
+      const vec = new Float64Array(regionSize);
+      if (!src || src.length === 0) return vec;
+      const gSize = Math.max(1, Math.floor(regionSize / src.length));
+      for (let d = 0; d < src.length; d++) {
+        const v = src[d] || 0;
+        if (binarize ? v <= 0 : v === 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) vec[idx] = binarize ? 1 : v;
+        }
+      }
+      return vec;
+    };
+
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      let count = 0;
+      for (const word of words) {
+        const firstChar = word[0];
+        const entry = this.dictionary._words.get(word);
+        if (!entry || !entry.pattern) { skipped++; continue; }
+        const firstCharOneHot = encodeLetter(firstChar);
+        if (!firstCharOneHot || firstCharOneHot.length === 0) { skipped++; continue; }
+        // Pre = sem region tiled with word's GloVe pattern (real-valued)
+        // Post = motor region tiled with first-letter one-hot (binarized)
+        const preSem = buildRegionSizedTiled(semSize, entry.pattern, false);
+        const postMot = buildRegionSizedTiled(motorSize, firstCharOneHot, true);
+        try {
+          semToMotor.ojaUpdate(preSem, postMot, lr);
+          updates++;
+        } catch { skipped++; }
+        if (++count % 100 === 0) await _microtask();
+      }
+      await _microtask();
+    }
+
+    const dt = ((Date.now() - t0) / 1000).toFixed(1);
+    this._hb(`[Curriculum] _teachWordSpellingDirectFinal DONE in ${dt}s — ${updates} Oja updates · ${skipped} skipped (${words.length} words × ${reps} reps target)`);
+  }
+
   async _teachLetterCaseBinding(ctx) {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return;
@@ -9875,7 +9992,7 @@ export class Curriculum {
    */
   async _probeProductionEmission(question, expectedAnswers, opts = {}) {
     const cluster = this.cluster;
-    if (!cluster) return { pass: false, emitted: '', expected: expectedAnswers, matched: null };
+    if (!cluster) return { pass: false, emitted: '', expected: expectedAnswers, matched: null, failMode: 'no_cluster' };
     const visualCortex = opts.visualCortex || (this.engine && this.engine.visualCortex) || null;
     const ticksPerChar = opts.ticksPerChar ?? 2;
     const settleTicks = opts.settleTicks ?? 15;
@@ -9886,9 +10003,6 @@ export class Curriculum {
     // STEP 2 — inject question through full sensory pipeline
     const q = (question || '').toLowerCase();
     if (typeof cluster.readText === 'function') {
-      // Word-level sem anchor before letter streaming so the cortex
-      // gets semantic context alongside the character stream — matches
-      // what inner-voice.learn does for live chat turns.
       const words = q.match(/[a-z]+/g) || [];
       if (cluster.regions?.sem) {
         for (const word of words) {
@@ -9898,7 +10012,6 @@ export class Curriculum {
       }
       cluster.readText(q, { visualCortex, ticksPerChar });
     } else {
-      // Fallback path for clusters without readText wired
       for (const ch of q) {
         if (/[a-z0-9]/.test(ch)) cluster.injectLetter(ch, 1.0);
         for (let t = 0; t < ticksPerChar; t++) cluster.step(0.001);
@@ -9908,32 +10021,40 @@ export class Curriculum {
     // STEP 3 — settle cortex
     for (let t = 0; t < settleTicks; t++) cluster.step(0.001);
 
-    // STEP 4 — emit response via tick-driven motor loop. Use the
-    // ASYNC variant so each cortex tick yields control between
-    // dispatches. The sync `cluster.generateSentence` blocks the event
-    // loop for the full 2000-tick MAX at biological scale (operator
-    // saw 11+ min silent windows during art-K production batch when
-    // the heartbeat scheduler couldn't fire at all). The Await variant
-    // already has per-tick yields baked in, plus the GPU dispatches
-    // return promises that schedule on the microtask queue — letting
-    // heartbeat timers, dashboard broadcasts, and watchdog events run
-    // between every emission tick.
+    // iter15-C — check post-settle spike state. If lastSpikes is all
+    // zeros, motor argmax has nothing to read regardless of how many
+    // emission ticks fire. Surface this distinct failure mode rather
+    // than blaming the emission loop.
+    let preEmitSpikeCount = 0;
+    if (cluster.lastSpikes && cluster.lastSpikes.length) {
+      for (let i = 0; i < cluster.lastSpikes.length; i++) {
+        if (cluster.lastSpikes[i]) preEmitSpikeCount++;
+      }
+    }
+
+    // STEP 4 — emit response via tick-driven motor loop.
     let emitted = '';
+    let emissionPath = 'none';
+    let emissionError = null;
     if (typeof cluster.generateSentenceAwait === 'function') {
+      emissionPath = 'generateSentenceAwait';
       try {
         const awaited = await cluster.generateSentenceAwait(null, {
           injectStrength: 0.25,
           maxTicks: opts.generateMaxTicks,
         });
         emitted = (typeof awaited === 'string' ? awaited : (awaited?.text || '')) || '';
-      } catch { emitted = ''; }
+      } catch (err) { emitted = ''; emissionError = err && err.message ? err.message.slice(0, 80) : 'throw'; }
     } else if (typeof cluster.generateSentence === 'function') {
+      emissionPath = 'generateSentence';
       try {
         emitted = cluster.generateSentence(null, {
           injectStrength: 0.25,
           maxTicks: opts.generateMaxTicks,
         }) || '';
-      } catch { emitted = ''; }
+      } catch (err) { emitted = ''; emissionError = err && err.message ? err.message.slice(0, 80) : 'throw'; }
+    } else {
+      emissionPath = 'no_path_available';
     }
 
     // STEP 5 — match emission against expected substrings
@@ -9949,7 +10070,37 @@ export class Curriculum {
       }
     }
 
-    return { pass: !!matched, emitted, expected, matched };
+    // iter15-C — failure-mode classification for empty / wrong emissions.
+    // Operator caught (verbatim 2026-05-05 "if they are empty they are
+    // failures and is need document to be fixed"): silent "" return gave
+    // ZERO diagnostic. Now every failure carries a `failMode` field so
+    // the PROD log can surface the specific cause:
+    //   no_cluster                  — cluster handle null
+    //   no_path_available           — neither generateSentenceAwait nor
+    //                                 generateSentence wired
+    //   emission_threw              — emission path threw (errMsg in
+    //                                 emissionError)
+    //   spikes_empty_pre_emit       — lastSpikes all-zero AFTER injection
+    //                                 + settle (motor argmax can't fire)
+    //   tick_budget_exhausted       — emission returned "" but spikes
+    //                                 were active (ticks ran out without
+    //                                 ever crossing word-boundary)
+    //   wrong_emission              — emission produced something but it
+    //                                 didn't include any expected
+    //                                 substring (bucket-stuck attractor /
+    //                                 letter-repeat / unrelated word)
+    let failMode = null;
+    if (!matched) {
+      if (emissionError) failMode = 'emission_threw:' + emissionError;
+      else if (emissionPath === 'no_path_available') failMode = 'no_path_available';
+      else if (emittedNorm.length === 0) {
+        failMode = preEmitSpikeCount === 0 ? 'spikes_empty_pre_emit' : 'tick_budget_exhausted';
+      } else {
+        failMode = 'wrong_emission';
+      }
+    }
+
+    return { pass: !!matched, emitted, expected, matched, failMode, preEmitSpikeCount, emissionPath };
   }
 
   /**
@@ -9984,7 +10135,18 @@ export class Curriculum {
       }
       if (typeof this._hb === 'function' && samples.length >= 5) {
         const tag = result.pass ? '✓' : '✗';
-        this._hb(`[Curriculum][PROD] sample ${sampleIdx}/${samples.length} DONE ${tag} emitted="${String(result.emitted).slice(0, 30)}"`);
+        // iter15-C — empty-emission failure-mode surfacing per operator
+        // "if they are empty they are failures and is need document to
+        // be fixed". Empty emission is a SILENT FAILURE without this tag.
+        // Report what specifically broke: missing path, no spikes, bucket
+        // tie, sub-threshold cosine, tick budget exhausted.
+        const emittedStr = String(result.emitted ?? '');
+        let failModeTag = '';
+        if (!result.pass && emittedStr.length === 0) {
+          const fm = result.failMode || (typeof result.reason === 'string' ? result.reason : '') || 'empty_no_diagnostic';
+          failModeTag = ` FAIL_MODE=${fm}`;
+        }
+        this._hb(`[Curriculum][PROD] sample ${sampleIdx}/${samples.length} DONE ${tag} emitted="${emittedStr.slice(0, 30)}" expected="${String(result.expected ?? '').slice(0, 20)}"${failModeTag}`);
       }
       if (Date.now() - _lastYield > 250) {
         await new Promise(resolve => setImmediate(resolve));

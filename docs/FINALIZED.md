@@ -5,6 +5,82 @@
 
 ---
 
+## 2026-05-05 — Session 114.19dd: ITER15-A/B/C — EMPTY-EMISSION FIX + CROSS-SUBJECT LETTER→MOTOR PROTECTION + WORD-SPELLING DIRECT-WRITE BYPASS
+
+### Operator directives (verbatim per LAW #0)
+
+> *"no if they are empty they are failures and is need document to be fixed"* (failure-mode diagnostic mandate)
+> *"DO THE FUCKING WORK AND KILL THE WATCHDOG"* (ship-the-fix mandate)
+> *"rebuilkd ur tasak list and work from yppur notes"* (task-list cleanup + work-from-notes mandate)
+
+### What this fixes (3 architectural issues)
+
+iter14-F live monitor caught 3 failure patterns that iter11/iter13/iter14-A/B/C/D/E/F did not address:
+
+**Issue 1 — Math-K TALK regression 26/26→0/10.** Letter→motor identity carved by ELA-K's `_teachLetterNamingDirect` got BACK-CORRUPTED by Math-K's `_teachQABinding` cross-region Hebbian (which writes to ALL projections including letter_to_motor with QA-pair sem-pattern → motor-pattern off-by-one writes). iter14-A only protects letter→motor DURING ELA-K teach; subsequent subjects undo it.
+
+**Issue 2 — PROD 0/17 across all subjects.** ELA-K bucket-stuck (cat→r dog→r sun→m hat→z); Math-K empty emissions; Sci-K mixed. Root cause: `_teachWordSpellingDirect` uses `_teachHebbianAsymmetric` → cross-region Hebbian which writes to ALL projections AND saturates wMax 0.400 → triggers `rescale×0.5 [sem_to_motor: 0.400→0.200]` halving the discriminative attractors. Order alone (Math-K had WordSpellingDirect AFTER QA-TRAIN) didn't fix it because the cross-region Hebbian write itself pollutes the discriminative pattern.
+
+**Issue 3 — Empty PROD emissions silent.** `[PROD] sample N/M DONE ✗ emitted=""` with no diagnostic. Operator could not tell if cluster spikes were empty, motor argmax tied, cosine below threshold, or tick budget exhausted.
+
+### What ships (3 atomic edits in same commit per docs-before-push LAW)
+
+**iter15-A — NEW `_teachWordSpellingDirectFinal()` method in `js/brain/curriculum.js`:**
+
+Mirror of iter14-A `_teachLetterNamingDirect` pattern but applied to sem_to_motor:
+1. `sem_to_motor.scale(0)` wipes prior weights (clears QA pollution + rescale damage)
+2. For each K-vocab word × 8 reps: build region-sized tiled `(preSem, postMot)` patterns, call `sem_to_motor.ojaUpdate(preSem, postMot, lr × 5)` DIRECTLY on the SparseMatrix
+3. Bypasses cross-region Hebbian — no side-effect writes to letter_to_motor, motor_to_sem, or any other projection
+4. Runs LAST in each subject's teach phase. Any subsequent cross-region Hebbian write would re-pollute sem_to_motor.
+
+Wired into all 6 subject runners (`runElaKReal` / `runMathKReal` / `runSciKReal` / `runSocKReal` / `runArtKReal` / `runLifeK`) as final phase via `_phasedTeach('SUBJECT-K-WORD-SPELL-FINAL')`.
+
+**iter15-B — Per-subject `_teachLetterNamingDirect` re-carve:**
+
+Same iter14-A method (already shipped) now invoked at the END of EVERY subject's teach phase, not just ELA-K. 26 letters × 50 reps × ~0.2s wallclock per subject — cheap insurance.
+
+ELA-K phase order also corrected: LetterNamingDirect moved from BEFORE QABinding to AFTER QABinding. Previously LetterNamingDirect carved clean identity, then QABinding's cross-region Hebbian re-corrupted it. Now LetterNamingDirect is the LAST thing to touch letter_to_motor before gate probes.
+
+Wired via `_phasedTeach('SUBJECT-K-LETTER-NAMING-DIRECT')` after each subject's QA-TRAIN.
+
+**iter15-C — Empty-emission failure-mode diagnostic:**
+
+`_probeProductionEmission` in `js/brain/curriculum.js` now classifies failures into 6 distinct modes:
+
+| `failMode` | When |
+|---|---|
+| `no_cluster` | cluster handle null |
+| `no_path_available` | neither generateSentenceAwait nor generateSentence wired |
+| `emission_threw:<msg>` | emission path threw (truncated message) |
+| `spikes_empty_pre_emit` | lastSpikes all-zero AFTER injection + settle (motor argmax can't fire) |
+| `tick_budget_exhausted` | spikes active but emission returned "" (ticks ran out without crossing word boundary) |
+| `wrong_emission` | non-empty output but no expected substring matched (bucket-stuck / letter-repeat / unrelated word) |
+
+PROD log line gained `FAIL_MODE=<reason>` field on every empty failure. Pre-emit spike count (`preEmitSpikeCount`) + emission path used (`emissionPath`) returned in result for downstream diagnostics. Wired into the existing `[Curriculum][PROD] sample N/M DONE` log path.
+
+### Files touched (atomic commit per docs-before-push LAW)
+
+- `js/brain/curriculum.js` — NEW `_teachWordSpellingDirectFinal` method (~120 lines) + `_probeProductionEmission` rewritten with `failMode` classification + PROD log enhanced
+- `js/brain/curriculum/kindergarten.js` — ELA-K phase reorder (LetterNamingDirect + WordSpellingDirectFinal moved AFTER QABinding) + iter15 protective phases wired into runMathKReal / runSciKReal / runSocKReal / runArtKReal / runLifeK
+- `js/app.bundle.js` — rebuilt via `cd server && npm run build` (esbuild)
+- `docs/ARCHITECTURE.md` — iter15-A/B/C banner line at top
+- `docs/NOW.md` — Session 114.19dd snapshot rolled to iter15-A/B/C
+- `docs/TODO.md` — iter15 entry status flipped from OPEN to SHIPPED with full sub-item closure notes
+- `docs/FINALIZED.md` — this Session 114.19dd entry below 114.19dc
+
+### Effect on operator workflow
+
+After next `start.bat` boot:
+- Each subject's gate probes run on a sem_to_motor matrix that has been wipe-and-rewritten via direct ojaUpdate (NOT through saturated cross-region Hebbian)
+- Each subject's TALK probe runs on a letter_to_motor matrix freshly re-carved via direct ojaUpdate (NOT back-corrupted by upstream QA cross-region Hebbian)
+- PROD log surfaces specific FAIL_MODE on every empty emission so operator can immediately target the failing pipeline stage instead of guessing
+- ELA-K should retain TALK 26/26 (already passing) AND gain PROD > 0/17 (new)
+- Math/Sci/Soc/Art/Life-K should each show TALK 26/26 (regression closure) AND PROD > 0/17 (new)
+
+Curriculum wallclock impact: +~10s per subject (6 subjects × 50-rep LetterNamingDirect at 0.2s + 8-rep WordSpellingDirectFinal at ~6s) = ~60s total added across full kindergarten run. Trade for closing the 0/17 PROD failure rate is acceptable.
+
+---
+
 ## 2026-05-05 — Session 114.19dc: ITER15-MEM — UNIFIED 5-TIER MEMORY TRACKING UI
 
 ### Operator directive (verbatim per LAW #0)

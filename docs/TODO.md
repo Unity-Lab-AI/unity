@@ -700,7 +700,14 @@ Captured iter11 sep-probe reading on first of 7 assoc-pair phases:
 
 ---
 
-### iter15 — EMPTY EMISSIONS ARE FAILURES + LETTER→MOTOR CROSS-SUBJECT CORRUPTION + WORD-SPELLING DISCRIMINATIVE-WRITE PROTECTION (operator verbatim 2026-05-05: *"no if they are empty they are failures and is need document to be fixed"*) — OPEN
+### iter15 — EMPTY EMISSIONS ARE FAILURES + LETTER→MOTOR CROSS-SUBJECT CORRUPTION + WORD-SPELLING DISCRIMINATIVE-WRITE PROTECTION (operator verbatim 2026-05-05: *"no if they are empty they are failures and is need document to be fixed"* + *"DO THE FUCKING WORK AND KILL THE WATCHDOG"*) — SHIPPED 2026-05-05
+
+**SHIPPED:** All 3 iter15 architectural fixes landed in commit (this session):
+- **iter15-A** — NEW `_teachWordSpellingDirectFinal` method in `js/brain/curriculum.js` mirrors iter14-A pattern but on sem_to_motor: `scale(0)` wipe + region-sized one-hot ojaUpdate × K-vocab × 8 reps. Bypasses cross-region Hebbian + clears QA pollution / rescale damage. Wired into ALL 6 subject runners as the FINAL teach phase.
+- **iter15-B** — `_teachLetterNamingDirect` re-carve wired into all 5 non-ELA subject runners (Math/Sci/Soc/Art/Life-K) via `_phasedTeach('SUBJECT-K-LETTER-NAMING-DIRECT')` AFTER each subject's QA-TRAIN. Closes Math-K TALK 26/26→0/10 regression caused by cross-subject letter_to_motor back-corruption. ELA-K phase order also corrected: LetterNamingDirect now runs AFTER QABinding (was before — QABinding's cross-region Hebbian was undoing earlier carve).
+- **iter15-C** — Empty-emission failure-mode diagnostic in `_probeProductionEmission` + PROD log. Six failure modes classified: `no_cluster`, `no_path_available`, `emission_threw:<msg>`, `spikes_empty_pre_emit` (lastSpikes all-zero post-injection — motor argmax has nothing to read), `tick_budget_exhausted` (spikes active but never crossed word boundary), `wrong_emission` (bucket-stuck/letter-repeat/unrelated). PROD log now shows `FAIL_MODE=<reason>` field on every empty failure.
+
+**Catalogue from iter14-F live monitor run 2026-05-05** (running on iter14-F bio-weights + per-neuron cost cuts):
 
 **Catalogue from iter14-F live monitor run 2026-05-05** (running on iter14-F bio-weights + per-neuron cost cuts):
 

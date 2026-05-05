@@ -958,7 +958,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "bfd15586-d3c4";
+var BUILD = "36740beb-8b71";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -12934,6 +12934,12 @@ var K_MIXIN = {
       if (typeof this._teachWordSpellingDirect === "function") {
         await this._phasedTeach("LIFE-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "life" }));
       }
+      if (typeof this._teachLetterNamingDirect === "function") {
+        await this._phasedTeach("LIFE-K-LETTER-NAMING-DIRECT", () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+      if (typeof this._teachWordSpellingDirectFinal === "function") {
+        await this._phasedTeach("LIFE-K-WORD-SPELL-FINAL", () => this._teachWordSpellingDirectFinal({ reps: 8, subject: "life" }));
+      }
       this._lifeKRemakeDone = true;
     }
     return await this._gateLifeKReal();
@@ -13036,6 +13042,12 @@ var K_MIXIN = {
       }
       if (typeof this._teachWordSpellingDirect === "function") {
         await this._phasedTeach("ART-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "art" }));
+      }
+      if (typeof this._teachLetterNamingDirect === "function") {
+        await this._phasedTeach("ART-K-LETTER-NAMING-DIRECT", () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+      if (typeof this._teachWordSpellingDirectFinal === "function") {
+        await this._phasedTeach("ART-K-WORD-SPELL-FINAL", () => this._teachWordSpellingDirectFinal({ reps: 8, subject: "art" }));
       }
       this._artKRemakeDone = true;
     }
@@ -13196,6 +13208,12 @@ var K_MIXIN = {
       if (typeof this._teachWordSpellingDirect === "function") {
         await this._phasedTeach("SOC-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "social" }));
       }
+      if (typeof this._teachLetterNamingDirect === "function") {
+        await this._phasedTeach("SOC-K-LETTER-NAMING-DIRECT", () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+      if (typeof this._teachWordSpellingDirectFinal === "function") {
+        await this._phasedTeach("SOC-K-WORD-SPELL-FINAL", () => this._teachWordSpellingDirectFinal({ reps: 8, subject: "social" }));
+      }
       this._socKRemakeDone = true;
     }
     return await this._gateSocKReal();
@@ -13341,6 +13359,12 @@ var K_MIXIN = {
       }
       if (typeof this._teachWordSpellingDirect === "function") {
         await this._phasedTeach("SCI-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "science" }));
+      }
+      if (typeof this._teachLetterNamingDirect === "function") {
+        await this._phasedTeach("SCI-K-LETTER-NAMING-DIRECT", () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+      if (typeof this._teachWordSpellingDirectFinal === "function") {
+        await this._phasedTeach("SCI-K-WORD-SPELL-FINAL", () => this._teachWordSpellingDirectFinal({ reps: 8, subject: "science" }));
       }
       this._sciKRemakeDone = true;
     }
@@ -13603,6 +13627,12 @@ var K_MIXIN = {
       }
       if (typeof this._teachWordSpellingDirect === "function") {
         await this._phasedTeach("MATH-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "math" }));
+      }
+      if (typeof this._teachLetterNamingDirect === "function") {
+        await this._phasedTeach("MATH-K-LETTER-NAMING-DIRECT", () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+      if (typeof this._teachWordSpellingDirectFinal === "function") {
+        await this._phasedTeach("MATH-K-WORD-SPELL-FINAL", () => this._teachWordSpellingDirectFinal({ reps: 8, subject: "math" }));
       }
       this._mathKTransformsDone = true;
     }
@@ -16140,11 +16170,6 @@ var K_MIXIN = {
         _phaseDone("_teachLetterNaming");
       }
       this._memorySnapshotAndGc("after _teachLetterNaming");
-      if (typeof this._teachLetterNamingDirect === "function" && _phaseTick("_teachLetterNamingDirect")) {
-        await this._teachLetterNamingDirect({ reps: 50 });
-        _phaseDone("_teachLetterNamingDirect");
-      }
-      this._memorySnapshotAndGc("after _teachLetterNamingDirect");
       if (typeof this._teachWordSpellingDirect === "function" && _phaseTick("_teachWordSpellingDirect")) {
         await this._teachWordSpellingDirect({ reps: 8, subject: "ela" });
         _phaseDone("_teachWordSpellingDirect");
@@ -16153,6 +16178,15 @@ var K_MIXIN = {
         const qaTrain = TRAIN_BANKS["ela/kindergarten"] || [];
         await this._teachQABinding(qaTrain, { label: "ELA-K-QA-TRAIN" });
         _phaseDone("_teachQABinding");
+      }
+      if (typeof this._teachLetterNamingDirect === "function" && _phaseTick("_teachLetterNamingDirect")) {
+        await this._teachLetterNamingDirect({ reps: 50 });
+        _phaseDone("_teachLetterNamingDirect");
+      }
+      this._memorySnapshotAndGc("after _teachLetterNamingDirect");
+      if (typeof this._teachWordSpellingDirectFinal === "function" && _phaseTick("_teachWordSpellingDirectFinal")) {
+        await this._teachWordSpellingDirectFinal({ reps: 8, subject: "ela" });
+        _phaseDone("_teachWordSpellingDirectFinal");
       }
       this._elaKRemakeDone = true;
     }
@@ -22391,6 +22425,115 @@ var Curriculum = class _Curriculum {
     const dt = ((Date.now() - t0) / 1e3).toFixed(1);
     this._hb(`[Curriculum] _teachLetterNamingDirect DONE in ${dt}s \u2014 ${updates} Oja updates \xB7 ${skipped} skipped (26 letters \xD7 ${reps} reps target)`);
   }
+  // iter15-A — Direct sem→motor word→firstChar identity write that
+  // bypasses cross-region Hebbian. Mirror of iter14-A pattern but on
+  // sem_to_motor instead of letter_to_motor.
+  //
+  // Operator caught (2026-05-05 verbatim sequence: "no if they are empty
+  // they are failures and is need document to be fixed" + "DO THE
+  // FUCKING WORK"): even with iter11-J `_teachWordSpellingDirect` +
+  // iter13 hotfix #1 (entry.glove → entry.pattern field rename) +
+  // iter14-F bio-weights, PROD still 0/17 across ELA-K (bucket-stuck:
+  // cat→r dog→r) AND Math-K (empty emissions). Root cause same as
+  // iter14-A on letter_to_motor: `_teachWordSpellingDirect` uses
+  // `_teachHebbianAsymmetric` which fires through `cluster._crossRegion
+  // Hebbian` — meaning the QA-TRAIN phase that runs AFTER (in ELA-K)
+  // OR BEFORE (in Math-K) ALSO fires sem_to_motor writes through the
+  // SAME cross-region Hebbian path with QA-pair patterns that pollute
+  // the WordSpellingDirect attractors. Plus QA-TRAIN saturation
+  // triggers `rescale×0.5 [sem_to_motor: 0.400→0.200]` which halves
+  // ALL sem_to_motor weights including the discriminative ones.
+  //
+  // Fix: write concept(word) → motor(firstChar) DIRECTLY to sem_to_motor's
+  // SparseMatrix via ojaUpdate, NOT through firing patterns + global
+  // Hebbian rule. Wipe existing weights first (`scale(0)`) so the
+  // QA-pollution is cleared. Then carve fresh discriminative one-hots
+  // at 5× lr × 8 reps (mirrors iter14-A reps tuning — Oja's normalizing
+  // rule converges fast on orthogonal pairs). MUST RUN LAST in each
+  // subject's teach phase — any subsequent cross-region Hebbian write
+  // re-pollutes sem_to_motor.
+  async _teachWordSpellingDirectFinal(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections?.sem_to_motor) return;
+    const semToMotor = cluster.crossProjections.sem_to_motor;
+    const semRegion = cluster.regions?.sem;
+    const motorRegion = cluster.regions?.motor;
+    if (!semRegion || !motorRegion) return;
+    const reps = opts.reps ?? 8;
+    const lr = (cluster.learningRate ?? 0.01) * 5;
+    const subject = opts.subject || "all";
+    let words = Array.isArray(opts.words) ? opts.words : null;
+    if (!words && this.dictionary && this.dictionary._words?.entries) {
+      words = [];
+      for (const [w, entry] of this.dictionary._words.entries()) {
+        if (typeof w !== "string" || w.length === 0) continue;
+        if (!/^[a-z]+$/.test(w)) continue;
+        if (!entry || !entry.pattern || !entry.pattern.length) continue;
+        if (entry.isPersona) continue;
+        words.push(w);
+      }
+    }
+    if (!words || words.length === 0) {
+      this._hb(`[Curriculum] _teachWordSpellingDirectFinal SKIPPED \u2014 no K vocab found (subject=${subject})`);
+      return;
+    }
+    this._hb(`[Curriculum] _teachWordSpellingDirectFinal START: ${words.length} K words \xD7 ${reps} reps \xB7 lr=${lr.toFixed(4)} (subject=${subject}) \u2014 DIRECT sem_to_motor.ojaUpdate writes (bypasses cross-region Hebbian + QA-rescale to protect discriminative attractors)`);
+    if (typeof semToMotor.scale === "function") {
+      semToMotor.scale(0);
+      this._hb(`[Curriculum] _teachWordSpellingDirectFinal \u2014 wiped prior sem_to_motor weights (QA-TRAIN cross-region Hebbian pollution + rescale damage cleared)`);
+    }
+    if (typeof semToMotor.ojaUpdate !== "function") {
+      this._hb(`[Curriculum] _teachWordSpellingDirectFinal SKIPPED \u2014 sem_to_motor.ojaUpdate not available`);
+      return;
+    }
+    const t0 = Date.now();
+    let updates = 0, skipped = 0;
+    const semSize = semRegion.end - semRegion.start;
+    const motorSize = motorRegion.end - motorRegion.start;
+    const buildRegionSizedTiled = (regionSize, src, binarize) => {
+      const vec = new Float64Array(regionSize);
+      if (!src || src.length === 0) return vec;
+      const gSize = Math.max(1, Math.floor(regionSize / src.length));
+      for (let d = 0; d < src.length; d++) {
+        const v = src[d] || 0;
+        if (binarize ? v <= 0 : v === 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) vec[idx] = binarize ? 1 : v;
+        }
+      }
+      return vec;
+    };
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      let count = 0;
+      for (const word of words) {
+        const firstChar = word[0];
+        const entry = this.dictionary._words.get(word);
+        if (!entry || !entry.pattern) {
+          skipped++;
+          continue;
+        }
+        const firstCharOneHot = encodeLetter(firstChar);
+        if (!firstCharOneHot || firstCharOneHot.length === 0) {
+          skipped++;
+          continue;
+        }
+        const preSem = buildRegionSizedTiled(semSize, entry.pattern, false);
+        const postMot = buildRegionSizedTiled(motorSize, firstCharOneHot, true);
+        try {
+          semToMotor.ojaUpdate(preSem, postMot, lr);
+          updates++;
+        } catch {
+          skipped++;
+        }
+        if (++count % 100 === 0) await _microtask();
+      }
+      await _microtask();
+    }
+    const dt = ((Date.now() - t0) / 1e3).toFixed(1);
+    this._hb(`[Curriculum] _teachWordSpellingDirectFinal DONE in ${dt}s \u2014 ${updates} Oja updates \xB7 ${skipped} skipped (${words.length} words \xD7 ${reps} reps target)`);
+  }
   async _teachLetterCaseBinding(ctx) {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return;
@@ -26284,7 +26427,7 @@ var Curriculum = class _Curriculum {
    */
   async _probeProductionEmission(question, expectedAnswers, opts = {}) {
     const cluster = this.cluster;
-    if (!cluster) return { pass: false, emitted: "", expected: expectedAnswers, matched: null };
+    if (!cluster) return { pass: false, emitted: "", expected: expectedAnswers, matched: null, failMode: "no_cluster" };
     const visualCortex = opts.visualCortex || this.engine && this.engine.visualCortex || null;
     const ticksPerChar = opts.ticksPerChar ?? 2;
     const settleTicks = opts.settleTicks ?? 15;
@@ -26306,26 +26449,40 @@ var Curriculum = class _Curriculum {
       }
     }
     for (let t = 0; t < settleTicks; t++) cluster.step(1e-3);
+    let preEmitSpikeCount = 0;
+    if (cluster.lastSpikes && cluster.lastSpikes.length) {
+      for (let i = 0; i < cluster.lastSpikes.length; i++) {
+        if (cluster.lastSpikes[i]) preEmitSpikeCount++;
+      }
+    }
     let emitted = "";
+    let emissionPath = "none";
+    let emissionError = null;
     if (typeof cluster.generateSentenceAwait === "function") {
+      emissionPath = "generateSentenceAwait";
       try {
         const awaited = await cluster.generateSentenceAwait(null, {
           injectStrength: 0.25,
           maxTicks: opts.generateMaxTicks
         });
         emitted = (typeof awaited === "string" ? awaited : awaited?.text || "") || "";
-      } catch {
+      } catch (err) {
         emitted = "";
+        emissionError = err && err.message ? err.message.slice(0, 80) : "throw";
       }
     } else if (typeof cluster.generateSentence === "function") {
+      emissionPath = "generateSentence";
       try {
         emitted = cluster.generateSentence(null, {
           injectStrength: 0.25,
           maxTicks: opts.generateMaxTicks
         }) || "";
-      } catch {
+      } catch (err) {
         emitted = "";
+        emissionError = err && err.message ? err.message.slice(0, 80) : "throw";
       }
+    } else {
+      emissionPath = "no_path_available";
     }
     const emittedNorm = String(emitted).toLowerCase().trim();
     const expected = Array.isArray(expectedAnswers) ? expectedAnswers : [expectedAnswers];
@@ -26338,7 +26495,17 @@ var Curriculum = class _Curriculum {
         break;
       }
     }
-    return { pass: !!matched, emitted, expected, matched };
+    let failMode = null;
+    if (!matched) {
+      if (emissionError) failMode = "emission_threw:" + emissionError;
+      else if (emissionPath === "no_path_available") failMode = "no_path_available";
+      else if (emittedNorm.length === 0) {
+        failMode = preEmitSpikeCount === 0 ? "spikes_empty_pre_emit" : "tick_budget_exhausted";
+      } else {
+        failMode = "wrong_emission";
+      }
+    }
+    return { pass: !!matched, emitted, expected, matched, failMode, preEmitSpikeCount, emissionPath };
   }
   /**
    * Run a batch of production probes. Returns `{pass, total, fails: [{q, emitted, expected}...]}`.
@@ -26365,7 +26532,13 @@ var Curriculum = class _Curriculum {
       }
       if (typeof this._hb === "function" && samples.length >= 5) {
         const tag = result.pass ? "\u2713" : "\u2717";
-        this._hb(`[Curriculum][PROD] sample ${sampleIdx}/${samples.length} DONE ${tag} emitted="${String(result.emitted).slice(0, 30)}"`);
+        const emittedStr = String(result.emitted ?? "");
+        let failModeTag = "";
+        if (!result.pass && emittedStr.length === 0) {
+          const fm = result.failMode || (typeof result.reason === "string" ? result.reason : "") || "empty_no_diagnostic";
+          failModeTag = ` FAIL_MODE=${fm}`;
+        }
+        this._hb(`[Curriculum][PROD] sample ${sampleIdx}/${samples.length} DONE ${tag} emitted="${emittedStr.slice(0, 30)}" expected="${String(result.expected ?? "").slice(0, 20)}"${failModeTag}`);
       }
       if (Date.now() - _lastYield > 250) {
         await new Promise((resolve) => setImmediate(resolve));
