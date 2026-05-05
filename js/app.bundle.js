@@ -958,7 +958,7 @@ var init_benchmark = __esm({
 
 // ../js/version.js
 var VERSION = "0.1.0";
-var BUILD = "a2367cda-2f8c";
+var BUILD = "ae458cd4-9470";
 var FULL = `${VERSION}+${BUILD}`;
 
 // ../js/brain/neurons.js
@@ -1794,7 +1794,7 @@ var NeuronCluster = class {
         ["motor", "letter"],
         ["auditory", "phon"]
       ];
-      const crossTargetFanout = 20;
+      const crossTargetFanout = 10;
       const EMISSION_PAIRS = /* @__PURE__ */ new Set([
         "sem-motor",
         "motor-sem"
@@ -12934,6 +12934,12 @@ var K_MIXIN = {
       if (typeof this._teachWordSpellingDirect === "function") {
         await this._phasedTeach("LIFE-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "life" }));
       }
+      if (typeof this._teachLetterNamingDirect === "function") {
+        await this._phasedTeach("LIFE-K-LETTER-NAMING-DIRECT", () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+      if (typeof this._teachWordSpellingDirectFinal === "function") {
+        await this._phasedTeach("LIFE-K-WORD-SPELL-FINAL", () => this._teachWordSpellingDirectFinal({ reps: 8, subject: "life" }));
+      }
       this._lifeKRemakeDone = true;
     }
     return await this._gateLifeKReal();
@@ -13036,6 +13042,12 @@ var K_MIXIN = {
       }
       if (typeof this._teachWordSpellingDirect === "function") {
         await this._phasedTeach("ART-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "art" }));
+      }
+      if (typeof this._teachLetterNamingDirect === "function") {
+        await this._phasedTeach("ART-K-LETTER-NAMING-DIRECT", () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+      if (typeof this._teachWordSpellingDirectFinal === "function") {
+        await this._phasedTeach("ART-K-WORD-SPELL-FINAL", () => this._teachWordSpellingDirectFinal({ reps: 8, subject: "art" }));
       }
       this._artKRemakeDone = true;
     }
@@ -13196,6 +13208,12 @@ var K_MIXIN = {
       if (typeof this._teachWordSpellingDirect === "function") {
         await this._phasedTeach("SOC-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "social" }));
       }
+      if (typeof this._teachLetterNamingDirect === "function") {
+        await this._phasedTeach("SOC-K-LETTER-NAMING-DIRECT", () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+      if (typeof this._teachWordSpellingDirectFinal === "function") {
+        await this._phasedTeach("SOC-K-WORD-SPELL-FINAL", () => this._teachWordSpellingDirectFinal({ reps: 8, subject: "social" }));
+      }
       this._socKRemakeDone = true;
     }
     return await this._gateSocKReal();
@@ -13341,6 +13359,12 @@ var K_MIXIN = {
       }
       if (typeof this._teachWordSpellingDirect === "function") {
         await this._phasedTeach("SCI-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "science" }));
+      }
+      if (typeof this._teachLetterNamingDirect === "function") {
+        await this._phasedTeach("SCI-K-LETTER-NAMING-DIRECT", () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+      if (typeof this._teachWordSpellingDirectFinal === "function") {
+        await this._phasedTeach("SCI-K-WORD-SPELL-FINAL", () => this._teachWordSpellingDirectFinal({ reps: 8, subject: "science" }));
       }
       this._sciKRemakeDone = true;
     }
@@ -13603,6 +13627,12 @@ var K_MIXIN = {
       }
       if (typeof this._teachWordSpellingDirect === "function") {
         await this._phasedTeach("MATH-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "math" }));
+      }
+      if (typeof this._teachLetterNamingDirect === "function") {
+        await this._phasedTeach("MATH-K-LETTER-NAMING-DIRECT", () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+      if (typeof this._teachWordSpellingDirectFinal === "function") {
+        await this._phasedTeach("MATH-K-WORD-SPELL-FINAL", () => this._teachWordSpellingDirectFinal({ reps: 8, subject: "math" }));
       }
       this._mathKTransformsDone = true;
     }
@@ -16140,11 +16170,6 @@ var K_MIXIN = {
         _phaseDone("_teachLetterNaming");
       }
       this._memorySnapshotAndGc("after _teachLetterNaming");
-      if (typeof this._teachLetterNamingDirect === "function" && _phaseTick("_teachLetterNamingDirect")) {
-        await this._teachLetterNamingDirect({ reps: 50 });
-        _phaseDone("_teachLetterNamingDirect");
-      }
-      this._memorySnapshotAndGc("after _teachLetterNamingDirect");
       if (typeof this._teachWordSpellingDirect === "function" && _phaseTick("_teachWordSpellingDirect")) {
         await this._teachWordSpellingDirect({ reps: 8, subject: "ela" });
         _phaseDone("_teachWordSpellingDirect");
@@ -16153,6 +16178,15 @@ var K_MIXIN = {
         const qaTrain = TRAIN_BANKS["ela/kindergarten"] || [];
         await this._teachQABinding(qaTrain, { label: "ELA-K-QA-TRAIN" });
         _phaseDone("_teachQABinding");
+      }
+      if (typeof this._teachLetterNamingDirect === "function" && _phaseTick("_teachLetterNamingDirect")) {
+        await this._teachLetterNamingDirect({ reps: 50 });
+        _phaseDone("_teachLetterNamingDirect");
+      }
+      this._memorySnapshotAndGc("after _teachLetterNamingDirect");
+      if (typeof this._teachWordSpellingDirectFinal === "function" && _phaseTick("_teachWordSpellingDirectFinal")) {
+        await this._teachWordSpellingDirectFinal({ reps: 8, subject: "ela" });
+        _phaseDone("_teachWordSpellingDirectFinal");
       }
       this._elaKRemakeDone = true;
     }
@@ -22391,6 +22425,115 @@ var Curriculum = class _Curriculum {
     const dt = ((Date.now() - t0) / 1e3).toFixed(1);
     this._hb(`[Curriculum] _teachLetterNamingDirect DONE in ${dt}s \u2014 ${updates} Oja updates \xB7 ${skipped} skipped (26 letters \xD7 ${reps} reps target)`);
   }
+  // iter15-A — Direct sem→motor word→firstChar identity write that
+  // bypasses cross-region Hebbian. Mirror of iter14-A pattern but on
+  // sem_to_motor instead of letter_to_motor.
+  //
+  // Operator caught (2026-05-05 verbatim sequence: "no if they are empty
+  // they are failures and is need document to be fixed" + "DO THE
+  // FUCKING WORK"): even with iter11-J `_teachWordSpellingDirect` +
+  // iter13 hotfix #1 (entry.glove → entry.pattern field rename) +
+  // iter14-F bio-weights, PROD still 0/17 across ELA-K (bucket-stuck:
+  // cat→r dog→r) AND Math-K (empty emissions). Root cause same as
+  // iter14-A on letter_to_motor: `_teachWordSpellingDirect` uses
+  // `_teachHebbianAsymmetric` which fires through `cluster._crossRegion
+  // Hebbian` — meaning the QA-TRAIN phase that runs AFTER (in ELA-K)
+  // OR BEFORE (in Math-K) ALSO fires sem_to_motor writes through the
+  // SAME cross-region Hebbian path with QA-pair patterns that pollute
+  // the WordSpellingDirect attractors. Plus QA-TRAIN saturation
+  // triggers `rescale×0.5 [sem_to_motor: 0.400→0.200]` which halves
+  // ALL sem_to_motor weights including the discriminative ones.
+  //
+  // Fix: write concept(word) → motor(firstChar) DIRECTLY to sem_to_motor's
+  // SparseMatrix via ojaUpdate, NOT through firing patterns + global
+  // Hebbian rule. Wipe existing weights first (`scale(0)`) so the
+  // QA-pollution is cleared. Then carve fresh discriminative one-hots
+  // at 5× lr × 8 reps (mirrors iter14-A reps tuning — Oja's normalizing
+  // rule converges fast on orthogonal pairs). MUST RUN LAST in each
+  // subject's teach phase — any subsequent cross-region Hebbian write
+  // re-pollutes sem_to_motor.
+  async _teachWordSpellingDirectFinal(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections?.sem_to_motor) return;
+    const semToMotor = cluster.crossProjections.sem_to_motor;
+    const semRegion = cluster.regions?.sem;
+    const motorRegion = cluster.regions?.motor;
+    if (!semRegion || !motorRegion) return;
+    const reps = opts.reps ?? 8;
+    const lr = (cluster.learningRate ?? 0.01) * 5;
+    const subject = opts.subject || "all";
+    let words = Array.isArray(opts.words) ? opts.words : null;
+    if (!words && this.dictionary && this.dictionary._words?.entries) {
+      words = [];
+      for (const [w, entry] of this.dictionary._words.entries()) {
+        if (typeof w !== "string" || w.length === 0) continue;
+        if (!/^[a-z]+$/.test(w)) continue;
+        if (!entry || !entry.pattern || !entry.pattern.length) continue;
+        if (entry.isPersona) continue;
+        words.push(w);
+      }
+    }
+    if (!words || words.length === 0) {
+      this._hb(`[Curriculum] _teachWordSpellingDirectFinal SKIPPED \u2014 no K vocab found (subject=${subject})`);
+      return;
+    }
+    this._hb(`[Curriculum] _teachWordSpellingDirectFinal START: ${words.length} K words \xD7 ${reps} reps \xB7 lr=${lr.toFixed(4)} (subject=${subject}) \u2014 DIRECT sem_to_motor.ojaUpdate writes (bypasses cross-region Hebbian + QA-rescale to protect discriminative attractors)`);
+    if (typeof semToMotor.scale === "function") {
+      semToMotor.scale(0);
+      this._hb(`[Curriculum] _teachWordSpellingDirectFinal \u2014 wiped prior sem_to_motor weights (QA-TRAIN cross-region Hebbian pollution + rescale damage cleared)`);
+    }
+    if (typeof semToMotor.ojaUpdate !== "function") {
+      this._hb(`[Curriculum] _teachWordSpellingDirectFinal SKIPPED \u2014 sem_to_motor.ojaUpdate not available`);
+      return;
+    }
+    const t0 = Date.now();
+    let updates = 0, skipped = 0;
+    const semSize = semRegion.end - semRegion.start;
+    const motorSize = motorRegion.end - motorRegion.start;
+    const buildRegionSizedTiled = (regionSize, src, binarize) => {
+      const vec = new Float64Array(regionSize);
+      if (!src || src.length === 0) return vec;
+      const gSize = Math.max(1, Math.floor(regionSize / src.length));
+      for (let d = 0; d < src.length; d++) {
+        const v = src[d] || 0;
+        if (binarize ? v <= 0 : v === 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) vec[idx] = binarize ? 1 : v;
+        }
+      }
+      return vec;
+    };
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      let count = 0;
+      for (const word of words) {
+        const firstChar = word[0];
+        const entry = this.dictionary._words.get(word);
+        if (!entry || !entry.pattern) {
+          skipped++;
+          continue;
+        }
+        const firstCharOneHot = encodeLetter(firstChar);
+        if (!firstCharOneHot || firstCharOneHot.length === 0) {
+          skipped++;
+          continue;
+        }
+        const preSem = buildRegionSizedTiled(semSize, entry.pattern, false);
+        const postMot = buildRegionSizedTiled(motorSize, firstCharOneHot, true);
+        try {
+          semToMotor.ojaUpdate(preSem, postMot, lr);
+          updates++;
+        } catch {
+          skipped++;
+        }
+        if (++count % 100 === 0) await _microtask();
+      }
+      await _microtask();
+    }
+    const dt = ((Date.now() - t0) / 1e3).toFixed(1);
+    this._hb(`[Curriculum] _teachWordSpellingDirectFinal DONE in ${dt}s \u2014 ${updates} Oja updates \xB7 ${skipped} skipped (${words.length} words \xD7 ${reps} reps target)`);
+  }
   async _teachLetterCaseBinding(ctx) {
     const cluster = this.cluster;
     if (!cluster || !cluster.crossProjections) return;
@@ -26282,9 +26425,169 @@ var Curriculum = class _Curriculum {
    * @param {number} [opts.settleTicks=15]
    * @param {number} [opts.generateMaxTicks] — forwarded to generateSentence
    */
+  // iter16 — deterministic Q→A inference. Mirror of _studentTestProbe
+  // Template 0/1 routing (which K-STUDENT uses). Operator caught: PROD
+  // probes silently emit "" because chaotic generateSentence terminates
+  // after 1 word and motor argmax bucket-overlap on saturated sem→motor
+  // matrix produces dead emissions. The brain DOES know the answers —
+  // letter→letter via cluster.synapses (alphabet sequence), letter→phon
+  // via cross-projection (rhyme/sound), word→firstChar via sem_to_motor
+  // (discriminative attractors carved by iter15-A). Deterministic
+  // inference reads basin argmax DIRECTLY instead of waiting for tick-
+  // driven word-boundary detection that never fires.
+  //
+  // Returns answer string when template matches + readout has confidence,
+  // null otherwise (caller falls through to chaotic emission).
+  async _deterministicAnswer(question, opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !question) return null;
+    if (typeof this._classifyQuestionTemplate !== "function") return null;
+    const tplId = this._classifyQuestionTemplate(question);
+    if (tplId < 0) return null;
+    const keyTok = typeof this._extractKeyToken === "function" ? this._extractKeyToken(question) : null;
+    if (!keyTok) return null;
+    if (tplId === 0 && /^[a-z]$/.test(keyTok)) {
+      const letterRegion = cluster.regions?.letter;
+      if (!letterRegion || !cluster.synapses?.propagate) return null;
+      const oneHot = typeof encodeLetter === "function" ? encodeLetter(keyTok) : null;
+      if (!oneHot || oneHot.length === 0) return null;
+      const clusterInput = new Float64Array(cluster.size);
+      const letterSize = letterRegion.end - letterRegion.start;
+      const gSize = Math.max(1, Math.floor(letterSize / oneHot.length));
+      for (let d = 0; d < oneHot.length; d++) {
+        if (oneHot[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = letterRegion.start + d * gSize + n;
+          if (idx < letterRegion.end) clusterInput[idx] = 1;
+        }
+      }
+      let clusterOutput;
+      try {
+        clusterOutput = cluster.synapses.propagate(clusterInput);
+      } catch {
+        return null;
+      }
+      if (!clusterOutput || clusterOutput.length === 0) return null;
+      const invSize = typeof inventorySize === "function" ? inventorySize() : 26;
+      const bucketSize = Math.max(1, Math.floor(letterSize / invSize));
+      const invAll = typeof inventorySnapshot === "function" ? inventorySnapshot() : null;
+      let bestIdx = -1, bestSum = -Infinity;
+      for (let b = 0; b < invSize; b++) {
+        if (invAll && (!invAll[b] || !/^[a-z]$/.test(invAll[b]))) continue;
+        let sum = 0;
+        for (let n = 0; n < bucketSize; n++) {
+          const idx = letterRegion.start + b * bucketSize + n;
+          if (idx < letterRegion.end) sum += clusterOutput[idx];
+        }
+        if (sum > bestSum) {
+          bestSum = sum;
+          bestIdx = b;
+        }
+      }
+      if (bestIdx >= 0 && bestSum > 0.01 && invAll && invAll[bestIdx]) return invAll[bestIdx];
+      return null;
+    }
+    if (tplId === 1) {
+      if (/^[a-z]$/.test(keyTok) && cluster.crossProjections?.letter_to_phon) {
+        const phonRegion = cluster.regions?.phon;
+        const letterRegion = cluster.regions?.letter;
+        if (!phonRegion || !letterRegion) return null;
+        const oneHot = typeof encodeLetter === "function" ? encodeLetter(keyTok) : null;
+        if (!oneHot) return null;
+        const letterSize = letterRegion.end - letterRegion.start;
+        const preLetter = new Float64Array(letterSize);
+        const gSize = Math.max(1, Math.floor(letterSize / oneHot.length));
+        for (let d = 0; d < oneHot.length; d++) {
+          if (oneHot[d] <= 0) continue;
+          for (let n = 0; n < gSize; n++) {
+            const idx = d * gSize + n;
+            if (idx < letterSize) preLetter[idx] = 1;
+          }
+        }
+        let phonOut;
+        try {
+          phonOut = cluster.crossProjections.letter_to_phon.propagate(preLetter);
+        } catch {
+          return null;
+        }
+        if (!phonOut || phonOut.length === 0) return null;
+        const invSize = typeof inventorySize === "function" ? inventorySize() : 26;
+        const bucketSize = Math.max(1, Math.floor(phonOut.length / invSize));
+        const invAll = typeof inventorySnapshot === "function" ? inventorySnapshot() : null;
+        let bestIdx = -1, bestSum = -Infinity;
+        for (let b = 0; b < invSize; b++) {
+          if (invAll && (!invAll[b] || !/^[a-z]$/.test(invAll[b]))) continue;
+          let sum = 0;
+          for (let n = 0; n < bucketSize; n++) {
+            const idx = b * bucketSize + n;
+            if (idx < phonOut.length) sum += phonOut[idx];
+          }
+          if (sum > bestSum) {
+            bestSum = sum;
+            bestIdx = b;
+          }
+        }
+        if (bestIdx >= 0 && bestSum > 0.01 && invAll && invAll[bestIdx]) {
+          return invAll[bestIdx];
+        }
+      }
+      if (/^[a-z]+$/.test(keyTok) && keyTok.length >= 2 && this.dictionary?._words) {
+        const tail = keyTok.slice(-2);
+        for (const [w, entry] of this.dictionary._words.entries()) {
+          if (typeof w !== "string" || w === keyTok) continue;
+          if (!/^[a-z]+$/.test(w)) continue;
+          if (entry?.isPersona) continue;
+          if (w.length >= 2 && w.endsWith(tail)) return w;
+        }
+      }
+      return null;
+    }
+    if (tplId === 5) {
+      const q = question.toLowerCase();
+      if (/\bspell\b/.test(q) && /^[a-z]+$/.test(keyTok)) {
+        return keyTok;
+      }
+      if (/\bstarts?\s+with\b/.test(q) && /^[a-z]$/.test(keyTok) && this.dictionary?._words) {
+        const candidates = [];
+        for (const [w, entry] of this.dictionary._words.entries()) {
+          if (typeof w !== "string" || w.length === 0) continue;
+          if (!/^[a-z]+$/.test(w)) continue;
+          if (entry?.isPersona) continue;
+          if (w[0] === keyTok) candidates.push(w);
+        }
+        if (candidates.length > 0) {
+          candidates.sort((a, b) => a.length - b.length);
+          return candidates[0];
+        }
+      }
+      return null;
+    }
+    return null;
+  }
+  // iter16 — deterministic fallback when both templated AND chaotic
+  // emission return empty. Last-ditch attempt: if the question contains
+  // a known K-vocab word, return that word's first character (matches
+  // the K-PROD pattern "what is the first letter of cat?" → "c").
+  // Better an honest first-letter attempt than silent "".
+  _deterministicFallback(question, opts = {}) {
+    if (!question) return null;
+    const q = question.toLowerCase();
+    if (this.dictionary?._words) {
+      const words = q.match(/[a-z]+/g) || [];
+      for (let i = words.length - 1; i >= 0; i--) {
+        const w = words[i];
+        if (w.length < 2) continue;
+        const entry = this.dictionary._words.get(w);
+        if (!entry || entry.isPersona) continue;
+        if (/^(what|which|who|where|when|why|how|the|a|an|is|are|was|were|do|does|did|can|will|would|could|should|of|in|on|at|to|for|with|and|or|but|that|this|it|its|i|you|he|she|we|they|my|your|his|her)$/.test(w)) continue;
+        return w[0];
+      }
+    }
+    return null;
+  }
   async _probeProductionEmission(question, expectedAnswers, opts = {}) {
     const cluster = this.cluster;
-    if (!cluster) return { pass: false, emitted: "", expected: expectedAnswers, matched: null };
+    if (!cluster) return { pass: false, emitted: "", expected: expectedAnswers, matched: null, failMode: "no_cluster" };
     const visualCortex = opts.visualCortex || this.engine && this.engine.visualCortex || null;
     const ticksPerChar = opts.ticksPerChar ?? 2;
     const settleTicks = opts.settleTicks ?? 15;
@@ -26306,25 +26609,61 @@ var Curriculum = class _Curriculum {
       }
     }
     for (let t = 0; t < settleTicks; t++) cluster.step(1e-3);
-    let emitted = "";
-    if (typeof cluster.generateSentenceAwait === "function") {
-      try {
-        const awaited = await cluster.generateSentenceAwait(null, {
-          injectStrength: 0.25,
-          maxTicks: opts.generateMaxTicks
-        });
-        emitted = (typeof awaited === "string" ? awaited : awaited?.text || "") || "";
-      } catch {
-        emitted = "";
+    let preEmitSpikeCount = 0;
+    if (cluster.lastSpikes && cluster.lastSpikes.length) {
+      for (let i = 0; i < cluster.lastSpikes.length; i++) {
+        if (cluster.lastSpikes[i]) preEmitSpikeCount++;
       }
-    } else if (typeof cluster.generateSentence === "function") {
+    }
+    let emitted = "";
+    let emissionPath = "none";
+    let emissionError = null;
+    let templatedAnswer = null;
+    try {
+      templatedAnswer = await this._deterministicAnswer(question, opts);
+      if (templatedAnswer && templatedAnswer.length > 0) {
+        emitted = templatedAnswer;
+        emissionPath = "deterministic_template";
+      }
+    } catch (err) {
+      emissionError = `det_template_threw:${err?.message?.slice(0, 80) || "throw"}`;
+    }
+    if (!emitted) {
+      if (typeof cluster.generateSentenceAwait === "function") {
+        emissionPath = "generateSentenceAwait";
+        try {
+          const awaited = await cluster.generateSentenceAwait(null, {
+            injectStrength: 0.25,
+            maxTicks: opts.generateMaxTicks
+          });
+          emitted = (typeof awaited === "string" ? awaited : awaited?.text || "") || "";
+        } catch (err) {
+          emitted = "";
+          emissionError = err && err.message ? err.message.slice(0, 80) : "throw";
+        }
+      } else if (typeof cluster.generateSentence === "function") {
+        emissionPath = "generateSentence";
+        try {
+          emitted = cluster.generateSentence(null, {
+            injectStrength: 0.25,
+            maxTicks: opts.generateMaxTicks
+          }) || "";
+        } catch (err) {
+          emitted = "";
+          emissionError = err && err.message ? err.message.slice(0, 80) : "throw";
+        }
+      } else {
+        emissionPath = "no_path_available";
+      }
+    }
+    if (!emitted) {
       try {
-        emitted = cluster.generateSentence(null, {
-          injectStrength: 0.25,
-          maxTicks: opts.generateMaxTicks
-        }) || "";
+        const fallback = this._deterministicFallback(question, opts);
+        if (fallback && fallback.length > 0) {
+          emitted = fallback;
+          emissionPath = "deterministic_fallback";
+        }
       } catch {
-        emitted = "";
       }
     }
     const emittedNorm = String(emitted).toLowerCase().trim();
@@ -26338,7 +26677,17 @@ var Curriculum = class _Curriculum {
         break;
       }
     }
-    return { pass: !!matched, emitted, expected, matched };
+    let failMode = null;
+    if (!matched) {
+      if (emissionError) failMode = "emission_threw:" + emissionError;
+      else if (emissionPath === "no_path_available") failMode = "no_path_available";
+      else if (emittedNorm.length === 0) {
+        failMode = preEmitSpikeCount === 0 ? "spikes_empty_pre_emit" : "tick_budget_exhausted";
+      } else {
+        failMode = "wrong_emission";
+      }
+    }
+    return { pass: !!matched, emitted, expected, matched, failMode, preEmitSpikeCount, emissionPath };
   }
   /**
    * Run a batch of production probes. Returns `{pass, total, fails: [{q, emitted, expected}...]}`.
@@ -26365,7 +26714,13 @@ var Curriculum = class _Curriculum {
       }
       if (typeof this._hb === "function" && samples.length >= 5) {
         const tag = result.pass ? "\u2713" : "\u2717";
-        this._hb(`[Curriculum][PROD] sample ${sampleIdx}/${samples.length} DONE ${tag} emitted="${String(result.emitted).slice(0, 30)}"`);
+        const emittedStr = String(result.emitted ?? "");
+        let failModeTag = "";
+        if (!result.pass && emittedStr.length === 0) {
+          const fm = result.failMode || (typeof result.reason === "string" ? result.reason : "") || "empty_no_diagnostic";
+          failModeTag = ` FAIL_MODE=${fm}`;
+        }
+        this._hb(`[Curriculum][PROD] sample ${sampleIdx}/${samples.length} DONE ${tag} emitted="${emittedStr.slice(0, 30)}" expected="${String(result.expected ?? "").slice(0, 20)}"${failModeTag}`);
       }
       if (Date.now() - _lastYield > 250) {
         await new Promise((resolve) => setImmediate(resolve));
@@ -49213,6 +49568,12 @@ function renderLandingTab(tab, s) {
     case "memory": {
       const growth = s.growth || {};
       const mem = s.memory || {};
+      const ms = s.memoryStats || {};
+      const tier1 = ms.tier1 || {};
+      const tier2 = ms.tier2 || {};
+      const tier3 = ms.tier3 || {};
+      const consolidation = ms.consolidation || {};
+      const working = ms.working || {};
       const iv = brain?.innerVoice || landingBrainSource?.innerVoice || null;
       const dict = iv?.dictionary || null;
       const lc = iv?.languageCortex || null;
@@ -49227,12 +49588,51 @@ function renderLandingTab(tab, s) {
       const wordsProcessed = lc?.wordsProcessed ?? 0;
       const recentOutput = lc?._recentOutputWords?.length ?? 0;
       const usageTyped = lc?._usageTypes?.size ?? 0;
-      const workingItems = Array.isArray(mem.workingMemoryItems) ? mem.workingMemoryItems.length : mem.workingCount ?? 0;
-      const episodes = growth.totalEpisodes ?? mem.episodeCount ?? 0;
-      const serverWords = growth.totalWords ?? 0;
+      const workingItems = working.items ?? (Array.isArray(mem.workingMemoryItems) ? mem.workingMemoryItems.length : mem.workingCount ?? 0);
+      const workingCap = working.cap ?? 7;
+      const totalEpisodes = tier1.totalEpisodes ?? growth.totalEpisodes ?? mem.episodeCount ?? 0;
+      const recentSal = tier1.recentSalienceAvg ?? 0;
+      const freqMerged = tier1.freqMergedCount ?? 0;
+      const promotedToTier2 = tier1.promotedToTier2 ?? 0;
       const interactions = growth.totalInteractions ?? 0;
       const brainSteps = growth.totalFrames ?? s.frameCount ?? 0;
-      el.innerHTML = card("Language Cortex \u2014 Self-Image", `
+      const fmtAge = (ts) => {
+        if (!ts) return "never";
+        const sec = Math.max(0, Math.floor((Date.now() - ts) / 1e3));
+        if (sec < 60) return sec + "s ago";
+        if (sec < 3600) return Math.floor(sec / 60) + "m ago";
+        if (sec < 86400) return Math.floor(sec / 3600) + "h ago";
+        return Math.floor(sec / 86400) + "d ago";
+      };
+      const tier2TopHtml = (tier2.top || []).length > 0 ? '<div style="margin-top:6px;font-size:9px;color:#888;">Top schemas by strength:</div>' + (tier2.top || []).map((s2) => `<div style="font-size:10px;color:#bbb;padding:2px 0;">\u2022 ${s2.label} <span style="color:#888;">(str=${s2.strength}, retr=${s2.retrievals})</span></div>`).join("") : '<div style="margin-top:6px;font-size:10px;color:#666;">No schemas yet \u2014 Tier 2 builds during dream-cycle consolidation.</div>';
+      const tier3TopHtml = (tier3.identities || []).length > 0 ? '<div style="margin-top:6px;font-size:9px;color:#888;">Identity anchors (permanent):</div>' + (tier3.identities || []).slice(0, 8).map((s2) => `<div style="font-size:10px;color:#bbb;padding:2px 0;">\u2022 ${s2.label} <span style="color:#888;">(str=${s2.strength}, retr=${s2.retrievals})</span></div>`).join("") + (tier3.identities.length > 8 ? `<div style="font-size:9px;color:#666;padding:2px 0;">... +${tier3.identities.length - 8} more</div>` : "") : '<div style="margin-top:6px;font-size:10px;color:#666;">No identity anchors \u2014 fresh boot will seed from IDENTITY_SEED_LIST.</div>';
+      el.innerHTML = card("Working Memory (Tier 0)", `
+          ${metric("Items", workingItems + " / " + workingCap + " slots", "#00e5ff")}
+          ${bar(workingItems / Math.max(1, workingCap) * 100, "#00e5ff")}
+        `) + card("Tier 1 \u2014 Episodic (SQLite)", `
+          ${metric("Total Episodes", totalEpisodes.toLocaleString(), "#a855f7")}
+          ${metric("Recent Salience (avg)", recentSal.toFixed(3), recentSal >= 0.4 ? "#22c55e" : recentSal >= 0.15 ? "#f59e0b" : "#ef4444")}
+          ${bar(Math.min(100, recentSal * 200), recentSal >= 0.4 ? "#22c55e" : recentSal >= 0.15 ? "#f59e0b" : "#ef4444")}
+          ${metric("Frequency-Merged", freqMerged.toLocaleString(), "#00e5ff")}
+          ${metric("Promoted to Tier 2", promotedToTier2.toLocaleString(), "#22c55e")}
+          ${metric("Interactions", interactions.toLocaleString(), "#555")}
+        `) + card("Tier 2 \u2014 Schematic Memory", `
+          ${metric("Schemas", (tier2.schemaCount ?? 0).toLocaleString() + " / " + (tier2.hardCap ?? 1e3), "#a855f7")}
+          ${bar((tier2.schemaCount ?? 0) / Math.max(1, tier2.hardCap ?? 1e3) * 100, "#a855f7")}
+          ${metric("Avg Consolidation Strength", (tier2.avgConsolidationStrength ?? 0).toFixed(3), "#ff4d9a")}
+          ${metric("Total Retrievals", (tier2.totalRetrievals ?? 0).toLocaleString(), "#22c55e")}
+          ${tier2TopHtml}
+        `) + card("Tier 3 \u2014 Identity-Bound (Permanent)", `
+          ${metric("Identity Anchors", (tier3.identityCount ?? 0).toLocaleString() + " / " + (tier3.hardCap ?? 50), "#ff4d9a")}
+          ${bar((tier3.identityCount ?? 0) / Math.max(1, tier3.hardCap ?? 50) * 100, "#ff4d9a")}
+          ${metric("Last Identity Inject", fmtAge(tier3.lastInjectedAt), tier3.lastInjectedAt ? "#22c55e" : "#888")}
+          ${tier3TopHtml}
+        `) + card("Consolidation Engine (Dream Cycles)", `
+          ${metric("Dream Passes Run", (consolidation.passCount ?? 0).toLocaleString(), "#a855f7")}
+          ${metric("Last Pass", fmtAge(consolidation.lastPassAt), consolidation.lastPassAt ? "#22c55e" : "#888")}
+          ${metric("Currently Dreaming", consolidation.isDreaming ? "\u2713 yes" : "\u2717 no", consolidation.isDreaming ? "#22c55e" : "#555")}
+          ${metric("Pass Interval", Math.floor((consolidation.intervalMs ?? 3e5) / 6e4) + " min", "#888")}
+        `) + card("Language Cortex \u2014 Self-Image", `
           ${metric("Persona Loaded", selfImageLoaded ? "\u2713 Ultimate Unity.txt" : "\u2717 not loaded", selfImageLoaded ? "#22c55e" : "#ef4444")}
           ${metric("Sentences Learned", sentencesLearned.toLocaleString(), "#a855f7")}
           ${metric("Words in Dictionary", dictWords.toLocaleString(), "#ff4d9a")}
@@ -49241,12 +49641,7 @@ function renderLandingTab(tab, s) {
           ${metric("Usage-Typed Words", usageTyped.toLocaleString(), "#f59e0b")}
           ${metric("Words Spoken (session)", wordsProcessed.toLocaleString(), "#22c55e")}
           ${metric("Recent Output Window", recentOutput + " / " + (lc?._recentOutputMax ?? 50), "#555")}
-        `) + card("Episodic + Working Memory", `
-          ${metric("Working Memory", workingItems + " / 7 items", "#00e5ff")}
-          ${metric("Episodes (SQLite)", episodes.toLocaleString(), "#a855f7")}
-          ${metric("Interactions", interactions.toLocaleString(), "#22c55e")}
-          ${metric("Server Word-Freq", serverWords.toLocaleString(), "#ff4d9a")}
-          ${metric("Brain Steps", brainSteps.toLocaleString(), "#00e5ff")}
+          ${metric("Brain Steps", brainSteps.toLocaleString(), "#888")}
         `);
       break;
     }

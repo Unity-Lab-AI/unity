@@ -505,10 +505,13 @@ function connectToServer() {
       ws.send(JSON.stringify({ type: 'gpu_init_ack', clusterName, size }));
 
       const totalInit = Object.keys(clusterState).length;
-      // Seven main-brain clusters total (cortex / hippocampus / amygdala /
-      // basalGanglia / cerebellum / hypothalamus / mystery). Language
-      // cortex lives as sub-regions of cortex per T17.7 — not an 8th
-      // cluster. Display was hardcoded to "/8" pre-T17.7; now correct.
+      // Seven GPU-resident main-brain clusters total (cortex /
+      // hippocampus / amygdala / basalGanglia / cerebellum /
+      // hypothalamus / mystery). The language cortex is the 8th
+      // cluster but lives CPU-side (NeuronCluster instance with
+      // SparseMatrix cross-projections that don't yet have a GPU
+      // path) — so this status counter stays at /7 since it's
+      // tracking GPU-init progress only.
       statusEl.textContent = `GPU initialized: ${totalInit}/7 clusters — ${clusterName} (${size.toLocaleString()} neurons)`;
       console.log(`[GPU] Initialized ${clusterName}: ${size.toLocaleString()} neurons (${totalInit}/7)`);
       renderHierarchy();

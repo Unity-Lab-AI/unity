@@ -413,7 +413,18 @@ export class NeuronCluster {
       // Biologically realistic for a single cortical area pair (real
       // long-range cortical connections are ~100-1000 per neuron
       // distributed across MANY cortical areas — per-pair is lower).
-      const crossTargetFanout = 20;
+      //
+      // iter14-F per operator 2026-05-04 "MAKE THE LANGUAGE CORTEX
+      // BIG ENOUGH AS ITS THE MAIN FUCKING THING THIS BRAIN DOES":
+      // fanout cut 20→10 to halve cross-projection per-neuron storage
+      // cost. Combined with INTRA_CONNECTIVITY_CAP 0.15→0.05 in
+      // brain-server.js this roughly doubles language-cortex neuron
+      // count at fixed VRAM. Stays in biological range (real per-pair
+      // cortical fanout is closer to 50-200 across MANY areas; for
+      // a single pair, 10 is sparse but functional with the contrastive
+      // Hebbian + top-K-per-row pruning that keeps basins separable).
+      // Must stay in sync with brain-server.js CROSS_TARGET_FANOUT.
+      const crossTargetFanout = 10;
       // sem↔motor projections init with 50/50 excitatory/inhibitory
       // (zero-mean random weights) instead of default 70/30. Killed
       // the positive-bias baseline that drowned Hebbian training on

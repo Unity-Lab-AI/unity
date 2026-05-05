@@ -231,15 +231,52 @@ const RESOURCES = detectResources();
 // Operator verbatim 2026-04-22: "!M LANGUAGE CORTEX TO MATCH A REAL
 // BRAIN IT NEEDS TO BE MORE LIKE 25% of the fucking brain!!! ... fix
 // it now heftyly and thouroughly".
+//
+// iter14-F per operator 2026-05-04 sequence:
+//   1. "MAKE THE LANGUAGE CORTEX BIG ENOUGH AS ITS THE MAIN FUCKING
+//      THING THIS BRAIN DOES"
+//   2. "WTRF ARE YOU DOING YOU CANT MAKE THE OTHER BAINR SECTORES
+//      ONLY FRACTIONS OF THIR ORIGINAL SIZES" — rejected an earlier
+//      draft that cut 7 main clusters to 0.4-0.8% each
+//   3. "NO YOU FUCK THERE AR NOT BRAIN SECTIONS THAT ARE ONLY 1%
+//      OF THE BRAIN THAT IS NOT FUCKING NORMALLL AT MINUMIM EACH
+//      IS NO LESS THAT 4OR5%" — explicit floor on per-cluster
+//      bio-weight
+//   4. "NO FUCKER LOOK UP THE REAL FUCKING NUMBERS!" — research
+//      directive
+//
+// Real biology per Herculano-Houzel 2009 ("The Human Brain in
+// Numbers", Frontiers Hum Neurosci & PNAS):
+//   - Cerebellum: 80% of neurons (~69B), 10% of mass — granule
+//     cells dominate by count
+//   - Cerebral cortex: 19% of neurons (~16B), 82% of mass
+//   - All subcortical combined: 0.8% of neurons (~700M), 8% of
+//     mass — individually <1% by neuron count, ~1-2% by mass
+// Operator's 5% floor exceeds biology — applied anyway because
+// OPERATOR > BIOLOGY when explicit. Old iter6 split had
+// basalGanglia/hypothalamus at 1% absolute (way below operator's
+// 5% floor) and amygdala/mystery at 2%. Rebalance lifts all
+// subcortical to 6% floor, lifts cerebellum to real-brain 10%
+// mass share, drops language to 0.50 to make room. Language is
+// still the largest single cluster.
+//
+// Net effect at 16GB tier:
+//   - language_cortex: 0.75→0.50, but combined with CROSS_TARGET_
+//     FANOUT 20→10 + INTRA_CONNECTIVITY_CAP 0.15→0.05 cuts (per-
+//     neuron cost ~halved), language lands at ~715K neurons (up
+//     from 611K)
+//   - main brain: 0.25→0.50, total grows from ~178M to ~285M
+//     with no cluster starved below 6%
+//   - both grow; neither sacrificed
 const DEFAULT_BIO_WEIGHTS = {
-  language_cortex: 0.75,
+  language_cortex: 0.50,
   cortex:          0.10,
-  cerebellum:      0.05,
-  hippocampus:     0.04,
-  amygdala:        0.02,
-  basalGanglia:    0.01,
-  hypothalamus:    0.01,
-  mystery:         0.02,
+  cerebellum:      0.10,
+  hippocampus:     0.06,
+  amygdala:        0.06,
+  basalGanglia:    0.06,
+  hypothalamus:    0.06,
+  mystery:         0.06,
 };
 const BRAIN_VRAM_ALLOC = (function () {
   const cfg = RESOURCES.override || {};
@@ -1027,9 +1064,27 @@ class ServerBrain {
       // 25% needs architecture redesign (topographic sparse, hierarchy,
       // or streaming from CPU). Must match cluster.js values exactly.
       const CORTEX_TARGET_FANOUT = 30;          // matches cortexCluster opts.targetFanout
-      const CROSS_TARGET_FANOUT = 20;           // matches cluster.js crossTargetFanout (cut 30→20 for basin-collapse fix)
+      // iter14-F per operator 2026-05-04 ("MAKE THE LANGUAGE CORTEX
+      // BIG ENOUGH"): cut CROSS_TARGET_FANOUT 20→10 to halve cross-
+      // projection nnz storage. Each cross-projection at fanout 20
+      // stored dst_size × 20 entries × 8 bytes; at fanout 10 stores
+      // dst_size × 10 × 8 = 50% reduction. With 14 cross-projections
+      // per language cortex, this is the dominant per-neuron cost
+      // driver. Combined with bio-weight bump 0.75→0.90 and intra-
+      // connectivity cut 0.15→0.05, language cortex should deliver
+      // ~1.3M neurons at 16GB tier instead of 611K. Basin-separation
+      // risk acknowledged: prior cut 30→20 was the iter6 basin-collapse
+      // fix; further cut to 10 is more aggressive. If sep-probe results
+      // pin in OVERLOAD band, can be tuned back up to 14-16 in next
+      // iteration. Must match cluster.js crossTargetFanout exactly.
+      const CROSS_TARGET_FANOUT = 10;
       const BYTES_PER_NNZ = 8;                  // Float32 value + Uint32 colIdx
-      const INTRA_CONNECTIVITY_CAP = 0.15;      // cortexCluster opts.connectivity
+      // iter14-F: cut intra-density cap 0.15 → 0.05. At small-N (under
+      // ~600 neurons) the intra-synapse matrix used to consume up to
+      // 15% density × N² entries. Cut to 5% caps storage at small-N
+      // without affecting at-scale where the runtime clamp via
+      // (CORTEX_TARGET_FANOUT / size) keeps actual density much smaller.
+      const INTRA_CONNECTIVITY_CAP = 0.05;
       const CROSS_DENSITY_CAP = 0.005;          // cluster.js cross-projection clamp
       const FRACTIONS = {
         auditory: 0.083,
@@ -1926,6 +1981,13 @@ class ServerBrain {
         uptime: (Date.now() - (this._startedAt || Date.now())) / 1000,
         totalFrames: this.frameCount,
       },
+      // iter15-mem — unified 5-tier memory snapshot for dashboard +
+      // 3D brain memory tab. Tier 1 (Episodic SQLite) + Tier 2
+      // (Schematic) + Tier 3 (Identity-bound) + ConsolidationEngine
+      // + Working memory all in one payload. Operator verbatim:
+      // "shall be one unified system of the brain for memory not
+      // some side processes".
+      memoryStats: this._getMemoryStats(),
       // Live brain-event stream — plasticity fires, curriculum phases,
       // drug events, template classifications, everything the cortex
       // is DOING in the current window. Each entry carries
@@ -4832,6 +4894,118 @@ class ServerBrain {
     return this._stmtEpisodeCount.get().count;
   }
 
+  /**
+   * iter15-mem — unified 5-tier memory stats for dashboard / 3D brain UI.
+   *
+   * Operator verbatim 2026-05-05: "now that we added memory we need a way
+   * to track it as the dashboard has nothing and the 3D brain page only
+   * has [basic episodic counts] — not enough information to accurat;ly
+   * track the memory abilities of the brain we implimented and whould
+   * and shall be one unified system of the brain for memory not some
+   * side processes".
+   *
+   * Returns a snapshot of all 5 memory tiers in one payload so both the
+   * dashboard.html unified-memory card and the 3D brain landing page
+   * memory tab read from a single source of truth.
+   *
+   * Tier 1 (Episodic) lives in episodic-memory.db; we read aggregates.
+   * Tier 2 (Schematic) + Tier 3 (Identity-bound) live in their respective
+   * Map stores; we summarize counts + top-K + averages. ConsolidationEngine
+   * exposes lastPassAt + passCount publicly.
+   */
+  _getMemoryStats() {
+    const stats = {
+      tier1: { totalEpisodes: 0, recentSalienceAvg: 0, freqMergedCount: 0, promotedToTier2: 0, prunedTotal: 0 },
+      tier2: { schemaCount: 0, hardCap: 1000, avgConsolidationStrength: 0, totalRetrievals: 0, top: [] },
+      tier3: { identityCount: 0, hardCap: 50, lastInjectedAt: 0, identities: [] },
+      consolidation: { lastPassAt: 0, passCount: 0, isDreaming: false, intervalMs: 5 * 60 * 1000 },
+      working: { items: 0, cap: 7 },
+    };
+
+    // Tier 1 — Episodic (SQLite)
+    if (this._db) {
+      try {
+        stats.tier1.totalEpisodes = this.getEpisodeCount();
+        // Recent salience snapshot (last 20 episodes)
+        if (this._stmtRecentEpisodes) {
+          const recent = this._stmtRecentEpisodes.all(20);
+          if (Array.isArray(recent) && recent.length > 0) {
+            let sumSal = 0; let n = 0;
+            for (const ep of recent) {
+              if (typeof ep.salience_score === 'number') { sumSal += ep.salience_score; n++; }
+            }
+            if (n > 0) stats.tier1.recentSalienceAvg = sumSal / n;
+          }
+        }
+        // Aggregate counts (frequency-merged, promoted, pruned counters)
+        if (typeof this._db.prepare === 'function') {
+          try {
+            const merged = this._db.prepare('SELECT SUM(frequency_count - 1) as merged FROM episodes WHERE frequency_count > 1').get();
+            stats.tier1.freqMergedCount = (merged && merged.merged) || 0;
+            const promoted = this._db.prepare('SELECT COUNT(*) as c FROM episodes WHERE promoted_to_schema_id IS NOT NULL').get();
+            stats.tier1.promotedToTier2 = (promoted && promoted.c) || 0;
+          } catch (e) { /* schema mismatch on older db, skip */ }
+        }
+      } catch (err) { /* db not ready, leave defaults */ }
+    }
+
+    // Tier 2 — Schematic
+    if (this.schemaStore && typeof this.schemaStore.size === 'function') {
+      stats.tier2.schemaCount = this.schemaStore.size();
+      stats.tier2.hardCap = this.schemaStore.maxSchemas || 1000;
+      let strSum = 0; let retrievSum = 0; let n = 0;
+      const all = [];
+      for (const sch of this.schemaStore.schemas.values()) {
+        all.push(sch);
+        if (typeof sch.consolidationStrength === 'number') strSum += sch.consolidationStrength;
+        if (typeof sch.retrievalCount === 'number') retrievSum += sch.retrievalCount;
+        n++;
+      }
+      stats.tier2.avgConsolidationStrength = n > 0 ? strSum / n : 0;
+      stats.tier2.totalRetrievals = retrievSum;
+      // Top 5 by consolidation strength
+      all.sort((a, b) => (b.consolidationStrength || 0) - (a.consolidationStrength || 0));
+      stats.tier2.top = all.slice(0, 5).map(s => ({
+        label: s.label || 'unlabeled',
+        strength: Number((s.consolidationStrength || 0).toFixed(3)),
+        retrievals: s.retrievalCount || 0,
+      }));
+    }
+
+    // Tier 3 — Identity-bound (permanent)
+    if (this.tier3Store && typeof this.tier3Store.size === 'function') {
+      stats.tier3.identityCount = this.tier3Store.size();
+      stats.tier3.hardCap = this.tier3Store.hardCap || 50;
+      stats.tier3.lastInjectedAt = this.tier3Store.lastInjectedAt || 0;
+      const ids = [];
+      for (const sch of this.tier3Store.identitySchemas.values()) {
+        ids.push({
+          label: sch.label || 'unlabeled',
+          strength: Number((sch.consolidationStrength || 0).toFixed(3)),
+          retrievals: sch.retrievalCount || 0,
+          lastRetrievalAt: sch.lastRetrievalAt || 0,
+        });
+      }
+      ids.sort((a, b) => b.strength - a.strength);
+      stats.tier3.identities = ids;
+    }
+
+    // ConsolidationEngine
+    if (this.consolidationEngine) {
+      stats.consolidation.lastPassAt = this.consolidationEngine.lastPassAt || 0;
+      stats.consolidation.passCount = this.consolidationEngine.passCount || 0;
+      stats.consolidation.isDreaming = this._isDreaming === true;
+    }
+
+    // Working memory (existing field on this.memory)
+    const mem = this.memory || {};
+    stats.working.items = Array.isArray(mem.workingMemoryItems) ? mem.workingMemoryItems.length
+                       : (mem.workingCount || 0);
+    stats.working.cap = mem.workingCap || 7;
+
+    return stats;
+  }
+
   // ── Persistence ──────────────────────────────────────────────
 
   saveWeights(opts = {}) {
@@ -6677,6 +6851,46 @@ function _spawnGpuClient(port) {
     console.log(`[Server] DREAM_NO_AUTO_GPU=1 — skipping browser auto-launch. Open http://localhost:${port}/compute.html manually to start GPU compute.`);
     return;
   }
+  // iter15-D — kill any Chrome process attached to the isolated
+  // UnityBrain-WebGPU-Profile BEFORE checking the existing-client guard.
+  // Operator caught (verbatim 2026-05-05 "the compute html is not
+  // opening correclty the dangerous skip one ... just dashboard and 3D
+  // brain is opening"): stop.bat killed the node server but NOT the
+  // isolated Chrome window holding compute.html. On next start.bat,
+  // that lingering Chrome's WebSocket auto-reconnect picked up the
+  // new server BEFORE this auto-launch ran — the T18.11 guard below
+  // saw "already connected" and skipped the spawn. Operator ended up
+  // with no visible compute.html because the prior Chrome window was
+  // hidden / minimized / on another virtual desktop. Fix: kill any
+  // Chrome processes whose command line contains
+  // UnityBrain-WebGPU-Profile so the guard sees no client and the
+  // auto-launch proceeds with a fresh window the operator can see.
+  if (process.platform === 'win32') {
+    try {
+      const { execSync } = require('child_process');
+      // PowerShell Get-CimInstance is the modern WMIC replacement.
+      // Only kills Chrome / Edge attached to OUR isolated profile —
+      // operator's regular Chrome stays alive.
+      execSync(
+        'powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -match \'^chrome\\.exe$|^msedge\\.exe$\' -and $_.CommandLine -like \'*UnityBrain-WebGPU-Profile*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"',
+        { stdio: 'ignore', timeout: 5000 }
+      );
+      // Force-clear the GPU client reference so the guard below sees no
+      // client. The killed Chrome's WebSocket close event will eventually
+      // fire async and re-clear state (idempotent). Without this, the
+      // event loop hasn't yet processed the disconnect when the guard
+      // checks readyState — guard fires, spawn skips, operator ends up
+      // with no compute.html again.
+      if (brain) {
+        brain._gpuClient = null;
+        brain._gpuConnected = false;
+      }
+      console.log(`[Server] Stale-Chrome cleanup: killed any Chrome / Edge attached to UnityBrain-WebGPU-Profile (operator's regular browser unaffected).`);
+    } catch (err) {
+      console.warn(`[Server] Stale-Chrome cleanup warning: ${err.message} (proceeding anyway)`);
+    }
+  }
+
   // T18.11 — skip auto-launch when a GPU client is already connected.
   // The scenario: operator restarts the server without closing the
   // prior compute.html tab. That tab's ws.onclose auto-reconnect
@@ -6689,87 +6903,187 @@ function _spawnGpuClient(port) {
   // driver combos the cascade reaches NDIS/WinSock kernel paths →
   // whole PC loses internet → hard reset. Spawn-delay at the call
   // site (3.5 s post-T18.11) gives the pre-existing tab time to
-  // reconnect before this check runs.
+  // reconnect before this check runs. iter15-D pre-kills any stale
+  // Chrome (above) so this guard now only fires when there's a
+  // GENUINE concurrent compute.html in some non-isolated browser
+  // (which is the legitimate concurrent-instance case to skip).
   if (brain && brain._gpuClient && brain._gpuClient.readyState === 1) {
-    console.log(`[Server] GPU compute client already connected from prior session — skipping auto-launch. Open ${port}/compute.html manually if needed.`);
+    console.log(`[Server] GPU compute client already connected from a non-isolated browser — skipping auto-launch. Open ${port}/compute.html manually in the same browser if needed, OR close that tab and rerun start.bat to get the isolated --enable-unsafe-webgpu Chrome window.`);
     return;
   }
   const url = `http://localhost:${port}/compute.html`;
-  const { exec } = require('child_process');
+  const { exec, spawn } = require('child_process');
 
   // iter14-E per operator 2026-05-04: "obviously make the start.bat
   // fucking work!!! if we cant interact with the html thius is
   // pointless and well never beable to scale right when we do comp."
+  // iter15-D per operator 2026-05-05: "the compute html is not opening
+  // correclty the dangerous skip one ... just dashboard and 3D brain
+  // is opening" — exec(cmdString) with nested quotes was fragile on
+  // Windows. Switched to spawn(exe, [args]) with array form so each
+  // argument gets quoted separately, then verbose log + retry chain
+  // (Chrome → Edge → default browser fallback). Always logs what was
+  // detected + what command ran so silent failures surface.
   //
   // Detect Chrome (or Edge fallback) and launch compute.html with
   // --enable-unsafe-webgpu flag. This raises the WebGPU
   // maxStorageBufferBindingSize from the 2GB spec minimum to whatever
-  // the GPU driver actually supports (typically 4-8 GB, sometimes more
-  // on consumer cards). Without this flag, the server can't allocate
-  // per-cluster state buffers above 2GB → caps total neurons at 178M
-  // (12 bytes/neuron × 178M = 2.14GB) regardless of tier picked in
-  // GPUCONFIGURE.bat. With the flag + bindingCeilingMB raised in
-  // resource-config.json, the brain can scale to whatever the actual
-  // GPU driver permits.
+  // the GPU driver actually supports. Plus
+  // --enable-dawn-features=allow_unsafe_apis,disable_robustness for
+  // Chrome 120+ which gates SOME unsafe-webgpu APIs behind a separate
+  // Dawn-level flag. Plus --no-first-run --no-default-browser-check
+  // so the isolated profile doesn't show first-run wizard. Plus
+  // --new-window forces a fresh window so flags actually apply (tabs
+  // in existing windows inherit launch flags only if the existing
+  // window had them).
   //
-  // Plus a dedicated user-data-dir keeps the unsafe-webgpu Chrome
-  // profile separate from the operator's regular browsing session
-  // (no cross-contamination of cookies, extensions, GPU state).
-  // --new-window prevents the URL from opening in an existing tab
-  // that doesn't have the flag set.
-  let cmd;
+  // Per-app user-data-dir keeps the unsafe-webgpu Chrome profile
+  // sandboxed from the operator's regular browsing session.
   if (process.platform === 'win32') {
     const fs = require('fs');
     const path = require('path');
-    // Common Chrome install locations (in priority order)
     const chromePaths = [
       'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
       'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
       path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+      // Chrome SxS / Beta / Dev / Canary alternates
+      path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome SxS\\Application\\chrome.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome Beta\\Application\\chrome.exe'),
+      'C:\\Program Files\\Google\\Chrome Beta\\Application\\chrome.exe',
     ];
     const edgePaths = [
       'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
       'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      path.join(process.env.LOCALAPPDATA || '', 'Microsoft\\Edge\\Application\\msedge.exe'),
     ];
+
     let exePath = null;
     let browserName = null;
+    const checkedPaths = [];
     for (const p of chromePaths) {
-      if (p && fs.existsSync(p)) { exePath = p; browserName = 'Chrome'; break; }
+      if (!p) continue;
+      const exists = fs.existsSync(p);
+      checkedPaths.push(`${exists ? '✓' : '✗'} ${p}`);
+      if (exists && !exePath) { exePath = p; browserName = 'Chrome'; }
     }
-    if (!exePath) {
-      for (const p of edgePaths) {
-        if (p && fs.existsSync(p)) { exePath = p; browserName = 'Edge'; break; }
-      }
+    for (const p of edgePaths) {
+      if (!p) continue;
+      const exists = fs.existsSync(p);
+      checkedPaths.push(`${exists ? '✓' : '✗'} ${p}`);
+      if (exists && !exePath) { exePath = p; browserName = 'Edge'; }
     }
+    console.log(`[Server] _spawnGpuClient browser detection:\n  ${checkedPaths.join('\n  ')}`);
+
     if (exePath) {
-      // Per-app user-data-dir so unsafe-webgpu profile is sandboxed.
+      // Sandboxed user-data-dir for the unsafe-webgpu profile.
       const userDataDir = path.join(process.env.LOCALAPPDATA || process.env.TEMP || '.', 'UnityBrain-WebGPU-Profile');
-      // Quote both the exe and the URL; --new-window forces a fresh
-      // window with the unsafe-webgpu flag honored (tabs in existing
-      // windows inherit launch flags, so a fresh window guarantees
-      // the flag took effect).
-      cmd = `"${exePath}" --enable-unsafe-webgpu --user-data-dir="${userDataDir}" --new-window "${url}"`;
-      console.log(`[Server] Launching GPU compute client via ${browserName} with --enable-unsafe-webgpu (raises WebGPU binding ceiling above 2GB spec minimum).`);
+
+      // iter15-D — clear stale Chrome singleton lockfiles before spawn.
+      // Operator caught (verbatim 2026-05-05 "i use to open it in my
+      // open browedr with the others, but after the unsafe update it
+      // was opening in its own window browser but now its not opening
+      // at all"). Symptom: Chrome silently exits when Singleton* files
+      // exist in the user-data-dir from a prior instance that didn't
+      // shut down cleanly (e.g. the operator closed the brain-server
+      // process while compute.html was still open, leaving the lock).
+      // Fix: nuke Singleton* + lockfile before spawn — this is safe
+      // because the sandboxed profile is single-purpose (compute.html
+      // only) and there's never a legitimate concurrent user of it.
+      try {
+        if (fs.existsSync(userDataDir)) {
+          const STALE_LOCKS = ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile'];
+          for (const name of STALE_LOCKS) {
+            const p = path.join(userDataDir, name);
+            try {
+              if (fs.existsSync(p) || fs.lstatSync(p, { throwIfNoEntry: false })) {
+                fs.unlinkSync(p);
+                console.log(`[Server] Cleared stale Chrome lock: ${p}`);
+              }
+            } catch { /* file may not exist or be a symlink target — ignore */ }
+          }
+        }
+      } catch (err) {
+        console.warn(`[Server] Lock cleanup warning: ${err.message} (proceeding anyway)`);
+      }
+
+      const args = [
+        '--enable-unsafe-webgpu',
+        '--enable-dawn-features=allow_unsafe_apis,disable_robustness',
+        '--enable-features=Vulkan',
+        `--user-data-dir=${userDataDir}`,
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-extensions',
+        '--new-window',
+        url,
+      ];
+      console.log(`[Server] Launching GPU compute client via ${browserName} (${exePath}) with --enable-unsafe-webgpu + Dawn allow_unsafe_apis. Profile: ${userDataDir}`);
+      console.log(`[Server] Full args: ${args.join(' ')}`);
+      let spawnedOK = false;
+      try {
+        // spawn with array form — Node handles per-argument quoting
+        // automatically. detached + unref so Chrome lives past server
+        // restart. ignore stdio so Chrome's own output doesn't pollute
+        // the brain server log.
+        const child = spawn(exePath, args, { detached: true, stdio: 'ignore', windowsHide: false });
+        child.on('error', (err) => {
+          console.warn(`[Server] Browser spawn error: ${err.message}. Falling back to default browser open.`);
+          exec(`start "" "${url}"`, () => {});
+        });
+        child.unref();
+        spawnedOK = true;
+        console.log(`[Server] GPU compute client spawn() initiated — PID ${child.pid}. URL: ${url}`);
+      } catch (err) {
+        console.warn(`[Server] spawn() threw: ${err.message}. Falling back to default browser open.`);
+        exec(`start "" "${url}"`, () => {});
+      }
+
+      // Watchdog — verify a GPU client actually connected within 30s.
+      // Chrome can silently exit after spawn (stale profile lock, GPU
+      // process crash, etc.) producing no error event. If no client
+      // shows up by then, fall back to the default browser so the
+      // operator at least gets compute.html open (capped at 2GB
+      // binding ceiling = 178M neurons, but functional).
+      if (spawnedOK) {
+        setTimeout(() => {
+          if (!brain || !brain._gpuClient || brain._gpuClient.readyState !== 1) {
+            console.warn(`[Server] GPU client never connected after Chrome spawn (30s timeout). Chrome may have failed silently — falling back to default browser to at least open compute.html (will be capped at 2GB binding ceiling without --enable-unsafe-webgpu flag).`);
+            exec(`start "" "${url}"`, () => {});
+          } else {
+            console.log(`[Server] GPU client connected — Chrome auto-launch confirmed working.`);
+          }
+        }, 30000);
+      }
     } else {
-      // Fallback: default browser (no unsafe-webgpu flag — operator
-      // will be capped at 2GB binding ceiling = 178M neurons regardless
-      // of tier picked).
-      cmd = `start "" "${url}"`;
       console.warn(`[Server] Chrome and Edge not found in standard install paths. Falling back to default browser launch — WebGPU binding ceiling will stay at 2GB spec minimum (cap ~178M neurons). Install Chrome OR open ${url} manually in a Chromium browser launched with --enable-unsafe-webgpu flag to scale past 178M.`);
+      exec(`start "" "${url}"`, (err) => {
+        if (err) console.warn(`[Server] Default-browser fallback failed: ${err.message}. Open ${url} manually.`);
+        else console.log(`[Server] GPU compute client opened in default browser: ${url}`);
+      });
     }
   } else if (process.platform === 'darwin') {
-    cmd = `open -a "Google Chrome" --args --enable-unsafe-webgpu --new-window "${url}" || open "${url}"`;
-  } else {
-    cmd = `google-chrome --enable-unsafe-webgpu --new-window "${url}" || chromium --enable-unsafe-webgpu --new-window "${url}" || xdg-open "${url}"`;
-  }
-
-  exec(cmd, (err) => {
-    if (err) {
-      console.warn(`[Server] Auto-launch failed (${err.message}). Open ${url} manually in a WebGPU-capable browser (Chrome / Edge / Chromium) launched with --enable-unsafe-webgpu flag to lift the 2GB binding ceiling.`);
-    } else {
-      console.log(`[Server] GPU compute client launched: ${url}`);
+    const args = ['-a', 'Google Chrome', '--args', '--enable-unsafe-webgpu', '--enable-dawn-features=allow_unsafe_apis,disable_robustness', '--new-window', url];
+    console.log(`[Server] Launching GPU compute client via macOS open: ${args.join(' ')}`);
+    try {
+      const child = spawn('open', args, { detached: true, stdio: 'ignore' });
+      child.unref();
+    } catch (err) {
+      console.warn(`[Server] macOS spawn failed: ${err.message}. Falling back to default open.`);
+      exec(`open "${url}"`, () => {});
     }
-  });
+  } else {
+    // Linux — try google-chrome first, then chromium, then xdg-open
+    const linuxArgs = ['--enable-unsafe-webgpu', '--enable-dawn-features=allow_unsafe_apis,disable_robustness', '--enable-features=Vulkan', '--new-window', url];
+    const tryLinux = (exe, fallbackFn) => {
+      try {
+        const child = spawn(exe, linuxArgs, { detached: true, stdio: 'ignore' });
+        child.on('error', () => fallbackFn());
+        child.unref();
+        console.log(`[Server] GPU compute client spawned via ${exe}`);
+      } catch { fallbackFn(); }
+    };
+    tryLinux('google-chrome', () => tryLinux('chromium', () => exec(`xdg-open "${url}"`, () => {})));
+  }
 }
 
 // Bind interface — default to loopback only so the brain server isn't

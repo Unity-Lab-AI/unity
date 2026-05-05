@@ -188,6 +188,16 @@ export const K_MIXIN = {
         await this._phasedTeach('LIFE-K-WORD-SPELL', () => this._teachWordSpellingDirect({ reps: 8, subject: 'life' }));
       }
 
+      // iter15-B — Re-carve letter→motor identity post-QA-TRAIN.
+      if (typeof this._teachLetterNamingDirect === 'function') {
+        await this._phasedTeach('LIFE-K-LETTER-NAMING-DIRECT', () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+
+      // iter15-A — Direct sem→motor wipe-and-rewrite. MUST RUN LAST.
+      if (typeof this._teachWordSpellingDirectFinal === 'function') {
+        await this._phasedTeach('LIFE-K-WORD-SPELL-FINAL', () => this._teachWordSpellingDirectFinal({ reps: 8, subject: 'life' }));
+      }
+
       this._lifeKRemakeDone = true;
     }
 
@@ -293,6 +303,16 @@ export const K_MIXIN = {
       // that produced PROD wrong answers across all K subjects.
       if (typeof this._teachWordSpellingDirect === 'function') {
         await this._phasedTeach('ART-K-WORD-SPELL', () => this._teachWordSpellingDirect({ reps: 8, subject: 'art' }));
+      }
+
+      // iter15-B — Re-carve letter→motor identity post-QA-TRAIN.
+      if (typeof this._teachLetterNamingDirect === 'function') {
+        await this._phasedTeach('ART-K-LETTER-NAMING-DIRECT', () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+
+      // iter15-A — Direct sem→motor wipe-and-rewrite. MUST RUN LAST.
+      if (typeof this._teachWordSpellingDirectFinal === 'function') {
+        await this._phasedTeach('ART-K-WORD-SPELL-FINAL', () => this._teachWordSpellingDirectFinal({ reps: 8, subject: 'art' }));
       }
 
       this._artKRemakeDone = true;
@@ -455,6 +475,16 @@ export const K_MIXIN = {
         await this._phasedTeach('SOC-K-WORD-SPELL', () => this._teachWordSpellingDirect({ reps: 8, subject: 'social' }));
       }
 
+      // iter15-B — Re-carve letter→motor identity post-QA-TRAIN.
+      if (typeof this._teachLetterNamingDirect === 'function') {
+        await this._phasedTeach('SOC-K-LETTER-NAMING-DIRECT', () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+
+      // iter15-A — Direct sem→motor wipe-and-rewrite. MUST RUN LAST.
+      if (typeof this._teachWordSpellingDirectFinal === 'function') {
+        await this._phasedTeach('SOC-K-WORD-SPELL-FINAL', () => this._teachWordSpellingDirectFinal({ reps: 8, subject: 'social' }));
+      }
+
       this._socKRemakeDone = true;
     }
 
@@ -600,9 +630,20 @@ export const K_MIXIN = {
         await this._phasedTeach('SCI-K-QA-TRAIN', () => this._teachQABinding(sciQA, { label: 'SCI-K-QA-TRAIN' }));
       }
 
-      // iter11-J — Word-spelling discriminative one-hot.
+      // iter11-J — Word-spelling discriminative one-hot via cross-region
+      // Hebbian (initial pass).
       if (typeof this._teachWordSpellingDirect === 'function') {
         await this._phasedTeach('SCI-K-WORD-SPELL', () => this._teachWordSpellingDirect({ reps: 8, subject: 'science' }));
+      }
+
+      // iter15-B — Re-carve letter→motor identity post-QA-TRAIN.
+      if (typeof this._teachLetterNamingDirect === 'function') {
+        await this._phasedTeach('SCI-K-LETTER-NAMING-DIRECT', () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+
+      // iter15-A — Direct sem→motor wipe-and-rewrite. MUST RUN LAST.
+      if (typeof this._teachWordSpellingDirectFinal === 'function') {
+        await this._phasedTeach('SCI-K-WORD-SPELL-FINAL', () => this._teachWordSpellingDirectFinal({ reps: 8, subject: 'science' }));
       }
 
       this._sciKRemakeDone = true;
@@ -933,9 +974,23 @@ export const K_MIXIN = {
         await this._phasedTeach('MATH-K-QA-TRAIN', () => this._teachQABinding(mathQA, { label: 'MATH-K-QA-TRAIN' }));
       }
 
-      // iter11-J — Word-spelling discriminative one-hot.
+      // iter11-J — Word-spelling discriminative one-hot via cross-region
+      // Hebbian (initial pass).
       if (typeof this._teachWordSpellingDirect === 'function') {
         await this._phasedTeach('MATH-K-WORD-SPELL', () => this._teachWordSpellingDirect({ reps: 8, subject: 'math' }));
+      }
+
+      // iter15-B — Re-carve letter→motor identity. Math-K TALK regressed
+      // 26/26 (post-ELA-K) → 0/10 because Math-K QABinding cross-region
+      // Hebbian back-corrupted letter_to_motor. Run LetterNamingDirect
+      // here to restore clean a→a b→b c→c... identity for TALK probe.
+      if (typeof this._teachLetterNamingDirect === 'function') {
+        await this._phasedTeach('MATH-K-LETTER-NAMING-DIRECT', () => this._teachLetterNamingDirect({ reps: 50 }));
+      }
+
+      // iter15-A — Direct sem→motor wipe-and-rewrite. MUST RUN LAST.
+      if (typeof this._teachWordSpellingDirectFinal === 'function') {
+        await this._phasedTeach('MATH-K-WORD-SPELL-FINAL', () => this._teachWordSpellingDirectFinal({ reps: 8, subject: 'math' }));
       }
 
       this._mathKTransformsDone = true;
@@ -2525,44 +2580,52 @@ export const K_MIXIN = {
         _phaseDone('_teachLetterNaming');
       }
       this._memorySnapshotAndGc('after _teachLetterNaming');
+
+      // iter11-J — Word-spelling discriminative one-hot via cross-region
+      // Hebbian. Builds initial discriminative attractors. iter15 ships
+      // a SECOND pass via `_teachWordSpellingDirectFinal` AFTER QA-TRAIN
+      // (direct ojaUpdate, bypasses cross-region Hebbian) to protect
+      // these attractors from QA rescale damage.
+      if (typeof this._teachWordSpellingDirect === 'function' && _phaseTick('_teachWordSpellingDirect')) {
+        await this._teachWordSpellingDirect({ reps: 8, subject: 'ela' });
+        _phaseDone('_teachWordSpellingDirect');
+      }
+
+      // T37.f — Question-answer training. Provides ~50 Q→A pairs from
+      // TRAIN_BANKS (DISTINCT from EXAM_BANKS — held-out discipline).
+      // Saturates sem_to_motor wMax 0.400 → rescale×0.5 → 0.200, which
+      // halves ALL sem_to_motor weights INCLUDING the iter11-J
+      // discriminative attractors carved above. iter15 protective
+      // passes below re-establish those attractors via direct ojaUpdate
+      // bypassing cross-region Hebbian.
+      if (_phaseTick('_teachQABinding')) {
+        const qaTrain = TRAIN_BANKS['ela/kindergarten'] || [];
+        await this._teachQABinding(qaTrain, { label: 'ELA-K-QA-TRAIN' });
+        _phaseDone('_teachQABinding');
+      }
+
+      // iter15-B — Re-carve letter→motor identity AFTER QA-TRAIN.
+      // Operator caught Math-K TALK regression 26/26→0/10 (cross-subject
+      // QA back-corruption of letter_to_motor). Same risk in ELA-K: the
+      // QABinding above re-runs cross-region Hebbian which writes new
+      // off-by-one-style patterns into letter_to_motor, undoing the
+      // earlier `_teachLetterNamingDirect` carve. Run again at the END
+      // to lock in clean letter→motor identity post-QA. 0.2s wallclock —
+      // cheap insurance.
       if (typeof this._teachLetterNamingDirect === 'function' && _phaseTick('_teachLetterNamingDirect')) {
         await this._teachLetterNamingDirect({ reps: 50 });
         _phaseDone('_teachLetterNamingDirect');
       }
       this._memorySnapshotAndGc('after _teachLetterNamingDirect');
 
-      // iter11-J — Word-spelling discriminative one-hot. For every K
-      // vocab word, write `concept(word) → motor(firstChar(word))`
-      // discriminative pair into sem_to_motor. Mirrors the
-      // _teachLetterSequenceDirect pattern (orthogonal one-hot writes,
-      // 3× lr boost) but on the cross-projection and on word-level
-      // vocab. After this, sem→motor argmax for "cat" goes to `c`
-      // bucket cleanly instead of bucket-stuck `r/u/u/z` random
-      // attractors. DYN-PROD probe + spell-out questions get clean
-      // first-letter discrimination.
-      if (typeof this._teachWordSpellingDirect === 'function' && _phaseTick('_teachWordSpellingDirect')) {
-        // ELA-K vocab union for first-letter binding. Pulls from the
-        // dictionary's K-marked entries since the runner has already
-        // populated 100% K vocab via UPFRONT-VOCAB-TEACH + per-phase
-        // teach calls.
-        await this._teachWordSpellingDirect({ reps: 8, subject: 'ela' });
-        _phaseDone('_teachWordSpellingDirect');
-      }
-
-      // T37.f — Question-answer training. Without this, she learns
-      // primitives (letter→letter, word→word, alphabet sequence) but
-      // can't parse question-form sentences at test time. TRAIN_BANKS
-      // provides ~50 Q→A pairs DISTINCT from EXAM_BANKS (validated by
-      // T23.b.2 startup overlap check) so held-out discipline preserves
-      // test validity.
-      if (_phaseTick('_teachQABinding')) {
-        const qaTrain = TRAIN_BANKS['ela/kindergarten'] || [];
-        // reps defaulted in _teachQABinding (100) to drive discriminable
-        // weight into sem→motor despite near-identical bag-of-words
-        // sentence embeddings across different "what letter comes
-        // after X?" questions.
-        await this._teachQABinding(qaTrain, { label: 'ELA-K-QA-TRAIN' });
-        _phaseDone('_teachQABinding');
+      // iter15-A — Direct sem→motor word→firstChar wipe-and-rewrite.
+      // Bypasses cross-region Hebbian + clears QA pollution / rescale
+      // damage. scale(0) wipe + clean ojaUpdate × K-vocab × 8 reps.
+      // MUST RUN LAST — any subsequent cross-region Hebbian write
+      // re-pollutes sem_to_motor.
+      if (typeof this._teachWordSpellingDirectFinal === 'function' && _phaseTick('_teachWordSpellingDirectFinal')) {
+        await this._teachWordSpellingDirectFinal({ reps: 8, subject: 'ela' });
+        _phaseDone('_teachWordSpellingDirectFinal');
       }
 
       this._elaKRemakeDone = true;
