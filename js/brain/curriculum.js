@@ -2566,21 +2566,55 @@ export class Curriculum {
         if (clean) { personaSentences.push(clean); fallbackInjected.push(clean); }
       }
     }
-    // Promote each unique word from the injected sentences to
-    // isPersona:true in the dictionary so the persona-first oracle
-    // pass picks them up. Words already in K dictionary just get
-    // their flag flipped — no new entries created.
+    // iter14-B fix — promote each unique word from injected sentences
+    // to isPersona:true. iter11-V originally only flipped existing
+    // dictionary entries' flag; if the word wasn't already in K vocab
+    // the persona-first oracle pass had nothing to scan. Operator
+    // caught (2026-05-04): RESP probe `hello→locals` and `mom→drives`
+    // — persona-corpus didn't dominate even though boostPersona was
+    // on. Real fix: when a fallback word is MISSING from dictionary,
+    // INJECT it directly with its GloVe pattern from sharedEmbeddings
+    // + isPersona=true so the persona-first pass finds it. Words
+    // already in dictionary just get the flag flipped (preserves
+    // their existing pattern + cortex snapshot from when they were
+    // learned through normal teach paths).
     if (fallbackInjected.length > 0 && cluster.dictionary && cluster.dictionary._words?.get) {
       const promoted = new Set();
+      const injectedNew = new Set();
       for (const s of fallbackInjected) {
         for (const w of s.split(/\s+/)) {
           if (!w || promoted.has(w)) continue;
           promoted.add(w);
           const entry = cluster.dictionary._words.get(w);
-          if (entry) entry.isPersona = true;
+          if (entry) {
+            entry.isPersona = true;
+          } else if (sharedEmbeddings && typeof sharedEmbeddings.getEmbedding === 'function') {
+            // Word not in dictionary — inject directly with GloVe pattern
+            // so persona-first oracle pass can scan it. Skip if no GloVe
+            // available (rare for chat vocab — most greetings + emotion
+            // words are standard English in 6B.300d corpus).
+            try {
+              const glove = sharedEmbeddings.getEmbedding(w);
+              if (glove && glove.length > 0) {
+                cluster.dictionary._words.set(w, {
+                  word: w,
+                  pattern: new Float64Array(glove),
+                  isPersona: true,
+                  arousal: 0.7,
+                  valence: 0.5,
+                  frequency: 1,
+                  cortexSnapshot: null,
+                  syllables: [w],
+                  stressPrimary: 0,
+                  lastSeen: Date.now(),
+                });
+                injectedNew.add(w);
+              }
+            } catch { /* per-word inject failure non-fatal */ }
+          }
         }
       }
-      this._hb(`[Curriculum] iter11-V fallback injected: ${fallbackInjected.length} sentences (${PERSONA_GREETING_FALLBACK.length}× greeting + ${PERSONA_EMOTION_FALLBACK.length}× emotion) — ${promoted.size} dictionary words promoted to isPersona=true`);
+      this._hb(`[Curriculum] iter11-V fallback injected: ${fallbackInjected.length} sentences (${PERSONA_GREETING_FALLBACK.length}× greeting + ${PERSONA_EMOTION_FALLBACK.length}× emotion) — ${promoted.size - injectedNew.size} existing dictionary words promoted to isPersona=true + ${injectedNew.size} NEW persona-only entries injected with GloVe pattern (iter14-B fix per "fix those fucking issues NOW!")`);
     }
 
     cluster._personaRefreshCorpus = personaSentences;
@@ -5394,6 +5428,105 @@ export class Curriculum {
 
     const dt = ((Date.now() - t0) / 1000).toFixed(1);
     this._hb(`[Curriculum] _teachWordSpellingDirect DONE in ${dt}s — ${updates} discriminative writes · ${skipped} skipped (${words.length} words × ${reps} reps target)`);
+  }
+
+  // iter14-A — Direct letter→motor identity write that bypasses
+  // cross-region Hebbian. Operator caught (2026-05-04 verbatim "fix
+  // those fucking issues NOW!"): even with iter11-A reorder
+  // (_teachLetterNaming AFTER _teachAlphabetSequencePairs),
+  // LETTER→MOTOR DIAG still showed off-by-one corruption b→a c→b
+  // d→c e→c. Root cause: _teachLetterNaming uses
+  // _teachHebbianAsymmetric which calls cluster._crossRegionHebbian —
+  // that fires Hebbian updates on ALL cross-projections including
+  // letter_to_motor. The earlier _teachAlphabetSequencePairs
+  // _teachAssociationPairs calls (writing letter[X]→motor[X+1]
+  // sequence pairs into sem_to_motor + motor_to_sem) ALSO ride on
+  // _crossRegionHebbian and accumulate off-by-one weights into
+  // letter_to_motor. When _teachLetterNaming fires LATER, the
+  // existing corruption dominates the fresh identity write.
+  //
+  // Fix: write letter[X]→motor[X] DIRECTLY to letter_to_motor's
+  // SparseMatrix via ojaUpdate, NOT through firing patterns + global
+  // Hebbian rule. Wipe existing weights first (`scale(0)`) so the
+  // off-by-one corruption from sequence training is cleared. Then
+  // carve fresh identity at 5× lr × 50 reps (mirrors iter9-E
+  // _teachLetterSequenceDirect pattern but on the cross-projection).
+  // After this, LETTER→MOTOR DIAG should show clean identity:
+  // a→a b→b c→c d→d ... z→z. TALK probe will pass at 26/26.
+  async _teachLetterNamingDirect(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections?.letter_to_motor) return;
+    const letterToMotor = cluster.crossProjections.letter_to_motor;
+    const letterRegion = cluster.regions?.letter;
+    const motorRegion = cluster.regions?.motor;
+    if (!letterRegion || !motorRegion) return;
+
+    const reps = opts.reps ?? 50;
+    const lr = (cluster.learningRate ?? 0.01) * 5; // 5x boost — discriminative one-hot can take stronger lr than the standard cross-region Hebbian path
+    const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
+    ensureLetters(Array.from(ALPHABET));
+
+    this._hb(`[Curriculum] _teachLetterNamingDirect START: 26 letters × ${reps} reps · lr=${lr.toFixed(4)} — letter[X]→motor[X] discriminative one-hot writes DIRECTLY into letter_to_motor cross-projection (bypasses cross-region Hebbian to avoid sequence-training back-corruption)`);
+
+    // iter14-A — wipe existing letter_to_motor weights to clear out
+    // off-by-one corruption that accumulated during prior teach phases
+    // (Phase 2 letter sequence intra-Hebbian + _teachAlphabetSequencePairs
+    // _teachAssociationPairs both polluted this projection via cross-
+    // region Hebbian). Fresh ojaUpdate writes carve clean identity from
+    // a zero-weight starting point — Oja's normalizing rule converges
+    // fast on orthogonal one-hot pairs.
+    if (typeof letterToMotor.scale === 'function') {
+      letterToMotor.scale(0);
+      this._hb(`[Curriculum] _teachLetterNamingDirect — wiped prior letter_to_motor weights (off-by-one corruption from upstream sequence training)`);
+    }
+    if (typeof letterToMotor.ojaUpdate !== 'function') {
+      this._hb(`[Curriculum] _teachLetterNamingDirect SKIPPED — letter_to_motor.ojaUpdate not available`);
+      return;
+    }
+
+    const t0 = Date.now();
+    let updates = 0, skipped = 0;
+
+    // Build region-sized one-hot patterns. encodeLetter returns
+    // inventory-sized vector (40 symbols a-z + 0-9 + space . , ').
+    // SparseMatrix.ojaUpdate iterates by row index 0..rows-1 (post)
+    // and accesses preSpikes[colIdx[k]] for col indices, so we need
+    // REGION-SIZED vectors (rows=motorRegion size, cols=letterRegion
+    // size for letter_to_motor projection).
+    const letterSize = letterRegion.end - letterRegion.start;
+    const motorSize = motorRegion.end - motorRegion.start;
+    const buildRegionSizedOneHot = (regionSize, oneHot) => {
+      const vec = new Float64Array(regionSize);
+      if (!oneHot || oneHot.length === 0) return vec;
+      const gSize = Math.max(1, Math.floor(regionSize / oneHot.length));
+      for (let d = 0; d < oneHot.length; d++) {
+        if (oneHot[d] <= 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < regionSize) vec[idx] = 1;
+        }
+      }
+      return vec;
+    };
+
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      for (let i = 0; i < ALPHABET.length; i++) {
+        const letter = ALPHABET[i];
+        const oneHot = encodeLetter(letter);
+        if (!oneHot || oneHot.length === 0) { skipped++; continue; }
+        const preLetter = buildRegionSizedOneHot(letterSize, oneHot);
+        const postMotor = buildRegionSizedOneHot(motorSize, oneHot);
+        try {
+          letterToMotor.ojaUpdate(preLetter, postMotor, lr);
+          updates++;
+        } catch { skipped++; }
+      }
+      if ((rep & 7) === 7) await _microtask();
+    }
+
+    const dt = ((Date.now() - t0) / 1000).toFixed(1);
+    this._hb(`[Curriculum] _teachLetterNamingDirect DONE in ${dt}s — ${updates} Oja updates · ${skipped} skipped (26 letters × ${reps} reps target)`);
   }
 
   async _teachLetterCaseBinding(ctx) {
