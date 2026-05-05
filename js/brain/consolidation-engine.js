@@ -68,7 +68,18 @@ export class ConsolidationEngine {
     if (!this.brain || !this.cluster || !this.schemaStore) {
       return { skipped: 'engine not fully wired' };
     }
+    // iter20-A — harden gate. Operator caught (verbatim 2026-05-05
+    // "fix it all thouroughly"): 102 consolidation passes in 67s
+    // (one every 0.66s instead of 5min interval). Setting
+    // `lastPassAt = Date.now()` at end of try-block left a window
+    // where any throw or unexpected control flow between _inFlight=
+    // true and line 195 left the gate unguarded — next tick's
+    // shouldRunPass saw stale lastPassAt and re-fired immediately.
+    // Setting it FIRST (right after _inFlight) means the gate is
+    // closed before any work happens. Even if pass throws, the gate
+    // still holds for 5 minutes.
     this._inFlight = true;
+    this.lastPassAt = Date.now();
     const startMs = Date.now();
     this.passCount++;
     const passId = this.passCount;
@@ -192,7 +203,8 @@ export class ConsolidationEngine {
       // up fresh schema state from SchemaStore.toJSON.
 
       stats.durationMs = Date.now() - startMs;
-      this.lastPassAt = Date.now();
+      // iter20-A: lastPassAt already set at top of pass for gate
+      // hardening — no need to reassign here.
       console.log(`[Consolidation] pass ${passId}: ${stats.candidatesFound} candidates → ${stats.clustersFormed} clusters → ${stats.schemasCreated} new schemas, ${stats.schemasReinforced} reinforced, ${stats.replaysExecuted} replays (${stats.hebbianWritesTotal} writes), ${stats.schemasMerged} merged, ${stats.schemasDecayed} decayed, ${stats.tier3Promotions} promoted to Tier 3, ${stats.episodesDecayed} episodes decayed / ${stats.episodesPruned} pruned · duration=${stats.durationMs}ms`);
     } catch (err) {
       console.warn(`[Consolidation] pass ${passId} threw: ${err.message}`);

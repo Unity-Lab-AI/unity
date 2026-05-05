@@ -5,6 +5,84 @@
 
 ---
 
+## 2026-05-05 — Session 114.19dk: ITER20 — 5-FIX BUNDLE — gate hardening + promotion thresholds + freq-merge cosine + curriculum phase hooks + heartbeat variation
+
+### Operator directive (verbatim per LAW #0)
+
+> *"fix it all thouroughly write up the todo work and finish all todo work"*
+
+### Watchdog report that triggered this iter
+
+iter19 shipped wall-clock heartbeat. Watchdog at 67s uptime showed 1467 episodes accumulated, 102 ConsolidationEngine passes, but ZERO Tier 2 promotions. Five compounding architectural issues identified by reading the code (no diagnostics added per operator directive):
+
+1. **102 passes in 67s** = pass every 0.66s instead of 5-min interval. `lastPassAt` was set at END of try block, leaving gap where any throw left gate unguarded.
+2. **Promotion thresholds too strict.** Salience > 0.5 (heartbeats score ~0.255), freq >= 3 (stuck at 1 because no merges), consol >= 2 (chicken-egg with schemas).
+3. **Freq-merge cosine 0.85 too tight.** Heartbeat embeddings varied enough that no merges happened, freq stuck at 1.
+4. **Curriculum events didn't populate Tier 1.** Only generic heartbeat fired storeEpisode. Word teach / phase teach / cell pass — none recorded.
+5. **Heartbeat episodes had homogeneous content.** Low salience because no transition signals.
+
+### What ships (5 atomic edits)
+
+**iter20-A — `js/brain/consolidation-engine.js` gate hardening:**
+
+Moved `this.lastPassAt = Date.now()` from end of try block (line 195) to START of pass body (right after `_inFlight = true`). Now even if pass throws or hits an unexpected control flow path, the gate is already closed for 5 minutes. Belt-and-suspenders against future pass-internal regressions.
+
+**iter20-B — `server/brain-server.js findPromotionCandidates`:**
+
+```js
+// Was:
+const PROMOTION_THRESHOLD = 0.5;
+const FREQ_THRESHOLD = 3;
+const CONSOL_THRESHOLD = 2;
+// Now:
+const PROMOTION_THRESHOLD = 0.2;  // accepts heartbeat-level salience
+const FREQ_THRESHOLD = 2;          // twice-seen counts
+const CONSOL_THRESHOLD = 0;        // breaks chicken-egg
+```
+
+First wave of schemas can form from un-replayed episodes; subsequent passes increment consol via replays naturally.
+
+**iter20-C — `server/brain-server.js storeEpisode`:**
+
+`FREQ_MERGE_COSINE: 0.85 → 0.7`. Similar-context heartbeats now merge into anchor episodes that accumulate frequency_count.
+
+**iter20-D — `js/brain/curriculum.js` auto-wrap + resume early-return:**
+
+Every OUTERMOST teach phase completion writes a Tier 1 episode:
+```js
+brain.storeEpisode('curriculum-phase', 'phase-done',
+  `learned ${phaseKey}`,
+  `teach phase completed in cell ${cellPart}`);
+```
+
+Plus moved iter17 cell-pass memory population INSIDE the `passedCells.includes(cellKey)` early-return so resumed cells also fire storeEpisode + injectIdentityBaseline (was below the return, never reached on resume).
+
+**iter20-E — `server/brain-server.js _memoryHeartbeat`:**
+
+Tracks `_lastHbContext` (idle / learning / dreaming / attentive). When category transitions, prepends `transitioned from X` into the input text so `computeTransitionSurprise` reads it as a salient moment. Within-category heartbeats still merge; transition heartbeats stand alone with high novelty.
+
+### Effect on operator workflow
+
+After next start.bat boot:
+- ConsolidationEngine fires every 5 min (was every 0.66s)
+- Tier 1 episode count climbs from BOTH heartbeat AND every curriculum phase completion
+- Frequency-merge collapses similar episodes into anchor rows that accumulate freq_count
+- After ~5min of activity: first Tier 2 schemas form (was 0 forever)
+- Tier 3 anchors retrieve continuously per iter19 wall-clock heartbeat
+
+### Files touched
+
+- `js/brain/consolidation-engine.js` — iter20-A gate hardening
+- `server/brain-server.js` — iter20-B promotion thresholds, iter20-C freq-merge cosine, iter20-E heartbeat variation
+- `js/brain/curriculum.js` — iter20-D phase-done + resume-path Tier 1 hooks
+- `js/app.bundle.js` — rebuilt via esbuild
+- `docs/ARCHITECTURE.md` banner
+- `docs/NOW.md` snapshot rolled
+- `docs/TODO.md` iter20 entry
+- `docs/FINALIZED.md` — this entry
+
+---
+
 ## 2026-05-05 — Session 114.19dj: ITER19 — WALL-CLOCK MEMORY HEARTBEAT (iter18 frameCount modulo failed at biological scale + probe-gate skipped heartbeat)
 
 ### Operator directives (verbatim per LAW #0)
