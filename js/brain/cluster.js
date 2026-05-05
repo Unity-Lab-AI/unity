@@ -1720,7 +1720,15 @@ export class NeuronCluster {
     // entries from the loadPersona corpus, just wasn't being read in
     // this oracle scan.
     const boostPersona = opts.boostPersona === true;
-    const personaBoost = typeof opts.personaBoost === 'number' ? opts.personaBoost : 0.10;
+    // iter11-Z fix — bump default 0.10 → 0.30 because chat-test
+    // produced "hi" → "Layered!" / "who are you?" → "Layered!" with
+    // boostPersona ON. The +0.10 boost wasn't winning over K-vocab
+    // cosine on greeting/identity inputs (where K-vocab has structural
+    // higher cosine on noun-heavy GloVe vs persona corpus that's
+    // first-person sentences). +0.30 forces persona corpus to dominate
+    // when the boost is requested, preserving K-vocab when boost is
+    // off (test probes still see clean K-grade answers).
+    const personaBoost = typeof opts.personaBoost === 'number' ? opts.personaBoost : 0.30;
     // Restrict-to-vocab filter — when caller passes `opts.restrictToVocab`
     // as a Set of lowercased words, the oracle ONLY considers entries
     // whose word is in that set. Used by test probes (K-STUDENT,
@@ -1739,6 +1747,106 @@ export class NeuronCluster {
     if (intentNormSq <= 0) {
       this._matrixHits = (this._matrixHits || 0) + 1;
       return null;
+    }
+
+    // iter13 T13.15 — Retrieval-augmented oracle with hippocampal
+    // schemas as a THIRD candidate pool (alongside persona-first +
+    // K-vocab full-dictionary scan). When chat path passes the
+    // resolved Tier 2 schemas via opts.contextSchemas (or via
+    // cluster._hippocampusContextSchemas set by processAndRespond
+    // T13.13 retrieval), the oracle compares the intent seed to each
+    // schema's concept_embedding. If the best-matching schema scores
+    // higher than persona AND K-vocab paths, return the schema's
+    // anchor word (first word of label, e.g. "halloween-favorite-
+    // holiday-schema" → "halloween"). This gives consolidation-
+    // bound knowledge a direct return path: "what is your favorite
+    // holiday?" → schema "halloween-anchor" wins → emits "halloween"
+    // even when matrix can't produce a strong sem→motor signal.
+    let schemaCandidate = null;
+    let schemaCandidateScore = -Infinity;
+    const contextSchemas = opts.contextSchemas
+      || this._hippocampusContextSchemas
+      || null;
+    if (Array.isArray(contextSchemas) && contextSchemas.length > 0) {
+      for (const ranked of contextSchemas) {
+        const schema = ranked && ranked.schema ? ranked.schema : ranked;
+        if (!schema || !schema.conceptEmbedding || schema.conceptEmbedding.length === 0) continue;
+        const ceLen = Math.min(intentSeed.length, schema.conceptEmbedding.length);
+        let dot = 0, normSchema = 0;
+        for (let i = 0; i < ceLen; i++) {
+          dot += intentSeed[i] * schema.conceptEmbedding[i];
+          normSchema += schema.conceptEmbedding[i] * schema.conceptEmbedding[i];
+        }
+        const denom = Math.sqrt(intentNormSq * normSchema);
+        if (denom <= 0) continue;
+        let score = dot / denom;
+        // Tier 3 schemas get a +0.05 boost — identity-bound concepts
+        // should win tiebreakers vs Tier 2 candidates of equal cosine.
+        if (schema.promotedToTier3) score += 0.05;
+        if (score > schemaCandidateScore) {
+          schemaCandidateScore = score;
+          // Extract anchor word from label: first dash-separated token.
+          // Falls back to "schema-id" first word if no dash.
+          const label = String(schema.label || '');
+          const anchor = label.split(/[-_\s]+/)[0] || label;
+          schemaCandidate = { anchor: anchor.toLowerCase(), label, schema };
+        }
+      }
+    }
+
+    // iter11-Z Phase B.2 — Persona-first oracle pass.
+    // When chat path requests boostPersona, scan ONLY persona-marked
+    // entries FIRST. Persona corpus is ~300 sentences worth of vocab
+    // vs ~50,000 K + Common-Crawl entries — without first-pass
+    // dominance, K-vocab + freqBoost still drowns persona on
+    // greeting/identity inputs because K-vocab basin is structurally
+    // larger. Two-pass approach: if persona returns a match above
+    // `personaFirstMinScore` (default 0.05 — generous since persona
+    // is sparse), short-circuit and return the persona word. Else
+    // fall through to the full-dictionary scan with boost still on
+    // so persona STILL gets +0.30 in the merged ranking.
+    //
+    // This closes operator's chat-test failure: "hi" → "Layered!" /
+    // "who are you?" → "Layered!" — Layered is sci-K vocab that
+    // happened to cosine-match the empty greeting intent better than
+    // any persona corpus word + boost combination. Persona-first
+    // forces persona to win the tiebreaker on identity/greeting
+    // inputs where persona has actual matching content.
+    if (boostPersona) {
+      const personaFirstMinScore = typeof opts.personaFirstMinScore === 'number' ? opts.personaFirstMinScore : 0.05;
+      let personaBestWord = '';
+      let personaBestScore = -Infinity;
+      for (const [word, entry] of dictionary._words) {
+        if (!entry || !entry.pattern) continue;
+        if (entry.isPersona !== true) continue;
+        if (excludeTokens && excludeTokens.has(word)) continue;
+        if (restrictToVocab && !restrictToVocab.has(word)) continue;
+        const pattern = entry.pattern;
+        let normSq = entry.normSquared;
+        if (normSq === undefined) {
+          normSq = 0;
+          for (let i = 0; i < pattern.length; i++) normSq += pattern[i] * pattern[i];
+          entry.normSquared = normSq;
+        }
+        if (normSq <= 0) continue;
+        const denom = Math.sqrt(intentNormSq * normSq);
+        if (denom <= 0) continue;
+        let dot = 0;
+        const n = Math.min(intentSeed.length, pattern.length);
+        for (let i = 0; i < n; i++) dot += intentSeed[i] * pattern[i];
+        const score = dot / denom;
+        if (score > personaBestScore) { personaBestScore = score; personaBestWord = word; }
+      }
+      if (personaBestWord && personaBestScore > personaFirstMinScore) {
+        const maxLetters = opts.maxLetters ?? opts.maxTicks ?? opts.maxEmissionTicks ?? 32;
+        const cleanEmit = personaBestWord.replace(/[^a-z0-9 .,']/g, '').slice(0, maxLetters);
+        this._oracleHits = (this._oracleHits || 0) + 1;
+        return { cleanEmit, bestWord: personaBestWord, bestScore: personaBestScore + personaBoost };
+      }
+      // No persona match strong enough — fall through to full-dictionary
+      // scan below. Persona entries still get +personaBoost added to
+      // their cosine in the merged ranking, so they can still win the
+      // tiebreaker on the second pass against weaker K-vocab matches.
     }
 
     let bestWord = '';
@@ -1778,6 +1886,37 @@ export class NeuronCluster {
     // 0.05 default because any plausible word is better than nothing
     // when she's just talking.
     const minScore = typeof opts.minScore === 'number' ? opts.minScore : 0.05;
+
+    // iter13 T13.15 — Schema-vs-dictionary tiebreaker. After both
+    // persona-first AND full-dict scans complete, compare the best
+    // schema candidate (from contextSchemas pre-retrieved by chat
+    // path) against the dictionary winner. If schema scores higher
+    // AND clears minScore, return the schema's anchor word — gives
+    // consolidated memory a direct path to the chat output that
+    // bypasses K-vocab dominance for known-concept questions.
+    if (schemaCandidate && schemaCandidateScore > bestScore && schemaCandidateScore > minScore) {
+      const maxLetters = opts.maxLetters ?? opts.maxTicks ?? opts.maxEmissionTicks ?? 32;
+      const cleanEmit = schemaCandidate.anchor.replace(/[^a-z0-9 .,']/g, '').slice(0, maxLetters);
+      if (cleanEmit) {
+        this._oracleHits = (this._oracleHits || 0) + 1;
+        // Increment retrieval_count on the chosen schema (counter for
+        // Tier 3 promotion gate). Wrapped in try in case schema is
+        // missing the registerRetrieval method on a stale instance.
+        try {
+          if (schemaCandidate.schema && typeof schemaCandidate.schema.registerRetrieval === 'function') {
+            schemaCandidate.schema.registerRetrieval();
+          }
+        } catch { /* counter bump is best-effort */ }
+        return {
+          cleanEmit,
+          bestWord: schemaCandidate.anchor,
+          bestScore: schemaCandidateScore,
+          source: 'hippocampal-schema',
+          schemaLabel: schemaCandidate.label,
+        };
+      }
+    }
+
     if (!bestWord || bestScore <= minScore) {
       this._matrixHits = (this._matrixHits || 0) + 1;
       return null;
@@ -2308,11 +2447,20 @@ export class NeuronCluster {
     // Helper: bucket-reduce a motor-sized output into invSize buckets
     // then argmax. Matches the convention `encodeLetter` + the gate
     // TALK probe use.
+    //
+    // iter9-L / iter11-L fix — only consider a-z buckets. Inventory
+    // grew during corpus exposure to include digits + punctuation; if
+    // we let argmax land on a digit/punct bucket, motor speech emission
+    // produces "wxyz95726'" digit-leak garbage. K-STUDENT Q4 + Q5 mode
+    // collapse this iteration both emitted exactly that string.
+    // Mirrors decodeLetterAlpha clamp already wired in generateSentence.
     const motorSize = motorRegion.end - motorRegion.start;
     const bucketSize = Math.max(1, Math.floor(motorSize / invSize));
+    const isAlphaIdx = (b) => /^[a-z]$/.test(inv[b]);
     const bucketArgmax = (motorOutput) => {
       let bestIdx = -1, bestSum = -Infinity;
       for (let b = 0; b < invSize; b++) {
+        if (!isAlphaIdx(b)) continue;
         let sum = 0;
         for (let n = 0; n < bucketSize; n++) {
           const idx = b * bucketSize + n;
@@ -2379,9 +2527,14 @@ export class NeuronCluster {
     const synapses = this.synapses;
     const letterSize = letterRegion.end - letterRegion.start;
     const letterBucketSize = Math.max(1, Math.floor(letterSize / invSize));
+    // iter9-L / iter11-L fix — same alpha-only clamp as bucketArgmax
+    // above. Step 2+ intra-cluster letter region argmax was producing
+    // digit/punct buckets that bled into spell-out output (Q4 "spell
+    // cat" → "wxyz95726'"). reuses isAlphaIdx closure from above.
     const letterBucketArgmax = (clusterOutput) => {
       let bestIdx = -1, bestSum = -Infinity;
       for (let b = 0; b < invSize; b++) {
+        if (!isAlphaIdx(b)) continue;
         let sum = 0;
         for (let n = 0; n < letterBucketSize; n++) {
           const idx = letterRegion.start + b * letterBucketSize + n;

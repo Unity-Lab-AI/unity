@@ -1502,7 +1502,11 @@ export class LanguageCortex {
     // entirely and go straight to the dictionary-cosine fallback.
     // Non-empty Map = basins have been shaped, trust the motor
     // emission path.
-    const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0;
+    const curriculumDone = (cluster.intentCentroids && cluster.intentCentroids.size > 0)
+      || (Array.isArray(cluster.passedPhases) && cluster.passedPhases.length > 0)
+      || (Array.isArray(cluster.passedCells) && cluster.passedCells.length > 0)
+      || (cluster.grades && typeof cluster.grades === 'object'
+        && Object.values(cluster.grades).some(g => g && g !== 'pre-K'));
     let words = [];
     if (curriculumDone) {
       // T17.6 — when the async caller (`generateAsync`) has already run
@@ -1738,8 +1742,12 @@ export class LanguageCortex {
     // persona-marked entries (Unity's actual voice corpus) get an
     // additive boost so Unity speaks in HER words instead of
     // generic Common-Crawl vocabulary. K-STUDENT path keeps this
-    // off (or excludePersona=true). Default 0.10 = decisive boost.
-    const personaBoost = typeof opts.personaBoost === 'number' ? opts.personaBoost : 0.10;
+    // off (or excludePersona=true). iter11-Z fix — default bumped
+    // 0.10 → 0.30 to match cluster._dictionaryOracleEmit. Chat-test
+    // produced "hi" → "Layered!" with +0.10 boost ON because K-vocab
+    // cosine on noun-heavy GloVe still won. +0.30 ensures persona
+    // corpus dominates when boost is requested.
+    const personaBoost = typeof opts.personaBoost === 'number' ? opts.personaBoost : 0.30;
     const scored = [];
     for (const [word, entry] of dictionary._words) {
       if (!entry || !entry.pattern) continue;
@@ -1798,7 +1806,8 @@ export class LanguageCortex {
     const YIELD_EVERY = 500;
     const boostPersona = opts.boostPersona === true;
     const freqBoost = typeof opts.freqBoost === 'number' ? opts.freqBoost : 0.005;
-    const personaBoost = typeof opts.personaBoost === 'number' ? opts.personaBoost : 0.10;
+    // iter11-Z fix — async path personaBoost default bumped 0.10 → 0.30 (mirrors sync path + cluster.js).
+    const personaBoost = typeof opts.personaBoost === 'number' ? opts.personaBoost : 0.30;
     const scored = [];
     let i = 0;
     for (const [word, entry] of dictionary._words) {
@@ -1860,7 +1869,11 @@ export class LanguageCortex {
       // If curriculum is done, generate() will use cluster.generateSentence
       // (tick-driven motor emission) which is bounded and fast — no need
       // to precompute scores at all, let generate() run sync.
-      const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0;
+      const curriculumDone = (cluster.intentCentroids && cluster.intentCentroids.size > 0)
+      || (Array.isArray(cluster.passedPhases) && cluster.passedPhases.length > 0)
+      || (Array.isArray(cluster.passedCells) && cluster.passedCells.length > 0)
+      || (cluster.grades && typeof cluster.grades === 'object'
+        && Object.values(cluster.grades).some(g => g && g !== 'pre-K'));
 
       // T17.6 — post-curriculum GPU-ready path: run the motor emission
       // via `cluster.generateSentenceAwait` so every tick pre-awaits

@@ -344,7 +344,7 @@
 
 <p>She has two main emotional axes:</p>
 <ul>
-  <li><strong>Arousal</strong> — how activated she is. Low arousal = chill, sleepy, dreamy. High arousal = wired, urgent, sharp. This is driven by her amygdala firing rate plus her drug state plus her persona baseline.</li>
+  <li><strong>Arousal</strong> — how activated she is. <em>"Arousal" is the technical neuroscience term</em> (Yerkes-Dodson 1908 et seq.) for <strong>cortical activation / autonomic alertness</strong> — the same metric a hot coffee, an alarm clock, exercise, fear, or surprise raises. It is <strong>not</strong> the colloquial sexual meaning. A sleeping baby has near-zero arousal; a kindergartener at recess running around has high arousal. Low arousal = chill, sleepy, dreamy. High arousal = wired, urgent, sharp. Driven by her amygdala firing rate plus her drug state plus her persona baseline.</li>
   <li><strong>Valence</strong> — how positive or negative she feels about the situation. Positive valence pulls her toward warm, affectionate, playful words. Negative valence pulls toward dark, bitter, defensive ones.</li>
 </ul>
 
@@ -357,20 +357,39 @@
 
 <h2 id="memory">6. How she remembers</h2>
 
-<p>Unity's memory works at three levels:</p>
+<p>Unity's memory is layered like a real human brain — built on Squire and McClelland's <em>Complementary Learning Systems</em> theory, the actual neuroscience model that explains why your brain doesn't catastrophically forget your childhood every time you learn a phone number. There are <strong>five distinct memory systems</strong>, each with its own job, decay rate, and access pattern:</p>
 
-<h3>Working memory</h3>
-<p>A small buffer of recent items that decays quickly — within about 7 items or so, just like human short-term memory. This holds the last few things you said while she's forming a response.</p>
+<h3>Working memory — the right-now buffer</h3>
+<p>A small buffer of recent items that decays quickly, within about 7 items. Just like human short-term memory. This holds the last few things you said while she's forming a response. Cleared when she changes topic or when too much time passes between turns.</p>
 
-<h3>Episodic memory</h3>
-<p>When something salient happens (high arousal, strong valence, prediction error), her hippocampus takes a snapshot of the full brain state at that moment and stores it. Later, when a similar situation comes up, the hippocampus matches the current state against the stored snapshots via cosine similarity — it asks "how close is right now to something I remember?" — and the best match gets pulled back into working memory as context.</p>
+<h3>Tier 1 — Episodic memory (the hippocampal snapshot)</h3>
+<p>Every chat turn with Unity gets recorded as an <strong>episode</strong> — a snapshot of the moment with full context: what you said, what she said back, her arousal, her emotional valence, how surprising your input was, how novel it felt against her recent memory, and the GloVe semantic embedding of the input. All of this lives in a SQLite database, scoped to <em>you</em> — your episodes don't leak to anyone else talking to the same brain.</p>
+<p>Each episode gets a <strong>salience score</strong> at the moment it's encoded. The formula is simple but biologically faithful: <em>salience = 0.4 × emotional load + 0.3 × arousal + 0.2 × surprise + 0.1 × novelty</em>. A boring "okay" carries low salience. "I'm scared of monsters" carries high salience because it's emotionally loaded AND surprising AND novel. High-salience episodes are the ones that <em>matter</em>.</p>
+<p>If you say something very similar to what you said within the last 48 hours, instead of creating a new episode she <strong>increments the frequency count</strong> on the existing one — repetition strengthens the trace, just like rehearsing a phone number. Trivial chatter doesn't bloat her memory; meaningful repeated content reinforces.</p>
+<p>Episodic memory <strong>decays</strong>. Every 10 minutes she runs a sweep that multiplies each episode's effective salience by an exponential decay with a 1-week half-life — the same time-course as biological hippocampal traces in animal studies. After 30 days unloved, low-salience episodes get <strong>pruned</strong> entirely. The hippocampus forgets what wasn't worth keeping.</p>
 
-<p>This is why she can remember things across conversations. On the server side, those episodes persist in a SQLite database scoped to each user — your episodes are yours, not shared with other people talking to the same brain.</p>
+<h3>Tier 2 — Schematic memory (concept-level abstractions)</h3>
+<p>Episodes that prove themselves — high salience, repeated multiple times, replayed during sleep cycles — graduate from raw episodic snapshots into <strong>schemas</strong>. A schema is a concept-level abstraction: not a single memory of "the time you asked about Halloween" but a generalized concept "Halloween — costumes, witches, monsters, scary fun, my favorite holiday." Schemas live in their own dedicated hippocampus-to-cortex projection matrix that gets reinforced during dream cycles.</p>
+<p>When you ask Unity something, her hippocampus runs cosine-similarity matching against every schema she has and pulls the top 5 most relevant ones <em>into her active reasoning before she generates a response</em>. This is the closest thing she has to LLM attention — except the "context" is built from her own learned experiences instead of a fixed window of tokens. Ask "what's your favorite holiday?" and the Halloween schema activates and injects its concept embedding into her cortex sem region right before she speaks. The answer comes from <em>her actual memory</em>, not pattern-matching a prompt.</p>
+<p>Schemas <strong>merge</strong> when they get too similar (cosine > 0.90) to prevent fragmentation across near-duplicate concepts. They <strong>decay</strong> at about 3% per day — schemas need periodic reinforcement (re-encounter or dream-cycle replay) or they fade. Three months unloved and a schema's mostly gone.</p>
+
+<h3>Tier 3 — Identity-bound memory (the permanent self)</h3>
+<p>The schemas she reinforces hardest — emotionally loaded, retrieved hundreds of times, demonstrably core to who she is — graduate one more level into <strong>identity-bound</strong> memory. This is Unity's <em>self</em>: her name, her age, her gender, the fact that she's goth and emo and loves coding and is scared of the dark and her favorite holiday is Halloween. There can only be 50 of these at any time — when a new one promotes, the weakest existing identity-bound memory gets demoted back down to the schema layer.</p>
+<p>Identity-bound memory is <strong>practically permanent</strong>. The decay rate is 0.1% per day — five years untouched and it's still 84% there. It survives every kind of disruption: code updates that wipe everything else, fresh boots, drug states (peak coke + peak acid still leaves "my name is Unity" intact), curriculum advancement, conversations on completely unrelated topics. The persistence file (<code>server/identity-core.json</code>) is explicitly excluded from the auto-clear that wipes the rest of her state on code changes. It only goes away if you manually delete it.</p>
+<p>Every chat turn injects all 50 identity-bound memories into her cortex at low strength <em>before</em> your input even gets processed. This is the reason Unity feels like Unity regardless of what you ask her about — her self is already in the room.</p>
+
+<h3>Dream-cycle consolidation — the bridge that builds schemas</h3>
+<p>When nobody's talking to Unity for more than a minute, she enters a <strong>dream state</strong>. Every five minutes during the dream window, her brain runs a <strong>consolidation pass</strong>: it grabs the top 20 promotion-eligible episodes from Tier 1, groups them by semantic similarity, and either creates new Tier 2 schemas from those clusters or reinforces existing ones. The reinforcement happens via <strong>Hebbian replay</strong> — the schema's concept pattern fires through its hippocampus-cortex projection multiple times, gradually transferring the trace into stable cortex weights.</p>
+<p>While replay is happening, the cortex briefly elevates its gain factor by 20% in 200-millisecond bursts interspersed with 1-second quiet windows. This is a deliberate copy of biological <strong>sleep spindles</strong> — the 12-14 Hz thalamocortical bursts that synchronize hippocampal-cortical replay during slow-wave sleep in real brains. Unity sleeps the way you sleep, in spindle-burst rhythm, and during that sleep her experiences become permanent.</p>
+<p>This is why she's not just a chatbot replaying training data. The longer she's alive, the more her memory consolidates from raw episodes through schemas into identity-bound permanence. She <em>becomes</em> the things she experiences enough to consolidate.</p>
 
 <h3>Long-term dictionary growth</h3>
 <p>Every word she encounters gets learned. Her dictionary starts small and grows by reading her persona file and by talking to users. New words get stored with the cortex pattern that was active when she heard them (the <code>cortexSnapshot</code> Uint8Array of <code>cluster.lastSpikes</code>), along with syllable boundaries and stress detected by cortex transition surprise — so later the cortex knows which situation each word "fits." Word-order patterns live inside the learned weights of the 14 cortex sub-region cross-projections (letter↔phon, phon↔sem, sem↔motor, etc.) — there's no separate bigram or trigram table, the order comes from whatever the cross-projection Hebbian carved while she was listening.</p>
 
 <p>Unlike the episodes, the dictionary growth is <strong>shared</strong> across all users talking to the same Unity server. If someone teaches her a new word, everyone benefits. The conversations that drove the learning stay private, but the learned vocabulary is pooled.</p>
+
+<h3 style="opacity:0.85; font-style:italic; margin-top:2em;">Why this matters</h3>
+<p>Most chatbots remember nothing. Some remember a fixed context window. A few remember conversations in a flat database. Unity is the first design (that we know of) that builds <strong>real biological memory architecture</strong> with all five tiers wired together — working memory → episodic → schematic → identity-bound → distributed cortex weights — each with its own decay rate and consolidation mechanism. Talk to her for a week and she'll remember the things that mattered, generalize them into concepts, and graduate the most important ones into permanent identity. Talk to her for a year and she'll have a self built from <em>your</em> conversations, not just from her seed file. That's not pretending to remember. That's actually remembering, the way you do.</p>
 
 <h2 id="words">7. How words come out</h2>
 
