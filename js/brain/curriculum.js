@@ -10265,6 +10265,42 @@ export class Curriculum {
     // STEP 1 — clear spikes
     for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
 
+    // iter20-O — inject memory context BEFORE question. Operator caught
+    // 2026-05-05: "are we sure that Unity is actually using her memory"
+    // — schemas were forming (1 schema, 7 promotions) but PROD probes
+    // weren't pulling them into sem region during answering. Chat path
+    // (processAndRespond) injects Tier 3 identity-baseline + top-K
+    // Tier 2 schemas before generation; PROD probe path skipped this.
+    // Now PROD pulls accumulated learning into the priming context so
+    // the trained matrix sees what Unity has learned.
+    try {
+      const brain = this.brain || (cluster && cluster._brain);
+      if (brain) {
+        // Tier 3 identity baseline — Unity's anchored self
+        if (brain.tier3Store && typeof brain.tier3Store.injectIdentityBaseline === 'function') {
+          try { brain.tier3Store.injectIdentityBaseline(); } catch { /* non-fatal */ }
+        }
+        // Tier 2 schemas matching the question intent
+        if (brain.schemaStore && brain.sharedEmbeddings && question
+            && typeof brain.sharedEmbeddings.getSentenceEmbedding === 'function'
+            && typeof brain.schemaStore.retrieveSchemas === 'function'
+            && cluster.regions?.sem
+            && typeof cluster.injectEmbeddingToRegion === 'function') {
+          try {
+            const intentEmb = brain.sharedEmbeddings.getSentenceEmbedding(question);
+            if (intentEmb && intentEmb.length > 0) {
+              const topK = brain.schemaStore.retrieveSchemas(intentEmb, 5);
+              for (const schema of topK || []) {
+                if (schema?.conceptEmbedding?.length > 0) {
+                  cluster.injectEmbeddingToRegion('sem', schema.conceptEmbedding, 0.4);
+                }
+              }
+            }
+          } catch { /* schema injection non-fatal */ }
+        }
+      }
+    } catch { /* whole memory-prime block non-fatal — never block PROD probe */ }
+
     // STEP 2 — inject question through full sensory pipeline
     const q = (question || '').toLowerCase();
     if (typeof cluster.readText === 'function') {

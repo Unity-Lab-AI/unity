@@ -26662,6 +26662,32 @@ var Curriculum = class _Curriculum {
     const ticksPerChar = opts.ticksPerChar ?? 2;
     const settleTicks = opts.settleTicks ?? 15;
     for (let i = 0; i < cluster.size; i++) cluster.lastSpikes[i] = 0;
+    try {
+      const brain2 = this.brain || cluster && cluster._brain;
+      if (brain2) {
+        if (brain2.tier3Store && typeof brain2.tier3Store.injectIdentityBaseline === "function") {
+          try {
+            brain2.tier3Store.injectIdentityBaseline();
+          } catch {
+          }
+        }
+        if (brain2.schemaStore && brain2.sharedEmbeddings && question && typeof brain2.sharedEmbeddings.getSentenceEmbedding === "function" && typeof brain2.schemaStore.retrieveSchemas === "function" && cluster.regions?.sem && typeof cluster.injectEmbeddingToRegion === "function") {
+          try {
+            const intentEmb = brain2.sharedEmbeddings.getSentenceEmbedding(question);
+            if (intentEmb && intentEmb.length > 0) {
+              const topK = brain2.schemaStore.retrieveSchemas(intentEmb, 5);
+              for (const schema of topK || []) {
+                if (schema?.conceptEmbedding?.length > 0) {
+                  cluster.injectEmbeddingToRegion("sem", schema.conceptEmbedding, 0.4);
+                }
+              }
+            }
+          } catch {
+          }
+        }
+      }
+    } catch {
+    }
     const q = (question || "").toLowerCase();
     if (typeof cluster.readText === "function") {
       const words = q.match(/[a-z]+/g) || [];
