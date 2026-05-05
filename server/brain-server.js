@@ -3762,6 +3762,24 @@ class ServerBrain {
       // biological scale.
       this._memoryHeartbeat();
 
+      // iter20-N — ConsolidationEngine fires at TOP of tick alongside
+      // memory heartbeat. Operator caught (verbatim 2026-05-05): "last
+      // pass 6min ago and pass intervasl is 5min" — pass should have
+      // fired but didn't. Root cause: iter20-J's consolidation block
+      // was placed at the BOTTOM of tick body, AFTER the probe-gate
+      // early-return at line ~3961. When curriculum runs gate probes
+      // (extended windows during biological-scale teach), tick early-
+      // returns and SKIPS consolidation. Moving to TOP so it fires
+      // every tick regardless of probe-gate state. iter20-A's gate
+      // hardening (5min interval + lastPassAt set early) prevents
+      // rapid re-fire even during probe-heavy windows.
+      if (this.consolidationEngine
+          && this.consolidationEngine.shouldRunPass()) {
+        this.consolidationEngine.runConsolidationPass().catch(err => {
+          console.warn('[Consolidation] pass failed:', err?.message || err);
+        });
+      }
+
       // ── GPU EXCLUSIVE: all computation on GPU, zero CPU burn ──
       const gpuReady = this._gpuConnected && this._gpuClient?.readyState === 1;
 
@@ -4092,21 +4110,10 @@ class ServerBrain {
         if (this.tonicDrives.amygdala < 12) this.tonicDrives.amygdala = 12;
       }
 
-      // iter20-J — ConsolidationEngine fires during curriculum too.
-      // Operator 2026-05-05 "fix all the memory teirs so they fucking
-      // work". Old gate (`!_curriculumInProgress`) blocked Tier 2
-      // schema formation for hours during long curriculum runs. Now
-      // consolidation runs during curriculum at the same 5-min
-      // interval as during dream cycles — schemas form continuously
-      // as episodes accumulate. iter20-A's gate hardening (lastPassAt
-      // set at start of pass) prevents rapid re-fire. Pass duration
-      // ~25ms doesn't materially compete with Hebbian.
-      if (this.consolidationEngine
-          && this.consolidationEngine.shouldRunPass()) {
-        this.consolidationEngine.runConsolidationPass().catch(err => {
-          console.warn('[Consolidation] pass failed:', err?.message || err);
-        });
-      }
+      // iter20-J/N — ConsolidationEngine moved to TOP of tick body
+      // (alongside _memoryHeartbeat) to avoid being pre-empted by the
+      // probe-gate early-return. See the consolidation call earlier
+      // in tick body.
 
       // iter18/19 memory heartbeat moved to the TOP of the tick body
       // (above the probe-gate early-return) — see this._memoryHeartbeat()
