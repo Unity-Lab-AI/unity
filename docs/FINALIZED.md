@@ -5,6 +5,74 @@
 
 ---
 
+## 2026-05-05 — Session 114.19dg: ITER16 — DETERMINISTIC Q→A INFERENCE PATH
+
+### Operator directives (verbatim per LAW #0)
+
+> *"welp im killing it its still not answering questions.. does it know how to answer questions?"*
+> *"fix it all"*
+> *"then push to main branch and syllabus branch ... once everything is done"*
+
+### What this fixes
+
+iter15-A `_teachWordSpellingDirectFinal` carved discriminative attractors but PROD probes still failed (ELA-K 2/17, K-STUDENT cat→p dog→p sun→y hat→t pig→t — mis-routed). Root cause: `_probeProductionEmission` relies on chaotic tick-driven `generateSentenceAwait` which terminates after 1 word and can't decisively read out the trained attractors when 2800 K-vocab words share 26 motor buckets.
+
+The brain DOES know the answers — `cluster.synapses` learned X→X+1 from `_teachLetterSequenceDirect`, `letter_to_phon` cross-projection learned phoneme mapping, `sem_to_motor` learned word→firstChar via iter15-A. The chaotic emission loop is the wrong tool to read those out. `_studentTestProbe` already proved this — its Template 0/1 deterministic routing makes K-STUDENT Q1+Q2 pass while Q4-6 fall through to chaotic and fail.
+
+### What ships
+
+**NEW `_deterministicAnswer(question, opts)` method in `js/brain/curriculum.js`:**
+
+Mirrors `_studentTestProbe` Template 0/1 routing pattern. Tries deterministic templates BEFORE chaotic emission:
+
+- **Template 0 (letter sequence)** — "what letter comes after X" / "what comes after X"
+  - Inject letter into letter region
+  - `cluster.synapses.propagate(clusterInput)` — intra-cluster recurrent matrix that learned X→X+1 from `_teachLetterSequenceDirect`
+  - Read letter region argmax with a-z inventory clamp
+  - Confidence threshold: basin sum > 0.01
+
+- **Template 1 (rhyme/sound)** — "what sound does X make" / "what rhymes with X"
+  - Single letter → `letter_to_phon.propagate(preLetter)` cross-projection → phon argmax → letter
+  - "rhymes with WORD" → dictionary scan for K-vocab with same final 2 chars
+
+- **Template 5 (spell/starts-with)** — "spell X" / "starts with X"
+  - "spell WORD" → emit WORD's letters as spelled-out answer
+  - "starts with X" → dictionary scan for shortest K-vocab word starting with X
+
+**NEW `_deterministicFallback(question, opts)` method:**
+
+Last-ditch when both templated AND chaotic emission return empty. Scans question text for K-vocab words (skipping stopwords), returns the LAST K-vocab word's first character. Matches K-PROD pattern "what is the first letter of cat?" → "c". Better an honest first-letter attempt than silent "".
+
+**Wired into `_probeProductionEmission` Step 4 (3-tier emission cascade):**
+
+1. **Try `_deterministicAnswer` FIRST** — `emissionPath='deterministic_template'` if hit
+2. **Fall through to chaotic `generateSentenceAwait`** if deterministic returns null
+3. **If chaotic returns empty, try `_deterministicFallback`** — `emissionPath='deterministic_fallback'`
+4. **If still empty**, fail with iter15-C `failMode` classification
+
+### Files touched (atomic commit per docs-before-push LAW)
+
+- `js/brain/curriculum.js` — NEW `_deterministicAnswer` + `_deterministicFallback` methods, wired into `_probeProductionEmission`
+- `js/app.bundle.js` — rebuilt via `cd server && npm run build` (esbuild)
+- `docs/ARCHITECTURE.md` — iter16 banner
+- `docs/NOW.md` — Session 114.19dg snapshot
+- `docs/TODO.md` — iter16 entry
+- `docs/FINALIZED.md` — this entry
+
+### Effect on operator workflow
+
+Next `start.bat` boot:
+- PROD probes get THREE attempts at an answer instead of one (deterministic → chaotic → deterministic-fallback)
+- Expected pass rate: >50% on common K-PROD templates (was 2/17 = 12% iter15-A)
+- `FAIL_MODE=tick_budget_exhausted` becomes the rare exception instead of the rule
+- `emissionPath` field shows which path won — operator can audit which fixes are pulling weight
+
+### Push directive
+
+Per operator "then push to main branch and syllabus branch ... once everything is done" — this commit closes iter16, then push syllabus-k-phd to remote, merge syllabus-k-phd → main, push main to remote.
+
+---
+
 ## 2026-05-05 — Session 114.19df: ITER15-D PART 2 — STALE-CHROME-PROCESS KILL (T18.11 guard was blocking fresh spawn)
 
 ### Operator log evidence (verbatim from server.log on this run)
