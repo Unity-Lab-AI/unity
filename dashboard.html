@@ -177,6 +177,51 @@
       <div id="d-growth" style="display:flex;gap:20px;flex-wrap:wrap;"></div>
     </div>
 
+    <!-- iter15-mem unified 5-tier memory panel. Per operator verbatim
+         2026-05-05 "shall be one unified system of the brain for memory
+         not some side processes". Renders Tier 0 (Working) + Tier 1
+         (Episodic SQLite) + Tier 2 (Schematic) + Tier 3 (Identity-bound
+         permanent) + ConsolidationEngine cycle stats from a single
+         payload (state.memoryStats) emitted by brain-server `_getMemoryStats()`. -->
+    <div class="card" style="margin-top:12px;">
+      <div class="card-title">Memory System — 5-Tier Hippocampal Unified View</div>
+      <div id="d-memory-unified" style="padding:8px 12px;font-family:monospace;font-size:11px;color:#aaa;line-height:1.6;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+          <div>
+            <div style="color:#00e5ff;font-size:10px;letter-spacing:0.5px;margin-bottom:4px;">⌛ TIER 0 — WORKING (volatile)</div>
+            <div>items: <span id="d-mem-working" style="color:#22c55e;">0 / 7</span></div>
+          </div>
+          <div>
+            <div style="color:#a855f7;font-size:10px;letter-spacing:0.5px;margin-bottom:4px;">📚 TIER 1 — EPISODIC (SQLite)</div>
+            <div>episodes: <span id="d-mem-t1-count" style="color:#22c55e;">0</span></div>
+            <div>recent salience avg: <span id="d-mem-t1-sal" style="color:#ff4d9a;">0.000</span></div>
+            <div>frequency-merged: <span id="d-mem-t1-merged" style="color:#00e5ff;">0</span></div>
+            <div>promoted to Tier 2: <span id="d-mem-t1-promoted" style="color:#22c55e;">0</span></div>
+          </div>
+          <div>
+            <div style="color:#ff4d9a;font-size:10px;letter-spacing:0.5px;margin-bottom:4px;">🧩 TIER 2 — SCHEMATIC (concepts)</div>
+            <div>schemas: <span id="d-mem-t2-count" style="color:#22c55e;">0</span> / <span id="d-mem-t2-cap" style="color:#666;">1000</span></div>
+            <div>avg consolidation: <span id="d-mem-t2-strength" style="color:#a855f7;">0.000</span></div>
+            <div>total retrievals: <span id="d-mem-t2-retr" style="color:#00e5ff;">0</span></div>
+            <div id="d-mem-t2-top" style="margin-top:4px;color:#666;font-size:10px;">no schemas yet</div>
+          </div>
+          <div>
+            <div style="color:#22c55e;font-size:10px;letter-spacing:0.5px;margin-bottom:4px;">⭐ TIER 3 — IDENTITY (permanent)</div>
+            <div>anchors: <span id="d-mem-t3-count" style="color:#22c55e;">0</span> / <span id="d-mem-t3-cap" style="color:#666;">50</span></div>
+            <div>last inject: <span id="d-mem-t3-inject" style="color:#888;">never</span></div>
+            <div id="d-mem-t3-top" style="margin-top:4px;color:#666;font-size:10px;">no anchors yet</div>
+          </div>
+          <div>
+            <div style="color:#f59e0b;font-size:10px;letter-spacing:0.5px;margin-bottom:4px;">🌙 CONSOLIDATION ENGINE</div>
+            <div>passes run: <span id="d-mem-cons-count" style="color:#22c55e;">0</span></div>
+            <div>last pass: <span id="d-mem-cons-last" style="color:#888;">never</span></div>
+            <div>dreaming now: <span id="d-mem-cons-dreaming" style="color:#555;">no</span></div>
+            <div>pass interval: <span id="d-mem-cons-interval" style="color:#666;">5 min</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card" style="margin-top:12px;">
       <div class="card-title">Cluster Activity</div>
       <div id="d-clusters"></div>
@@ -346,6 +391,59 @@
           <div style="font-size:11px;"><span style="color:#00e5ff;font-size:18px;font-weight:700;">${g.totalFrames?.toLocaleString() ?? 0}</span><br><span style="color:#555;">brain steps</span></div>
           <div style="font-size:11px;"><span style="color:#22c55e;font-size:18px;font-weight:700;">${(g.uptime / 3600).toFixed(1)}h</span><br><span style="color:#555;">uptime</span></div>
         `;
+      }
+
+      // iter15-mem unified 5-tier memory system render. Reads
+      // state.memoryStats populated by brain-server `_getMemoryStats()`.
+      // Per operator verbatim 2026-05-05 "shall be one unified system
+      // of the brain for memory not some side processes".
+      if (s.memoryStats) {
+        const ms = s.memoryStats;
+        const t1 = ms.tier1 || {};
+        const t2 = ms.tier2 || {};
+        const t3 = ms.tier3 || {};
+        const cons = ms.consolidation || {};
+        const work = ms.working || {};
+
+        const fmtAge = (ts) => {
+          if (!ts) return 'never';
+          const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+          if (sec < 60) return sec + 's ago';
+          if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
+          if (sec < 86400) return Math.floor(sec / 3600) + 'h ago';
+          return Math.floor(sec / 86400) + 'd ago';
+        };
+
+        $('d-mem-working').textContent = (work.items ?? 0) + ' / ' + (work.cap ?? 7);
+        $('d-mem-t1-count').textContent = (t1.totalEpisodes ?? 0).toLocaleString();
+        $('d-mem-t1-sal').textContent = (t1.recentSalienceAvg ?? 0).toFixed(3);
+        $('d-mem-t1-merged').textContent = (t1.freqMergedCount ?? 0).toLocaleString();
+        $('d-mem-t1-promoted').textContent = (t1.promotedToTier2 ?? 0).toLocaleString();
+        $('d-mem-t2-count').textContent = (t2.schemaCount ?? 0).toLocaleString();
+        $('d-mem-t2-cap').textContent = (t2.hardCap ?? 1000).toLocaleString();
+        $('d-mem-t2-strength').textContent = (t2.avgConsolidationStrength ?? 0).toFixed(3);
+        $('d-mem-t2-retr').textContent = (t2.totalRetrievals ?? 0).toLocaleString();
+        if (Array.isArray(t2.top) && t2.top.length > 0) {
+          $('d-mem-t2-top').innerHTML = '<span style="color:#888;">top:</span> '
+            + t2.top.slice(0, 3).map(x => `<span style="color:#bbb;">${x.label}</span> <span style="color:#666;">(${x.strength})</span>`).join(' · ');
+        } else {
+          $('d-mem-t2-top').textContent = 'no schemas yet';
+        }
+        $('d-mem-t3-count').textContent = (t3.identityCount ?? 0).toLocaleString();
+        $('d-mem-t3-cap').textContent = (t3.hardCap ?? 50).toLocaleString();
+        $('d-mem-t3-inject').textContent = fmtAge(t3.lastInjectedAt);
+        if (Array.isArray(t3.identities) && t3.identities.length > 0) {
+          $('d-mem-t3-top').innerHTML = '<span style="color:#888;">anchors:</span> '
+            + t3.identities.slice(0, 4).map(x => `<span style="color:#bbb;">${x.label}</span>`).join(' · ')
+            + (t3.identities.length > 4 ? ` <span style="color:#666;">+${t3.identities.length - 4}</span>` : '');
+        } else {
+          $('d-mem-t3-top').textContent = 'no anchors yet';
+        }
+        $('d-mem-cons-count').textContent = (cons.passCount ?? 0).toLocaleString();
+        $('d-mem-cons-last').textContent = fmtAge(cons.lastPassAt);
+        $('d-mem-cons-dreaming').textContent = cons.isDreaming ? '✓ yes' : 'no';
+        $('d-mem-cons-dreaming').style.color = cons.isDreaming ? '#22c55e' : '#555';
+        $('d-mem-cons-interval').textContent = Math.floor((cons.intervalMs ?? 300000) / 60000) + ' min';
       }
 
       // Clusters

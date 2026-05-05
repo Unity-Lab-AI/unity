@@ -656,21 +656,27 @@ function renderLandingTab(tab, s) {
       break;
     }
     case 'memory': {
-      // Memory stats live in THREE places depending on brain path:
-      //   1. server state  — growth.totalWords, totalEpisodes, totalInteractions, totalFrames
-      //   2. local brain   — innerVoice.dictionary + languageCortex (loaded from Ultimate Unity.txt)
-      //   3. memory module — working memory buffer (optional, present in local brain)
-      // Read whatever is available, show real values, 0 when genuinely zero.
+      // iter15-mem unified 5-tier memory tracking. Operator verbatim
+      // 2026-05-05: "now that we added memory we need a way to track
+      // it ... shall be one unified system of the brain for memory not
+      // some side processes". Reads `s.memoryStats` populated by the
+      // server `_getMemoryStats()` helper alongside legacy growth +
+      // language-cortex cardinality fields.
       const growth = s.growth || {};
       const mem = s.memory || {};
+      const ms = s.memoryStats || {};
+      const tier1 = ms.tier1 || {};
+      const tier2 = ms.tier2 || {};
+      const tier3 = ms.tier3 || {};
+      const consolidation = ms.consolidation || {};
+      const working = ms.working || {};
 
-      // Read InnerVoice from whichever brain is alive right now — `brain`
-      // is only assigned after the setup modal start button; before that
-      // the landing page still has a RemoteBrain with a real InnerVoice.
+      // Language-cortex cardinality (sentences/words/bigrams) still
+      // lives on the local InnerVoice — pull from whichever brain is
+      // alive right now.
       const iv = brain?.innerVoice || landingBrainSource?.innerVoice || null;
       const dict = iv?.dictionary || null;
       const lc = iv?.languageCortex || null;
-
       const dictWords = dict?._words?.size ?? dict?.size ?? 0;
       const dictBigramHeads = dict?._bigrams?.size ?? 0;
       let dictTotalBigrams = 0;
@@ -683,14 +689,67 @@ function renderLandingTab(tab, s) {
       const recentOutput = lc?._recentOutputWords?.length ?? 0;
       const usageTyped = lc?._usageTypes?.size ?? 0;
 
-      const workingItems = Array.isArray(mem.workingMemoryItems) ? mem.workingMemoryItems.length
-                         : (mem.workingCount ?? 0);
-      const episodes = growth.totalEpisodes ?? mem.episodeCount ?? 0;
-      const serverWords = growth.totalWords ?? 0;
+      const workingItems = working.items ?? (Array.isArray(mem.workingMemoryItems) ? mem.workingMemoryItems.length : (mem.workingCount ?? 0));
+      const workingCap = working.cap ?? 7;
+      const totalEpisodes = tier1.totalEpisodes ?? growth.totalEpisodes ?? mem.episodeCount ?? 0;
+      const recentSal = tier1.recentSalienceAvg ?? 0;
+      const freqMerged = tier1.freqMergedCount ?? 0;
+      const promotedToTier2 = tier1.promotedToTier2 ?? 0;
       const interactions = growth.totalInteractions ?? 0;
       const brainSteps = growth.totalFrames ?? s.frameCount ?? 0;
 
+      const fmtAge = (ts) => {
+        if (!ts) return 'never';
+        const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+        if (sec < 60) return sec + 's ago';
+        if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
+        if (sec < 86400) return Math.floor(sec / 3600) + 'h ago';
+        return Math.floor(sec / 86400) + 'd ago';
+      };
+
+      const tier2TopHtml = (tier2.top || []).length > 0
+        ? '<div style="margin-top:6px;font-size:9px;color:#888;">Top schemas by strength:</div>'
+          + (tier2.top || []).map(s => `<div style="font-size:10px;color:#bbb;padding:2px 0;">• ${s.label} <span style="color:#888;">(str=${s.strength}, retr=${s.retrievals})</span></div>`).join('')
+        : '<div style="margin-top:6px;font-size:10px;color:#666;">No schemas yet — Tier 2 builds during dream-cycle consolidation.</div>';
+
+      const tier3TopHtml = (tier3.identities || []).length > 0
+        ? '<div style="margin-top:6px;font-size:9px;color:#888;">Identity anchors (permanent):</div>'
+          + (tier3.identities || []).slice(0, 8).map(s => `<div style="font-size:10px;color:#bbb;padding:2px 0;">• ${s.label} <span style="color:#888;">(str=${s.strength}, retr=${s.retrievals})</span></div>`).join('')
+          + (tier3.identities.length > 8 ? `<div style="font-size:9px;color:#666;padding:2px 0;">... +${tier3.identities.length - 8} more</div>` : '')
+        : '<div style="margin-top:6px;font-size:10px;color:#666;">No identity anchors — fresh boot will seed from IDENTITY_SEED_LIST.</div>';
+
       el.innerHTML =
+        card('Working Memory (Tier 0)', `
+          ${metric('Items', workingItems + ' / ' + workingCap + ' slots', '#00e5ff')}
+          ${bar((workingItems / Math.max(1, workingCap)) * 100, '#00e5ff')}
+        `) +
+        card('Tier 1 — Episodic (SQLite)', `
+          ${metric('Total Episodes', totalEpisodes.toLocaleString(), '#a855f7')}
+          ${metric('Recent Salience (avg)', recentSal.toFixed(3), recentSal >= 0.4 ? '#22c55e' : recentSal >= 0.15 ? '#f59e0b' : '#ef4444')}
+          ${bar(Math.min(100, recentSal * 200), recentSal >= 0.4 ? '#22c55e' : recentSal >= 0.15 ? '#f59e0b' : '#ef4444')}
+          ${metric('Frequency-Merged', freqMerged.toLocaleString(), '#00e5ff')}
+          ${metric('Promoted to Tier 2', promotedToTier2.toLocaleString(), '#22c55e')}
+          ${metric('Interactions', interactions.toLocaleString(), '#555')}
+        `) +
+        card('Tier 2 — Schematic Memory', `
+          ${metric('Schemas', (tier2.schemaCount ?? 0).toLocaleString() + ' / ' + (tier2.hardCap ?? 1000), '#a855f7')}
+          ${bar(((tier2.schemaCount ?? 0) / Math.max(1, tier2.hardCap ?? 1000)) * 100, '#a855f7')}
+          ${metric('Avg Consolidation Strength', (tier2.avgConsolidationStrength ?? 0).toFixed(3), '#ff4d9a')}
+          ${metric('Total Retrievals', (tier2.totalRetrievals ?? 0).toLocaleString(), '#22c55e')}
+          ${tier2TopHtml}
+        `) +
+        card('Tier 3 — Identity-Bound (Permanent)', `
+          ${metric('Identity Anchors', (tier3.identityCount ?? 0).toLocaleString() + ' / ' + (tier3.hardCap ?? 50), '#ff4d9a')}
+          ${bar(((tier3.identityCount ?? 0) / Math.max(1, tier3.hardCap ?? 50)) * 100, '#ff4d9a')}
+          ${metric('Last Identity Inject', fmtAge(tier3.lastInjectedAt), tier3.lastInjectedAt ? '#22c55e' : '#888')}
+          ${tier3TopHtml}
+        `) +
+        card('Consolidation Engine (Dream Cycles)', `
+          ${metric('Dream Passes Run', (consolidation.passCount ?? 0).toLocaleString(), '#a855f7')}
+          ${metric('Last Pass', fmtAge(consolidation.lastPassAt), consolidation.lastPassAt ? '#22c55e' : '#888')}
+          ${metric('Currently Dreaming', consolidation.isDreaming ? '✓ yes' : '✗ no', consolidation.isDreaming ? '#22c55e' : '#555')}
+          ${metric('Pass Interval', Math.floor((consolidation.intervalMs ?? 300000) / 60000) + ' min', '#888')}
+        `) +
         card('Language Cortex — Self-Image', `
           ${metric('Persona Loaded', selfImageLoaded ? '✓ Ultimate Unity.txt' : '✗ not loaded', selfImageLoaded ? '#22c55e' : '#ef4444')}
           ${metric('Sentences Learned', sentencesLearned.toLocaleString(), '#a855f7')}
@@ -700,13 +759,7 @@ function renderLandingTab(tab, s) {
           ${metric('Usage-Typed Words', usageTyped.toLocaleString(), '#f59e0b')}
           ${metric('Words Spoken (session)', wordsProcessed.toLocaleString(), '#22c55e')}
           ${metric('Recent Output Window', recentOutput + ' / ' + (lc?._recentOutputMax ?? 50), '#555')}
-        `) +
-        card('Episodic + Working Memory', `
-          ${metric('Working Memory', workingItems + ' / 7 items', '#00e5ff')}
-          ${metric('Episodes (SQLite)', episodes.toLocaleString(), '#a855f7')}
-          ${metric('Interactions', interactions.toLocaleString(), '#22c55e')}
-          ${metric('Server Word-Freq', serverWords.toLocaleString(), '#ff4d9a')}
-          ${metric('Brain Steps', brainSteps.toLocaleString(), '#00e5ff')}
+          ${metric('Brain Steps', brainSteps.toLocaleString(), '#888')}
         `);
       break;
     }

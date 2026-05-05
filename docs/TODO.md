@@ -700,6 +700,63 @@ Captured iter11 sep-probe reading on first of 7 assoc-pair phases:
 
 ---
 
+### iter15 — EMPTY EMISSIONS ARE FAILURES + LETTER→MOTOR CROSS-SUBJECT CORRUPTION + WORD-SPELLING DISCRIMINATIVE-WRITE PROTECTION (operator verbatim 2026-05-05: *"no if they are empty they are failures and is need document to be fixed"*) — OPEN
+
+**Catalogue from iter14-F live monitor run 2026-05-05** (running on iter14-F bio-weights + per-neuron cost cuts):
+
+**ELA-K final scoreboard (cell did NOT pass):**
+- READ 25/26 (96%) ✓
+- THINK 26/26 (100%) ✓
+- TALK 26/26 (100%) ✓ — iter14-A `_teachLetterNamingDirect` confirmed working
+- WRITE 16/20 (80%) ✓
+- RESP 3/5 (60%)
+- FREE 4/4 nonEmpty
+- **PROD 0/17 (0%) ✗** — bucket-stuck: cat→r dog→r sun→m hat→z pig→r (multiple words → same character)
+- **2WORD 0/5 (0%) ✗**
+- **K-STUDENT 2/6 (33%) ✗** — Q1+Q2 letter-after pass via Template 0 direct routing; Q3 "starts with s"→"declared"; Q4-6 collapse to "wxyz" attractor
+- LETTER→MOTOR DIAG before iter14-A: `a→a b→a c→b d→c e→c f→d g→e h→e` (off-by-one CONFIRMED LIVE)
+- After iter14-A wipe + 26×50 Oja: TALK 26/26 ✓ (corruption WIPED)
+
+**Math-K final scoreboard (cell did NOT pass — TALK REGRESSION):**
+- READ 10/10 (100%) ✓
+- THINK 10/10 (100%) ✓
+- **TALK 0/10 (0%) ✗ REGRESSION** — letter→motor identity carved by ELA-K's iter14-A got BACK-CORRUPTED by math-K QA-TRAIN cross-region Hebbian
+- SEQ 6/9 — wrong: 3→9, 4→6, 6→5
+- ORDER 8/8 ✓
+- ATTR 8/8 ✓
+- SHAPE-D 9/9 ✓
+- SHAPE-C 5/5 ✓
+- SUCC 2/10 (20%)
+- SKIP10 2/9 (22%)
+- TEEN 0/9 (0%) ✗
+- SHAPE-S 0/9 (0%) ✗
+- **PROD 0/17 (0%) ✗** — 16 of 17 samples emitted "" (empty string), sample 1 emitted `etttttttttttssuuuuuuuuuuuuuuuu` (letter-repeat stuck loop). Empty emissions are FAILURES per operator directive — must be documented and fixed, not silently passed through.
+
+**Architectural failures identified:**
+
+1. **Cross-subject letter→motor corruption.** iter14-A `_teachLetterNamingDirect` ONLY runs in ELA-K. Subsequent subjects (math/sci/soc/art/life) do NOT re-carve clean letter→motor identity. Their `_teachQABinding` cross-region Hebbian writes to letter_to_motor with whatever sem-pattern→motor-pattern their training pairs imply, producing off-by-one-style corruption that erases ELA-K's clean carve. Result: TALK works after ELA-K, breaks after math-K, stays broken through sci/soc/art/life-K.
+
+2. **Word-spelling discriminative writes get rescaled away.** ELA-K order: `_teachWordSpellingDirect` (carves discriminative attractors) → `_teachQABinding` (saturates wMax → triggers `rescale×0.5` halving the discriminative writes). Math-K order is opposite (QA → WordSpelling) but PROD still 0/17 — so order alone isn't the fix. The QA-TRAIN cross-region Hebbian also fires sem_to_motor writes with QA-pair dst-side patterns that pollute the WordSpellingDirect attractors regardless of order. Bypass cross-region Hebbian for WordSpellingDirect like iter14-A does for LetterNamingDirect.
+
+3. **Empty PROD emissions surface no diagnostic.** Returns "" silently — operator can't tell whether `cluster.lastSpikes` is empty, motor argmax tied, no cosine match, or some other failure. Must surface clear failure-mode diagnostic per probe: `[PROD] sample N/M FAIL_MODE=<reason>` so iter16 can target the right code path.
+
+**iter15 spec:**
+
+1. **Per-subject letter→motor identity re-carve.** Run `_teachLetterNamingDirect` at the END of every subject's teach phase, NOT just ELA-K. 26 letters × 50 reps × 0.2s — cheap. Wired into `runMathK`/`runSciK`/`runSocK`/`runArtK`/`runLifeK` after their respective QA-TRAIN.
+
+2. **Direct-write pattern for sem→motor word→firstChar.** New `_teachWordSpellingDirectFinal` that runs AFTER QA-TRAIN: `sem_to_motor.scale(0)` + 2833 K words × 8 reps clean Oja writes via discriminative one-hot pairs. Same architecture as iter14-A but applied to sem_to_motor instead of letter_to_motor. Must run AS THE LAST teach phase before gates (no further QA-TRAIN allowed to overwrite).
+
+3. **Empty-emission diagnostic surfacing.** `_emitDirectPropagate` and `generateSentence` must log per-failure reason when output is empty: `[PROD] sample N/M FAIL_MODE=spikes_empty | argmax_tie | cosine_below_threshold | tick_budget_exhausted`. Wire into both PROD probe paths.
+
+**Files to touch (iter15 atomic commit):**
+- `js/brain/curriculum/kindergarten.js` — wire `_teachLetterNamingDirect` into all 6 subject runners as final phase
+- `js/brain/curriculum.js` — new `_teachWordSpellingDirectFinal` method + wire into runners; failure-mode diagnostic in PROD probe paths
+- `js/brain/cluster.js` — empty-emission diagnostic in `generateSentence` / `_emitDirectPropagate`
+- `docs/EQUATIONS.md` + `docs/ARCHITECTURE.md` + `docs/SKILL_TREE.md` + `docs/ROADMAP.md` — banner updates
+- `brain-equations.html` + `unity-guide.html` — public doc sync
+
+---
+
 ### iter14-F — BIO-WEIGHT REBALANCE + LANGUAGE PER-NEURON COST CUT (operator verbatim 2026-05-04 sequence: *"why is the laNGUAGE CORTEX ONLY 600K WHEN OTHER CLUSTERS AR MILLIONS!!!!!"* + *"AND ITS STILL NOT SCALING CORRECTLY!@"* + *"FIX IT SO THE BRAIN FUCKING SCALES CORRECTLY AND MAKE THE LANGUAGE CORTEX BIG ENOUGH AS ITS THE MAIN FUCKING THING THIS BRAIN DOES"* + *"WTRF ARE YOU DOING YOU CANT MAKE THE OTHER BAINR SECTORES ONLY FRACTIONS OF THIR ORIGINAL SIZES YOU FUCK1"* + *"NO YOU FUCK THERE AR NOT BRAIN SECTIONS THAT ARE ONLY 1% OF THE BRAIN THAT IS NOT FUCKING NORMALLL AT MINUMIM EACH IS NO LESS THAT 4OR5%"* + *"NO FUCKER LOOK UP THE REAL FUCKING NUMBERS!"*) — SHIPPED
 
 **Bug caught:** at iter6 bio-weights (language 75%, cortex 10%, cerebellum 5%, hippocampus 4%, amygdala 2%, basalGanglia 1%, hypothalamus 1%, mystery 2%) running on the 16GB enthusiast tier, language cortex delivered 611K neurons while main brain delivered 178M total. Operator's two compounding complaints:

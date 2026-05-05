@@ -1981,6 +1981,13 @@ class ServerBrain {
         uptime: (Date.now() - (this._startedAt || Date.now())) / 1000,
         totalFrames: this.frameCount,
       },
+      // iter15-mem — unified 5-tier memory snapshot for dashboard +
+      // 3D brain memory tab. Tier 1 (Episodic SQLite) + Tier 2
+      // (Schematic) + Tier 3 (Identity-bound) + ConsolidationEngine
+      // + Working memory all in one payload. Operator verbatim:
+      // "shall be one unified system of the brain for memory not
+      // some side processes".
+      memoryStats: this._getMemoryStats(),
       // Live brain-event stream — plasticity fires, curriculum phases,
       // drug events, template classifications, everything the cortex
       // is DOING in the current window. Each entry carries
@@ -4885,6 +4892,118 @@ class ServerBrain {
    */
   getEpisodeCount() {
     return this._stmtEpisodeCount.get().count;
+  }
+
+  /**
+   * iter15-mem — unified 5-tier memory stats for dashboard / 3D brain UI.
+   *
+   * Operator verbatim 2026-05-05: "now that we added memory we need a way
+   * to track it as the dashboard has nothing and the 3D brain page only
+   * has [basic episodic counts] — not enough information to accurat;ly
+   * track the memory abilities of the brain we implimented and whould
+   * and shall be one unified system of the brain for memory not some
+   * side processes".
+   *
+   * Returns a snapshot of all 5 memory tiers in one payload so both the
+   * dashboard.html unified-memory card and the 3D brain landing page
+   * memory tab read from a single source of truth.
+   *
+   * Tier 1 (Episodic) lives in episodic-memory.db; we read aggregates.
+   * Tier 2 (Schematic) + Tier 3 (Identity-bound) live in their respective
+   * Map stores; we summarize counts + top-K + averages. ConsolidationEngine
+   * exposes lastPassAt + passCount publicly.
+   */
+  _getMemoryStats() {
+    const stats = {
+      tier1: { totalEpisodes: 0, recentSalienceAvg: 0, freqMergedCount: 0, promotedToTier2: 0, prunedTotal: 0 },
+      tier2: { schemaCount: 0, hardCap: 1000, avgConsolidationStrength: 0, totalRetrievals: 0, top: [] },
+      tier3: { identityCount: 0, hardCap: 50, lastInjectedAt: 0, identities: [] },
+      consolidation: { lastPassAt: 0, passCount: 0, isDreaming: false, intervalMs: 5 * 60 * 1000 },
+      working: { items: 0, cap: 7 },
+    };
+
+    // Tier 1 — Episodic (SQLite)
+    if (this._db) {
+      try {
+        stats.tier1.totalEpisodes = this.getEpisodeCount();
+        // Recent salience snapshot (last 20 episodes)
+        if (this._stmtRecentEpisodes) {
+          const recent = this._stmtRecentEpisodes.all(20);
+          if (Array.isArray(recent) && recent.length > 0) {
+            let sumSal = 0; let n = 0;
+            for (const ep of recent) {
+              if (typeof ep.salience_score === 'number') { sumSal += ep.salience_score; n++; }
+            }
+            if (n > 0) stats.tier1.recentSalienceAvg = sumSal / n;
+          }
+        }
+        // Aggregate counts (frequency-merged, promoted, pruned counters)
+        if (typeof this._db.prepare === 'function') {
+          try {
+            const merged = this._db.prepare('SELECT SUM(frequency_count - 1) as merged FROM episodes WHERE frequency_count > 1').get();
+            stats.tier1.freqMergedCount = (merged && merged.merged) || 0;
+            const promoted = this._db.prepare('SELECT COUNT(*) as c FROM episodes WHERE promoted_to_schema_id IS NOT NULL').get();
+            stats.tier1.promotedToTier2 = (promoted && promoted.c) || 0;
+          } catch (e) { /* schema mismatch on older db, skip */ }
+        }
+      } catch (err) { /* db not ready, leave defaults */ }
+    }
+
+    // Tier 2 — Schematic
+    if (this.schemaStore && typeof this.schemaStore.size === 'function') {
+      stats.tier2.schemaCount = this.schemaStore.size();
+      stats.tier2.hardCap = this.schemaStore.maxSchemas || 1000;
+      let strSum = 0; let retrievSum = 0; let n = 0;
+      const all = [];
+      for (const sch of this.schemaStore.schemas.values()) {
+        all.push(sch);
+        if (typeof sch.consolidationStrength === 'number') strSum += sch.consolidationStrength;
+        if (typeof sch.retrievalCount === 'number') retrievSum += sch.retrievalCount;
+        n++;
+      }
+      stats.tier2.avgConsolidationStrength = n > 0 ? strSum / n : 0;
+      stats.tier2.totalRetrievals = retrievSum;
+      // Top 5 by consolidation strength
+      all.sort((a, b) => (b.consolidationStrength || 0) - (a.consolidationStrength || 0));
+      stats.tier2.top = all.slice(0, 5).map(s => ({
+        label: s.label || 'unlabeled',
+        strength: Number((s.consolidationStrength || 0).toFixed(3)),
+        retrievals: s.retrievalCount || 0,
+      }));
+    }
+
+    // Tier 3 — Identity-bound (permanent)
+    if (this.tier3Store && typeof this.tier3Store.size === 'function') {
+      stats.tier3.identityCount = this.tier3Store.size();
+      stats.tier3.hardCap = this.tier3Store.hardCap || 50;
+      stats.tier3.lastInjectedAt = this.tier3Store.lastInjectedAt || 0;
+      const ids = [];
+      for (const sch of this.tier3Store.identitySchemas.values()) {
+        ids.push({
+          label: sch.label || 'unlabeled',
+          strength: Number((sch.consolidationStrength || 0).toFixed(3)),
+          retrievals: sch.retrievalCount || 0,
+          lastRetrievalAt: sch.lastRetrievalAt || 0,
+        });
+      }
+      ids.sort((a, b) => b.strength - a.strength);
+      stats.tier3.identities = ids;
+    }
+
+    // ConsolidationEngine
+    if (this.consolidationEngine) {
+      stats.consolidation.lastPassAt = this.consolidationEngine.lastPassAt || 0;
+      stats.consolidation.passCount = this.consolidationEngine.passCount || 0;
+      stats.consolidation.isDreaming = this._isDreaming === true;
+    }
+
+    // Working memory (existing field on this.memory)
+    const mem = this.memory || {};
+    stats.working.items = Array.isArray(mem.workingMemoryItems) ? mem.workingMemoryItems.length
+                       : (mem.workingCount || 0);
+    stats.working.cap = mem.workingCap || 7;
+
+    return stats;
   }
 
   // ── Persistence ──────────────────────────────────────────────

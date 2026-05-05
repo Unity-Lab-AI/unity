@@ -5,6 +5,69 @@
 
 ---
 
+## 2026-05-05 — Session 114.19dc: ITER15-MEM — UNIFIED 5-TIER MEMORY TRACKING UI
+
+### Operator directive (verbatim per LAW #0)
+
+> *"also now that we added memory we need a way to track it as the dashboard has nothing and the 3D brain page only has this:Language Cortex — Self-Image / Persona Loaded / ✓ Ultimate Unity.txt / Sentences Learned 2,474 / Words in Dictionary 4,005 / Bigram Heads 0 / Total Bigrams 0 / Usage-Typed Words 0 / Words Spoken (session) 0 / Recent Output Window 50 / 50 / Episodic + Working Memory / Working Memory 0 / 7 items / Episodes (SQLite) 0 / Interactions 0 / Server Word-Freq 0 / Brain Steps 6,304 --- which is not enough information to accurat;ly track the memory abilities of the brain we implimented and whould and shall be one unified system of the brain for memory not some side processes"*
+
+### What this fixes
+
+iter13 shipped a 5-tier hippocampal consolidation system (Working / Tier 1 Episodic / Tier 2 Schematic / Tier 3 Identity-bound / ConsolidationEngine) but the user-facing UI never gained tracking surface for the new tiers. Operator caught this — dashboard.html had ZERO memory tracking, and the 3D brain page memory tab only showed legacy fields (sentences/words/bigrams/working-mem-count/SQLite-episodes/interactions/server-word-freq/brain-steps). No Tier 2 schema count, no Tier 3 identity anchors, no consolidation pass count, no recent salience averages, no frequency-merged-counter.
+
+### What ships
+
+**1. `_getMemoryStats()` helper on brain-server.js** — single source of truth for unified 5-tier memory snapshot:
+
+```
+{
+  tier1: { totalEpisodes, recentSalienceAvg, freqMergedCount, promotedToTier2, prunedTotal },
+  tier2: { schemaCount, hardCap, avgConsolidationStrength, totalRetrievals, top: [{label, strength, retrievals}] },
+  tier3: { identityCount, hardCap, lastInjectedAt, identities: [...] },
+  consolidation: { lastPassAt, passCount, isDreaming, intervalMs },
+  working: { items, cap }
+}
+```
+
+Tier 1 reads aggregate SQLite queries (count + recent-salience avg over last 20 + frequency-merge counter + promoted-to-Tier-2 counter). Tier 2 + Tier 3 iterate their `Map` stores in-memory. ConsolidationEngine exposes `lastPassAt` + `passCount` directly. Working memory pulls from existing `this.memory` field.
+
+**2. `getState().memoryStats` exposes the unified snapshot** to all WebSocket consumers — dashboard.html + 3D brain landing page memory tab + any future memory-aware client all read from the same payload field.
+
+**3. dashboard.html unified memory card** (NEW — was ZERO memory tracking before):
+- Tier 0 — Working (items / cap)
+- Tier 1 — Episodic (count + recent salience avg + frequency-merged + promoted)
+- Tier 2 — Schematic (count / cap + avg consolidation strength + total retrievals + top 3 by strength)
+- Tier 3 — Identity-Bound (anchors / cap + last inject age + top 4 anchors)
+- Consolidation Engine (passes run + last pass age + currently dreaming + interval)
+
+Wired into existing WS state-update handler.
+
+**4. js/app.js memory tab handler rewritten** — replaces 2-card layout (Language Cortex Self-Image + Episodic+Working Memory) with 6-card layout: Working (Tier 0) + Tier 1 Episodic + Tier 2 Schematic + Tier 3 Identity-Bound + Consolidation Engine + Language Cortex Self-Image (kept). Includes per-tier bars, top-K listings, age-since-last-event helper.
+
+**5. js/app.bundle.js rebuilt** via `cd server && npm run build` (esbuild). Browser loads bundle, not live source.
+
+### Files touched (atomic commit per docs-before-push LAW)
+
+- `server/brain-server.js` — `_getMemoryStats()` helper + `memoryStats` field in `getState()`
+- `js/app.js` — memory tab handler rewritten with 6 unified-tier cards
+- `js/app.bundle.js` — rebuilt via esbuild
+- `dashboard.html` — NEW unified memory card with 5 tier columns + WS update wiring
+- `docs/ARCHITECTURE.md` — iter15-mem banner line at top
+- `docs/NOW.md` — Session 114.19dc snapshot rolled to iter15-mem
+- `docs/TODO.md` — iter15-mem entry already added when work started
+- `docs/FINALIZED.md` — this entry
+
+### Effect on operator workflow
+
+After next `start.bat` boot:
+- dashboard.html loads with the new "Memory System — 5-Tier Hippocampal Unified View" card visible above Cluster Activity
+- 3D brain landing → memory tab shows 6 cards (Working + Tier 1 + Tier 2 + Tier 3 + ConsolidationEngine + Language Cortex)
+- All values live-update from WS state at the existing dashboard poll cadence (no extra latency)
+
+The current curriculum run is unaffected — this is a UI / state-payload change only. Memory tracking goes live on the next browser refresh after a `start.bat` reboot picks up the new brain-server.js code.
+
+---
+
 ## 2026-05-04 — Session 114.19db: ITER14-F — BIO-WEIGHT REBALANCE + LANGUAGE PER-NEURON COST CUT
 
 ### Operator directives (verbatim per LAW #0)
