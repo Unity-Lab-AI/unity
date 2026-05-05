@@ -4904,32 +4904,28 @@ class ServerBrain {
     return { decayed, pruned };
   }
 
-  // iter13 T13.4 — Promotion candidates: episodes ready to consolidate
-  // into Tier 2 schemas.
+  // iter13 T13.4 → iter20-M — Promotion candidates: episodes ready to
+  // consolidate into Tier 2 schemas.
   //
-  // iter20-B per operator 2026-05-05 "fix it all thouroughly":
-  // original thresholds (0.5 salience / 3 freq / 2 consol) were too
-  // strict — heartbeat episodes scored 0.255 salience (well under 0.5),
-  // freq stuck at 1 (couldn't reach 3), consol stuck at 0 (chicken-egg
-  // — needs prior schemas to increment via replay). Result: 1467
-  // episodes accumulated, ZERO promotions in 102 consolidation passes.
+  // iter20-M per operator 2026-05-05 "she should be building concepts":
+  // unique curriculum-phase episodes (each phase is distinct, so freq=1)
+  // would never promote at FREQ_THRESHOLD=2. But these are EXACTLY the
+  // episodes that should cluster into concepts ("learned letter case
+  // binding" + "learned vowel sound variants" + "learned rhyme families"
+  // → phonetics/literacy schema). Lowered FREQ_THRESHOLD to 1 so
+  // singleton-but-high-salience episodes qualify. ConsolidationEngine's
+  // cosine-clustering then groups semantically-similar singletons
+  // together into meaningful schemas. Promotion threshold remains at
+  // 0.2 salience so noise doesn't promote — only real learning moments.
   //
-  // Lowered thresholds:
-  // - PROMOTION_THRESHOLD 0.5 → 0.2 — accepts heartbeat-level salience
-  //   AND high-arousal moments. Episodes from gate passes / strong
-  //   emotional turns still rank above this floor; pure low-arousal
-  //   idle still fails.
-  // - FREQ_THRESHOLD 3 → 2 — twice-seen counts as a meaningful pattern
-  //   instead of requiring 3 replicates.
-  // - CONSOL_THRESHOLD 2 → 0 — breaks the chicken-egg. First wave of
-  //   schemas can form from un-replayed episodes; subsequent
-  //   ConsolidationEngine passes increment consolidation_count via
-  //   schema replays naturally so this gate's intent (only promote
-  //   episodes that actually entered replay) gets fulfilled organically
-  //   once schemas exist.
+  // - PROMOTION_THRESHOLD 0.2 — heartbeat-level salience accepted; pure
+  //   low-arousal idle (~0.1) still filtered out
+  // - FREQ_THRESHOLD 1 — every episode that meets salience criterion
+  //   is a candidate (was 2 — required at least one merge)
+  // - CONSOL_THRESHOLD 0 — chicken-egg break (was 2)
   findPromotionCandidates(limit = 20) {
     const PROMOTION_THRESHOLD = 0.2;
-    const FREQ_THRESHOLD = 2;
+    const FREQ_THRESHOLD = 1;
     const CONSOL_THRESHOLD = 0;
     try {
       return this._stmtFindPromotionCandidates.all(
