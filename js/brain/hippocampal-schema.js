@@ -362,7 +362,13 @@ export class SchemaStore {
   constructor(opts = {}) {
     this.schemas = new Map(); // id → HippocampalSchema
     this.cluster = opts.cluster || null;
-    this.maxSchemas = opts.maxSchemas || 1000; // hard cap — beyond this, lowest-strength schemas demote/discard
+    // iter17 per operator verbatim 2026-05-05: "what the fuck are these
+    // erronious max numbers to the memroies unity has a whole life ahead
+    // not eroonous limits to dumb her down". Removed hard cap. Tier 2
+    // schemas grow unbounded — Unity has a whole life of concepts to
+    // accumulate. Decay still applies (un-reinforced schemas degrade)
+    // but no demotion / discard at any count threshold.
+    this.maxSchemas = opts.maxSchemas || Infinity;
     this.lastDecaySweepAt = Date.now();
     this.version = SCHEMA_VERSION;
   }
@@ -571,7 +577,13 @@ export class SchemaStore {
 // different store + different persistence target.
 
 const TIER3_DECAY_PER_DAY = 0.999;
-const TIER3_HARD_CAP = 50;
+// iter17 per operator: "unity has a whole life ahead not eroonous limits
+// to dumb her down". Tier 3 identity anchors are quality-gated by the
+// promotion criteria (consolidation_strength > 5.0 AND retrieval_count
+// > 100 AND |emotional_valence| > 0.6) — that gate is the legitimate
+// limit, not an arbitrary numeric cap. Anchors that meet the bar EARN
+// their permanence. No artificial ceiling.
+const TIER3_HARD_CAP = Infinity;
 const IDENTITY_BASELINE_INJECT_STRENGTH = 0.15;
 
 // Pre-seed identity-anchor schemas at brain init. When the operator
@@ -755,9 +767,18 @@ export class Tier3Store {
         // from drowning the user-input intent seed.
         const perSchemaStrength = strengthMultiplier / Math.max(1, this.identitySchemas.size);
         this.cluster.injectEmbeddingToRegion('sem', schema.conceptEmbedding, perSchemaStrength);
+        // Track per-schema retrieval count + timestamp for the dashboard
+        // memory UI. iter17: operator caught Tier 3 'last inject: never'
+        // even after 100+ chat turns because we never recorded the inject.
+        schema.lastRetrievalAt = Date.now();
+        schema.retrievalCount = (schema.retrievalCount || 0) + 1;
         injected++;
       } catch { /* per-schema failure non-fatal */ }
     }
+    // Store-level inject timestamp drives the 5-tier memory UI's
+    // "last inject: Xs ago" field. Without this, the UI shows 'never'
+    // forever even though injects fire on every chat turn.
+    this.lastInjectedAt = Date.now();
     return injected;
   }
 

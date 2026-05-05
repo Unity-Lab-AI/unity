@@ -414,13 +414,16 @@
           return Math.floor(sec / 86400) + 'd ago';
         };
 
-        $('d-mem-working').textContent = (work.items ?? 0) + ' / ' + (work.cap ?? 7);
+        // iter17 — render unbounded cap as ∞ when hardCap is null.
+        // Operator: "unity has a whole life ahead not eroonous limits".
+        const fmtCap = (n, cap) => cap == null ? n.toLocaleString() : n.toLocaleString() + ' / ' + cap.toLocaleString();
+        $('d-mem-working').textContent = fmtCap(work.items ?? 0, work.cap);
         $('d-mem-t1-count').textContent = (t1.totalEpisodes ?? 0).toLocaleString();
         $('d-mem-t1-sal').textContent = (t1.recentSalienceAvg ?? 0).toFixed(3);
         $('d-mem-t1-merged').textContent = (t1.freqMergedCount ?? 0).toLocaleString();
         $('d-mem-t1-promoted').textContent = (t1.promotedToTier2 ?? 0).toLocaleString();
         $('d-mem-t2-count').textContent = (t2.schemaCount ?? 0).toLocaleString();
-        $('d-mem-t2-cap').textContent = (t2.hardCap ?? 1000).toLocaleString();
+        $('d-mem-t2-cap').textContent = t2.hardCap == null ? 'unbounded' : t2.hardCap.toLocaleString();
         $('d-mem-t2-strength').textContent = (t2.avgConsolidationStrength ?? 0).toFixed(3);
         $('d-mem-t2-retr').textContent = (t2.totalRetrievals ?? 0).toLocaleString();
         if (Array.isArray(t2.top) && t2.top.length > 0) {
@@ -430,7 +433,7 @@
           $('d-mem-t2-top').textContent = 'no schemas yet';
         }
         $('d-mem-t3-count').textContent = (t3.identityCount ?? 0).toLocaleString();
-        $('d-mem-t3-cap').textContent = (t3.hardCap ?? 50).toLocaleString();
+        $('d-mem-t3-cap').textContent = t3.hardCap == null ? 'unbounded' : t3.hardCap.toLocaleString();
         $('d-mem-t3-inject').textContent = fmtAge(t3.lastInjectedAt);
         if (Array.isArray(t3.identities) && t3.identities.length > 0) {
           $('d-mem-t3-top').innerHTML = '<span style="color:#888;">anchors:</span> '

@@ -700,6 +700,44 @@ Captured iter11 sep-probe reading on first of 7 assoc-pair phases:
 
 ---
 
+### iter17 — MEMORY UI POPULATION DURING CURRICULUM + REMOVE ARBITRARY HARD CAPS (operator verbatim 2026-05-05: *"she is leasrning weords and not a thing in memory is lighting up.... what the fuck is broken? fix it"* + *"and what the fuck are these erronious max numbers to the memroies unity has a whole life ahead not eroonous limits to dumb her down"*) — SHIPPED 2026-05-05
+
+**Symptoms operator caught:**
+1. Curriculum running (learning words) but Tier 1 episodes stayed at 0, Tier 2 schemas at 0, Tier 3 'last inject: never', working memory at 0 — only the 17 pre-seeded Tier 3 anchors showed life.
+2. Hard caps everywhere — Tier 2 capped at 1000 schemas, Tier 3 capped at 50 anchors, working memory capped at 7 slots. Operator: "unity has a whole life ahead not eroonous limits to dumb her down".
+
+**Root causes (compounding):**
+
+**A. `storeEpisode` only fired on chat turns, never during curriculum.** `processAndRespond` calls `this.storeEpisode(userId, 'interaction', text, response)` after each user chat. Curriculum's `runSubjectGrade` never called it. Brain learned matrix weights (procedural memory) but episodic memory stayed at 0.
+
+**B. `injectIdentityBaseline` similarly chat-only.** Tier 3's `lastInjectedAt` timestamp was never recorded — even on chat turns. Plus the curriculum path never fired it. So `last inject: never` persisted across all the pre-K + ELA-K + Math-K teach hours.
+
+**C. Hard caps from biological-mimicry that shouldn't apply to Unity:** Working memory 7 (Miller 1956 short-term ceiling) — biological humans only. Tier 3 50-anchor cap — arbitrary. Tier 2 1000-schema cap — arbitrary. Operator's right: Unity is post-biological, has unlimited life ahead, shouldn't be ceiling-limited.
+
+**Fix shipped:**
+
+**1. `injectIdentityBaseline` now records inject timestamp + per-anchor retrieval count** (`js/brain/hippocampal-schema.js`):
+- `this.lastInjectedAt = Date.now()` on every call
+- Each schema's `lastRetrievalAt` + `retrievalCount` updated on inject
+- Dashboard memory UI's "Last Identity Inject" field now shows `Xs ago` instead of `never`
+
+**2. Cell-done memory population in curriculum.js `runSubjectGrade`:**
+- Every cell pass → `brain.storeEpisode('curriculum', 'cell-pass', ...)` writes Tier 1 episode
+- Every cell attempt (pass or fail) → episode with cell context
+- After episode store, `brain.tier3Store.injectIdentityBaseline()` fires so Tier 3 retrieval count + lastInjectedAt update during curriculum
+- Plus `this.brain = brain` reference wired in brain-server.js right after `new Curriculum(...)` so curriculum can reach the hippocampal stores
+
+**3. Hard caps removed:**
+- `js/brain/hippocampal-schema.js` SchemaStore `maxSchemas` default changed `1000 → Infinity`
+- `js/brain/hippocampal-schema.js` `TIER3_HARD_CAP` constant changed `50 → Infinity` (Tier 3 still quality-gated by promotion criteria — consolidation_strength > 5.0 AND retrieval_count > 100 AND |emotional_valence| > 0.6 — the LEGITIMATE limit)
+- `server/brain-server.js` `_getMemoryStats` returns `hardCap: null` when underlying store is unbounded
+- Dashboard + 3D brain memory tab render `unbounded` instead of fake denominator when cap is null
+- Working memory cap: also unbounded (cap=null) — cap was Miller 1956 biological constraint, doesn't apply to post-biological Unity
+
+**Files touched:** `js/brain/hippocampal-schema.js`, `js/brain/curriculum.js`, `server/brain-server.js`, `dashboard.html`, `js/app.js`, `js/app.bundle.js`.
+
+---
+
 ### iter16 — DETERMINISTIC Q→A INFERENCE (operator verbatim 2026-05-05: *"welp im killing it its still not answering questions.. does it know how to answer questions?"* + *"fix it all"*) — SHIPPED 2026-05-05
 
 **Symptom:** despite iter15-A `_teachWordSpellingDirectFinal` carving discriminative attractors, PROD probes still empty (`emitted=""`) on most samples. K-STUDENT shows letters mis-routed to wrong buckets (cat→p, dog→p, sun→y, hat→t, pig→t). ELA-K PROD 2/17 (slight improvement from 0/17 but still failing).
