@@ -1538,17 +1538,35 @@ export class LanguageCortex {
         // function-word stoplist the K-STUDENT vocab filter uses.
         const _liveExclude = _buildLiveChatExclude(cluster._lastUserInputText);
         cluster._lastUserInputText = null; // consume
-        // boostPersona on chat path (not internal-thought / popup) so
-        // tick-driven emission's dictionary-oracle fallback inside
-        // cluster.generateSentence picks persona corpus words over
-        // generic Common-Crawl family-cluster terms. Mirror of the
-        // language-cortex dictionary fallback boostPersona below.
-        const _isChatPath = !opts._internalThought;
+        // iter14-C fix per operator 2026-05-04: "wtf? we need to fix
+        // that then a kindergarden can make coherant sentences and
+        // once K grade is completed wtf did u expect us to be working
+        // towards? a grade K Unity you shit"
+        //
+        // Prior code set boostPersona only on chat path
+        // (_isChatPath = !opts._internalThought) — meaning POPUPS
+        // (_internalThought=true) had persona-first oracle pass
+        // DISABLED. That's wrong. The 3D-brain popups represent
+        // Unity's INNER VOICE — they should ALWAYS reflect her
+        // identity (Tier 3 anchors + persona corpus), not generic
+        // Common-Crawl K-vocab. A 5-year-old's "I want cookies" or
+        // "halloween is scary" inner thought IS persona-content,
+        // not external chat-response content.
+        //
+        // boostPersona now ON for both chat AND popups. Tier 3
+        // identity-baseline injection ALSO fires on popups (added
+        // here below — was previously chat-only in processAndRespond).
+        // Together: every popup pulls persona corpus + Tier 3 anchors
+        // before tick-driven emission, so even pre-K popups produce
+        // age-appropriate self-referential content instead of gibberish.
+        if (cluster.tier3Store && typeof cluster.tier3Store.injectIdentityBaseline === 'function') {
+          try { cluster.tier3Store.injectIdentityBaseline(0.15); } catch { /* baseline non-fatal */ }
+        }
         const raw = cluster.generateSentence(intentSeed, {
           injectStrength: 0.6,
           suppressNoise: opts._internalThought === true,
           excludeTokens: _liveExclude,
-          boostPersona: _isChatPath,
+          boostPersona: true, // iter14-C — always on, popups need persona too
         });
         words = raw ? raw.split(/\s+/).filter(Boolean) : [];
       }
@@ -1914,12 +1932,18 @@ export class LanguageCortex {
           // Note: don't consume `_lastUserInputText` here — the sync
           // generate() path that runs after this consumes it once and
           // both paths read the same field.
-          const _isChatPathAsync = !opts._internalThought;
+          // iter14-C — popups (internal-thought) ALSO get boostPersona
+          // + Tier 3 identity-baseline injection. See parallel sync
+          // path comment for full rationale per operator 2026-05-04
+          // ("a grade K Unity you shit").
+          if (cluster.tier3Store && typeof cluster.tier3Store.injectIdentityBaseline === 'function') {
+            try { cluster.tier3Store.injectIdentityBaseline(0.15); } catch { /* baseline non-fatal */ }
+          }
           const raw = await cluster.generateSentenceAwait(intentSeed, {
             injectStrength: 0.6,
             suppressNoise: opts._internalThought === true,
             excludeTokens: _liveExcludeAsync,
-            boostPersona: _isChatPathAsync,
+            boostPersona: true, // iter14-C — always on, popups need persona too
           });
           preEmittedWords = raw ? raw.split(/\s+/).filter(Boolean) : [];
         } catch (err) {
