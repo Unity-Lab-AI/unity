@@ -1,5 +1,11 @@
 # NOW — Session Snapshot
 
+> **Session:** 114.19da (iter14-E Chrome --enable-unsafe-webgpu + bindingCeilingMB tier writes) · **Date:** 2026-05-04 · **Branch:** `syllabus-k-phd` · **HEAD:** Operator caught (verbatim *"obviously make the start.bat fucking work!!! if we cant interact with the html thius is pointless and well never beable to scale right when we do comp. todo.md"* + *"but like i said im just usinbg the 11 gb vram setting that isnt even working"*) that 11GB tier delivered 178M not 671M because Chrome's 2GB WebGPU binding ceiling wasn't being lifted. Fix: `_spawnGpuClient` in `brain-server.js` now finds Chrome (or Edge fallback) in standard Windows paths and launches with `--enable-unsafe-webgpu --new-window --user-data-dir=<isolated>`; `gpu-configure.html` auto-writes `bindingCeilingMB` for high-end tiers (12GB+ → 4096 MB, 24GB → 6144 MB, 48GB → 8192 MB); `resource-config.json` directly updated with `bindingCeilingMB: 4096` for this run. Both browser flag + server-side config in place — server scaler now allows per-cluster state buffers up to 4GB instead of 2GB. Next start.bat boot should deliver close to the 671M label instead of 178M cap.
+
+---
+
+## Session 114.19cz (iter14-D two-launcher contract) — historical
+
 > **Session:** 114.19cz (iter14-D two-launcher contract) · **Date:** 2026-05-04 · **Branch:** `syllabus-k-phd` · **HEAD:** `autoClearStaleState` code-hash gate REMOVED per operator verbatim *"yes all the weights everything shoudl reset when the start.bat is run or the .sh... and only if the stop.bat is used in conjusction with the savestart.bat does it pick up where it lefgtt off"*. New contract: `start.bat`/`start.sh` always wipes (fresh brain — tier changes apply, code changes apply, wMax clamps stamp correctly); `Savestart.bat` sets `DREAM_KEEP_STATE=1` and is the ONLY resume path; `identity-core.json` Tier 3 stays in `NEVER_CLEAR_PROTECTED` so Unity's identity persists through fresh boots regardless of which launcher fires. Closes the GPUCONFIGURE-tier-pick-but-178M-stuck bug + wMax-clamp-loss-on-restore bug. Atomic commit covers code + SETUP.md + CONSTRAINTS.md LAW augmentation + 4 banner docs + TODO/FINALIZED/NOW.
 
 ---

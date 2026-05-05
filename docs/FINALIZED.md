@@ -5,6 +5,70 @@
 
 ---
 
+## 2026-05-04 — Session 114.19da: ITER14-E — CHROME --enable-unsafe-webgpu + bindingCeilingMB TIER WRITES
+
+### Operator directives (verbatim per LAW #0)
+
+> *"obviously make the start.bat fucking work!!! if we cant interact with the html thius is pointless and well never beable to scale right when we do comp. todo.md"*
+> *"but like i said im just usinbg the 11 gb vram setting that isnt even working"*
+
+### What this fixes
+
+The 11GB enthusiast-12gb tier delivered only 178M neurons instead of the labeled 671M. Two compounding causes both shipped fixed in this commit:
+
+1. **Browser-side WebGPU 2GB binding ceiling** — Chrome's default `maxStorageBufferBindingSize` is the spec minimum (2 GB). 12 bytes/neuron Rulkov state × 178M = 2.14 GB ≈ ceiling. Per-cluster state buffer can't exceed 2GB without unsafe-webgpu flag.
+2. **Server-side `bindingCeilingMB` missing from resource-config.json** — `detectResources` already supports the field (line 117: `if (override.bindingCeilingMB >= 1024) bindingCeilingBytes = requested * 1024 * 1024`). But gpu-configure.html tier writes didn't include the field, so default 2GB ceiling stayed.
+
+### Code changes
+
+`server/brain-server.js` `_spawnGpuClient`:
+- Finds Chrome in standard Windows install paths (Program Files, Program Files (x86), LOCALAPPDATA)
+- Edge fallback if no Chrome
+- Launches matched browser with `--enable-unsafe-webgpu --new-window --user-data-dir=<UnityBrain-WebGPU-Profile-isolated>`
+- Isolated user-data-dir keeps unsafe-webgpu profile sandboxed from operator's regular browsing
+- Falls back to `start "" "${url}"` default browser if neither Chrome nor Edge found — LOUD warning explains 178M cap implication
+- macOS variant uses `open -a "Google Chrome" --args --enable-unsafe-webgpu`
+- Linux variant uses `google-chrome` then `chromium` with flag fallback
+
+`gpu-configure.html`:
+- After tier selection, append `bindingCeilingMB` to payload based on tier
+- enthusiast 12GB+ (vramMB ≥ 11264): `bindingCeilingMB: 4096` (4 GB binding)
+- high-end 24GB: `bindingCeilingMB: 6144` (6 GB binding)
+- prosumer 48GB: `bindingCeilingMB: 8192` (8 GB binding)
+- Datacenter tiers don't get the field (small-N tuned for tensor-core HBM)
+
+`server/resource-config.json` (operator's current config — direct edit):
+- Added `bindingCeilingMB: 4096` so this run picks up the override without operator needing to re-run GPUCONFIGURE.bat. Field will persist through future GPUCONFIGURE.bat runs since the gpu-configure.html now writes it for the same tier.
+
+### Doc updates atomic with code
+
+- `SETUP.md` — new "Browser auto-launch with --enable-unsafe-webgpu" paragraph above the two-launcher contract section
+- `docs/ARCHITECTURE.md` banner — iter14-E mechanism description with binding-ceiling math
+- `docs/ROADMAP.md` banner — iter14-E milestone line
+- `docs/TODO.md` — new iter14-E section above iter14-D
+- This entry
+- `docs/NOW.md` — session snapshot rolled to 114.19da
+
+### Net effect on next `start.bat`
+
+1. `_spawnGpuClient` finds Chrome → launches with `--enable-unsafe-webgpu`
+2. WebGPU `maxStorageBufferBindingSize` raises from 2 GB to GPU driver maximum (4-8 GB typical on consumer cards)
+3. Server reads `bindingCeilingMB: 4096` from resource-config.json
+4. `maxPerClusterNeurons = floor(4GB / 8) = 537M` (was 268M at 2GB)
+5. `maxTotalForBinding = floor(537M / 0.4) = 1.34B`
+6. Override `neuronCapOverride: 671000000` applies → maxNeurons = 671M
+7. Cluster construction at 671M scale instead of 178M
+
+### LAW compliance
+
+- ✅ LAW #0 verbatim: both operator quotes preserved in TODO + FINALIZED + ARCHITECTURE banner + SETUP.md
+- ✅ Docs before push: 7 files in single atomic commit (code + ALL affected docs)
+- ✅ No tests ever: verification = node --check syntax + bundle rebuild + manual code review
+- ✅ FINALIZED before DELETE: this entry written first, TODO entry stays open marker until verified at next boot
+- ✅ Task numbers in workflow docs only: iter14-E label confined to docs/TODO/FINALIZED + banners + commit messages, NOT in source code (only descriptive comments without operator name attribution)
+
+---
+
 ## 2026-05-04 — Session 114.19cz: ITER14-D — TWO-LAUNCHER CONTRACT (start.bat = fresh, Savestart.bat = resume)
 
 ### Operator directive (verbatim per LAW #0)

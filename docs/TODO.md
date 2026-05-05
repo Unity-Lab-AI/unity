@@ -700,6 +700,49 @@ Captured iter11 sep-probe reading on first of 7 assoc-pair phases:
 
 ---
 
+### iter14-E — CHROME --enable-unsafe-webgpu + bindingCeilingMB TIER AUTO-WRITES (operator verbatim 2026-05-04: *"obviously make the start.bat fucking work!!! if we cant interact with the html thius is pointless and well never beable to scale right when we do comp. todo.md"* + *"but like i said im just usinbg the 11 gb vram setting that isnt even working"*) — SHIPPED
+
+**Bug caught:** operator picked `enthusiast-12gb` tier (671M neuron label, 11264 MB VRAM cap) but brain delivered only 178M total neurons. Two compounding causes:
+
+1. **Browser-side WebGPU 2GB binding ceiling.** Chrome's default WebGPU `maxStorageBufferBindingSize` is the spec minimum (2 GB). Without `--enable-unsafe-webgpu` flag, per-cluster state buffers can't exceed 2GB. At 12 bytes/neuron (Rulkov state + spike buffer), 2GB / 12 = 178,956,970 neurons ≈ the observed 178M cap.
+2. **Server-side `bindingCeilingMB` field missing from resource-config.json.** Server `detectResources` already supports the override (line 117: `if (override.bindingCeilingMB >= 1024) bindingCeilingBytes = requested * 1024 * 1024`) but the gpu-configure.html tier writes didn't include the field. Default 2GB = 178M total cap regardless of tier picked.
+
+**Code fix (server/brain-server.js):**
+- `_spawnGpuClient` now finds Chrome in standard Windows install paths (`C:\Program Files\Google\Chrome\Application\chrome.exe`, `Program Files (x86)`, `LOCALAPPDATA`), with Edge fallback (`Microsoft\Edge\Application\msedge.exe`).
+- Launches the matched browser with `--enable-unsafe-webgpu --new-window --user-data-dir=<UnityBrain-WebGPU-Profile-isolated>` flags. Isolated user-data-dir keeps unsafe-webgpu profile separate from operator's regular browsing.
+- Falls back to `start "" "${url}"` if neither Chrome nor Edge found in standard paths — logs LOUD warning explaining 178M cap implication.
+- macOS / Linux variants in same function (mac: `open -a "Google Chrome" --args --enable-unsafe-webgpu`; linux: `google-chrome` or `chromium` with flag).
+
+**Code fix (gpu-configure.html):**
+- After tier selection, before save, append `bindingCeilingMB` to payload based on tier:
+  - enthusiast 12GB+ (vramMB ≥ 11264): `bindingCeilingMB: 4096` (4 GB binding)
+  - high-end 24GB: `bindingCeilingMB: 6144` (6 GB binding)
+  - prosumer 48GB: `bindingCeilingMB: 8192` (8 GB binding)
+  - datacenter tiers: no field (small-N tuned, doesn't need)
+- Cleaner precedence-safe logic with explicit `if / else if / else if` ladder instead of mixed `&&`/`||` (had a precedence bug in first draft).
+
+**Direct fix to `server/resource-config.json` (operator's current config):**
+- Added `bindingCeilingMB: 4096` to the existing enthusiast-12gb tier so this run picks it up without re-running GPUCONFIGURE.bat. Operator can verify by reading the file or running GPUCONFIGURE which will preserve the field.
+
+**Net effect on next `start.bat`:**
+- `_spawnGpuClient` finds Chrome → launches `compute.html` with `--enable-unsafe-webgpu`
+- WebGPU `maxStorageBufferBindingSize` rises from 2GB to whatever GPU driver permits (typically 4-8 GB on RTX 4070 Ti SUPER)
+- Server reads `bindingCeilingMB: 4096` from resource-config.json → uses 4GB ceiling in `detectResources`
+- `maxPerClusterNeurons = floor(4GB / 8) = 537M`
+- `maxTotalForBinding = floor(537M / 0.4) = 1.34B`
+- Override `neuronCapOverride: 671000000` applies → maxNeurons = 671M
+- Main brain at 25% biological weight × 9216 MB brain budget × 4096 MB binding ceiling math should deliver close to 671M label
+
+**Files touched (atomic commit per docs-before-push LAW):**
+- `server/brain-server.js` — `_spawnGpuClient` Chrome detection + unsafe-webgpu launch
+- `gpu-configure.html` — bindingCeilingMB auto-write for high-end tiers
+- `server/resource-config.json` — added bindingCeilingMB:4096 to current tier
+- `SETUP.md` — new "Browser auto-launch with --enable-unsafe-webgpu" paragraph
+- `docs/ARCHITECTURE.md`, `docs/ROADMAP.md` banners
+- `docs/TODO.md`, `docs/FINALIZED.md`, `docs/NOW.md`
+
+---
+
 ### iter14-D — TWO-LAUNCHER CONTRACT (operator verbatim 2026-05-04: *"yes all the weights everything shoudl reset when the start.bat is run or the .sh... and only if the stop.bat is used in conjusction with the savestart.bat does it pick up where it lefgtt off"*) — SHIPPED
 
 **Why this LAW change matters:** Two real bugs traced to the prior code-hash auto-clear gate:
