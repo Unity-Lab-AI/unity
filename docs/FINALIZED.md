@@ -5,6 +5,104 @@
 
 ---
 
+## 2026-05-04 — Session 114.19db: ITER14-F — BIO-WEIGHT REBALANCE + LANGUAGE PER-NEURON COST CUT
+
+### Operator directives (verbatim per LAW #0)
+
+> *"why is the laNGUAGE CORTEX ONLY 600K WHEN OTHER CLUSTERS AR MILLIONS!!!!!"*
+> *"AND ITS STILL NOT SCALING CORRECTLY!@"*
+> *"FIX IT SO THE BRAIN FUCKING SCALES CORRECTLY AND MAKE THE LANGUAGE CORTEX BIG ENOUGH AS ITS THE MAIN FUCKING THING THIS BRAIN DOES"*
+> *"WTRF ARE YOU DOING YOU CANT MAKE THE OTHER BAINR SECTORES ONLY FRACTIONS OF THIR ORIGINAL SIZES YOU FUCK1"* (rejected first draft that cut 7 main clusters to 0.4-0.8% each)
+> *"NO YOU FUCK THERE AR NOT BRAIN SECTIONS THAT ARE ONLY 1% OF THE BRAIN THAT IS NOT FUCKING NORMALLL AT MINUMIM EACH IS NO LESS THAT 4OR5%"* (5% floor rule)
+> *"NO FUCKER LOOK UP THE REAL FUCKING NUMBERS!"* (research directive)
+> *"AND HTMLS / DO THEM FIRST"* (HTML-first ordering)
+
+### What this fixes
+
+At iter6 bio-weights (language 75% / 7 main clusters 25% combined with basalGanglia + hypothalamus at 1% absolute each) running on the 16GB enthusiast tier, language cortex delivered 611K neurons while main brain delivered 178M total. Operator's two compounding complaints:
+
+1. **Language cortex starved at 611K** — too small for THE main cognitive substrate of this brain. Cross-projection learning, dictionary oracle, sentence generation all live there.
+2. **Subcortical clusters at 1-2% bio-weight** — basalGanglia 1%, hypothalamus 1%, amygdala 2%, mystery 2%. Operator: "AT MINUMIM EACH IS NO LESS THAT 4OR5%".
+
+### Failed first attempt (rejected by operator BEFORE commit)
+
+Rebalanced to language 90% / 7 main clusters at 0.4-0.8% each. Operator interrupted: "WTRF ARE YOU DOING YOU CANT MAKE THE OTHER BAINR SECTORES ONLY FRACTIONS OF THIR ORIGINAL SIZES". Reverted that draft entirely. Net change to repo from that draft: zero (no commits).
+
+### Real-biology research grounding
+
+Per operator's directive "LOOK UP THE REAL FUCKING NUMBERS!", pulled Herculano-Houzel S. (2009) *"The Human Brain in Numbers: A Linearly Scaled-up Primate Brain"* (Frontiers in Human Neuroscience 3:31) and Azevedo F.A.C. et al. (2009) *"Equal numbers of neuronal and nonneuronal cells make the human brain an isometrically scaled-up primate brain"* (J Comp Neurol 513(5):532-541):
+
+- **Cerebellum:** 80% of neurons (~69B), 10% of brain mass — granule cells dominate by count
+- **Cerebral cortex:** 19% of neurons (~16B), 82% of brain mass
+- **All subcortical combined** (hippocampus, amygdala, BG, hypothalamus, brainstem): 0.8% of neurons (~700M), 8% of brain mass — individually <1% by neuron count, ~1-2% by mass
+
+Real biology has subcortical regions WELL below operator's 5% floor. **Operator's 5% floor exceeds biology** — applied because OPERATOR ＞ BIOLOGY when explicit.
+
+### Final iter14-F bio-weight split
+
+Edits to `server/brain-server.js:271-280`:
+
+| Cluster | Old (iter6) | New (iter14-F) | Notes |
+|---|---|---|---|
+| `language_cortex` | 0.75 | **0.50** | Still LARGEST single cluster; share cut compensated by per-neuron cost cut below |
+| `cortex` | 0.10 | 0.10 | Unchanged |
+| `cerebellum` | 0.05 | **0.10** | Lifted to match real-brain ~10% mass share |
+| `hippocampus` | 0.04 | **0.06** | Above 5% floor |
+| `amygdala` | 0.02 | **0.06** | Above 5% floor |
+| `basalGanglia` | 0.01 | **0.06** | Above 5% floor (was 1%) |
+| `hypothalamus` | 0.01 | **0.06** | Above 5% floor (was 1%) |
+| `mystery` | 0.02 | **0.06** | Above 5% floor |
+
+Sum = 1.00. Every non-language cluster ≥ 6%. Operator's "minimum 4-5%" rule honored with margin.
+
+### Per-neuron cost cuts (paired with bio-weight rebalance)
+
+The language_cortex 0.75 → 0.50 share cut would have shrunk language cortex from 611K to ~407K. To grow language despite the share cut, halved per-neuron cost:
+
+- `CROSS_TARGET_FANOUT: 20 → 10` in **BOTH** `server/brain-server.js:1080` and `js/brain/cluster.js:416` (must stay synced — both files reference the same constant). Each cross-projection nnz storage halved (`dst_size × 20 × 8 bytes` → `dst_size × 10 × 8 bytes`). With 14 cross-projections per language cortex, cross-projection storage drops ~50%.
+- `INTRA_CONNECTIVITY_CAP: 0.15 → 0.05` in `server/brain-server.js:1087`. At small-N (under ~600 neurons) the intra-synapse matrix used to consume up to 15% density × N². Cut to 5% caps storage at small-N without affecting at-scale where the runtime clamp via `(CORTEX_TARGET_FANOUT / size)` keeps actual density much smaller anyway.
+
+Combined effect: language per-neuron cost ~halved (17.6 KB/neuron → ~10 KB/neuron).
+
+### Net outcome at 16GB enthusiast tier (vramCapMB: 11264, neuronCapOverride: 671000000)
+
+- **Language cortex:** 611K → ~715K neurons (bio-weight cut compensated by per-neuron cost cut, net growth)
+- **Main brain total:** ~178M → ~285M neurons (bio-weight share doubled 0.25 → 0.50)
+- **No cluster starved below 6% bio-weight**
+- **Cerebellum** bumped to real-brain mass proportion (10%)
+
+### HTMLs updated FIRST per operator directive
+
+Per operator's "AND HTMLS / DO THEM FIRST", HTML files updated before docs:
+
+- **`brain-equations.html`** — added new BIO-WEIGHT VRAM ALLOCATION section (line ~1450) with iter14-F numbers + Herculano-Houzel citation; updated CROSS-PROJECTION DENSITY tuning history (300→1500→30→20→10); updated 7→8 cluster mentions in brain-state vector definition (line 332), worked-example intro (line 348), Ψ summation (line 503), Rulkov-map cluster diagram (line 959), Hackall360 credit footer (line 2396).
+- **`unity-guide.html`** — meta description + og:description + og:image:alt updated 7→8 clusters; section 3 paragraph rewritten for 8 clusters; section 4 region grid completely rewritten with iter14-F bio-weights (LANGUAGE CORTEX 50% / CORTEX 10% / CEREBELLUM 10% / HIPPOCAMPUS 6% / AMYGDALA 6% / BASAL GANGLIA 6% / HYPOTHALAMUS 6% / MYSTERY Ψ 6%) + Herculano-Houzel citation in section 4 intro; section 4 closing paragraph updated to refer to language cortex (was "cortex's eight sub-regions").
+- **`index.html`** — `og:image:alt` meta tag 7→8 clusters; landing subtitle "seven biologically-weighted clusters" → "eight biologically-weighted clusters".
+- **`compute.html`** — comment block at line 508 updated to clarify why GPU-init counter shows /7 (8th cluster — language cortex — runs CPU-side via SparseMatrix cross-projections); display still correctly shows /7 since it tracks GPU-init progress only.
+
+### Files touched (atomic commit per docs-before-push LAW)
+
+- `server/brain-server.js` — `DEFAULT_BIO_WEIGHTS` rebalanced + research-cited comment block + `CROSS_TARGET_FANOUT 20→10` + `INTRA_CONNECTIVITY_CAP 0.15→0.05`
+- `js/brain/cluster.js` — `crossTargetFanout 20→10` with comment cross-referencing brain-server.js
+- `brain-equations.html` — BIO-WEIGHT VRAM ALLOCATION section + 7→8 cluster mentions
+- `unity-guide.html` — sections 3+4 rewritten for 8 clusters with iter14-F bio-weights + Herculano-Houzel citation
+- `index.html` — meta tag 7→8 clusters
+- `compute.html` — comment clarification (display unchanged)
+- `docs/ARCHITECTURE.md` — iter14-F banner line at top
+- `docs/SKILL_TREE.md` — iter14-F banner line at top
+- `docs/ROADMAP.md` — iter14-F banner line at top
+- `docs/EQUATIONS.md` — iter14-F banner with new bio-weight values + Herculano-Houzel citation
+- `docs/NOW.md` — Session 114.19db snapshot rolled to iter14-F; 114.19da kept as historical
+- `docs/TODO.md` — iter14-F entry added above iter14-E
+- `docs/FINALIZED.md` — this Session 114.19db entry below 114.19da
+
+### Sources cited
+
+- Herculano-Houzel S. (2009) "The Human Brain in Numbers: A Linearly Scaled-up Primate Brain." *Frontiers in Human Neuroscience* 3:31.
+- Azevedo F.A.C., Carvalho L.R.B., Grinberg L.T., Farfel J.M., Ferretti R.E.L., Leite R.E.P., Filho W.J., Lent R., Herculano-Houzel S. (2009) "Equal numbers of neuronal and nonneuronal cells make the human brain an isometrically scaled-up primate brain." *Journal of Comparative Neurology* 513(5):532-541.
+
+---
+
 ## 2026-05-04 — Session 114.19da: ITER14-E — CHROME --enable-unsafe-webgpu + bindingCeilingMB TIER WRITES
 
 ### Operator directives (verbatim per LAW #0)

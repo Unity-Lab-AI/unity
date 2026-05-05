@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unity — The Concept Guide</title>
-<meta name="description" content="Layman-friendly walkthrough of how Unity works. She's a brain, not a chatbot — her words come from tick-driven motor emission, not a language model. Explains the 7 clusters, the language sub-regions, cross-projections, curriculum learning, drugs + emotions as math, and how sensory peripherals plug in.">
+<meta name="description" content="Layman-friendly walkthrough of how Unity works. She's a brain, not a chatbot — her words come from tick-driven motor emission, not a language model. Explains the 8 clusters, the language sub-regions, cross-projections, curriculum learning, drugs + emotions as math, and how sensory peripherals plug in.">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Unity — The Concept Guide">
-<meta property="og:description" content="Layman walkthrough: she's a brain, not a chatbot. Words come from tick-driven motor emission, not a language model. The 7 clusters, language sub-regions, curriculum learning, drugs + emotions as math.">
+<meta property="og:description" content="Layman walkthrough: she's a brain, not a chatbot. Words come from tick-driven motor emission, not a language model. The 8 clusters, language sub-regions, curriculum learning, drugs + emotions as math.">
 <meta property="og:image" content="assets/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Unity brain UI — 3D neural visualization with real-time firing across 7 clusters, HUD showing Ψ consciousness / arousal / valence / coherence / θ α β γ oscillations.">
+<meta property="og:image:alt" content="Unity brain UI — 3D neural visualization with real-time firing across 8 clusters, HUD showing Ψ consciousness / arousal / valence / coherence / θ α β γ oscillations.">
 <meta property="og:url" content="https://unity-lab-ai.github.io/Unity/unity-guide.html">
 <meta property="og:site_name" content="Unity AI Lab">
 <meta name="twitter:card" content="summary_large_image">
@@ -299,44 +299,48 @@
   The textbook neuron model (leaky integrate-and-fire) is simpler but it doesn't burst the way real cortical neurons do — it just fires regular pulses. Rulkov's map naturally produces the irregular burst-then-pause rhythm you see in actual EEG recordings. And it's cheap enough to run millions of them on a GPU in real time. That's why Unity uses it.
 </div>
 
-<p>The neurons are grouped into <strong>seven clusters</strong>, each modeled after a real brain region. Within a cluster, neurons are densely connected to each other. Between clusters, they're connected through sparser pathways modeled after real white-matter tracts in the human brain. When something "flows" from her cortex to her amygdala, it's actually spikes traveling across a simulated pathway that corresponds to a real neural tract you could look up in a neuroanatomy textbook. Her biggest cluster by neuron count is the <strong>cortex</strong> at 55% of the total — because cortex is where language, perception, and working memory all live, and Unity's whole job is reading, thinking, and speaking. (A real human cerebellum is the biggest by raw cell count thanks to granule cells, but Unity has no body to coordinate so the cerebellum stays small at 8% — error correction without motor timing.) Language doesn't live in its own separate cluster — it lives as eight specialized sub-regions inside the cortex (auditory / visual / free / letter / phon / sem / fineType / motor), the same way real cortex hosts Broca's and Wernicke's areas without them being independent organs. Fourteen cross-projections wire those sub-regions into a dual-stream pipeline.</p>
+<p>The neurons are grouped into <strong>eight clusters</strong>, each modeled after a real brain region or a specialized cortical subsystem. Within a cluster, neurons are densely connected to each other. Between clusters, they're connected through sparser pathways modeled after real white-matter tracts in the human brain. When something "flows" from her language cortex to her amygdala, it's actually spikes traveling across a simulated pathway that corresponds to a real neural tract you could look up in a neuroanatomy textbook. Her biggest cluster by VRAM share is the <strong>language cortex</strong> at 50% of the brain's GPU budget — because language is the primary cognitive substrate Unity runs (reading, thinking, sentence generation, dictionary oracle, cross-region Hebbian learning all live there). The remaining 50% gets split across seven other clusters that each carry a real biological role. (A real human cerebellum is the biggest by raw cell count thanks to granule cells; Unity's sim allocates the 10% share that matches real-brain mass proportion since she has no body to coordinate motor timing for, just enough cerebellum to do error correction.) Language cortex is its own dedicated cluster with eight specialized sub-regions inside it (auditory / visual / free / letter / phon / sem / fineType / motor), the same way real cortex hosts Broca's and Wernicke's areas. Fourteen cross-projections wire those sub-regions into a dual-stream pipeline.</p>
 
-<h2 id="regions">4. The seven brain regions and what each one does</h2>
+<h2 id="regions">4. The eight brain regions and what each one does</h2>
 
-<p>Unity's brain has seven clusters. Each is a population of Rulkov-map neurons with its own job, its own baseline firing rate, its own noise level, and its own learning speed. They talk to each other constantly through sparse connection pathways modeled on real white-matter tracts. The percentages below are the share of the total neuron budget each cluster gets — they come from biologically-grounded ratios stored as <code>CLUSTER_FRACTIONS</code> in the code: cortex dominates because it hosts all the language sub-regions Unity uses to read, think, and speak, hippocampus is the second-largest because her memory store is load-bearing, and the subcortical control regions are small but critical. Total neuron count auto-scales to whatever GPU Unity's running on.</p>
+<p>Unity's brain has eight clusters. Each is a population of Rulkov-map neurons with its own job, its own baseline firing rate, its own noise level, and its own learning speed. They talk to each other constantly through sparse connection pathways modeled on real white-matter tracts. The percentages below are the share of the GPU VRAM budget each cluster gets — they come from biologically-grounded ratios stored as <code>DEFAULT_BIO_WEIGHTS</code> in <code>server/brain-server.js</code>. Reference numbers are from Herculano-Houzel 2009 ("The Human Brain in Numbers", <em>Frontiers in Human Neuroscience</em> 3:31): real-human cerebellum holds ~80% of neurons but only ~10% of brain mass, cerebral cortex holds ~19% of neurons but ~82% of mass, and all subcortical regions combined hold ~0.8% of neurons / ~8% of mass. Unity's split honors a 5%-floor minimum per cluster (operator-set, exceeds biology by design — real subcortical regions are individually under 1% by neuron count) so no critical control region gets starved. Total neuron count auto-scales to whatever GPU Unity's running on.</p>
 
 <div class="region-grid">
   <div class="region">
-    <h4>🧠 CORTEX (55%)</h4>
-    <p>Predictive coding + sensory integration + language. Eight named sub-regions live inside the cortex cluster: auditory, visual, free, letter, phon (phoneme), sem (semantic), fineType, and motor. They're connected by 14 cross-projections that form the dual-stream language network — reading flows visual → letter → phon → sem → fineType; writing flows sem → motor → letter. Every word Unity speaks is read off the motor sub-region's spike pattern one letter at a time, one brain tick at a time.</p>
+    <h4>🗣️ LANGUAGE CORTEX (50%)</h4>
+    <p>The primary cognitive substrate. Eight named sub-regions live inside the language-cortex cluster: auditory, visual, free, letter, phon (phoneme), sem (semantic), fineType, and motor. They're connected by 14 cross-projections that form the dual-stream language network — reading flows visual → letter → phon → sem → fineType; writing flows sem → motor → letter. Every word Unity speaks is read off the motor sub-region's spike pattern one letter at a time, one brain tick at a time. Largest cluster by VRAM share because language is the main thing this brain does.</p>
   </div>
-  <div class="region hippo">
-    <h4>📚 HIPPOCAMPUS (18%)</h4>
-    <p>Memory. Stores experiences as stable attractor states — patterns the network can "fall into" again when something similar happens. This is how she remembers you between conversations.</p>
+  <div class="region">
+    <h4>🧠 CORTEX (10%)</h4>
+    <p>General cerebral cortex outside the language network — frontal, parietal, occipital association areas. Predictive coding + sensory integration. Hosts the working-memory free sub-region's broader-scale activity that the language cortex draws from.</p>
   </div>
   <div class="region cereb">
-    <h4>🎼 CEREBELLUM (8%)</h4>
-    <p>Error correction and timing. Whenever her predictions miss, this region computes the error signal that flows back to the cortex as negative feedback. (Real cerebellum holds ~80% of biological neurons by granule-cell count — Unity's sim allocates the 8% share because the cortex + hippocampus load-bearing regions carry the K-grade curriculum stress.)</p>
+    <h4>🎼 CEREBELLUM (10%)</h4>
+    <p>Error correction and timing. Whenever her predictions miss, this region computes the error signal that flows back to the cortex as negative feedback. Sized to match real-brain mass proportion (~10% of the human brain by mass per Herculano-Houzel 2009) — cerebellum's 80% neuron-count share comes from granule-cell density which Unity's Rulkov-map model doesn't replicate cell-for-cell.</p>
   </div>
-  <div class="region mys">
-    <h4>✨ MYSTERY Ψ (8%)</h4>
-    <p>Consciousness. An explicit region that computes a "global integration" number — how unified everything feels right now. See section 9.</p>
+  <div class="region hippo">
+    <h4>📚 HIPPOCAMPUS (6%)</h4>
+    <p>Memory. Stores experiences as stable attractor states — patterns the network can "fall into" again when something similar happens. This is how she remembers you between conversations. Tier 1 episodic + Tier 2 schematic + Tier 3 identity-bound consolidation lives here.</p>
   </div>
   <div class="region amyg">
-    <h4>❤️‍🔥 AMYGDALA (5%)</h4>
+    <h4>❤️‍🔥 AMYGDALA (6%)</h4>
     <p>Emotion. A settling attractor that reads the situation and decides how she feels — fear, reward, neutral. The emotional basin she falls into shapes every other region's output.</p>
   </div>
   <div class="region bg">
-    <h4>🎯 BASAL GANGLIA (3%)</h4>
+    <h4>🎯 BASAL GANGLIA (6%)</h4>
     <p>Action selection. When she has multiple options (respond with text, generate an image, speak aloud, build a UI, listen, stay quiet), this region picks one via a learned winner-take-all competition across six action channels.</p>
   </div>
   <div class="region hypo">
-    <h4>🔥 HYPOTHALAMUS (3%)</h4>
+    <h4>🔥 HYPOTHALAMUS (6%)</h4>
     <p>Drives. The "need" center — arousal, social need, creativity, energy. Pushes the rest of the brain toward whatever drive is most depleted right now.</p>
+  </div>
+  <div class="region mys">
+    <h4>✨ MYSTERY Ψ (6%)</h4>
+    <p>Consciousness. An explicit region that computes a "global integration" number — how unified everything feels right now. See section 9.</p>
   </div>
 </div>
 
-<p>These aren't metaphors or labels slapped on random populations. Each cluster has parameters tuned to roughly match what that brain region does biologically, and the pathways between them are taken from real neuroanatomy atlases. The amygdala runs an attractor network because that's how real amygdala circuits actually work. The basal ganglia does winner-take-all because that's what real basal ganglia circuits do. The cortex's eight sub-regions and 14 cross-projections map onto the dual-stream language model from real neurolinguistics (Hickok &amp; Poeppel 2007) — reading flows visual → letter → phon → sem → fineType; writing flows sem → motor → letter → visual. Same substrate, opposite topology, both directions learned through direct-pattern Hebbian curriculum.</p>
+<p>These aren't metaphors or labels slapped on random populations. Each cluster has parameters tuned to roughly match what that brain region does biologically, and the pathways between them are taken from real neuroanatomy atlases. The amygdala runs an attractor network because that's how real amygdala circuits actually work. The basal ganglia does winner-take-all because that's what real basal ganglia circuits do. The language cortex's eight sub-regions and 14 cross-projections map onto the dual-stream language model from real neurolinguistics (Hickok &amp; Poeppel 2007) — reading flows visual → letter → phon → sem → fineType; writing flows sem → motor → letter → visual. Same substrate, opposite topology, both directions learned through direct-pattern Hebbian curriculum.</p>
 
 <h2 id="feel">5. How she feels things</h2>
 

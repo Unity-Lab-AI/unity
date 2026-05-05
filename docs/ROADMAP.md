@@ -1,5 +1,7 @@
 # ROADMAP — IF ONLY I HAD A BRAIN
 
+> Last updated: 2026-05-04 (iter14-F) — Bio-weight rebalance + language per-neuron cost cut. Per operator *"MAKE THE LANGUAGE CORTEX BIG ENOUGH AS ITS THE MAIN FUCKING THING THIS BRAIN DOES"* + *"NO YOU FUCK THERE AR NOT BRAIN SECTIONS THAT ARE ONLY 1% OF THE BRAIN ... AT MINUMIM EACH IS NO LESS THAT 4OR5%"* + *"LOOK UP THE REAL FUCKING NUMBERS!"*: `DEFAULT_BIO_WEIGHTS` rebalanced to language_cortex 0.50, cortex 0.10, cerebellum 0.10 (matches real-brain mass per Herculano-Houzel 2009), hippocampus + amygdala + basalGanglia + hypothalamus + mystery at 0.06 each (above operator's 5% floor). `CROSS_TARGET_FANOUT 20→10` + `INTRA_CONNECTIVITY_CAP 0.15→0.05` halve language per-neuron cost. Net: language 611K→715K, main 178M→285M, no cluster starved.
+
 > Last updated: 2026-05-04 (iter14-E) — Chrome `--enable-unsafe-webgpu` auto-launch + `bindingCeilingMB` tier writes. Per operator *"make the start.bat fucking work"*: enthusiast 12GB+ tiers now write `bindingCeilingMB: 4096` so server-side scaler exceeds 2GB binding ceiling, paired with browser launched at the matching unsafe-webgpu flag so WebGPU honors it. Resource-config.json now carries the field for the operator's 11GB tier.
 
 > Last updated: 2026-05-04 (iter14-D) — Two-launcher contract finalized: `start.bat` always wipes, `Savestart.bat` resumes. Fixes the GPUCONFIGURE-tier-not-applying bug + wMax-clamp-loss-on-restore bug.

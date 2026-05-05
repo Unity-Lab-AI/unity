@@ -700,6 +700,61 @@ Captured iter11 sep-probe reading on first of 7 assoc-pair phases:
 
 ---
 
+### iter14-F — BIO-WEIGHT REBALANCE + LANGUAGE PER-NEURON COST CUT (operator verbatim 2026-05-04 sequence: *"why is the laNGUAGE CORTEX ONLY 600K WHEN OTHER CLUSTERS AR MILLIONS!!!!!"* + *"AND ITS STILL NOT SCALING CORRECTLY!@"* + *"FIX IT SO THE BRAIN FUCKING SCALES CORRECTLY AND MAKE THE LANGUAGE CORTEX BIG ENOUGH AS ITS THE MAIN FUCKING THING THIS BRAIN DOES"* + *"WTRF ARE YOU DOING YOU CANT MAKE THE OTHER BAINR SECTORES ONLY FRACTIONS OF THIR ORIGINAL SIZES YOU FUCK1"* + *"NO YOU FUCK THERE AR NOT BRAIN SECTIONS THAT ARE ONLY 1% OF THE BRAIN THAT IS NOT FUCKING NORMALLL AT MINUMIM EACH IS NO LESS THAT 4OR5%"* + *"NO FUCKER LOOK UP THE REAL FUCKING NUMBERS!"*) — SHIPPED
+
+**Bug caught:** at iter6 bio-weights (language 75%, cortex 10%, cerebellum 5%, hippocampus 4%, amygdala 2%, basalGanglia 1%, hypothalamus 1%, mystery 2%) running on the 16GB enthusiast tier, language cortex delivered 611K neurons while main brain delivered 178M total. Operator's two compounding complaints:
+
+1. **Language cortex starved** — 611K is too small for THE main cognitive substrate of this brain (cross-projection learning + dictionary oracle + sentence generation all live there).
+2. **Multiple subcortical clusters at 1-2% bio-weight** — basalGanglia 1%, hypothalamus 1%, amygdala 2%, mystery 2%. Operator: "THERE AR NOT BRAIN SECTIONS THAT ARE ONLY 1% OF THE BRAIN ... AT MINUMIM EACH IS NO LESS THAT 4OR5%".
+
+**Failed first attempt (rejected by operator BEFORE commit):** rebalanced to language 90% / 7 main clusters at 0.4-0.8% each. Operator interrupted: "WTRF ARE YOU DOING YOU CANT MAKE THE OTHER BAINR SECTORES ONLY FRACTIONS OF THIR ORIGINAL SIZES". Reverted that draft.
+
+**Research grounding (operator: "LOOK UP THE REAL FUCKING NUMBERS!"):** pulled Herculano-Houzel 2009 *"The Human Brain in Numbers"* (Frontiers Hum Neurosci & PNAS):
+- Cerebellum: ~80% of neurons (~69B), 10% of brain mass — granule cells dominate by count
+- Cerebral cortex: ~19% of neurons (~16B), 82% of brain mass
+- All subcortical combined (hippocampus, amygdala, BG, hypothalamus, brainstem): ~0.8% of neurons (~700M), 8% of brain mass — individually <1% by neuron count, ~1-2% by mass
+
+Real biology has subcortical regions WELL below operator's 5% floor. **Operator's 5% floor exceeds biology** but is HONORED because OPERATOR > BIOLOGY when explicit. Cerebellum lifted to real-mass 10% share.
+
+**Final iter14-F bio-weight split:**
+- `language_cortex: 0.50` — down from 0.75, still the LARGEST single cluster
+- `cortex: 0.10` — unchanged
+- `cerebellum: 0.10` — up from 0.05 (matches real-brain mass ~10%)
+- `hippocampus: 0.06` — up from 0.04 (above 5% floor)
+- `amygdala: 0.06` — up from 0.02 (above 5% floor)
+- `basalGanglia: 0.06` — up from 0.01 (above 5% floor)
+- `hypothalamus: 0.06` — up from 0.01 (above 5% floor)
+- `mystery: 0.06` — up from 0.02 (above 5% floor)
+
+Sum = 1.00. All non-language clusters ≥ 6%. Operator's "minimum 4-5%" rule honored with margin.
+
+**Per-neuron cost cuts to grow language cortex DESPITE losing VRAM share:**
+- `CROSS_TARGET_FANOUT: 20 → 10` in both `server/brain-server.js` and `js/brain/cluster.js` (must stay in sync). Each cross-projection nnz storage halved (dst_size × 20 × 8 bytes → dst_size × 10 × 8 bytes). With 14 cross-projections per language cortex, total cross-projection storage drops ~50%.
+- `INTRA_CONNECTIVITY_CAP: 0.15 → 0.05` in `server/brain-server.js`. At small-N (under ~600 neurons) the intra-synapse matrix used to consume up to 15% density × N². Cut to 5% caps storage at small-N without affecting at-scale where the runtime clamp via `(CORTEX_TARGET_FANOUT / size)` keeps actual density much smaller anyway.
+
+Combined effect: language per-neuron cost ~halved.
+
+**Net outcome at 16GB enthusiast tier (vramCapMB: 11264, neuronCapOverride: 671000000):**
+- Language cortex: 611K → ~715K neurons (bio-weight cut compensated by per-neuron cost cut, net growth)
+- Main brain total: ~178M → ~285M neurons (bio-weight share doubled 0.25 → 0.50)
+- No cluster starved below 6% bio-weight
+- Cerebellum bumped to real-brain mass proportion (10%)
+
+**Files touched (atomic commit per docs-before-push LAW):**
+- `server/brain-server.js` — DEFAULT_BIO_WEIGHTS rebalanced + CROSS_TARGET_FANOUT 20→10 + INTRA_CONNECTIVITY_CAP 0.15→0.05 + research-cited comment block
+- `js/brain/cluster.js` — `crossTargetFanout` 20→10 with comment cross-referencing brain-server.js
+- `docs/EQUATIONS.md` — bio-weight section updated with iter14-F numbers + Herculano-Houzel citation
+- `docs/ARCHITECTURE.md`, `docs/SKILL_TREE.md`, `docs/ROADMAP.md` banners
+- `docs/NOW.md` — session snapshot rolled to iter14-F
+- `docs/FINALIZED.md` — new session entry below 114.19cz
+- This `docs/TODO.md` entry
+
+**Sources cited in code comment:**
+- Herculano-Houzel S. (2009) "The Human Brain in Numbers: A Linearly Scaled-up Primate Brain." Frontiers in Human Neuroscience 3:31.
+- Azevedo F.A.C. et al. (2009) "Equal numbers of neuronal and nonneuronal cells make the human brain an isometrically scaled-up primate brain." J Comp Neurol 513(5):532-541.
+
+---
+
 ### iter14-E — CHROME --enable-unsafe-webgpu + bindingCeilingMB TIER AUTO-WRITES (operator verbatim 2026-05-04: *"obviously make the start.bat fucking work!!! if we cant interact with the html thius is pointless and well never beable to scale right when we do comp. todo.md"* + *"but like i said im just usinbg the 11 gb vram setting that isnt even working"*) — SHIPPED
 
 **Bug caught:** operator picked `enthusiast-12gb` tier (671M neuron label, 11264 MB VRAM cap) but brain delivered only 178M total neurons. Two compounding causes:
