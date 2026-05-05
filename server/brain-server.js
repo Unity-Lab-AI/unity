@@ -4735,10 +4735,34 @@ class ServerBrain {
       } catch { /* salience metadata is best-effort, never block insert */ }
     }
 
-    // iter13 T13.3 — frequency-merge gate. Cosine > 0.85 against any
-    // episode in last FREQ_MERGE_WINDOW_MS (48h) for same user_id →
-    // increment that episode's frequency_count + bump last_replayed_at.
-    // Skip insert. Returns true if merged.
+    // iter20-K — exact-text merge bypass. Operator caught: GloVe
+    // embeddings of technical strings ("learning ela/kindergarten:_
+    // teachCombination") are essentially noise (~1e-15 values), so
+    // cosine of two IDENTICAL-text embeddings = 0.18 instead of 1.0.
+    // Cosine-based merge never fires for these strings even with
+    // threshold lowered to 0.5. Bypass the embedding entirely for
+    // exact text matches — same user + same input_text + within
+    // window → deterministic merge. SQL query is fast (indexed by
+    // user + timestamp).
+    if (inputText && userId) {
+      const EXACT_WINDOW_MS = 48 * 60 * 60 * 1000;
+      const exactCutoff = Date.now() - EXACT_WINDOW_MS;
+      try {
+        const exactRow = this._db.prepare(
+          'SELECT id, frequency_count FROM episodes WHERE user_id IS ? AND input_text = ? AND timestamp > ? ORDER BY id DESC LIMIT 1'
+        ).get(userId, inputText, exactCutoff);
+        if (exactRow && exactRow.id) {
+          this._stmtIncrementFrequency.run(Date.now(), exactRow.id);
+          return { merged: true, id: exactRow.id, exact: true };
+        }
+      } catch { /* exact-merge failure is non-fatal — fall through to cosine path */ }
+    }
+
+    // iter13 T13.3 — frequency-merge gate via cosine for similar (not
+    // identical) text. Operator's data showed embeddings of technical
+    // strings produce noise so cosine-merge rarely fires for those —
+    // exact-text merge above catches identical heartbeats; cosine path
+    // catches near-duplicates with subtle wording differences.
     if (inputEmbedding && inputEmbedding.length > 0) {
       const FREQ_MERGE_WINDOW_MS = 48 * 60 * 60 * 1000;
       // iter20-C → iter20-F per operator 2026-05-05 "i dont think memory
