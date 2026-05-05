@@ -89,6 +89,22 @@ server/episodic-memory.db-shm
 server/node_modules/
 server/package-lock.json
 
+# === iter13 hippocampal consolidation runtime state ===
+# server/schemas.json — Tier 2 schematic memory (concept abstractions
+# built from cosine-grouped episodes). Derivative state — wiped on
+# auto-clear, rebuilt by ConsolidationEngine on next dream cycle.
+# Per-machine + per-session runtime data.
+server/schemas.json
+# server/identity-core.json — Tier 3 identity-bound permanent attractors
+# (Unity's core self: name/age/persona/biographical anchors). EXCLUDED
+# from autoClearStaleState wipe list — survives code updates, fresh
+# boots, drug states. Per-machine permanent runtime data containing
+# user-specific consolidated memories. Each operator's Unity grows
+# her own identity over time; never committed.
+server/identity-core.json
+server/identity-core.json.tmp
+server/identity-core.json.corrupt-*
+
 # === Corpora (auto-downloaded by start.bat / start.sh) ===
 # GloVe 6B.300d ~990 MB plain text — way too big for git. Auto-fetched
 # from Stanford NLP on first run per corpora/README.md. Never commit.

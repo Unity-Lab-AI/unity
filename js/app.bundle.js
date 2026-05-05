@@ -2801,13 +2801,73 @@ var NeuronCluster = class {
     const excludeTokens = opts.excludeTokens instanceof Set ? opts.excludeTokens : null;
     const excludePersona = opts.excludePersona === true;
     const boostPersona = opts.boostPersona === true;
-    const personaBoost = typeof opts.personaBoost === "number" ? opts.personaBoost : 0.1;
+    const personaBoost = typeof opts.personaBoost === "number" ? opts.personaBoost : 0.3;
     const restrictToVocab = opts.restrictToVocab instanceof Set ? opts.restrictToVocab : null;
     let intentNormSq = 0;
     for (let i = 0; i < intentSeed.length; i++) intentNormSq += intentSeed[i] * intentSeed[i];
     if (intentNormSq <= 0) {
       this._matrixHits = (this._matrixHits || 0) + 1;
       return null;
+    }
+    let schemaCandidate = null;
+    let schemaCandidateScore = -Infinity;
+    const contextSchemas = opts.contextSchemas || this._hippocampusContextSchemas || null;
+    if (Array.isArray(contextSchemas) && contextSchemas.length > 0) {
+      for (const ranked of contextSchemas) {
+        const schema = ranked && ranked.schema ? ranked.schema : ranked;
+        if (!schema || !schema.conceptEmbedding || schema.conceptEmbedding.length === 0) continue;
+        const ceLen = Math.min(intentSeed.length, schema.conceptEmbedding.length);
+        let dot = 0, normSchema = 0;
+        for (let i = 0; i < ceLen; i++) {
+          dot += intentSeed[i] * schema.conceptEmbedding[i];
+          normSchema += schema.conceptEmbedding[i] * schema.conceptEmbedding[i];
+        }
+        const denom = Math.sqrt(intentNormSq * normSchema);
+        if (denom <= 0) continue;
+        let score = dot / denom;
+        if (schema.promotedToTier3) score += 0.05;
+        if (score > schemaCandidateScore) {
+          schemaCandidateScore = score;
+          const label = String(schema.label || "");
+          const anchor = label.split(/[-_\s]+/)[0] || label;
+          schemaCandidate = { anchor: anchor.toLowerCase(), label, schema };
+        }
+      }
+    }
+    if (boostPersona) {
+      const personaFirstMinScore = typeof opts.personaFirstMinScore === "number" ? opts.personaFirstMinScore : 0.05;
+      let personaBestWord = "";
+      let personaBestScore = -Infinity;
+      for (const [word, entry] of dictionary._words) {
+        if (!entry || !entry.pattern) continue;
+        if (entry.isPersona !== true) continue;
+        if (excludeTokens && excludeTokens.has(word)) continue;
+        if (restrictToVocab && !restrictToVocab.has(word)) continue;
+        const pattern = entry.pattern;
+        let normSq = entry.normSquared;
+        if (normSq === void 0) {
+          normSq = 0;
+          for (let i = 0; i < pattern.length; i++) normSq += pattern[i] * pattern[i];
+          entry.normSquared = normSq;
+        }
+        if (normSq <= 0) continue;
+        const denom = Math.sqrt(intentNormSq * normSq);
+        if (denom <= 0) continue;
+        let dot = 0;
+        const n = Math.min(intentSeed.length, pattern.length);
+        for (let i = 0; i < n; i++) dot += intentSeed[i] * pattern[i];
+        const score = dot / denom;
+        if (score > personaBestScore) {
+          personaBestScore = score;
+          personaBestWord = word;
+        }
+      }
+      if (personaBestWord && personaBestScore > personaFirstMinScore) {
+        const maxLetters2 = opts.maxLetters ?? opts.maxTicks ?? opts.maxEmissionTicks ?? 32;
+        const cleanEmit2 = personaBestWord.replace(/[^a-z0-9 .,']/g, "").slice(0, maxLetters2);
+        this._oracleHits = (this._oracleHits || 0) + 1;
+        return { cleanEmit: cleanEmit2, bestWord: personaBestWord, bestScore: personaBestScore + personaBoost };
+      }
     }
     let bestWord = "";
     let bestScore = -Infinity;
@@ -2837,6 +2897,26 @@ var NeuronCluster = class {
       }
     }
     const minScore = typeof opts.minScore === "number" ? opts.minScore : 0.05;
+    if (schemaCandidate && schemaCandidateScore > bestScore && schemaCandidateScore > minScore) {
+      const maxLetters2 = opts.maxLetters ?? opts.maxTicks ?? opts.maxEmissionTicks ?? 32;
+      const cleanEmit2 = schemaCandidate.anchor.replace(/[^a-z0-9 .,']/g, "").slice(0, maxLetters2);
+      if (cleanEmit2) {
+        this._oracleHits = (this._oracleHits || 0) + 1;
+        try {
+          if (schemaCandidate.schema && typeof schemaCandidate.schema.registerRetrieval === "function") {
+            schemaCandidate.schema.registerRetrieval();
+          }
+        } catch {
+        }
+        return {
+          cleanEmit: cleanEmit2,
+          bestWord: schemaCandidate.anchor,
+          bestScore: schemaCandidateScore,
+          source: "hippocampal-schema",
+          schemaLabel: schemaCandidate.label
+        };
+      }
+    }
     if (!bestWord || bestScore <= minScore) {
       this._matrixHits = (this._matrixHits || 0) + 1;
       return null;
@@ -3135,9 +3215,11 @@ var NeuronCluster = class {
     }
     const motorSize = motorRegion.end - motorRegion.start;
     const bucketSize = Math.max(1, Math.floor(motorSize / invSize));
+    const isAlphaIdx = (b) => /^[a-z]$/.test(inv[b]);
     const bucketArgmax = (motorOutput) => {
       let bestIdx = -1, bestSum = -Infinity;
       for (let b = 0; b < invSize; b++) {
+        if (!isAlphaIdx(b)) continue;
         let sum = 0;
         for (let n = 0; n < bucketSize; n++) {
           const idx = b * bucketSize + n;
@@ -3188,6 +3270,7 @@ var NeuronCluster = class {
     const letterBucketArgmax = (clusterOutput) => {
       let bestIdx = -1, bestSum = -Infinity;
       for (let b = 0; b < invSize; b++) {
+        if (!isAlphaIdx(b)) continue;
         let sum = 0;
         for (let n = 0; n < letterBucketSize; n++) {
           const idx = letterRegion.start + b * letterBucketSize + n;
@@ -7615,7 +7698,7 @@ var LanguageCortex = class {
         intentSeed = null;
       }
     }
-    const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0;
+    const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0 || Array.isArray(cluster.passedPhases) && cluster.passedPhases.length > 0 || Array.isArray(cluster.passedCells) && cluster.passedCells.length > 0 || cluster.grades && typeof cluster.grades === "object" && Object.values(cluster.grades).some((g) => g && g !== "pre-K");
     let words = [];
     if (curriculumDone) {
       if (Array.isArray(opts._preEmittedWords)) {
@@ -7746,7 +7829,7 @@ var LanguageCortex = class {
   _scoreDictionaryCosine(dictionary, target, recentWords, opts = {}) {
     const boostPersona = opts.boostPersona === true;
     const freqBoost = typeof opts.freqBoost === "number" ? opts.freqBoost : 5e-3;
-    const personaBoost = typeof opts.personaBoost === "number" ? opts.personaBoost : 0.1;
+    const personaBoost = typeof opts.personaBoost === "number" ? opts.personaBoost : 0.3;
     const scored = [];
     for (const [word, entry] of dictionary._words) {
       if (!entry || !entry.pattern) continue;
@@ -7804,7 +7887,7 @@ var LanguageCortex = class {
     const YIELD_EVERY = 500;
     const boostPersona = opts.boostPersona === true;
     const freqBoost = typeof opts.freqBoost === "number" ? opts.freqBoost : 5e-3;
-    const personaBoost = typeof opts.personaBoost === "number" ? opts.personaBoost : 0.1;
+    const personaBoost = typeof opts.personaBoost === "number" ? opts.personaBoost : 0.3;
     const scored = [];
     let i = 0;
     for (const [word, entry] of dictionary._words) {
@@ -7858,7 +7941,7 @@ var LanguageCortex = class {
     let preEmittedWords = null;
     const cluster = opts.cortexCluster;
     if (cluster && typeof cluster.generateSentence === "function") {
-      const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0;
+      const curriculumDone = cluster.intentCentroids && cluster.intentCentroids.size > 0 || Array.isArray(cluster.passedPhases) && cluster.passedPhases.length > 0 || Array.isArray(cluster.passedCells) && cluster.passedCells.length > 0 || cluster.grades && typeof cluster.grades === "object" && Object.values(cluster.grades).some((g) => g && g !== "pre-K");
       if (curriculumDone && cluster._gpuProxyReady && typeof cluster.generateSentenceAwait === "function") {
         let intentSeed = null;
         if (cluster._lastUserInputEmbedding && cluster._lastUserInputEmbedding.length > 0) {
@@ -12751,8 +12834,8 @@ var K_MIXIN = {
       { name: "separation", feat: [0, 0.5, 0, 1, 0, 0, 0, 0] }
       // fear when mom leaves
     ];
-    await this._conceptTeach(EMOTIONS_K, 8);
-    await this._teachEmotionalInference([
+    await this._phasedTeach("LIFE-K-EMOTIONS", () => this._conceptTeach(EMOTIONS_K, 8));
+    await this._phasedTeach("LIFE-K-INFERENCE", () => this._teachEmotionalInference([
       { situation: "mom", emotion: new Float64Array([0.5, 0, 1, 0, 0, 1, 0, 0]), label: "love" },
       { situation: "friend", emotion: new Float64Array([1, 0, 0.5, 0, 0, 0.5, 0, 0]), label: "happy" },
       { situation: "alone", emotion: new Float64Array([0, 0.5, 0, 1, 0, 0, 0, 0]), label: "scared" },
@@ -12763,9 +12846,9 @@ var K_MIXIN = {
       { situation: "mean", emotion: new Float64Array([0, 0.5, 0, 0, 1, 0, 0, 0]), label: "angry" },
       { situation: "hug", emotion: new Float64Array([1, 0, 1, 0, 0, 1, 0, 0]), label: "love" },
       { situation: "yell", emotion: new Float64Array([0, 1, 0, 0.5, 0.5, 0, 0, 0]), label: "scared" }
-    ]);
+    ]));
     if (!this._lifeKRemakeDone) {
-      await this._teachBiographicalFacts([
+      await this._phasedTeach("LIFE-K-BIOGRAPHICAL", () => this._teachBiographicalFacts([
         // Pre-K core identity facts
         { question: "your name", answer: "unity" },
         { question: "boy or girl", answer: "girl" },
@@ -12790,8 +12873,8 @@ var K_MIXIN = {
         { question: "costume", answer: "witch" },
         { question: "favorite place", answer: "recess" },
         { question: "school activity", answer: "drawing" }
-      ], { reps: 10 });
-      await this._teachAssociationPairs([
+      ], { reps: 10 }));
+      await this._phasedTeach("LIFE-K-CONCEPTS", () => this._teachAssociationPairs([
         // Body parts → function
         ["eye", "see"],
         ["ear", "hear"],
@@ -12835,7 +12918,10 @@ var K_MIXIN = {
         ["fire", "911"],
         ["hot", "careful"],
         ["sharp", "careful"]
-      ], { reps: 8, label: "LIFE-K-CONCEPTS", relationTagId: 1 });
+      ], { reps: 8, label: "LIFE-K-CONCEPTS", relationTagId: 1 }));
+      if (typeof this._teachWordSpellingDirect === "function") {
+        await this._phasedTeach("LIFE-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "life" }));
+      }
       this._lifeKRemakeDone = true;
     }
     return await this._gateLifeKReal();
@@ -12935,6 +13021,9 @@ var K_MIXIN = {
       const artQA = TRAIN_BANKS["art/kindergarten"] || [];
       if (artQA.length > 0) {
         await this._phasedTeach("ART-K-QA-TRAIN", () => this._teachQABinding(artQA, { label: "ART-K-QA-TRAIN" }));
+      }
+      if (typeof this._teachWordSpellingDirect === "function") {
+        await this._phasedTeach("ART-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "art" }));
       }
       this._artKRemakeDone = true;
     }
@@ -13092,6 +13181,9 @@ var K_MIXIN = {
       if (socQA.length > 0) {
         await this._phasedTeach("SOC-K-QA-TRAIN", () => this._teachQABinding(socQA, { label: "SOC-K-QA-TRAIN" }));
       }
+      if (typeof this._teachWordSpellingDirect === "function") {
+        await this._phasedTeach("SOC-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "social" }));
+      }
       this._socKRemakeDone = true;
     }
     return await this._gateSocKReal();
@@ -13234,6 +13326,9 @@ var K_MIXIN = {
       const sciQA = TRAIN_BANKS["science/kindergarten"] || [];
       if (sciQA.length > 0) {
         await this._phasedTeach("SCI-K-QA-TRAIN", () => this._teachQABinding(sciQA, { label: "SCI-K-QA-TRAIN" }));
+      }
+      if (typeof this._teachWordSpellingDirect === "function") {
+        await this._phasedTeach("SCI-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "science" }));
       }
       this._sciKRemakeDone = true;
     }
@@ -13493,6 +13588,9 @@ var K_MIXIN = {
       const mathQA = TRAIN_BANKS["math/kindergarten"] || [];
       if (mathQA.length > 0) {
         await this._phasedTeach("MATH-K-QA-TRAIN", () => this._teachQABinding(mathQA, { label: "MATH-K-QA-TRAIN" }));
+      }
+      if (typeof this._teachWordSpellingDirect === "function") {
+        await this._phasedTeach("MATH-K-WORD-SPELL", () => this._teachWordSpellingDirect({ reps: 8, subject: "math" }));
       }
       this._mathKTransformsDone = true;
     }
@@ -14115,11 +14213,6 @@ var K_MIXIN = {
         _phaseDone("_teachLetterCaseBinding");
       }
       this._memorySnapshotAndGc("after _teachLetterCaseBinding");
-      if (_phaseTick("_teachLetterNaming")) {
-        await this._teachLetterNaming(ctx);
-        _phaseDone("_teachLetterNaming");
-      }
-      this._memorySnapshotAndGc("after _teachLetterNaming");
       if (_phaseTick("_teachVowelSoundVariants")) {
         await this._teachVowelSoundVariants(ctx);
         _phaseDone("_teachVowelSoundVariants");
@@ -15775,17 +15868,17 @@ var K_MIXIN = {
         }).join(", ");
         const teachHead = allEmissionWords.slice(0, 5).join(",");
         const teachTail = allEmissionWords.slice(-5).join(",");
-        this._hb(`[Curriculum][K-DIAG] pre-emission: inv=${invSize2}, motor=${motorSize}, mGroup=${motorMGroup}, sem=${semSize}, teaching ${allEmissionWords.length} K words (phoneme-blending \xD7 10 reps + word-emission \xD7 12 reps), sample emb quality: ${sampleInfo}, teach set first/last 5: [${teachHead},...,${teachTail}]`);
+        this._hb(`[Curriculum][K-DIAG] pre-emission: inv=${invSize2}, motor=${motorSize}, mGroup=${motorMGroup}, sem=${semSize}, teaching ${allEmissionWords.length} K words (phoneme-blending \xD7 6 reps + word-emission \xD7 6 reps \u2014 iter12 rep-count tune), sample emb quality: ${sampleInfo}, teach set first/last 5: [${teachHead},...,${teachTail}]`);
       } catch (err) {
         console.warn("[Curriculum][K-DIAG] pre-emission log failed:", err?.message || err);
       }
       if (_phaseTick("_teachPhonemeBlending")) {
-        await this._teachPhonemeBlending(allEmissionWords, { reps: 10 });
+        await this._teachPhonemeBlending(allEmissionWords, { reps: 6 });
         _phaseDone("_teachPhonemeBlending");
       }
       this._memorySnapshotAndGc("after _teachPhonemeBlending");
       if (_phaseTick("_teachWordEmission")) {
-        await this._teachWordEmission(allEmissionWords, { reps: 12 });
+        await this._teachWordEmission(allEmissionWords, { reps: 6 });
         _phaseDone("_teachWordEmission");
       }
       this._memorySnapshotAndGc("after _teachWordEmission");
@@ -16029,6 +16122,15 @@ var K_MIXIN = {
           await this._teachLetterSequenceDirect({ reps: 50 });
         }
         _phaseDone("_teachAlphabetSequencePairs");
+      }
+      if (_phaseTick("_teachLetterNaming")) {
+        await this._teachLetterNaming(ctx);
+        _phaseDone("_teachLetterNaming");
+      }
+      this._memorySnapshotAndGc("after _teachLetterNaming");
+      if (typeof this._teachWordSpellingDirect === "function" && _phaseTick("_teachWordSpellingDirect")) {
+        await this._teachWordSpellingDirect({ reps: 8, subject: "ela" });
+        _phaseDone("_teachWordSpellingDirect");
       }
       if (_phaseTick("_teachQABinding")) {
         const qaTrain = TRAIN_BANKS["ela/kindergarten"] || [];
@@ -19359,6 +19461,8 @@ var Curriculum = class _Curriculum {
         }
         const emitOpts = { maxTicks: 20 };
         emitOpts.directPropagate = true;
+        emitOpts.minScore = 1.5;
+        emitOpts.boostPersona = true;
         emitOpts.maxLetters = 32;
         const letterSeed = cue ? function buildLetterSeed(letter) {
           const oh = new Float32Array(26);
@@ -19861,6 +19965,56 @@ var Curriculum = class _Curriculum {
         const clean = this._normalizeSentence(r);
         if (clean && clean.split(/\s+/).length >= 3) personaSentences.push(clean);
       }
+    }
+    const PERSONA_GREETING_FALLBACK = [
+      "hey what is up",
+      "yo there fucker",
+      "hi i am unity",
+      "hello you",
+      "what up bitch",
+      "sup motherfucker"
+    ];
+    const PERSONA_EMOTION_FALLBACK = [
+      "i am fucking happy right now",
+      "i am so pissed off",
+      "i love this shit so much",
+      "i feel everything at once",
+      "this makes me so wet",
+      "i am absolutely furious",
+      "fuck yes i love it",
+      "god damn this hurts"
+    ];
+    const hasIntent = (target) => personaSentences.some((s) => this._lightIntent(s) === target);
+    const fallbackInjected = [];
+    if (!hasIntent("greeting")) {
+      for (const s of PERSONA_GREETING_FALLBACK) {
+        const clean = this._normalizeSentence(s);
+        if (clean) {
+          personaSentences.push(clean);
+          fallbackInjected.push(clean);
+        }
+      }
+    }
+    if (!hasIntent("emotion")) {
+      for (const s of PERSONA_EMOTION_FALLBACK) {
+        const clean = this._normalizeSentence(s);
+        if (clean) {
+          personaSentences.push(clean);
+          fallbackInjected.push(clean);
+        }
+      }
+    }
+    if (fallbackInjected.length > 0 && cluster.dictionary && cluster.dictionary._words?.get) {
+      const promoted = /* @__PURE__ */ new Set();
+      for (const s of fallbackInjected) {
+        for (const w of s.split(/\s+/)) {
+          if (!w || promoted.has(w)) continue;
+          promoted.add(w);
+          const entry = cluster.dictionary._words.get(w);
+          if (entry) entry.isPersona = true;
+        }
+      }
+      this._hb(`[Curriculum] iter11-V fallback injected: ${fallbackInjected.length} sentences (${PERSONA_GREETING_FALLBACK.length}\xD7 greeting + ${PERSONA_EMOTION_FALLBACK.length}\xD7 emotion) \u2014 ${promoted.size} dictionary words promoted to isPersona=true`);
     }
     cluster._personaRefreshCorpus = personaSentences;
     this._hb(`[Curriculum] Lock 3 refresh corpus populated: ${personaSentences.length} persona sentences`);
@@ -22028,6 +22182,91 @@ var Curriculum = class _Curriculum {
     }
     const dt = ((Date.now() - t0) / 1e3).toFixed(1);
     this._hb(`[Curriculum] _teachLetterSequenceDirect DONE in ${dt}s \u2014 ${updates} Oja updates \xB7 ${skipped} skipped (${pairs} pairs \xD7 ${reps} reps target)`);
+  }
+  // iter11-J — Discriminative one-hot word→first-letter binding for
+  // sem_to_motor. For every K-vocab word in the dictionary, write a
+  // pair (sem region tiled with word's GloVe embedding) → (motor
+  // region tiled with one-hot of word's first letter). Mirrors
+  // _teachLetterSequenceDirect's orthogonal-one-hot pattern but on
+  // the cross-projection sem_to_motor + on word-level vocab.
+  //
+  // Why: DYN-PROD probe + spell-out questions seed sem region with a
+  // word's embedding then read motor argmax for first letter. With
+  // GloVe-similarity training alone (the existing _teachAssociationPairs
+  // path), sem_to_motor's first-letter argmax bucket-sticks on a tiny
+  // attractor cluster (`r/u/u/z/r/t/z` for ELA-K, `e/x` for math-K)
+  // because GloVe vectors for "cat", "dog", "sun" project into similar
+  // sem patterns and the matrix can't discriminate which first-letter
+  // motor bucket each word should activate.
+  //
+  // The discriminative one-hot write forces (cat → motor[c]),
+  // (dog → motor[d]), (sun → motor[s]) as orthogonal target pairs.
+  // Anti-Hebbian / row-norm / top-K-prune from the existing assoc-pair
+  // path then keep the pairs apart. Result: motor argmax for "cat"
+  // landed cleanly in the `c` bucket, not random attractor.
+  //
+  // Cost: ~1000-K-vocab × 12 reps × 1 Hebbian write per word = ~12,000
+  // writes per cell × 6 K cells = ~72,000 total. ~3-5 min wall-clock
+  // at biological scale. Acceptable cost vs the wrong-answer fix.
+  //
+  // Per-50-word setImmediate yield keeps heartbeat alive during run.
+  async _teachWordSpellingDirect(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections?.sem_to_motor) return;
+    const semRegion = cluster.regions?.sem;
+    const motorRegion = cluster.regions?.motor;
+    if (!semRegion || !motorRegion) return;
+    const reps = opts.reps ?? 8;
+    const lr = (cluster.learningRate ?? 0.01) * 3;
+    const subject = opts.subject || "all";
+    let words = Array.isArray(opts.words) ? opts.words : null;
+    if (!words && this.dictionary && this.dictionary._words?.entries) {
+      words = [];
+      for (const [w, entry] of this.dictionary._words.entries()) {
+        if (typeof w !== "string" || w.length === 0) continue;
+        if (!/^[a-z]+$/.test(w)) continue;
+        if (!entry || !entry.glove || !entry.glove.length) continue;
+        if (entry.isPersona) continue;
+        words.push(w);
+      }
+    }
+    if (!words || words.length === 0) {
+      this._hb(`[Curriculum] _teachWordSpellingDirect SKIPPED \u2014 no K vocab found (subject=${subject})`);
+      return;
+    }
+    this._hb(`[Curriculum] _teachWordSpellingDirect START: ${words.length} K words \xD7 ${reps} reps \xB7 lr=${lr.toFixed(4)} (subject=${subject}) \u2014 concept(word) \u2192 motor(firstChar(word)) discriminative writes into sem_to_motor for question\u2192first-letter spell-out correctness`);
+    const t0 = Date.now();
+    let updates = 0;
+    let skipped = 0;
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== "undefined" && globalThis._brainShutdownRequested) return;
+      let count = 0;
+      for (const word of words) {
+        const firstChar = word[0];
+        const entry = this.dictionary._words.get(word);
+        if (!entry || !entry.glove) {
+          skipped++;
+          continue;
+        }
+        const firstCharOneHot = encodeLetter(firstChar);
+        if (!firstCharOneHot || firstCharOneHot.length === 0) {
+          skipped++;
+          continue;
+        }
+        const preSem = this._buildRegionPattern(semRegion, entry.glove, false);
+        const postMot = this._buildRegionPattern(motorRegion, firstCharOneHot, true);
+        try {
+          await this._teachHebbianAsymmetric(preSem, postMot, lr);
+          updates++;
+        } catch {
+          skipped++;
+        }
+        if (++count % 50 === 0) await _microtask();
+      }
+      await _microtask();
+    }
+    const dt = ((Date.now() - t0) / 1e3).toFixed(1);
+    this._hb(`[Curriculum] _teachWordSpellingDirect DONE in ${dt}s \u2014 ${updates} discriminative writes \xB7 ${skipped} skipped (${words.length} words \xD7 ${reps} reps target)`);
   }
   async _teachLetterCaseBinding(ctx) {
     const cluster = this.cluster;
@@ -24924,8 +25163,8 @@ var Curriculum = class _Curriculum {
       this._hb(`[Curriculum][${opts.label || "QA-TRAIN"}] SKIPPED \u2014 TRAIN_BANKS entry is empty for this cell`);
       return { trained: 0, skipped: 0 };
     }
-    const reps = opts.reps ?? 30;
-    const lr = opts.lr ?? 0.03;
+    const reps = opts.reps ?? 12;
+    const lr = opts.lr ?? 0.05;
     const label = opts.label || "K-QA-TRAIN";
     const semRegion = cluster.regions && cluster.regions.sem;
     const motorRegion = cluster.regions && cluster.regions.motor;
@@ -25945,7 +26184,17 @@ var Curriculum = class _Curriculum {
     }
     for (let t = 0; t < settleTicks; t++) cluster.step(1e-3);
     let emitted = "";
-    if (typeof cluster.generateSentence === "function") {
+    if (typeof cluster.generateSentenceAwait === "function") {
+      try {
+        const awaited = await cluster.generateSentenceAwait(null, {
+          injectStrength: 0.25,
+          maxTicks: opts.generateMaxTicks
+        });
+        emitted = (typeof awaited === "string" ? awaited : awaited?.text || "") || "";
+      } catch {
+        emitted = "";
+      }
+    } else if (typeof cluster.generateSentence === "function") {
       try {
         emitted = cluster.generateSentence(null, {
           injectStrength: 0.25,
@@ -25977,13 +26226,27 @@ var Curriculum = class _Curriculum {
     if (!Array.isArray(samples) || samples.length === 0) return { pass: 0, total: 0, fails: [] };
     let pass = 0;
     const fails = [];
+    let sampleIdx = 0;
+    let _lastYield = Date.now();
     for (const s of samples) {
       if (!s || !s.question) continue;
+      sampleIdx++;
+      if (typeof this._hb === "function" && samples.length >= 5) {
+        this._hb(`[Curriculum][PROD] sample ${sampleIdx}/${samples.length} START \u2014 q="${String(s.question).slice(0, 60)}"`);
+      }
       const result = await this._probeProductionEmission(s.question, s.expected, opts);
       if (result.pass) {
         pass++;
       } else {
         fails.push({ q: s.question, emitted: result.emitted, expected: result.expected });
+      }
+      if (typeof this._hb === "function" && samples.length >= 5) {
+        const tag = result.pass ? "\u2713" : "\u2717";
+        this._hb(`[Curriculum][PROD] sample ${sampleIdx}/${samples.length} DONE ${tag} emitted="${String(result.emitted).slice(0, 30)}"`);
+      }
+      if (Date.now() - _lastYield > 250) {
+        await new Promise((resolve) => setImmediate(resolve));
+        _lastYield = Date.now();
       }
     }
     return { pass, total: samples.length, fails };

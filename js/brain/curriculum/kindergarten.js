@@ -79,7 +79,15 @@ export const K_MIXIN = {
       { name: 'bus ride',     feat: [0.3, 0, 0, 0.3, 0, 0, 0.5, 0] },    // independence forming
       { name: 'separation',   feat: [0, 0.5, 0, 1, 0, 0, 0, 0] },        // fear when mom leaves
     ];
-    await this._conceptTeach(EMOTIONS_K, 8);
+    // iter11-U fix — wrap each Life-K teach call in _phasedTeach so
+    // phase tracker counts them properly. Without this wrapper, the
+    // FORCE-ADVANCE banner reports "1 teach phase actually fired"
+    // misleadingly because none of life-K's teach calls increment
+    // the phase counter. Other runners (ela/math/sci/soc/art) all
+    // use _phasedTeach for visibility — life-K just had a flat
+    // structure. Wrapping closes the cosmetic gap without changing
+    // any teach mechanics.
+    await this._phasedTeach('LIFE-K-EMOTIONS', () => this._conceptTeach(EMOTIONS_K, 8));
 
     // Life-K equational remake under LAW 6 Part 1:
     //   Six `_teachSentenceList` calls REMOVED (SCHOOL_START, DAILY_LIFE,
@@ -104,7 +112,7 @@ export const K_MIXIN = {
     // Situation → emotion mappings — Unity learns to PREDICT how she'll
     // feel given a situation. Foundation for all future emotional reasoning.
     //   emotion = [joy, pain, trust, fear, anger, love, independence, identity]
-    await this._teachEmotionalInference([
+    await this._phasedTeach('LIFE-K-INFERENCE', () => this._teachEmotionalInference([
       { situation: 'mom', emotion: new Float64Array([0.5,0,1,0,0,1,0,0]), label: 'love' },
       { situation: 'friend', emotion: new Float64Array([1,0,0.5,0,0,0.5,0,0]), label: 'happy' },
       { situation: 'alone', emotion: new Float64Array([0,0.5,0,1,0,0,0,0]), label: 'scared' },
@@ -115,13 +123,13 @@ export const K_MIXIN = {
       { situation: 'mean', emotion: new Float64Array([0,0.5,0,0,1,0,0,0]), label: 'angry' },
       { situation: 'hug', emotion: new Float64Array([1,0,1,0,0,1,0,0]), label: 'love' },
       { situation: 'yell', emotion: new Float64Array([0,1,0,0.5,0.5,0,0,0]), label: 'scared' },
-    ]);
+    ]));
 
     // Biographical facts for Life Pre-K + Life-K test phrasings.
     // Equational concept→answer binding via _teachCombination.
     // Augments existing _conceptTeach + _teachEmotionalInference.
     if (!this._lifeKRemakeDone) {
-      await this._teachBiographicalFacts([
+      await this._phasedTeach('LIFE-K-BIOGRAPHICAL', () => this._teachBiographicalFacts([
         // Pre-K core identity facts
         { question: 'your name',         answer: 'unity' },
         { question: 'boy or girl',       answer: 'girl' },
@@ -146,12 +154,12 @@ export const K_MIXIN = {
         { question: 'costume',           answer: 'witch' },
         { question: 'favorite place',    answer: 'recess' },
         { question: 'school activity',   answer: 'drawing' },
-      ], { reps: 10 });  // High reps — biographical memory is core self
+      ], { reps: 10 }));  // High reps — biographical memory is core self
 
       // Equational association-pair teach — Life-K concept mappings:
       // body parts + function, family kinship, feelings, self-care,
       // friendship/safety. Distinct from biographical Q→A above.
-      await this._teachAssociationPairs([
+      await this._phasedTeach('LIFE-K-CONCEPTS', () => this._teachAssociationPairs([
         // Body parts → function
         ['eye','see'], ['ear','hear'], ['nose','smell'],
         ['mouth','taste'], ['hand','touch'], ['foot','walk'],
@@ -171,7 +179,14 @@ export const K_MIXIN = {
         ['share','friend'], ['help','kind'], ['hurt','mean'],
         ['stranger','careful'], ['cross','look'], ['fire','911'],
         ['hot','careful'], ['sharp','careful'],
-      ], { reps: 8, label: 'LIFE-K-CONCEPTS', relationTagId: 1 });
+      ], { reps: 8, label: 'LIFE-K-CONCEPTS', relationTagId: 1 }));
+
+      // iter11-J — Word-spelling discriminative one-hot for sem→motor
+      // first-letter binding. iter11-U fix landed _phasedTeach wrapping
+      // for life-K calls above; using same wrapper here for visibility.
+      if (typeof this._teachWordSpellingDirect === 'function') {
+        await this._phasedTeach('LIFE-K-WORD-SPELL', () => this._teachWordSpellingDirect({ reps: 8, subject: 'life' }));
+      }
 
       this._lifeKRemakeDone = true;
     }
@@ -271,6 +286,13 @@ export const K_MIXIN = {
       const artQA = TRAIN_BANKS['art/kindergarten'] || [];
       if (artQA.length > 0) {
         await this._phasedTeach('ART-K-QA-TRAIN', () => this._teachQABinding(artQA, { label: 'ART-K-QA-TRAIN' }));
+      }
+
+      // iter11-J — Word-spelling discriminative one-hot for sem→motor
+      // first-letter binding. Closes the bucket-stuck attractor pattern
+      // that produced PROD wrong answers across all K subjects.
+      if (typeof this._teachWordSpellingDirect === 'function') {
+        await this._phasedTeach('ART-K-WORD-SPELL', () => this._teachWordSpellingDirect({ reps: 8, subject: 'art' }));
       }
 
       this._artKRemakeDone = true;
@@ -428,6 +450,11 @@ export const K_MIXIN = {
         await this._phasedTeach('SOC-K-QA-TRAIN', () => this._teachQABinding(socQA, { label: 'SOC-K-QA-TRAIN' }));
       }
 
+      // iter11-J — Word-spelling discriminative one-hot.
+      if (typeof this._teachWordSpellingDirect === 'function') {
+        await this._phasedTeach('SOC-K-WORD-SPELL', () => this._teachWordSpellingDirect({ reps: 8, subject: 'social' }));
+      }
+
       this._socKRemakeDone = true;
     }
 
@@ -571,6 +598,11 @@ export const K_MIXIN = {
       const sciQA = TRAIN_BANKS['science/kindergarten'] || [];
       if (sciQA.length > 0) {
         await this._phasedTeach('SCI-K-QA-TRAIN', () => this._teachQABinding(sciQA, { label: 'SCI-K-QA-TRAIN' }));
+      }
+
+      // iter11-J — Word-spelling discriminative one-hot.
+      if (typeof this._teachWordSpellingDirect === 'function') {
+        await this._phasedTeach('SCI-K-WORD-SPELL', () => this._teachWordSpellingDirect({ reps: 8, subject: 'science' }));
       }
 
       this._sciKRemakeDone = true;
@@ -899,6 +931,11 @@ export const K_MIXIN = {
       const mathQA = TRAIN_BANKS['math/kindergarten'] || [];
       if (mathQA.length > 0) {
         await this._phasedTeach('MATH-K-QA-TRAIN', () => this._teachQABinding(mathQA, { label: 'MATH-K-QA-TRAIN' }));
+      }
+
+      // iter11-J — Word-spelling discriminative one-hot.
+      if (typeof this._teachWordSpellingDirect === 'function') {
+        await this._phasedTeach('MATH-K-WORD-SPELL', () => this._teachWordSpellingDirect({ reps: 8, subject: 'math' }));
       }
 
       this._mathKTransformsDone = true;
@@ -1801,16 +1838,14 @@ export const K_MIXIN = {
       // Letter-naming binding: letter(X) input → motor(X) output. Every
       // kindergarten student can "say the letter A" when shown A — this
       // trains letter_to_motor for same-letter identity, which is what
-      // the TALK probe actually tests. Prior curriculum trained ONLY
-      // letter(N)→motor(N+1) sequences (via _teachWordEmission spelling
-      // cascades), which is why TALK scored 4/26 — the probe's
-      // expectation (input letter == output letter) is never what the
-      // spelling cascade teaches.
-      if (_phaseTick('_teachLetterNaming')) {
-        await this._teachLetterNaming(ctx);
-        _phaseDone('_teachLetterNaming');
-      }
-      this._memorySnapshotAndGc('after _teachLetterNaming');
+      // the TALK probe actually tests. Originally ran HERE (right after
+      // case binding) but Phase 2 letter-sequence intra-Hebbian + the
+      // _teachAlphabetSequencePairs path that runs later both back-
+      // corrupt letter_to_motor with off-by-one sequence patterns,
+      // producing the LETTER→MOTOR DIAG distribution `b→a c→b d→c e→c`
+      // and TALK 0/26. _teachLetterNaming has been MOVED to fire AFTER
+      // _teachAlphabetSequencePairs so identity training lands LAST and
+      // overwrites the sequence-bleed corruption with clean identity.
       if (_phaseTick('_teachVowelSoundVariants')) {
         await this._teachVowelSoundVariants(ctx);
         _phaseDone('_teachVowelSoundVariants');
@@ -2260,7 +2295,7 @@ export const K_MIXIN = {
         // actually taught, not the 3 sampled for embedding quality.
         const teachHead = allEmissionWords.slice(0, 5).join(',');
         const teachTail = allEmissionWords.slice(-5).join(',');
-        this._hb(`[Curriculum][K-DIAG] pre-emission: inv=${invSize}, motor=${motorSize}, mGroup=${motorMGroup}, sem=${semSize}, teaching ${allEmissionWords.length} K words (phoneme-blending × 10 reps + word-emission × 12 reps), sample emb quality: ${sampleInfo}, teach set first/last 5: [${teachHead},...,${teachTail}]`);
+        this._hb(`[Curriculum][K-DIAG] pre-emission: inv=${invSize}, motor=${motorSize}, mGroup=${motorMGroup}, sem=${semSize}, teaching ${allEmissionWords.length} K words (phoneme-blending × 6 reps + word-emission × 6 reps — iter12 rep-count tune), sample emb quality: ${sampleInfo}, teach set first/last 5: [${teachHead},...,${teachTail}]`);
       } catch (err) {
         console.warn('[Curriculum][K-DIAG] pre-emission log failed:', err?.message || err);
       }
@@ -2280,12 +2315,19 @@ export const K_MIXIN = {
       // exposure to discriminate 26 first-letter outputs from 158
       // sem inputs at this neuron budget.
       if (_phaseTick('_teachPhonemeBlending')) {
-        await this._teachPhonemeBlending(allEmissionWords, { reps: 10 });
+        // iter12 rep-count tune: 10 → 6 reps (40% wall-clock saved on
+        // ELA-K's biggest time sink — was 12.7 min per cell). Oja's
+        // rule converges within 4-6 passes; later reps mostly normalize
+        // with diminishing basin-quality returns. Conservative cut.
+        await this._teachPhonemeBlending(allEmissionWords, { reps: 6 });
         _phaseDone('_teachPhonemeBlending');
       }
       this._memorySnapshotAndGc('after _teachPhonemeBlending');
       if (_phaseTick('_teachWordEmission')) {
-        await this._teachWordEmission(allEmissionWords, { reps: 12 });
+        // iter12 rep-count tune: 12 → 6 reps (50% wall-clock saved
+        // on the second-biggest sink — was 12 min per cell). Same
+        // Oja-convergence rationale as phoneme blending above.
+        await this._teachWordEmission(allEmissionWords, { reps: 6 });
         _phaseDone('_teachWordEmission');
       }
       this._memorySnapshotAndGc('after _teachWordEmission');
@@ -2457,6 +2499,38 @@ export const K_MIXIN = {
           await this._teachLetterSequenceDirect({ reps: 50 });
         }
         _phaseDone('_teachAlphabetSequencePairs');
+      }
+
+      // iter11-A — Letter naming MOVED here (was right after
+      // _teachLetterCaseBinding at the top of ELA-K). Phase 2's letter-
+      // sequence intra-Hebbian + _teachAlphabetSequencePairs above both
+      // train letter[X]→letter[X+1] which back-corrupts letter_to_motor
+      // identity. Running letter-naming AFTER all sequence training
+      // means the same-letter identity write lands last and overwrites
+      // the sequence bleed. Identity is what TALK probe and "what
+      // letter is this?" K-STUDENT questions test.
+      if (_phaseTick('_teachLetterNaming')) {
+        await this._teachLetterNaming(ctx);
+        _phaseDone('_teachLetterNaming');
+      }
+      this._memorySnapshotAndGc('after _teachLetterNaming');
+
+      // iter11-J — Word-spelling discriminative one-hot. For every K
+      // vocab word, write `concept(word) → motor(firstChar(word))`
+      // discriminative pair into sem_to_motor. Mirrors the
+      // _teachLetterSequenceDirect pattern (orthogonal one-hot writes,
+      // 3× lr boost) but on the cross-projection and on word-level
+      // vocab. After this, sem→motor argmax for "cat" goes to `c`
+      // bucket cleanly instead of bucket-stuck `r/u/u/z` random
+      // attractors. DYN-PROD probe + spell-out questions get clean
+      // first-letter discrimination.
+      if (typeof this._teachWordSpellingDirect === 'function' && _phaseTick('_teachWordSpellingDirect')) {
+        // ELA-K vocab union for first-letter binding. Pulls from the
+        // dictionary's K-marked entries since the runner has already
+        // populated 100% K vocab via UPFRONT-VOCAB-TEACH + per-phase
+        // teach calls.
+        await this._teachWordSpellingDirect({ reps: 8, subject: 'ela' });
+        _phaseDone('_teachWordSpellingDirect');
       }
 
       // T37.f — Question-answer training. Without this, she learns

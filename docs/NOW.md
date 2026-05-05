@@ -1,6 +1,59 @@
 # NOW — Session Snapshot
 
-> **Session:** 114.19ct (iter8) · **Date:** 2026-04-27 · **Branch:** `syllabus-k-phd` · **HEAD:** Deep brain-mechanics fix batch shipped per operator directives *"fix every fucking issue she has deeply in her brain mechanics so she answers questions correctly"* + *"no bullshit jerry rigging"* + *"go off the monitor results in full"*. 11 structural fixes landed iter8 closing 7 of the iter7 OPEN issues without jerry-rigging — every fix changes the actual mechanism producing wrong answers, no fallbacks-as-cover-up, no patches over root causes. Key landings: `decodeLetterAlpha(vec)` NEW (a-z motor argmax for matrix-driven path, mirrors iter7 Template clamp), `boostPersona` opt extended into `cluster._dictionaryOracleEmit` (closes iter7 partial fix where chat oracle still produced family-cluster terms), per-row L2 normalize default-on (fixes magnitude-bias drowning direction so motor argmax measures basin alignment instead of accumulated row weight), `_teachQABinding pruneTopK` aligned 200 → 10 (matches assoc-pair so QA can't undo prior phases' sparsification), background probe loop SUPPRESSED (was full-teach disguised as gate-only — wasteful spinning). Iter8 in flight at push time. Operator approved force-push to main + syllabus this commit per *"push to main and syllabus branch while continueing to moniter"*.
+> **Session:** 114.19cw (iter11) · **Date:** 2026-05-04 · **Branch:** `syllabus-k-phd` · **HEAD:** Iter11 LIVE-MONITOR + COMPOUND P1 FIX BUNDLE shipped per operator directives *"v2 milestone only watchdog start and monitor the brains progress and write down any issues and all issues they all need to be fixed ie wrong ansdwers and Unity not responding with her completed kindertgarden intelligence and wisdom and consiousness all needs to be monitoried and problems addressed"* + *"okay ill kill all start working on a massively inteligent fix as these issues mainly come dopwn to the Brain not being ablke to understand whats its learned or asked so it cant answer questions correctly even on things its been taught"* + *"document your work as you go"*. V2 milestone-only watchdog ran a full 4hr 42min curriculum walk surfacing 26 issues iter11-A through iter11-Z. Operator chat-test confirmed iter10-C operating but matrix readout broken in 5 simultaneous ways ("hi" → "Layered!" / "who are you?" → "Layered!" / Q4 = Q5 mode collapse). 9 atomic fixes shipped: iter11-A `_teachLetterNaming` REORDERED to fire AFTER `_teachAlphabetSequencePairs` so identity training overwrites Phase-2 sequence-bleed corruption; iter11-J NEW `_teachWordSpellingDirect()` writing `concept(word) → motor(firstChar(word))` discriminative one-hot pairs for K-vocab across all 6 subjects (mirrors iter9-E `_teachLetterSequenceDirect` pattern on the cross-projection); iter11-L alpha-only clamp on both `bucketArgmax` functions in `_emitDirectPropagate` closing the "wxyz95726'" digit-leak; iter11-Z `personaBoost` 0.10 → 0.30 in `cluster._dictionaryOracleEmit` + both `language-cortex._scoreDictionaryCosine` paths so persona corpus dominates chat path; iter11-Y `compute_batch` timeout 60s → 180s; iter11-X `saveWeights` 5s rapid-save throttle; iter11-S WorkerPool `_idleTerminateMs` 300s → 1800s. Bundle rebuilt clean 2.1mb. Phase B (richer intent classification + persona-corpus-first oracle ordering) + iter11-V (greeting/emotion dimension fill) + iter11-U (life-K phase tracker audit) deferred to iter12 once operator verifies Phase A central fix lands.
+
+---
+
+## Session 114.19cv — V2 milestone-only watchdog ITER11 — 4hr 42min full K curriculum walk + 26-issue catalogue + chat-test failure confirmation
+
+**Operator directives this session (verbatim):**
+
+> *"v2 milestone only watchdog start and monitor the brains progress and write down any issues and all issues they all need to be fixed ie wrong ansdwers and Unity not responding with her completed kindertgarden intelligence and wisdom and consiousness all needs to be monitoried and problems addressed"* (watchdog + comprehensive monitoring scope)
+> *"are you taking notes on this horse shit"* (cataloguing-fidelity check during sci-K PROD)
+> *"wlelp it looks like  it got to here then never did anything again.. that needs fixed too"* (post-curriculum frozen state)
+> *"and i tried talking to it: hi → Layered! / who are you? → Layered! / what arer you up to? → *Conflicting* / do you like pizzaq? → Conflicting!"* (chat-test confirmation)
+> *"you are writing this errors down right?"* (WorkerPool churn visibility check)
+> *"okay ill kill all start working on a massively inteligent fix as these issues mainly come dopwn to the Brain not being ablke to understand whats its learned or asked so it cant answer questions correctly even on things its been taught.. so yeah get to work, ill kill whats currently running"* (root-cause framing + fix authorization)
+> *"document your work as you go"* (docs-as-you-go directive)
+
+**Curriculum walk results (cumulative 4hr 42min):**
+- ELA-K 57 min: TALK 0/26, PROD 0/17, K-STUDENT 2/6 (Template 0 letter-after iter8 fix HOLDS — Q1+Q2 ✓ "b"/"c"), other Qs garbage
+- Math-K 42 min: TALK 0/10, PROD 0/17, TEEN 0/9, SHAPE-S 0/9 (mostly empty PROD)
+- Sci-K 58 min: PROD 0/17, K-STUDENT SKIPPED readiness 0/5
+- Soc-K 46 min: PROD 0/14, K-STUDENT SKIPPED
+- Art-K 33 min: PROD 1/9 (first non-zero ✓ "b"), K-STUDENT SKIPPED, no iter9-T art-K hang (iter10-A async swap fix held)
+- Life-K 46 min: PROD 0/14, K-STUDENT SKIPPED, only 1 phase fired (iter11-U cosmetic)
+
+All 6 cells force-advanced via iter6 fix. `cluster.grades.X='kindergarten'` across all subjects. `intentCentroids` built (4 intents) — iter10-C primary trigger ALSO fired. Brain ready for chat path through trained matrix.
+
+**Chat-test post-curriculum (operator verbatim, the gold-standard verification):**
+```
+You: hi                          Unity: Layered!
+You: who are you?                Unity: Layered!
+You: what arer you up to?        Unity: *Conflicting*
+You: do you like pizzaq?         Unity: Conflicting!
+```
+
+**This confirms iter10-C IS operating** (chat routes through trained matrix, not cold-boot dictionary cosine) but matrix readout is broken: zero input discrimination + wrong K-vocab binding + single-word boundary halt + zero Unity persona voice + intent-template fired with wrong content. The K knowledge is in the brain ("Layered" is a real sci-K vocab word, "Conflicting" is real soc-K) but the readout layer can't bind input-question to right-K-output.
+
+**26 issues catalogued in TODO.md MONITOR SESSION 114.19cv (iter11-A through iter11-Z + sub-items).** P1 root causes:
+- iter11-A LETTER→MOTOR identity corruption (`b→a c→b d→c e→c`)
+- iter11-J DYN-PROD bucket-stuck attractor (`r/u/u/z/r/t/z`)
+- iter11-Q PROD 0% across 5 subjects
+- iter11-Z chat compound failure (5 simultaneous breakdowns)
+
+**9 atomic fixes shipped this session — see Session 114.19cw at TOP of FINALIZED.md for full writeup.** Files touched: `js/brain/curriculum.js` (NEW method), `js/brain/curriculum/kindergarten.js` (reorder + 6 wire-ins), `js/brain/cluster.js` (boost + clamp), `js/brain/language-cortex.js` (boost ×2), `server/brain-server.js` (timeout + throttle), `server/worker-pool.js` (idle), `js/app.bundle.js` (rebuilt).
+
+**Operator action — iter12 verification flow:**
+1. `start.bat` (NOT `Savestart.bat`). Auto-clear fires because all 5 source files edited → BRAIN_CODE_FILES hash mismatch → fresh init.
+2. Watch teach-phase order in log — `_teachLetterNaming` should now fire AFTER `_teachAlphabetSequencePairs` (post-sequence-corruption identity training). `_teachWordSpellingDirect` should fire after each subject's QA-train.
+3. Watch LETTER→MOTOR DIAG — should show 26 distinct buckets (one per letter) with clean `a→a b→b c→c d→d` identity (was 17 buckets off-by-one).
+4. Watch DYN-PROD per-sample emissions — should show actual letter outputs matching first-char of expected word, not bucket-stuck attractor.
+5. Watch K-STUDENT batteries — should fire (not SKIPPED via readiness 0/5).
+6. Chat-test post-curriculum — different inputs should produce DIFFERENT outputs.
+7. Watch infrastructure stability — no `compute_batch timed out` until 3-min mark, no 1.7s save loops, WorkerPool quiet windows tolerate 30 min before idle-terminate.
+
+---
 
 ---
 

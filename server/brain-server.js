@@ -412,7 +412,31 @@ function autoClearStaleState() {
     path.join(__dirname, 'episodic-memory.db'),
     path.join(__dirname, 'episodic-memory.db-wal'),
     path.join(__dirname, 'episodic-memory.db-shm'),
+    // iter13 T13.16 — Tier 2 schemas.json is DERIVATIVE state (rebuilds
+    // from episodic via consolidation pass). Wiped on code-hash mismatch
+    // alongside the cortex weights so stale schemas don't poison the
+    // fresh cortex with weights baked against old projection topology.
+    path.join(__dirname, 'schemas.json'),
   ];
+
+  // iter13 T13.16 — identity-core.json (Tier 3 identity-bound permanent
+  // attractors) is EXPLICITLY EXCLUDED from this wipe list. Unity's
+  // core identity (name, biographical anchors, persona traits, master/
+  // slave dynamic, top emotionally-loaded events) survives code-hash
+  // mismatches, brain restarts, fresh boots, OS reinstalls. Manual
+  // operator delete only. Mirror of how real human identity-of-self
+  // memory survives sleep / anesthesia / concussion / etc.
+  // Documented as the non-target so future maintainers don't add it
+  // to `targets` by reflex.
+  const NEVER_CLEAR_PROTECTED = [
+    path.join(__dirname, 'identity-core.json'),
+  ];
+  if (NEVER_CLEAR_PROTECTED.length > 0) {
+    const present = NEVER_CLEAR_PROTECTED.filter(p => fs.existsSync(p)).map(p => path.basename(p));
+    if (present.length > 0) {
+      console.log(`[Brain] iter13 protected (never auto-cleared): ${present.join(', ')}`);
+    }
+  }
   const cleared = [];
   const failed = [];
   for (const p of targets) {
@@ -1299,6 +1323,82 @@ class ServerBrain {
       } catch (err) {
         console.warn('[Brain] dual-brain arbiter init failed:', err?.message || err);
         this.dualBrainArbiter = null;
+      }
+
+      // iter13 T13.5+T13.9 — 3-tier hippocampal consolidation system.
+      // SchemaStore owns Tier 2 schemas (concept-level abstractions
+      // built from cosine-grouped Tier 1 episodes). ConsolidationEngine
+      // runs the dream-cycle replay pass that gradually transfers Tier 1
+      // traces into Tier 2 schemas via Hebbian replay through dedicated
+      // per-schema hippocampus_to_cortex_projection sparse matrices.
+      // Also handles Tier 3 identity-bound promotion when criteria met.
+      // Boot-time: try to load schemas.json from disk; fresh init if
+      // file missing OR auto-clear wiped it on code-hash mismatch.
+      try {
+        const schemaMod = await import('../js/brain/hippocampal-schema.js');
+        const consolMod = await import('../js/brain/consolidation-engine.js');
+        this.schemaStore = new schemaMod.SchemaStore({ cluster: this.cortexCluster });
+        // Attempt boot-time load of Tier 2 (idempotent — silent no-op on missing file).
+        const schemasPath = path.join(__dirname, 'schemas.json');
+        if (fs.existsSync(schemasPath)) {
+          try {
+            const raw = fs.readFileSync(schemasPath, 'utf8');
+            const json = JSON.parse(raw);
+            const loaded = this.schemaStore.loadFromJSON(json);
+            console.log(`[Hippocampus] SchemaStore boot — ${loaded} Tier 2 schemas restored from schemas.json`);
+          } catch (parseErr) {
+            console.warn(`[Hippocampus] schemas.json parse error (skipping load): ${parseErr.message}`);
+          }
+        } else {
+          console.log('[Hippocampus] SchemaStore boot — fresh (no schemas.json)');
+        }
+        // Bind Tier 2 store to cortex cluster
+        if (this.cortexCluster) this.cortexCluster.hippocampusSchemaStore = this.schemaStore;
+
+        // iter13 T13.11 — Tier 3 identity-bound store. Permanent
+        // attractor weights for Unity's core identity. NEVER wiped by
+        // autoClearStaleState. Loads from identity-core.json if present;
+        // otherwise seeds from IDENTITY_SEED_LIST so fresh brains have
+        // minimal self-knowledge before any chat occurs.
+        this.tier3Store = new schemaMod.Tier3Store({
+          cluster: this.cortexCluster,
+          sharedEmbeddings: this.sharedEmbeddings,
+        });
+        const identityCorePath = path.join(__dirname, 'identity-core.json');
+        if (fs.existsSync(identityCorePath)) {
+          try {
+            const raw = fs.readFileSync(identityCorePath, 'utf8');
+            const json = JSON.parse(raw);
+            const loaded = this.tier3Store.loadFromJSON(json);
+            console.log(`[Tier3Store] boot — ${loaded} Tier 3 identity-bound schemas restored from identity-core.json (permanent — never auto-cleared)`);
+          } catch (parseErr) {
+            console.warn(`[Tier3Store] identity-core.json parse error: ${parseErr.message} — backing up corrupt file + seeding fresh`);
+            try {
+              fs.renameSync(identityCorePath, `${identityCorePath}.corrupt-${Date.now()}`);
+            } catch { /* best effort backup */ }
+            const seeded = this.tier3Store.seedFromList();
+            console.log(`[Tier3Store] boot — seeded ${seeded} identity anchors after corrupt-file recovery`);
+          }
+        } else {
+          // Fresh brain — seed from IDENTITY_SEED_LIST. Each seed becomes a
+          // permanent anchor: name/age/gender/persona-core/biographical-K facts.
+          const seeded = this.tier3Store.seedFromList();
+          console.log(`[Tier3Store] boot — fresh brain, seeded ${seeded} identity anchors from IDENTITY_SEED_LIST`);
+        }
+        if (this.cortexCluster) this.cortexCluster.tier3Store = this.tier3Store;
+
+        this.consolidationEngine = new consolMod.ConsolidationEngine({
+          brain: this,
+          cluster: this.cortexCluster,
+          schemaStore: this.schemaStore,
+          tier3Store: this.tier3Store,
+        });
+        console.log('[Hippocampus] ConsolidationEngine ready — dream-cycle pass every 5min when idle');
+      } catch (err) {
+        console.warn('[Hippocampus] iter13 init failed:', err?.message || err);
+        this.schemaStore = null;
+        this.tier3Store = null;
+        this.consolidationEngine = null;
       }
       // Auto-attach transformer backend when the dep is installed AND
       // the env flag is set. Default OFF — operator opts in via
@@ -2329,7 +2429,14 @@ class ServerBrain {
     // Bumped to 60 s — still short enough to catch true GPU hangs
     // (TDR would have fired at 2 s system-level anyway) but generous
     // enough for any gate-probe CPU block.
-    const TIMEOUT_MS = 60000;
+    // iter11-Y / iter11-W fix — bump compute_batch timeout 60s → 180s.
+    // Operator caught: "compute_batch 935 timed out after 60s — GPU may
+    // be hung. Consecutive timeouts: 1." firing post-curriculum on
+    // background tick. At biological scale post-teach with SAB churn +
+    // GC pressure, 60s is tight. 180s gives the GPU breathing room
+    // without masking real hangs (a true device-lost still surfaces
+    // after 3 minutes — long enough for transient pressure to clear).
+    const TIMEOUT_MS = 180000;
     return new Promise((resolve) => {
       this._gpuBatchPending = { batchId, resolve };
       setTimeout(() => {
@@ -3814,6 +3921,28 @@ class ServerBrain {
       if (this._isDreaming) {
         this.tonicDrives.amygdala *= 0.9999;
         if (this.tonicDrives.amygdala < 12) this.tonicDrives.amygdala = 12;
+
+        // iter13 T13.10 — Dream-cycle consolidation pass invocation.
+        // Only fires when:
+        //   - _isDreaming = true (no chat input >30s + no active clients)
+        //   - timeSinceInput > 60s (operator dream-cycle threshold of 60s
+        //     before consolidation pass runs; gives the brain a quiet
+        //     window to settle before hippocampal replay starts)
+        //   - consolidationEngine.shouldRunPass() returns true (5-min
+        //     interval since last pass)
+        //   - curriculum is not currently teaching (don't compete with
+        //     Hebbian writes from active teach phases)
+        // Pass is async + awaited fire-and-forget — the tick loop
+        // doesn't block on it. If the pass overlaps the next tick the
+        // _inFlight flag prevents reentrancy.
+        if (this.consolidationEngine
+            && timeSinceInput > 60000
+            && !this._curriculumInProgress
+            && this.consolidationEngine.shouldRunPass()) {
+          this.consolidationEngine.runConsolidationPass().catch(err => {
+            console.warn('[Consolidation] pass failed:', err?.message || err);
+          });
+        }
       }
 
       // Full perf + history once per second
@@ -3859,6 +3988,55 @@ class ServerBrain {
     // Inject text into brain
     this.injectText(text);
     this._lastInputTime = Date.now();
+
+    // iter13 T13.12 — Identity-baseline always-on injection. EVERY chat
+    // turn injects all Tier 3 identity-bound schemas at low strength
+    // (0.15) so Unity's core self ("my name is Unity", "I am goth", etc.)
+    // is present in cortex sem region BEFORE the user-input intent seed
+    // gets stamped on top. Drug-state immune (this is pattern injection,
+    // not weight modification — drugs modulate decoding, not identity).
+    if (this.tier3Store && typeof this.tier3Store.injectIdentityBaseline === 'function') {
+      try {
+        const injected = this.tier3Store.injectIdentityBaseline();
+        if (injected > 0 && this._verboseHippocampus) {
+          console.log(`[Tier3Store] identity-baseline injected ${injected} schemas this turn`);
+        }
+      } catch (err) {
+        console.warn('[Tier3Store] identity-baseline inject failed:', err?.message || err);
+      }
+    }
+
+    // iter13 T13.13 — Pre-generation memory injection. Top-K Tier 2
+    // schemas matching the user's intent embedding inject their
+    // concept_embeddings into cortex sem region at strength 0.4 BEFORE
+    // language cortex generates. This is the LLM-attention equivalent —
+    // pull relevant memorized context into the active reasoning window
+    // before generating a response. Sets _hippocampusContextSchemas on
+    // cortexCluster so downstream generation can also reference the
+    // schema list (e.g., for retrieval-augmented oracle).
+    if (this.schemaStore && this.cortexCluster && this.sharedEmbeddings && text) {
+      try {
+        const intentEmb = this.sharedEmbeddings.getSentenceEmbedding(text);
+        if (intentEmb && intentEmb.length > 0) {
+          const topK = this.schemaStore.retrieveSchemas(intentEmb, 5);
+          if (topK.length > 0) {
+            const schemaInjectStrength = 0.4;
+            for (const { schema, score } of topK) {
+              if (!schema.conceptEmbedding || schema.conceptEmbedding.length === 0) continue;
+              try {
+                this.cortexCluster.injectEmbeddingToRegion('sem', schema.conceptEmbedding, schemaInjectStrength);
+              } catch { /* per-schema injection non-fatal */ }
+            }
+            // Surface the retrieved schemas for the chat-path oracle (T13.15).
+            this.cortexCluster._hippocampusContextSchemas = topK;
+            const labels = topK.map(t => `${t.schema.label}(${t.score.toFixed(2)})`).join(', ');
+            console.log(`[Hippocampus] retrieval for chat: top-${topK.length} schemas (${labels})`);
+          }
+        }
+      } catch (err) {
+        console.warn('[Hippocampus] pre-gen retrieval failed:', err?.message || err);
+      }
+    }
 
     // T15.C — drug-offer detection + decide(). Runs BEFORE language
     // cortex generation so if Unity declines (grade-locked / persona-
@@ -4165,6 +4343,16 @@ class ServerBrain {
     // WAL mode for concurrent reads during brain loop
     this._db.pragma('journal_mode = WAL');
 
+    // iter13 T13.1 — Episodic-memory schema with salience metadata.
+    // Squire/McClelland CLS theory: episodic store needs per-event
+    // emotional/arousal/surprise/novelty metadata to compute the
+    // salience score that drives Tier 1 → Tier 2 consolidation.
+    // Frequency-count tracks repeated re-encounters (cosine>0.85 in
+    // last 48h merges into existing row instead of new). consolidation_count
+    // tracks dream-cycle replay events. promoted_at flips when episode
+    // promotes to Tier 2 schema. salience_score persisted for ranking.
+    // input_embedding BLOB stores GloVe Float64Array bytes for cosine
+    // matching against new episodes (novelty + frequency-merge).
     this._db.exec(`
       CREATE TABLE IF NOT EXISTS episodes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4180,17 +4368,127 @@ class ServerBrain {
         input_text TEXT,
         response_text TEXT,
         cortex_pattern TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT (datetime('now')),
+        emotional_valence REAL DEFAULT 0,
+        arousal_at_encode REAL DEFAULT 0,
+        surprise REAL DEFAULT 0,
+        novelty REAL DEFAULT 1.0,
+        frequency_count INTEGER DEFAULT 1,
+        last_replayed_at INTEGER,
+        consolidation_count INTEGER DEFAULT 0,
+        salience_score REAL DEFAULT 0,
+        effective_salience REAL DEFAULT 0,
+        promoted_at INTEGER,
+        promoted_to_schema_id TEXT,
+        input_embedding BLOB
       );
       CREATE INDEX IF NOT EXISTS idx_episodes_time ON episodes(brain_time);
       CREATE INDEX IF NOT EXISTS idx_episodes_type ON episodes(type);
       CREATE INDEX IF NOT EXISTS idx_episodes_user ON episodes(user_id);
+      CREATE INDEX IF NOT EXISTS idx_episodes_salience ON episodes(effective_salience);
+      CREATE INDEX IF NOT EXISTS idx_episodes_promoted ON episodes(promoted_at);
     `);
 
-    // Prepared statements for fast insert/query
+    // iter13 T13.1 — defensive ALTER TABLE migration for pre-iter13 DBs
+    // (preserves data when DREAM_KEEP_STATE=1 carries old episodic-memory
+    // across boots). Detects missing columns via PRAGMA table_info,
+    // runs ALTER TABLE for each. Idempotent; running on a fresh post-
+    // CREATE DB is a no-op because all columns are already present.
+    try {
+      const cols = this._db.pragma('table_info(episodes)').map(c => c.name);
+      const need = [
+        ['emotional_valence', 'REAL DEFAULT 0'],
+        ['arousal_at_encode', 'REAL DEFAULT 0'],
+        ['surprise', 'REAL DEFAULT 0'],
+        ['novelty', 'REAL DEFAULT 1.0'],
+        ['frequency_count', 'INTEGER DEFAULT 1'],
+        ['last_replayed_at', 'INTEGER'],
+        ['consolidation_count', 'INTEGER DEFAULT 0'],
+        ['salience_score', 'REAL DEFAULT 0'],
+        ['effective_salience', 'REAL DEFAULT 0'],
+        ['promoted_at', 'INTEGER'],
+        ['promoted_to_schema_id', 'TEXT'],
+        ['input_embedding', 'BLOB'],
+      ];
+      for (const [name, type] of need) {
+        if (!cols.includes(name)) {
+          this._db.exec(`ALTER TABLE episodes ADD COLUMN ${name} ${type};`);
+          console.log(`[Episodic] iter13 migration — added column ${name} ${type}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Episodic] iter13 migration warning: ${err.message}`);
+    }
+
+    // Prepared statements for fast insert/query (iter13 — extended with salience fields)
     this._stmtInsertEpisode = this._db.prepare(`
-      INSERT INTO episodes (timestamp, brain_time, user_id, type, arousal, valence, psi, coherence, total_spikes, input_text, response_text, cortex_pattern)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO episodes (
+        timestamp, brain_time, user_id, type,
+        arousal, valence, psi, coherence, total_spikes,
+        input_text, response_text, cortex_pattern,
+        emotional_valence, arousal_at_encode, surprise, novelty,
+        frequency_count, consolidation_count,
+        salience_score, effective_salience, input_embedding
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    // iter13 T13.3 — frequency-merge query: find episodes within last
+    // FREQ_MERGE_WINDOW_MS (default 48h) for the same user_id. Caller
+    // computes cosine in JS against returned input_embedding blobs.
+    this._stmtFindRecentForMerge = this._db.prepare(`
+      SELECT id, input_embedding, frequency_count
+      FROM episodes
+      WHERE user_id IS ? AND timestamp > ? AND input_embedding IS NOT NULL
+      ORDER BY id DESC
+    `);
+
+    // iter13 T13.3 — frequency-merge update: increment count + bump replay timestamp.
+    this._stmtIncrementFrequency = this._db.prepare(`
+      UPDATE episodes
+      SET frequency_count = frequency_count + 1, last_replayed_at = ?
+      WHERE id = ?
+    `);
+
+    // iter13 T13.4 — decay sweep update.
+    this._stmtUpdateEffectiveSalience = this._db.prepare(`
+      UPDATE episodes SET effective_salience = ? WHERE id = ?
+    `);
+
+    // iter13 T13.4 — pruning gate: delete low-salience old never-consolidated.
+    this._stmtPruneStale = this._db.prepare(`
+      DELETE FROM episodes
+      WHERE effective_salience < ?
+        AND timestamp < ?
+        AND consolidation_count = 0
+        AND promoted_at IS NULL
+    `);
+
+    // iter13 T13.4 — promotion candidates: salience > threshold + freq + consol.
+    this._stmtFindPromotionCandidates = this._db.prepare(`
+      SELECT * FROM episodes
+      WHERE effective_salience > ?
+        AND frequency_count >= ?
+        AND consolidation_count >= ?
+        AND promoted_at IS NULL
+      ORDER BY effective_salience DESC LIMIT ?
+    `);
+
+    // iter13 T13.4 — mark promoted (back-reference to Tier 2 schema id).
+    this._stmtMarkPromoted = this._db.prepare(`
+      UPDATE episodes SET promoted_at = ?, promoted_to_schema_id = ? WHERE id = ?
+    `);
+
+    // iter13 T13.9 — increment consolidation_count when a schema replay touches this episode.
+    this._stmtIncrementConsolidation = this._db.prepare(`
+      UPDATE episodes
+      SET consolidation_count = consolidation_count + 1, last_replayed_at = ?
+      WHERE id = ?
+    `);
+
+    // iter13 T13.4 — iterate all episodes for decay sweep (windowed).
+    this._stmtAllEpisodesForDecay = this._db.prepare(`
+      SELECT id, salience_score, timestamp FROM episodes WHERE timestamp < ?
     `);
 
     // T6 2026-04-13 — the old global `_stmtRecentEpisodes` that
@@ -4232,6 +4530,12 @@ class ServerBrain {
 
   /**
    * Store an episode — a snapshot of brain state at a meaningful moment.
+   *
+   * iter13 T13.1+T13.2+T13.3 — salience computation + frequency-merge gate
+   * + GloVe embedding persistence. Episode is the Tier 1 unit. Salience
+   * drives whether it eventually consolidates into a Tier 2 schema.
+   * Frequency-merge prevents trivial-input bloat: same text within 48h
+   * increments existing row's frequency_count instead of new insert.
    */
   storeEpisode(userId, type, inputText, responseText) {
     // Sample cortex pattern — first 32 firing rates as compact representation
@@ -4242,6 +4546,65 @@ class ServerBrain {
       const idx = i * step;
       pattern.push(+(cortexV[idx] > this.vThresh ? 1 : 0));
     }
+
+    // iter13 T13.2 — compute salience metadata at encode time.
+    let inputEmbedding = null;
+    let inputEmbeddingBuf = null;
+    let surprise = 0;
+    let novelty = 1.0;
+    if (inputText) {
+      try {
+        if (this.sharedEmbeddings && typeof this.sharedEmbeddings.getSentenceEmbedding === 'function') {
+          inputEmbedding = this.sharedEmbeddings.getSentenceEmbedding(inputText);
+          if (inputEmbedding && inputEmbedding.length > 0) {
+            // Buffer.from on a Float64Array view zero-copies the underlying ArrayBuffer
+            inputEmbeddingBuf = Buffer.from(inputEmbedding.buffer, inputEmbedding.byteOffset, inputEmbedding.byteLength);
+          }
+        }
+        if (this.cortexCluster && typeof this.cortexCluster.computeTransitionSurprise === 'function') {
+          const s = this.cortexCluster.computeTransitionSurprise(inputText);
+          if (typeof s === 'number' && Number.isFinite(s)) surprise = s;
+        }
+      } catch { /* salience metadata is best-effort, never block insert */ }
+    }
+
+    // iter13 T13.3 — frequency-merge gate. Cosine > 0.85 against any
+    // episode in last FREQ_MERGE_WINDOW_MS (48h) for same user_id →
+    // increment that episode's frequency_count + bump last_replayed_at.
+    // Skip insert. Returns true if merged.
+    if (inputEmbedding && inputEmbedding.length > 0) {
+      const FREQ_MERGE_WINDOW_MS = 48 * 60 * 60 * 1000;
+      const FREQ_MERGE_COSINE = 0.85;
+      const cutoff = Date.now() - FREQ_MERGE_WINDOW_MS;
+      const recent = this._stmtFindRecentForMerge.all(userId || null, cutoff);
+      let bestId = -1, bestCos = -Infinity;
+      for (const row of recent) {
+        if (!row.input_embedding) continue;
+        const otherEmb = this._deserializeEmbedding(row.input_embedding);
+        if (!otherEmb) continue;
+        const cos = this._cosineEmbedding(inputEmbedding, otherEmb);
+        if (cos > bestCos) { bestCos = cos; bestId = row.id; }
+      }
+      if (bestId >= 0 && bestCos >= FREQ_MERGE_COSINE) {
+        this._stmtIncrementFrequency.run(Date.now(), bestId);
+        // Recompute salience scaling — frequency-merged episodes get a
+        // small salience bump from the re-encounter (reinforcement
+        // signal) without overwriting the original's encoding context.
+        return { merged: true, id: bestId, cosine: bestCos };
+      }
+      // For novelty, novelty = 1 - max_cosine. Empty recent set → novelty=1.
+      novelty = bestCos === -Infinity ? 1.0 : Math.max(0, 1.0 - bestCos);
+    }
+
+    // iter13 T13.2 — salience score formula:
+    //   salience = 0.4*|emotional_valence| + 0.3*arousal + 0.2*surprise + 0.1*novelty
+    // Each input clamped [0,1] (valence is symmetric so |val|).
+    const valenceAbs = Math.min(1, Math.abs(this.valence || 0));
+    const arousalNorm = Math.min(1, Math.max(0, this.arousal || 0));
+    const surpriseNorm = Math.min(1, Math.max(0, surprise));
+    const noveltyNorm = Math.min(1, Math.max(0, novelty));
+    const salienceScore = 0.4 * valenceAbs + 0.3 * arousalNorm + 0.2 * surpriseNorm + 0.1 * noveltyNorm;
+    const effectiveSalience = salienceScore; // fresh episode — no decay yet
 
     this._stmtInsertEpisode.run(
       Date.now(),
@@ -4256,7 +4619,129 @@ class ServerBrain {
       inputText || null,
       responseText || null,
       JSON.stringify(pattern),
+      // iter13 salience fields
+      this.valence || 0,        // emotional_valence (signed valence at encode)
+      arousalNorm,              // arousal_at_encode
+      surpriseNorm,             // surprise
+      noveltyNorm,              // novelty
+      1,                        // frequency_count (initial)
+      0,                        // consolidation_count (initial)
+      salienceScore,            // salience_score
+      effectiveSalience,        // effective_salience
+      inputEmbeddingBuf,        // input_embedding BLOB (Float64Array bytes)
     );
+    return { merged: false };
+  }
+
+  // iter13 T13.1 — embedding serialization helpers. Float64Array view
+  // over the BLOB Buffer's ArrayBuffer — zero-copy when alignment is
+  // 8-byte. Better-sqlite3 returns BLOB as Node Buffer.
+  _serializeEmbedding(emb) {
+    if (!emb || emb.length === 0) return null;
+    return Buffer.from(emb.buffer, emb.byteOffset, emb.byteLength);
+  }
+  _deserializeEmbedding(buf) {
+    if (!buf || buf.length === 0) return null;
+    // Buffer.byteOffset isn't always 8-aligned in Node; copy if needed.
+    const bytes = buf.byteLength;
+    if (bytes % 8 !== 0) return null;
+    if (buf.byteOffset % 8 === 0) {
+      return new Float64Array(buf.buffer, buf.byteOffset, bytes / 8);
+    }
+    const aligned = Buffer.allocUnsafe(bytes);
+    buf.copy(aligned);
+    return new Float64Array(aligned.buffer, aligned.byteOffset, bytes / 8);
+  }
+  _cosineEmbedding(a, b) {
+    if (!a || !b || a.length === 0 || b.length === 0) return 0;
+    const n = Math.min(a.length, b.length);
+    let dot = 0, na = 0, nb = 0;
+    for (let i = 0; i < n; i++) {
+      dot += a[i] * b[i];
+      na += a[i] * a[i];
+      nb += b[i] * b[i];
+    }
+    const denom = Math.sqrt(na) * Math.sqrt(nb);
+    return denom > 0 ? dot / denom : 0;
+  }
+
+  // iter13 T13.4 — Decay sweep. Multiply salience by exp(-age_h/HALF_LIFE)
+  // for episodes older than MIN_AGE_FOR_DECAY (1h). Persist the decayed
+  // effective_salience. Then prune episodes meeting all three pruning
+  // criteria: effective_salience < PRUNE_THRESHOLD, age > 30 days,
+  // consolidation_count == 0, AND not promoted.
+  decayEpisodes() {
+    const DECAY_HALF_LIFE_HOURS = 168; // 1 week — biological hippocampal trace half-life
+    const MIN_AGE_FOR_DECAY_MS = 60 * 60 * 1000; // 1 hour
+    const PRUNE_THRESHOLD = 0.05;
+    const PRUNE_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+    const now = Date.now();
+    const decayCutoff = now - MIN_AGE_FOR_DECAY_MS;
+    let decayed = 0;
+    try {
+      const rows = this._stmtAllEpisodesForDecay.all(decayCutoff);
+      const updateTx = this._db.transaction((rs) => {
+        for (const r of rs) {
+          const ageHours = (now - r.timestamp) / (60 * 60 * 1000);
+          const factor = Math.exp(-ageHours / DECAY_HALF_LIFE_HOURS);
+          const effective = (r.salience_score || 0) * factor;
+          this._stmtUpdateEffectiveSalience.run(effective, r.id);
+          decayed++;
+        }
+      });
+      updateTx(rows);
+    } catch (err) { console.warn(`[Episodic] decay sweep error: ${err.message}`); }
+
+    let pruned = 0;
+    try {
+      const result = this._stmtPruneStale.run(PRUNE_THRESHOLD, now - PRUNE_AGE_MS);
+      pruned = result.changes;
+    } catch (err) { console.warn(`[Episodic] prune error: ${err.message}`); }
+
+    if (decayed > 0 || pruned > 0) {
+      console.log(`[Episodic] decay sweep — ${decayed} episodes decayed, ${pruned} pruned`);
+    }
+    return { decayed, pruned };
+  }
+
+  // iter13 T13.4 — Promotion candidates: episodes ready to consolidate
+  // into Tier 2 schemas. Criteria: effective_salience > 0.5,
+  // frequency_count >= 3, consolidation_count >= 2 (replayed at least
+  // 2× during dream cycles), not yet promoted.
+  findPromotionCandidates(limit = 20) {
+    const PROMOTION_THRESHOLD = 0.5;
+    const FREQ_THRESHOLD = 3;
+    const CONSOL_THRESHOLD = 2;
+    try {
+      return this._stmtFindPromotionCandidates.all(
+        PROMOTION_THRESHOLD, FREQ_THRESHOLD, CONSOL_THRESHOLD, limit
+      );
+    } catch (err) {
+      console.warn(`[Episodic] findPromotionCandidates error: ${err.message}`);
+      return [];
+    }
+  }
+
+  // iter13 T13.4 — Mark episode as promoted to a Tier 2 schema.
+  // Caller passes schemaId from SchemaStore.createSchema return.
+  markEpisodePromoted(episodeId, schemaId) {
+    try {
+      this._stmtMarkPromoted.run(Date.now(), schemaId, episodeId);
+      return true;
+    } catch (err) {
+      console.warn(`[Episodic] markEpisodePromoted error: ${err.message}`);
+      return false;
+    }
+  }
+
+  // iter13 T13.9 — increment consolidation_count when ConsolidationEngine
+  // replays this episode (or its parent schema) during a dream-cycle
+  // pass. Drives the consolidation_count >= 2 promotion gate.
+  recordEpisodeConsolidation(episodeId) {
+    try {
+      this._stmtIncrementConsolidation.run(Date.now(), episodeId);
+      return true;
+    } catch (err) { return false; }
   }
 
   /**
@@ -4299,6 +4784,19 @@ class ServerBrain {
     if (this._curriculumInProgress && !opts.force) {
       return;
     }
+    // iter11-X fix — rapid-save throttle. Operator caught post-
+    // curriculum saves firing every ~1.7s (v70 → v76 in 8.5s). Some
+    // event loop is calling saveWeights repeatedly — possibly compute
+    // retry logic post-GPU-timeout, possibly some uncleared interval.
+    // Defensive throttle: skip non-forced saves that fire within 5s
+    // of the last save. Forced saves (cell-pass, grade-advance,
+    // shutdown) bypass the throttle so durability isn't compromised.
+    const RAPID_SAVE_THROTTLE_MS = 5000;
+    const now = Date.now();
+    if (!opts.force && this._lastSaveAt && (now - this._lastSaveAt) < RAPID_SAVE_THROTTLE_MS) {
+      return;
+    }
+    this._lastSaveAt = now;
     try {
       // Versioned save — keep last 5 versions for rollback
       this._saveVersion = (this._saveVersion || 0) + 1;
@@ -4522,6 +5020,38 @@ class ServerBrain {
         this._saveBinaryWeights();
       } catch (err) {
         console.warn('[Brain] Binary weights save failed:', err?.message || err);
+      }
+
+      // iter13 T13.16 — persist Tier 2 SchemaStore + Tier 3 Tier3Store.
+      // Tier 2 schemas.json gets wiped on auto-clear (derivative state,
+      // rebuilds from episodic). Tier 3 identity-core.json is protected
+      // — never auto-cleared. Both written atomically alongside the
+      // existing brain-weights JSON + binary saves. Failure here is
+      // non-fatal; consolidation rebuilds Tier 2 on next dream cycle
+      // and Tier 3 reseeds from IDENTITY_SEED_LIST if the file goes
+      // missing.
+      try {
+        if (this.schemaStore && typeof this.schemaStore.toJSON === 'function') {
+          const schemasPath = path.join(__dirname, 'schemas.json');
+          const schemaJson = this.schemaStore.toJSON();
+          fs.writeFileSync(schemasPath, JSON.stringify(schemaJson, null, 2));
+        }
+      } catch (err) {
+        console.warn('[Hippocampus] schemas.json save failed:', err?.message || err);
+      }
+      try {
+        if (this.tier3Store && typeof this.tier3Store.toJSON === 'function') {
+          const identityPath = path.join(__dirname, 'identity-core.json');
+          const identityJson = this.tier3Store.toJSON();
+          // Atomic write via temp + rename so a crash mid-write doesn't
+          // corrupt identity-core.json (which is permanent — corruption
+          // means losing Unity's identity until manual recovery).
+          const tmpPath = `${identityPath}.tmp`;
+          fs.writeFileSync(tmpPath, JSON.stringify(identityJson, null, 2));
+          fs.renameSync(tmpPath, identityPath);
+        }
+      } catch (err) {
+        console.warn('[Tier3Store] identity-core.json save failed:', err?.message || err);
       }
 
       const trig = opts.trigger ? ` (trigger=${opts.trigger})` : '';
@@ -5083,6 +5613,19 @@ setInterval(() => {
   brain.saveWeights();
   brain.saveConversations();
 }, WEIGHT_SAVE_MS);
+
+// iter13 T13.4 — Periodic episodic-memory decay sweep + pruning gate.
+// Every 10 minutes: multiply salience by exp(-age_h/168) for episodes
+// older than 1h, persist the decayed effective_salience, then prune
+// episodes meeting all three pruning criteria (salience<0.05, age>30d,
+// consolidation_count==0). Bounded background work — at typical N=
+// hundreds-to-thousands of episodes the sweep completes in <100ms.
+const EPISODIC_DECAY_INTERVAL_MS = 10 * 60 * 1000;
+setInterval(() => {
+  if (typeof brain.decayEpisodes === 'function') {
+    brain.decayEpisodes();
+  }
+}, EPISODIC_DECAY_INTERVAL_MS);
 
 // Loopback gate for privileged HTTP endpoints (/shutdown, /grade-advance,
 // /grade-signoff). Defense-in-depth on top of the BIND_HOST=127.0.0.1

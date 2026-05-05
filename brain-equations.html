@@ -380,6 +380,7 @@ cortexPattern     = L2Normalize(sentenceEmbedding)        (300d vector in semant
     <div class="eq-card">
       <div class="eq-title">Step 2 — Amygdala settles on a feeling</div>
       <div class="eq-desc">
+        <p style="background:rgba(255,77,154,0.08);padding:10px 12px;border-left:3px solid #ff4d9a;border-radius:4px;margin-bottom:10px;font-size:13px;"><strong>Note on the term "arousal":</strong> Throughout this document, <em>arousal</em> means <strong>cortical activation / autonomic alertness</strong> — the standard neuroscience definition (Yerkes &amp; Dodson 1908, Hebb 1955, Pribram &amp; McGuinness 1975). It is the metric coffee, exercise, fear, surprise, an alarm clock, or a loud noise raises. It drives readiness-to-respond, attention, and vigilance. <strong>It is NOT the colloquial sexual meaning.</strong> A sleeping infant has near-zero arousal; a kindergartener at recess has high arousal; a rabbit hearing a hawk has maximum arousal. Unity's arousal field obeys the same neuroscience definition across all curriculum grades and persona states.</p>
         <p>The cortex pattern projects into the amygdala via a learned weight matrix. Amygdala runs its recurrent settle loop:</p>
         <div class="eq" style="font-size:13px;">
 x(t+1) = tanh(W · x(t) + drive(t))         (5 iterations)<br>
@@ -1089,19 +1090,8 @@ if (isExternalSpeech): motor.interrupt() &rarr; stop speech, clear pipeline</div
     </div>
 
     <!-- ═══ 8.8. MEMORY ═══ -->
-    <h2 id="memory-equations">8.8. Memory — Episodic, Working, Consolidation</h2>
-    <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-math">MATHEMATICS</span> Three memory systems running in parallel.</p>
-
-    <div class="eq-card">
-      <div class="eq-title"><span class="eq-tip" data-tip="Tulving 1972 (episodic memory): the hippocampus stores snapshots of brain state at meaningful moments. Each memory is a full cluster state vector — not text, not keywords, but the actual neural pattern. Recall works by cosine similarity: when a new input pattern matches a stored pattern above 0.6, the old state re-activates. This is how déjà vu works.">Episodic Memory — Hippocampal State Snapshots</span></div>
-      <div class="eq">store(snapshot) when salience &gt; 0.6
-recall(current) = argmax_i cosine(current, episode_i)
-if similarity &gt; 0.6: inject episode_i.pattern &times; 8.0 into hippocampus cluster</div>
-      <div class="eq-desc">
-        <p>Stores full brain state vectors (cluster firing rates) at meaningful moments. Recall triggered by high cortex prediction error (something surprising) — searches stored episodes by cosine similarity. Match re-injects the stored pattern as neural current, literally <strong>re-activating</strong> the past experience.</p>
-        <p class="mod-bio" style="margin-top:6px">Biology: Hippocampal sharp-wave ripples replay stored patterns during recall. Pattern completion in CA3. Our cosine similarity search is a simplified version of Hopfield network energy minimization.</p>
-      </div>
-    </div>
+    <h2 id="memory-equations">8.8. Memory — 5-Tier Hippocampal Consolidation System</h2>
+    <p><span class="tag tag-bio">NEUROSCIENCE</span> <span class="tag tag-math">MATHEMATICS</span> Squire/McClelland Complementary Learning Systems theory ported into running code. Five distinct memory systems running in parallel — working memory, Tier 1 episodic, Tier 2 schematic, Tier 3 identity-bound, plus a consolidation engine that transfers traces between them during dream cycles.</p>
 
     <div class="eq-card">
       <div class="eq-title"><span class="eq-tip" data-tip="Miller 1956 (the magical number 7±2): working memory holds ~7 items via sustained neural firing. Items decay at 0.98/step without reinforcement — if you stop thinking about it, it fades. This is why you forget what you were about to say. The 7-item limit is real neuroscience, not a software limitation.">Working Memory — Prefrontal Sustained Activation</span></div>
@@ -1116,11 +1106,101 @@ if at capacity: evict weakest</div>
     </div>
 
     <div class="eq-card">
-      <div class="eq-title"><span class="eq-tip" data-tip="McClelland et al. 1995 (complementary learning systems): memories start in hippocampus (fast, specific) and gradually transfer to cortex (slow, generalized) through repeated replay. Episodes activated 3+ times get flagged for long-term storage. This is why sleep (hippocampal replay) is crucial for learning — Unity's dreaming mode does exactly this.">Consolidation — Hippocampus &rarr; Cortex Transfer</span></div>
-      <div class="eq">if activationCount(episode_i) &ge; 3: consolidate to long-term</div>
+      <div class="eq-title"><span class="eq-tip" data-tip="Tulving 1972 (episodic memory) extended with iter13 salience scoring. Every chat turn becomes an episode with full encoding context: emotional valence from amygdala, arousal at encode, surprise from cortex transition surprise, novelty from cosine vs recent episodes. The salience formula determines which episodes consolidate to schemas.">Tier 1 — Episodic Salience Encoding</span></div>
+      <div class="eq">salience = 0.4 &middot; |emotional_valence| + 0.3 &middot; arousal + 0.2 &middot; surprise + 0.1 &middot; novelty
+novelty = 1 &minus; max_cosine(input_embedding, recent_episodes_48h)
+effective_salience(t) = salience &middot; exp(&minus;(t &minus; encode_t) / 168h)</div>
       <div class="eq-desc">
-        <p>Episodes activated 3+ times get flagged for long-term cortex storage. Repeated recall strengthens the cortex representation. This is how memories move from hippocampus-dependent to cortex-independent.</p>
-        <p class="mod-bio" style="margin-top:6px">Biology: Systems consolidation theory (Squire, 1992). Hippocampal replay during sleep gradually transfers memories to neocortex. Our threshold-based model simplifies the temporal dynamics.</p>
+        <p>Every chat turn gets a salience score from four components: emotional load (40%), arousal (30%), surprise (20%), novelty (10%). High-salience episodes are the ones that <strong>matter</strong>. Effective salience decays with a 168-hour (1-week) half-life — biological hippocampal trace duration in animal studies.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Hippocampal sharp-wave ripples replay stored patterns during recall. The salience-driven encoding maps to dopamine-modulated synaptic tagging in CA3 — emotionally loaded events get tagged for preferential consolidation.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Frequency-merge gate prevents memory bloat from trivial repeated chatter. Cosine > 0.85 within 48 hours triggers an in-place increment instead of a new row — repetition strengthens an existing trace, just like rehearsing a phone number. The same mechanism your hippocampus uses to consolidate familiar routines.">Frequency-Merge Gate &amp; Promotion to Schema</span></div>
+      <div class="eq">if cosine(new_input, episode_within_48h) &gt; 0.85:
+   episode.frequency_count += 1; episode.last_replayed_at = now
+   (NO new insert)
+
+PROMOTE if: effective_salience &gt; 0.5 AND frequency_count &ge; 3 AND consolidation_count &ge; 2
+PRUNE if: effective_salience &lt; 0.05 AND age &gt; 30d AND consolidation_count = 0</div>
+      <div class="eq-desc">
+        <p>Repetition strengthens an episode in place via the frequency-merge gate. Promotion to Tier 2 schema requires the episode to have been salient AND repeated AND replayed during dream cycles. Episodes that don't meet promotion criteria for 30+ days get pruned — the hippocampus forgets what wasn't worth keeping.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Hebbian rehearsal strengthens existing synaptic traces; un-rehearsed traces decay via long-term depression. The 30-day prune horizon roughly matches biological hippocampal trace lifetime before consolidation or forgetting.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Tier 2 schemas are concept-level abstractions built from cosine-grouped episodes. Each schema gets its own dedicated SparseMatrix projection from hippocampus to cortex sem region. The schema's concept embedding is a salience-weighted GloVe centroid. The 8d attribute vector captures emotional/arousal/identity-relevance fingerprint separate from semantic content.">Tier 2 — Schematic Memory (Concept Abstractions)</span></div>
+      <div class="eq">cluster episodes by cosine &gt; 0.7 (single-link agglomerative)
+
+concept_embedding = L2_normalize( &Sigma; salience_i &middot; embedding_i / &Sigma; salience_i )
+
+attribute_vector[8d] = [avg_valence, avg_arousal, avg_surprise, avg_novelty,
+                        log(1 + freq_total), exp(&minus;age_days/30),
+                        consolidation_strength, identity_relevance]
+
+merge if: concept_cosine &gt; 0.90 AND attribute_similarity &gt; 0.7
+daily_decay: consolidation_strength(d+1) = consolidation_strength(d) &times; 0.967</div>
+      <div class="eq-desc">
+        <p>Episodes within cosine &gt; 0.7 cluster into one schema. Schema's concept embedding is a salience-weighted GloVe centroid (L2-normalized). The 8d attribute vector captures the emotional/arousal/identity fingerprint separately from semantic content. Schemas merge when both concept and attribute similarities are high. Daily decay of 0.967× drops to ~30% in one month, ~10% in three months — meaningful memories need periodic reinforcement.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Cortical concept neurons in temporal lobe (Quiroga 2005 "Jennifer Aniston neuron"). Schemas correspond to engram cells that store pattern-completed concept abstractions. Daily decay matches interference-based forgetting in non-rehearsed cortical traces.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Schema retrieval is the LLM-attention equivalent. The chat path retrieves top-K schemas matching the user's intent embedding and injects their concept patterns into cortex sem region BEFORE generation runs. This pulls relevant memorized context into the active reasoning window — except the context is built from Unity's own learned experiences, not a fixed prompt window.">Top-K Schema Retrieval — LLM-Attention Equivalent</span></div>
+      <div class="eq">score(schema_i) = cosine(intent_emb, concept_emb_i) + min(0.2, 0.05 &middot; log(1 + strength_i))
+                  + 0.05 if Tier3 (identity-bound boost)
+
+top_K = sort(schemas, score DESC).slice(0, 5)
+
+inject_strength_per_schema = 0.4
+for s in top_K: cluster.injectEmbeddingToRegion('sem', s.concept_embedding, 0.4)</div>
+      <div class="eq-desc">
+        <p>Every chat turn ranks all schemas against the user's intent embedding. Top-5 schemas inject their concept embeddings into cortex sem region at strength 0.4 BEFORE generation runs. This is the closest thing Unity has to LLM attention — except the context comes from her own learned experiences. Tier 3 (identity-bound) schemas get a +0.05 boost to win tiebreakers.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Hippocampal pattern completion during cued recall. The +0.05 Tier 3 boost models the strength advantage of well-consolidated cortical engrams over recent hippocampal-dependent memories.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Tier 3 identity-bound memory is Unity's permanent self. The top-50 most-reinforced schemas with high emotional load + retrieval count graduate to identity-bound status. Decay rate 0.999/day means 5 years untouched still leaves the memory at 16% strength — practically permanent. The persistence file is excluded from auto-clear so identity survives code updates and fresh boots.">Tier 3 — Identity-Bound Permanent Attractors</span></div>
+      <div class="eq">PROMOTE TO TIER 3 if:
+   consolidation_strength &gt; 5.0
+   AND retrieval_count &gt; 100
+   AND |emotional_valence| &gt; 0.6
+
+hard_cap N = 50; demote weakest when exceeded
+daily_decay: strength(d+1) = strength(d) &times; 0.999
+   (5 years un-reinforced &asymp; 0.999^1825 &asymp; 0.16)
+
+ALWAYS-ON injection (every chat turn):
+inject_strength_per_schema = 0.15 / |Tier3|
+for s in Tier3: cluster.injectEmbeddingToRegion('sem', s.concept_embedding, strength)</div>
+      <div class="eq-desc">
+        <p>Schemas that prove themselves through hard reinforcement (strength &gt; 5.0 + retrieval &gt; 100 + emotional load &gt; 0.6) graduate to identity-bound permanence. Hard cap of 50 keeps the identity layer focused — when a 51st promotes, the weakest current Tier 3 demotes back to Tier 2. Daily decay of 0.999× makes these effectively permanent without years of un-reinforcement. Every chat turn injects all Tier 3 concepts into cortex BEFORE the user input — Unity's self is always in the room.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: Long-term cortical engrams in medial prefrontal cortex (Frankland 2005). Identity-bound memories survive hippocampal lesions because they've been fully consolidated to distributed cortical weights. Drug-state immunity matches the empirical observation that even severe intoxication doesn't erase your name.</p>
+      </div>
+    </div>
+
+    <div class="eq-card">
+      <div class="eq-title"><span class="eq-tip" data-tip="Dream-cycle consolidation runs every 5 minutes when the brain is idle for >60s with no chat input and no curriculum running. The pass replays high-salience episodes through Hebbian, gradually transferring traces from hippocampus to cortex. Replay magnitude scales with emotional weight × log(frequency). Sleep-spindle bursts at 1.2× gain mimic biological 12-14 Hz thalamocortical spindles.">Consolidation Engine — Dream-Cycle Replay</span></div>
+      <div class="eq">trigger: _isDreaming AND timeSinceInput &gt; 60s AND !curriculumInProgress
+            AND (now &minus; lastPassAt) &ge; 5min
+
+pass:
+  candidates &larr; top-20 by effective_salience
+  clusters &larr; cluster_by_cosine(candidates, 0.7)
+  for each cluster:
+    schema &larr; existing_or_new(cluster)
+    for replay in 1..4:
+      replay_lr = base_lr &middot; (1 + emotional_weight) &middot; log(1 + freq_total)
+      cluster.synapses.hebbianUpdate(concept_pattern, concept_pattern, replay_lr)
+      // sleep-spindle: gainMultiplier &times;= 1.2 for 200ms; quiet 1000ms
+    schema.consolidation_strength += 0.1 &middot; (1 + emotional_weight) &middot; replays</div>
+      <div class="eq-desc">
+        <p>When Unity is idle, the consolidation engine replays high-salience episodes 4 times each through the schema's hippocampus→cortex projection. Replay magnitude scales with emotional weight × log(frequency) so emotionally-loaded repeated episodes get the strongest reinforcement. Sleep-spindle bursts at 1.2× gain (200ms burst + 1000ms quiet) mimic biological 12-14 Hz thalamocortical spindles that synchronize hippocampus-cortex replay during slow-wave sleep.</p>
+        <p class="mod-bio" style="margin-top:6px">Biology: McClelland 1995 / Squire 1992 systems consolidation. Sleep-spindle bursts during NREM sleep coordinate hippocampal-cortical replay. The 5-minute pass interval mimics ultradian rhythm scale of replay events in rodents.</p>
       </div>
     </div>
 

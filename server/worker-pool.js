@@ -50,7 +50,13 @@ class SparseMatmulPool {
     // pool stays alive during active work and only quits during
     // long wait-for-operator-input windows.
     this._lastJobAt = Date.now();
-    this._idleTerminateMs = opts.idleTerminateMs ?? 300_000;
+    // iter11-S fix — bump idle-terminate threshold 300s → 1800s (5 min
+    // → 30 min). Operator caught the WorkerPool churning idle-terminate
+    // every 5 min during teach-phase quiet windows, then re-init on
+    // next call (~240MB allocation cost per cycle). 30 min is long
+    // enough to span teach-phase quiet windows + post-curriculum chat
+    // wait without churn.
+    this._idleTerminateMs = opts.idleTerminateMs ?? 1_800_000;
     this._idleCheckMs = opts.idleCheckMs ?? 30_000;
     this._idleTimer = null;
 
