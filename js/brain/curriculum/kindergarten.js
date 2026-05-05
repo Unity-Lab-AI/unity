@@ -2505,15 +2505,31 @@ export const K_MIXIN = {
       // _teachLetterCaseBinding at the top of ELA-K). Phase 2's letter-
       // sequence intra-Hebbian + _teachAlphabetSequencePairs above both
       // train letter[X]→letter[X+1] which back-corrupts letter_to_motor
-      // identity. Running letter-naming AFTER all sequence training
-      // means the same-letter identity write lands last and overwrites
-      // the sequence bleed. Identity is what TALK probe and "what
-      // letter is this?" K-STUDENT questions test.
+      // identity via cross-region Hebbian.
+      //
+      // iter14-A FIX: the iter11-A reorder DIDN'T fix the off-by-one —
+      // _teachLetterNaming uses cross-region Hebbian which is itself
+      // the back-corruption source. So we now run BOTH:
+      //   1. _teachLetterNaming — keeps writing letter→phon identity
+      //      via cross-region Hebbian (READ probe needs phon identity,
+      //      and 26/26 READ confirms this path is fine).
+      //   2. _teachLetterNamingDirect — IMMEDIATELY AFTER, wipes
+      //      letter_to_motor weights and writes clean letter→motor
+      //      identity via direct ojaUpdate on the SparseMatrix. This
+      //      bypasses cross-region Hebbian entirely, so the off-by-one
+      //      corruption from upstream sequence training gets erased and
+      //      replaced with clean a→a b→b c→c... TALK probe should
+      //      finally pass at 26/26 instead of 0/26.
       if (_phaseTick('_teachLetterNaming')) {
         await this._teachLetterNaming(ctx);
         _phaseDone('_teachLetterNaming');
       }
       this._memorySnapshotAndGc('after _teachLetterNaming');
+      if (typeof this._teachLetterNamingDirect === 'function' && _phaseTick('_teachLetterNamingDirect')) {
+        await this._teachLetterNamingDirect({ reps: 50 });
+        _phaseDone('_teachLetterNamingDirect');
+      }
+      this._memorySnapshotAndGc('after _teachLetterNamingDirect');
 
       // iter11-J — Word-spelling discriminative one-hot. For every K
       // vocab word, write `concept(word) → motor(firstChar(word))`
