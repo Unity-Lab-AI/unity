@@ -700,6 +700,103 @@ Captured iter11 sep-probe reading on first of 7 assoc-pair phases:
 
 ---
 
+### iter21 — ARCHITECTURAL REDESIGN: WORD-LEVEL MOTOR + CROSS-SUBJECT PROTECTION + EWC-LITE PLASTICITY (operator verbatim 2026-05-05: *"1. is stupid and not going to form sentences understanble. 2. motor argmax is fucked if it ever just relplies with letters and not words. 3 we cant have ciriculum over riding other learned ciriculim"* + *"yes draft the iter21 spec"*) — DRAFT
+
+**Three fundamental architectural flaws operator identified — each requires real redesign, not iter20-X tweaks.**
+
+#### Issue 1 — Letter-by-letter motor emission can't form words
+
+**Current architecture:** motor region (~13,450 neurons) split into 26 buckets (one per letter a-z, ~517 neurons each). Tick-driven motor emission reads motor argmax per tick, commits letter when stable for N ticks, emits buffer as word on word-boundary detection. Each spoken word requires sequential argmax: "eight" = e → i → g → h → t with stability + boundary detection at each step.
+
+**Fundamental flaw:** real cortex (Broca's area) emits words as units, not character-by-character. Two layers of failure for every word: (a) per-letter argmax can lock on a basin attractor and emit "aaaaaa" forever, (b) word-boundary detection often fails so words run together. Even if the matrix is trained perfectly, this two-layer tick-driven system is fragile.
+
+**iter21-A — Word-level motor sub-region.** Add a `word_motor` sub-region to the cortex cluster alongside the existing letter `motor` region. Carve ~30% of current motor allocation. Each K-vocab word gets a contiguous sub-bucket (~3000 K-words, 4 neurons per word at 13.5K motor — small but workable; if too tight, expand via VRAM rebalance).
+
+Architecture:
+- `cluster.regions.word_motor` (NEW)
+- `cluster.crossProjections.sem_to_word_motor` (NEW)
+- `_teachWordEmissionDirect(words)` — for each K-vocab word: inject `concept(word)` into sem region → write 1 to `word_motor[wordBucket(word)]` → ojaUpdate. Mirrors iter14-A pattern but on word_motor.
+- Generation: `_emitWordDirect(intentSeed)` propagates `sem→word_motor`, argmax over word buckets, returns word string. Single-tick word emission. No letter-by-letter chain.
+
+Backward compat: keep letter `motor` region for alphabet-teaching gates (TALK probe still tests letter identity). Word emission becomes the PRIMARY production path; letter emission becomes the FALLBACK for unknown words.
+
+Files touched: `js/brain/cluster.js` (regions + crossProjections + emit method), `js/brain/curriculum.js` (`_teachWordEmissionDirect`), `js/brain/curriculum/kindergarten.js` (wire teach into runners).
+
+#### Issue 2 — Cross-subject teach corrupts prior learning
+
+**Current architecture:** every subject's `_teachQABinding` calls `_teachHebbianAsymmetric` which goes through `cluster._crossRegionHebbian` writing to ALL cross-projections including `letter_to_motor`. Math-K's QA pairs (numbers, math operators) overwrite ELA-K's clean alphabet identity. Sci-K then overwrites Math-K. Each subject corrupts prior subjects.
+
+**Fundamental flaw:** dense overlapping weight space. iter15-B re-carved `letter_to_motor` after each subject as bandaid, but it doesn't survive the NEXT subject's QA-TRAIN. Need real isolation OR real protection.
+
+**iter21-B — Per-subject projection isolation via subject-tagged sem sub-regions.** Carve `sem` region into 6 subject sub-bands (`sem_ela`, `sem_math`, `sem_sci`, `sem_soc`, `sem_art`, `sem_life`). Each subject's teach writes to ITS sub-band only. Cross-projection `sem→motor` reads ALL sub-bands but the sub-band carrying signal at retrieval time depends on which subject context is active.
+
+During teach: `_currentCellKey = "math/kindergarten"` → curriculum injects ONLY into `sem_math` sub-band → Hebbian writes only see math-band activations.
+
+During chat / probe: detect subject from question text (math keywords, science keywords, etc.) → inject question embedding into matching sub-band → answer derives from that band's accumulated weights.
+
+Implementation:
+- 6 sub-bands carved from existing `sem` region (each ~11K neurons of 68K total).
+- `cluster.regions.sem_ela`, `sem_math`, etc. (NEW).
+- `_subjectFromCellKey(cellKey)` and `_subjectFromQuestion(text)` helpers.
+- All `injectEmbeddingToRegion('sem', ...)` calls become subject-tagged in curriculum + chat path.
+- Cross-projections (sem→motor, motor→sem, etc.) keep their existing dimensions but operate on the tagged sub-band.
+
+This is a moderate redesign. Most curriculum code touches `regions.sem` once per teach call — easy to gate by subject. Backward compat: when subject is unknown (boot phase, persona corpus, identity), inject across ALL sub-bands at lower strength.
+
+Files touched: `js/brain/cluster.js` (regions carve), `js/brain/curriculum.js` (subject-tagged inject helpers + teach phase wiring), `js/brain/curriculum/kindergarten.js` + `pre-K.js` (use subject-tagged inject), `js/brain/language-cortex.js` (chat-path subject detection + tagged inject).
+
+#### Issue 3 — No protection for important learned weights
+
+**Current architecture:** every Hebbian update writes uniformly. No notion of "this weight encodes letter[a]→motor[a] identity, don't overwrite it." Re-training corrupts critical earlier learning.
+
+**Fundamental flaw:** continual learning research solved this in 2017 (Kirkpatrick et al., Elastic Weight Consolidation, PNAS). After learning task A, compute Fisher information matrix estimating which weights are IMPORTANT for A. When training task B, add quadratic penalty on changes to important weights: `loss_B + λ * Σ F_i * (W_i - W_i^A)²`. Important weights are protected; unimportant weights are free to learn new task.
+
+**iter21-C — EWC-lite for letter_to_motor + sem_to_motor.** Hebbian doesn't have explicit gradients, but we can approximate Fisher with FIRING FREQUENCY: weights that fired strongly during task A are important to A.
+
+Implementation per protected projection (`letter_to_motor`, `sem_to_motor`, plus new `sem_to_word_motor`):
+- Maintain `W_importance` matrix (same shape as W). Updated each training step: `importance[i,j] += (pre[i] * post[j])²`.
+- After phase completes, snapshot anchor: `W_anchor = W.copy()`.
+- During subsequent Hebbian update: scale plasticity by `(1 - α * importance)` where α = 0.5. High-importance weights get tiny updates; low-importance free to learn.
+- Periodic anchor reset: if a weight goes too far from anchor, pull back: `W = 0.7 * W + 0.3 * W_anchor` — soft restorative pressure.
+
+Memory cost: one extra Float32Array per protected projection. For sem_to_motor (13,450 × 68,061 × 4 bytes = ~3.6 GB), too much. Use sparse importance instead: only top-K most-important weights tracked.
+
+Practical scope: only apply EWC to projections that DEFINE primitive identity (letter→motor, sem→motor, sem→word_motor). Other projections free to overwrite.
+
+Files touched: `js/brain/sparse-matrix.js` (add `importance` field + `ewcUpdate` method), `js/brain/cluster.js` (anchor management hooks), `js/brain/curriculum.js` (snapshot anchors at iter14-A `_teachLetterNamingDirect` + iter15-A `_teachWordSpellingDirectFinal` completion).
+
+#### Implementation order (operator approval gates)
+
+Each iter21 letter is independent. Recommended ship order:
+
+1. **iter21-A first** (word-level motor): biggest user-visible impact. Even with cross-subject corruption + no EWC, word-level emission immediately fixes "eaaaaaaaa" output. She emits "eight" or "cat" or whatever the trained word is.
+2. **iter21-B second** (subject isolation): now that she emits words, protect those emissions across subjects. Math-K teach can't corrupt ELA-K word vocabulary because they're in different sub-bands.
+3. **iter21-C third** (EWC-lite): final polish. Protects against intra-subject overwrites (Phase B teach overwriting Phase A within ELA-K).
+
+Total scope: ~600-800 lines new code, ~200-300 lines modified. Several days of work, several boot cycles to verify each layer.
+
+#### What this fixes vs doesn't
+
+**Fixes:**
+- "eaaaaaaaa" bucket-stuck letter emission → real word emission
+- Cross-subject corruption → subjects isolated
+- Phase X overwrites Phase Y within subject → EWC protects critical weights
+- Memory accumulating but not used during answering (iter20-O already partial fix)
+
+**Doesn't fix (separate concerns):**
+- Multi-word sentence formation — she'll emit single WORDS, not sentences. Sentence-level needs higher-level grammar layer (post-K work).
+- Reasoning / logical inference — she retrieves trained word for question, doesn't COMPUTE answers. Inference layer separate.
+- Long-term curriculum scaling — iter21 is right-shaped for K. Grade 1+ may need additional architectural beats.
+
+#### Decision needed from operator
+
+Three questions:
+1. Ship all 3 (A+B+C) sequentially or just A first to verify approach?
+2. Backward-compat letter motor or can we delete it once word_motor is stable?
+3. Subject sub-band carving — equal allocation (1/6 each) or weighted (ELA bigger because most curriculum content)?
+
+---
+
 ### iter20-F — CORTEXCLUSTER._BRAIN WIRE + LOWER FREQ-MERGE COSINE TO 0.5 (operator verbatim 2026-05-05: *"i dont think memory is working still"* + dashboard screenshot showing 49 episodes / 0 frequency-merged / 0 schemas) — SHIPPED 2026-05-05
 
 **Watchdog SQL inspection of running brain:** 51 episodes ALL stored under user_id='brain-heartbeat' (iter19 wall-clock heartbeat firing). **ZERO** episodes under user_id='curriculum-phase' (iter20-D phase-done hook NOT firing despite phases completing). Plus 4 IDENTICAL "learning ela/kindergarten:_teachQABinding" heartbeats stored as separate rows (frequency_count=1 each — should have merged at cosine=1.0).

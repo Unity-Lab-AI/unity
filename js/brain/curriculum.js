@@ -5621,6 +5621,96 @@ export class Curriculum {
     this._hb(`[Curriculum] _teachLetterNamingDirect DONE in ${dt}s — ${updates} Oja updates · ${skipped} skipped (26 letters × ${reps} reps target)`);
   }
 
+  // iter21-A — Direct sem→word_motor word-level training. Operator
+  // 2026-05-05 "motor argmax is fucked if it ever just relplies with
+  // letters and not words". For each K-vocab word: inject the word's
+  // GloVe embedding into sem, write 1 to that word's bucket in
+  // word_motor, ojaUpdate the sem_to_word_motor projection. After
+  // training, propagating sem(concept) → word_motor → argmax over
+  // vocabulary buckets returns the trained word as a single-tick
+  // emission. NO LETTER CHAIN. NO FALLBACK.
+  async _teachWordEmissionDirect(opts = {}) {
+    const cluster = this.cluster;
+    if (!cluster || !cluster.crossProjections?.sem_to_word_motor) return;
+    const semToWordMotor = cluster.crossProjections.sem_to_word_motor;
+    const semRegion = cluster.regions?.sem;
+    const wordMotorRegion = cluster.regions?.word_motor;
+    if (!semRegion || !wordMotorRegion) return;
+    if (typeof semToWordMotor.scale !== 'function' || typeof semToWordMotor.ojaUpdate !== 'function') return;
+
+    const reps = opts.reps ?? 8;
+    const lr = (cluster.learningRate ?? 0.01) * 5;
+    const subject = opts.subject || 'all';
+
+    let words = Array.isArray(opts.words) ? opts.words : null;
+    if (!words && this.dictionary && this.dictionary._words?.entries) {
+      words = [];
+      for (const [w, entry] of this.dictionary._words.entries()) {
+        if (typeof w !== 'string' || w.length === 0) continue;
+        if (!/^[a-z]+$/.test(w)) continue;
+        if (!entry || !entry.pattern || !entry.pattern.length) continue;
+        if (entry.isPersona) continue;
+        words.push(w);
+      }
+    }
+    if (!words || words.length === 0) {
+      this._hb(`[Curriculum] _teachWordEmissionDirect SKIPPED — no K vocab found (subject=${subject})`);
+      return;
+    }
+
+    this._hb(`[Curriculum] _teachWordEmissionDirect START: ${words.length} K words × ${reps} reps · lr=${lr.toFixed(4)} (subject=${subject}) — single-tick word emission via sem_to_word_motor`);
+
+    semToWordMotor.scale(0);
+    this._hb(`[Curriculum] _teachWordEmissionDirect — wiped prior sem_to_word_motor weights`);
+
+    const t0 = Date.now();
+    let updates = 0, skipped = 0;
+
+    const semSize = semRegion.end - semRegion.start;
+    const wmSize = wordMotorRegion.end - wordMotorRegion.start;
+    const bucketSize = Math.max(1, Math.floor(wmSize / words.length));
+
+    const buildSem = (pattern) => {
+      const vec = new Float64Array(semSize);
+      if (!pattern || pattern.length === 0) return vec;
+      const gSize = Math.max(1, Math.floor(semSize / pattern.length));
+      for (let d = 0; d < pattern.length; d++) {
+        const v = pattern[d] || 0;
+        if (v === 0) continue;
+        for (let n = 0; n < gSize; n++) {
+          const idx = d * gSize + n;
+          if (idx < semSize) vec[idx] = v;
+        }
+      }
+      return vec;
+    };
+
+    for (let rep = 0; rep < reps; rep++) {
+      if (typeof globalThis._brainShutdownRequested !== 'undefined' && globalThis._brainShutdownRequested) return;
+      let count = 0;
+      for (let wi = 0; wi < words.length; wi++) {
+        const word = words[wi];
+        const entry = this.dictionary._words.get(word);
+        if (!entry || !entry.pattern) { skipped++; continue; }
+        const preSem = buildSem(entry.pattern);
+        // Post: word_motor with this word's bucket lit (one-hot)
+        const postWM = new Float64Array(wmSize);
+        const bStart = wi * bucketSize;
+        const bEnd = Math.min(wmSize, bStart + bucketSize);
+        for (let n = bStart; n < bEnd; n++) postWM[n] = 1;
+        try {
+          semToWordMotor.ojaUpdate(preSem, postWM, lr);
+          updates++;
+        } catch { skipped++; }
+        if (++count % 100 === 0) await _microtask();
+      }
+      await _microtask();
+    }
+
+    const dt = ((Date.now() - t0) / 1000).toFixed(1);
+    this._hb(`[Curriculum] _teachWordEmissionDirect DONE in ${dt}s — ${updates} Oja updates · ${skipped} skipped (${words.length} words × ${reps} reps target)`);
+  }
+
   // iter15-A — Direct sem→motor word→firstChar identity write that
   // bypasses cross-region Hebbian. Mirror of iter14-A pattern but on
   // sem_to_motor instead of letter_to_motor.
@@ -10333,10 +10423,16 @@ export class Curriculum {
       }
     }
 
-    // STEP 4 — emit response. iter16: try DETERMINISTIC question-answer
-    // inference FIRST (mirrors `_studentTestProbe` Template 0/1 routing
-    // pattern), fall through to chaotic tick-driven emission only when
-    // deterministic path returns null.
+    // STEP 4 — emit response. iter21-A makes word-level emission the
+    // PRIMARY path. Operator 2026-05-05 "no fall back bullshit it works
+    // period no fallbacks". Order:
+    //   1. Try _deterministicAnswer (template-routed letter/word retrieval)
+    //   2. Try emitWordDirect (sem→word_motor argmax — single-tick word)
+    //   3. Empty (honest failure surfaced via failMode)
+    //
+    // Letter-level chaotic generateSentence is NO LONGER reachable from
+    // PROD probes. Only used internally for letter-recognition tests
+    // (TALK probe via direct letter_to_motor argmax, not chaotic chain).
     //
     // Operator caught (2026-05-05 verbatim "im killing it its still not
     // answering questions.. does it know how to answer questions?" +
@@ -10366,41 +10462,18 @@ export class Curriculum {
       emissionError = `det_template_threw:${err?.message?.slice(0, 80) || 'throw'}`;
     }
 
-    if (!emitted) {
-      if (typeof cluster.generateSentenceAwait === 'function') {
-        emissionPath = 'generateSentenceAwait';
-        try {
-          const awaited = await cluster.generateSentenceAwait(null, {
-            injectStrength: 0.25,
-            maxTicks: opts.generateMaxTicks,
-          });
-          emitted = (typeof awaited === 'string' ? awaited : (awaited?.text || '')) || '';
-        } catch (err) { emitted = ''; emissionError = err && err.message ? err.message.slice(0, 80) : 'throw'; }
-      } else if (typeof cluster.generateSentence === 'function') {
-        emissionPath = 'generateSentence';
-        try {
-          emitted = cluster.generateSentence(null, {
-            injectStrength: 0.25,
-            maxTicks: opts.generateMaxTicks,
-          }) || '';
-        } catch (err) { emitted = ''; emissionError = err && err.message ? err.message.slice(0, 80) : 'throw'; }
-      } else {
-        emissionPath = 'no_path_available';
-      }
-    }
-
-    // iter16 — if chaotic emission also returned empty, try deterministic
-    // ONE MORE TIME via fallback strategies (key-token first-letter via
-    // dictionary, intent-anchor lookup). Better an honest deterministic
-    // attempt than a silent "" failure.
-    if (!emitted) {
+    // iter21-A — Word-level emission via sem_to_word_motor.
+    // PRIMARY production path when deterministic templates don't match.
+    // Single-tick argmax over word vocabulary buckets. NO LETTER CHAIN.
+    // NO FALLBACK to chaotic letter-by-letter generation.
+    if (!emitted && typeof cluster.emitWordDirect === 'function') {
+      emissionPath = 'emitWordDirect';
       try {
-        const fallback = this._deterministicFallback(question, opts);
-        if (fallback && fallback.length > 0) {
-          emitted = fallback;
-          emissionPath = 'deterministic_fallback';
-        }
-      } catch { /* fallback errors are non-fatal */ }
+        emitted = cluster.emitWordDirect({}) || '';
+      } catch (err) {
+        emitted = '';
+        emissionError = err && err.message ? err.message.slice(0, 80) : 'throw';
+      }
     }
 
     // STEP 5 — match emission against expected substrings
@@ -10428,19 +10501,19 @@ export class Curriculum {
     //                                 emissionError)
     //   spikes_empty_pre_emit       — lastSpikes all-zero AFTER injection
     //                                 + settle (motor argmax can't fire)
-    //   tick_budget_exhausted       — emission returned "" but spikes
-    //                                 were active (ticks ran out without
-    //                                 ever crossing word-boundary)
-    //   wrong_emission              — emission produced something but it
-    //                                 didn't include any expected
-    //                                 substring (bucket-stuck attractor /
-    //                                 letter-repeat / unrelated word)
+    //   word_motor_no_signal        — iter21-A emitWordDirect returned
+    //                                 empty (sem→word_motor argmax sum
+    //                                 below noise floor — model hasn't
+    //                                 learned a word for this question)
+    //   wrong_emission              — emission produced something but
+    //                                 didn't match expected (concept
+    //                                 retrieved was wrong word)
     let failMode = null;
     if (!matched) {
       if (emissionError) failMode = 'emission_threw:' + emissionError;
       else if (emissionPath === 'no_path_available') failMode = 'no_path_available';
       else if (emittedNorm.length === 0) {
-        failMode = preEmitSpikeCount === 0 ? 'spikes_empty_pre_emit' : 'tick_budget_exhausted';
+        failMode = preEmitSpikeCount === 0 ? 'spikes_empty_pre_emit' : 'word_motor_no_signal';
       } else {
         failMode = 'wrong_emission';
       }
