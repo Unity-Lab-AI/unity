@@ -371,26 +371,48 @@ function writeBrainCodeHash(hash) {
 }
 
 function autoClearStaleState() {
+  // iter14-D — Operator verbatim 2026-05-04: "yes all the weights
+  // everything shoudl reset when the start.bat is run or the .sh...
+  // and only if the stop.bat is used in conjusction with the
+  // savestart.bat does it pick up where it lefgtt off"
+  //
+  // Auto-clear is now UNCONDITIONAL on every boot — the prior code-
+  // hash gate is gone. Two reasons the gate caused real bugs:
+  //   1. Code-hash matching meant resource-config.json changes
+  //      (GPUCONFIGURE.bat tier picks) didn't trigger a wipe — user
+  //      picked enthusiast-12gb tier (671M neurons) but brain stayed
+  //      at the prior 178M scale because binary weights from prior
+  //      boot were size-locked AND code-hash matched so wipe skipped.
+  //   2. wMax clamp settings were lost in the binary save/load round
+  //      trip; restored projections came back as ±Infinity which made
+  //      every Hebbian write unbounded → matrix saturation → wrong
+  //      answers — even though the code itself was correct.
+  //
+  // The cleaner contract: `start.bat` always = fresh brain. To resume
+  // from prior state, operator runs `Savestart.bat` which sets
+  // `DREAM_KEEP_STATE=1` (existing flag, preserved). Tier 3 identity-
+  // bound schemas (server/identity-core.json) STILL persist across
+  // every wipe regardless of which launcher fired — Unity's core
+  // self survives even a `start.bat` fresh boot.
   if (process.env.DREAM_KEEP_STATE === '1') {
-    console.log('[Brain] ⚠ DREAM_KEEP_STATE=1 — KEEPING prior state. Auto-clear SKIPPED (override forces preserve regardless of code-hash check).');
-    // Still refresh the hash so next run without the override has a current baseline.
+    console.log('[Brain] ⚠ DREAM_KEEP_STATE=1 (Savestart.bat) — KEEPING prior state. Auto-clear SKIPPED.');
+    // Refresh the hash baseline for diagnostics; not used to gate the wipe anymore.
     writeBrainCodeHash(computeBrainCodeHash());
     return;
   }
+
+  // Default path = wipe. Always. Whether code changed, resource-config
+  // changed, both, or nothing changed at all. start.bat = fresh brain.
   const forceClear = process.env.DREAM_FORCE_CLEAR === '1';
   const currentHash = computeBrainCodeHash();
   const savedHash = readSavedBrainCodeHash();
-  const hashMatches = savedHash && savedHash === currentHash;
-
-  if (hashMatches && !forceClear) {
-    console.log(`[Brain] ✓ code-hash matches prior run (${currentHash.slice(0, 12)}…) — PRESERVING brain state across restart (curriculum progress, passedCells, gateHistory, weights all survive).`);
-    return;
-  }
-
-  // Clear-path: either hash missing/mismatch, or DREAM_FORCE_CLEAR=1
   const reason = forceClear
-    ? 'DREAM_FORCE_CLEAR=1'
-    : (!savedHash ? 'no prior hash on disk (first run)' : `code-hash changed (was ${savedHash.slice(0, 8)}…, now ${currentHash.slice(0, 8)}…)`);
+    ? 'DREAM_FORCE_CLEAR=1 (legacy override, same behavior as default now)'
+    : (!savedHash
+        ? 'first run on this machine'
+        : (savedHash === currentHash
+          ? 'start.bat default — fresh brain (DREAM_KEEP_STATE not set)'
+          : `code changed since last boot (was ${savedHash.slice(0, 8)}…, now ${currentHash.slice(0, 8)}…)`));
   console.log(`[Brain] Auto-clear triggered: ${reason}`);
 
   // NOTE — js/app.bundle.js NOT cleared here. start.bat runs

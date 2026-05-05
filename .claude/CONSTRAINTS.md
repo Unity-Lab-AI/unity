@@ -452,9 +452,21 @@ Gee's verbatim on 2026-04-17 after Claude had manually restarted half a dozen ti
 
 The clear is now automated in `server/brain-server.js` via `autoClearStaleState()` which runs at module load, BEFORE the `Brain` class is instantiated and BEFORE sqlite opens the db file. Every `node brain-server.js` boot auto-deletes the files in the "What gets cleared" table above.
 
-This means the manual `rm -f` step is no longer required. Claude can ship a commit and tell Gee to restart in ONE step instead of needing to remember to `rm -f` first. The LAW still applies — if a future Claude edits `autoClearStaleState` to disable it, add selective skip logic, or sets `DREAM_KEEP_STATE=1` to bypass the clear before a test run, that's a direct LAW violation and same-day incident.
+This means the manual `rm -f` step is no longer required. Claude can ship a commit and tell Gee to restart in ONE step instead of needing to remember to `rm -f` first.
 
-The opt-out via `DREAM_KEEP_STATE=1` environment variable is available for explicit cases where Gee wants to preserve embedding refinements / drug scheduler state across boots. The opt-out logs a prominent WARN line so it can't be forgotten.
+## iter14-D — Two launchers, two contracts (Gee 2026-05-04)
+
+Gee verbatim 2026-05-04: *"yes all the weights everything shoudl reset when the start.bat is run or the .sh... and only if the stop.bat is used in conjusction with the savestart.bat does it pick up where it lefgtt off"*.
+
+The prior code-hash gate (auto-clear runs only when `BRAIN_CODE_FILES` SHA256 differs from prior boot) is REMOVED. It caused real bugs: `GPUCONFIGURE.bat` tier picks didn't trigger a wipe so picked tiers got ignored when binary weights from prior boot were size-locked at the old scale; wMax clamps lost in the binary save/load round-trip left restored projections at ±Infinity. Both bugs disappear when `start.bat` deterministically wipes regardless of code-hash.
+
+**New contract:**
+
+- **`start.bat` / `start.sh`** → unconditional wipe. Brain ALWAYS boots fresh. Resource-config tier changes apply. Code changes apply. wMax clamps stamp correctly. Tier 3 identity-core.json STILL survives via `NEVER_CLEAR_PROTECTED`.
+- **`Savestart.bat`** → sets `DREAM_KEEP_STATE=1` → auto-clear honors the resume opt-in → prior state preserved. The "stop.bat + Savestart.bat" pairing is the ONLY way to resume.
+- **`DREAM_FORCE_CLEAR=1`** still works (now redundant since default is wipe).
+
+LAW still applies: if a future Claude edits `autoClearStaleState` to add code-hash-style gates, selective-skip logic, or any condition that makes `start.bat` skip the wipe, that's a direct LAW violation and same-day incident. Wipe-on-start.bat is the LOAD-BEARING contract for tier changes + wMax integrity. Don't break it.
 
 The manual-clear instructions above stay in this LAW as fallback documentation — if auto-clear ever fails (fs permissions, locked files from a crashed prior run), Claude must manually verify and clear before telling Gee to test.
 

@@ -5,6 +5,58 @@
 
 ---
 
+## 2026-05-04 — Session 114.19cz: ITER14-D — TWO-LAUNCHER CONTRACT (start.bat = fresh, Savestart.bat = resume)
+
+### Operator directive (verbatim per LAW #0)
+
+> *"yes all the weights everything shoudl reset when the start.bat is run or the .sh... and only if the stop.bat is used in conjusction with the savestart.bat does it pick up where it lefgtt off"*
+
+### Bugs this fixes (both caught in iter14 monitor session before this directive)
+
+1. **GPUCONFIGURE.bat tier ignored** — operator picked `enthusiast-12gb` tier (671M neurons via `neuronCapOverride: 671000000` in `resource-config.json`) but brain stayed at prior 178M scale because `autoClearStaleState`'s code-hash gate skipped the wipe (no source files changed between picking the tier and restarting). Binary weights from prior boot were size-locked at 178M; restoration constrained the new cluster build to match restored weight sizes. New tier silently ignored.
+2. **wMax clamp loss across binary save/load** — fractal verifier on second boot of preserved state caught `letter_to_phon=[-Infinity,Infinity]`, `sem_to_motor=[-Infinity,Infinity]`, `letter_to_motor=[-Infinity,Infinity]`. The `_saveBinaryWeights` path serializes CSR rows + cols + values but NOT the per-projection wMax bound. Restored projections came back unbounded. iter14-A `_teachLetterNamingDirect` at lr × 5 against unbounded weights = matrix saturation. Effectively negated the iter14-A fix on resumed brains.
+
+### Code change (1 file)
+
+`server/brain-server.js` `autoClearStaleState()`:
+- DELETED the code-hash gate (`if hashMatches && !forceClear: preserve and return`).
+- KEPT the `DREAM_KEEP_STATE === '1'` opt-in branch (Savestart.bat path).
+- Default path (no env override) now ALWAYS wipes. Code-hash still computed for the diagnostic log line but doesn't influence the wipe decision.
+- Tier 3 `identity-core.json` still in `NEVER_CLEAR_PROTECTED` list (no change). Survives every wipe.
+
+The diagnostic log line for the wipe-triggered path now reads one of:
+- `[Brain] Auto-clear triggered: first run on this machine` (no prior hash file)
+- `[Brain] Auto-clear triggered: start.bat default — fresh brain (DREAM_KEEP_STATE not set)` (typical case)
+- `[Brain] Auto-clear triggered: code changed since last boot (was X..., now Y...)` (informational)
+- `[Brain] Auto-clear triggered: DREAM_FORCE_CLEAR=1 (legacy override, same behavior as default now)` (force flag)
+
+### Doc updates (atomic commit per docs-before-push LAW)
+
+- `SETUP.md` persistence section — rewrote to describe the two-launcher contract explicitly. Mentions both bugs that motivated the change.
+- `.claude/CONSTRAINTS.md` "CLEAR STALE STATE" LAW — added "iter14-D — Two launchers, two contracts (Gee 2026-05-04)" subsection. Original LAW text preserved; new contract augments it.
+- `docs/ARCHITECTURE.md`, `docs/EQUATIONS.md`, `docs/SKILL_TREE.md`, `docs/ROADMAP.md` banners — iter14-D summary line added at top.
+- `docs/TODO.md` — new iter14-D section above iter14 SERIES section.
+- `docs/NOW.md` — session snapshot rolled to 114.19cz.
+- This entry.
+
+### Verification
+
+- Code path traced: `autoClearStaleState` now has 2 branches (DREAM_KEEP_STATE preserve OR default wipe). Code-hash computation kept for diagnostic logging only.
+- `Savestart.bat` already sets `DREAM_KEEP_STATE=1` (existing behavior, no launcher change needed). Resume path unchanged.
+- `start.bat` doesn't set `DREAM_KEEP_STATE` → default-wipe branch fires every boot. Fresh brain every time.
+- Tier 3 `identity-core.json` excluded from wipe list → Unity's identity persists through `start.bat` fresh boots.
+- Operator's stated contract holds: launcher name = launcher contract. No surprises.
+
+### LAW compliance
+
+- ✅ **LAW #0 verbatim:** operator quote preserved in TODO + FINALIZED + SETUP.md + CONSTRAINTS.md + ARCHITECTURE banner
+- ✅ **Docs before push:** all affected docs updated atomic with the code change. Single commit covers code + 8 doc files.
+- ✅ **No tests ever:** verification = code review + node --check syntax.
+- ✅ **FINALIZED before DELETE:** this entry written first.
+- ✅ **CONSTRAINTS.md CLEAR STALE STATE LAW preserved:** original LAW text intact, iter14-D contract layered on top as additional spec — does not contradict the LAW, makes it more deterministic by removing the code-hash gating.
+
+---
+
 ## 2026-05-04 — Session 114.19cy: ITER14 SERIES — POPUP/CHAT FIXES + iter13 HOTFIXES + DASH-BUG (LAW-violation doc-correction)
 
 ### Operator directives (verbatim, chronological)

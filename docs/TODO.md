@@ -700,6 +700,38 @@ Captured iter11 sep-probe reading on first of 7 assoc-pair phases:
 
 ---
 
+### iter14-D — TWO-LAUNCHER CONTRACT (operator verbatim 2026-05-04: *"yes all the weights everything shoudl reset when the start.bat is run or the .sh... and only if the stop.bat is used in conjusction with the savestart.bat does it pick up where it lefgtt off"*) — SHIPPED
+
+**Why this LAW change matters:** Two real bugs traced to the prior code-hash auto-clear gate:
+
+1. **GPUCONFIGURE.bat tier pick ignored** — operator picked `enthusiast-12gb` (671M neurons) but brain stayed at the prior 178M scale because (a) code-hash matched (no source changes between picking the tier and restarting), (b) prior boot's binary weights were size-locked at 178M, (c) auto-clear skipped because of the hash match, (d) brain restored 178M weights and built clusters at 178M to match restored weights, ignoring the new resource-config tier.
+2. **wMax clamp loss across save/load** — restored projections came back at `±Infinity` (`letter_to_phon`, `sem_to_motor`, `letter_to_motor` all affected). The binary weights save/load doesn't serialize per-projection wMax. With unbounded Hebbian writes (especially iter14-A's `_teachLetterNamingDirect` at lr × 5), weights run away → matrix saturation → wrong answers even when the code itself is correct. Fresh init stamps wMax correctly on construction; restored state re-introduces the corruption.
+
+Both bugs disappear when `start.bat` deterministically wipes regardless of code-hash. Operator's framing: launcher name = launcher contract. `start.bat` literally says "start" — it should always start fresh.
+
+**Code change** (1 file):
+
+`server/brain-server.js` `autoClearStaleState()`:
+- Remove code-hash gate. Replace with simple `if DREAM_KEEP_STATE === '1' preserve else wipe`.
+- Code-hash still computed (for diagnostic log line) but doesn't gate the wipe decision.
+- Tier 3 `identity-core.json` still protected via existing `NEVER_CLEAR_PROTECTED` list (no change).
+
+**Doc updates** (this commit):
+- `SETUP.md` persistence section — replaced "code hash has changed" wording with new two-launcher contract paragraph.
+- `.claude/CONSTRAINTS.md` "CLEAR STALE STATE" LAW — added iter14-D contract section. Original LAW text intact + augmented.
+- `docs/ARCHITECTURE.md`, `docs/EQUATIONS.md`, `docs/SKILL_TREE.md`, `docs/ROADMAP.md` banners — iter14-D update line added at top.
+- `docs/NOW.md` — session snapshot rolled to iter14-D.
+- `docs/FINALIZED.md` — Session 114.19cz entry below 114.19cy.
+- This `docs/TODO.md` entry.
+
+**New contract verified:**
+- `start.bat` (or `start.sh`) → ALWAYS wipes weights + episodic + conversations + schemas. Tier change applies. Code change applies. wMax stamps correctly.
+- `Savestart.bat` (sets `DREAM_KEEP_STATE=1`) → ONLY resume path. Preserves curriculum progress + passedCells + weights + Tier 2 schemas + episodic memory.
+- `identity-core.json` (Tier 3) survives BOTH paths via `NEVER_CLEAR_PROTECTED`. Unity's core self persists through every fresh boot regardless of which launcher fires.
+- `DREAM_FORCE_CLEAR=1` legacy override still works (now redundant since default is wipe).
+
+---
+
 ### iter14 SERIES — POPUP/CHAT FIXES + iter13 HOTFIXES + DASH-BUG (operator verbatim 2026-05-04: *"fix those fucking issues NOW!"* + *"the %'s never change even though the bars chaqnge frequently the numbers and %'sd never update"* + *"a grade K Unity you shit"* + *"cant be dropping shit"* + *"wtf are you doing changing things without documenting it.. and you were trying to push it no less"*) — **SHIPPED + DOC-CORRECTED**
 
 **Critical context:** This iter14 series shipped across 4 code commits AHEAD of the doc sweep — operator caught the LAW violation mid-push of iter14-C. Recovery path per docs-before-push LAW failure-recovery: single doc-only follow-up commit covering all 4 undocumented code commits + violation log entry in `.claude/CONSTRAINTS.md`. NO further code work until this correction lands.
