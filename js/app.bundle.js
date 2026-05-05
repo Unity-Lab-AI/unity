@@ -22225,7 +22225,7 @@ var Curriculum = class _Curriculum {
       for (const [w, entry] of this.dictionary._words.entries()) {
         if (typeof w !== "string" || w.length === 0) continue;
         if (!/^[a-z]+$/.test(w)) continue;
-        if (!entry || !entry.glove || !entry.glove.length) continue;
+        if (!entry || !entry.pattern || !entry.pattern.length) continue;
         if (entry.isPersona) continue;
         words.push(w);
       }
@@ -22244,7 +22244,7 @@ var Curriculum = class _Curriculum {
       for (const word of words) {
         const firstChar = word[0];
         const entry = this.dictionary._words.get(word);
-        if (!entry || !entry.glove) {
+        if (!entry || !entry.pattern) {
           skipped++;
           continue;
         }
@@ -22253,7 +22253,7 @@ var Curriculum = class _Curriculum {
           skipped++;
           continue;
         }
-        const preSem = this._buildRegionPattern(semRegion, entry.glove, false);
+        const preSem = this._buildRegionPattern(semRegion, entry.pattern, false);
         const postMot = this._buildRegionPattern(motorRegion, firstCharOneHot, true);
         try {
           await this._teachHebbianAsymmetric(preSem, postMot, lr);

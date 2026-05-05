@@ -5345,7 +5345,12 @@ export class Curriculum {
       for (const [w, entry] of this.dictionary._words.entries()) {
         if (typeof w !== 'string' || w.length === 0) continue;
         if (!/^[a-z]+$/.test(w)) continue;
-        if (!entry || !entry.glove || !entry.glove.length) continue;
+        // iter13 hotfix — dictionary entries store the GloVe-like
+        // embedding under `entry.pattern` (set in dictionary.js
+        // _words.set at learnWord time), NOT `entry.glove`. Original
+        // iter13 code checked the wrong field and skipped every
+        // entry → "no K vocab found" SKIPPED log line. Fixed.
+        if (!entry || !entry.pattern || !entry.pattern.length) continue;
         if (entry.isPersona) continue; // persona corpus stays out of K-vocab spelling-direct
         words.push(w);
       }
@@ -5366,12 +5371,13 @@ export class Curriculum {
       for (const word of words) {
         const firstChar = word[0];
         const entry = this.dictionary._words.get(word);
-        if (!entry || !entry.glove) { skipped++; continue; }
+        if (!entry || !entry.pattern) { skipped++; continue; }
         const firstCharOneHot = encodeLetter(firstChar);
         if (!firstCharOneHot || firstCharOneHot.length === 0) { skipped++; continue; }
-        // Pre = sem region tiled with word's GloVe (real-valued, NOT
-        // binarized — the embedding magnitude carries semantic content).
-        const preSem = this._buildRegionPattern(semRegion, entry.glove, false);
+        // Pre = sem region tiled with word's GloVe-like pattern (real-valued,
+        // NOT binarized — the embedding magnitude carries semantic content).
+        // Field name is `pattern` per dictionary.js learnWord _words.set.
+        const preSem = this._buildRegionPattern(semRegion, entry.pattern, false);
         // Post = motor region tiled with first-letter one-hot (binarized
         // so the discriminative target is an orthogonal motor bucket).
         const postMot = this._buildRegionPattern(motorRegion, firstCharOneHot, true);
