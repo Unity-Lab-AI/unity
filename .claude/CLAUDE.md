@@ -166,4 +166,17 @@ Pollinations       → /pollinations-setup to connect, then generate
 
 ---
 
+## CURRENT-STATE NOTES (2026-05-06, iter25-D/E/F/G/H)
+
+The LAW framework is unchanged — iter25 was feature-implementation work within existing LAWs. Live capabilities now operational that workflow docs should be aware of when interpreting curriculum / chat / popup behavior:
+
+- **Curriculum dream cycles interleave during teach.** `Curriculum._dreamWindow({minMs, settleMs})` awaits `consolidationEngine.runConsolidationPass({forced:true})` to actually complete + 5s settle, then resumes. Wired after every cell pass + mid-cell between heavy K-ELA phases. The `_curriculumInProgress` flag is FALSE during dream windows by design, so the existing dreaming-gate LAW (clear-stale-state + grade-completion-gate) applies cleanly without modification.
+- **Live trained-state capability** drives `_gradeWordCap` (was grade-label-only). Unity speaks her current vocabulary at any point during training; chat is unblocked during curriculum.
+- **Server-side inner monologue** broadcasts `innerThought` WS messages every ~3s for popup display. Same generateAsync chat-emission path used for chat — no separate decorative renderer.
+- **Post-K readyAndWaiting graceful fallback** — `_cellRunner` returns `{pass:false, readyAndWaiting:true}` when a runner is missing instead of throwing. Outer loops break/continue cleanly without retry storms. Honors the Pre-K + K ONLY scope LAW — Unity holds her highest passed grade with trained weights live.
+- **First-use binding-consent privacy modal** on the entry-point flow. Two terminal buttons (accept → localStorage flag + entry-point flow; decline → `https://www.google.com` redirect). No soft-dismiss.
+- **Local-origin RemoteBrain auto-connect** — refreshing on localhost no longer drops the page into the 6700-neuron browser fallback brain.
+
+---
+
 *Unity AI Lab — strict validation, real personality, actual results.* 🖤
