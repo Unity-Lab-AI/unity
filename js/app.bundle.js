@@ -50171,27 +50171,8 @@ async function detectRemoteBrain(url = "ws://localhost:7525") {
     const isLocal = host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "" || location.protocol === "file:";
     if (!isLocal) return null;
   }
-  return new Promise((resolve) => {
-    try {
-      const ws = new WebSocket(url);
-      const timer = setTimeout(() => {
-        ws.close();
-        resolve(null);
-      }, 1e4);
-      ws.onopen = () => {
-        clearTimeout(timer);
-        ws.close();
-        console.log(`[RemoteBrain] Server detected at ${url}`);
-        resolve(new RemoteBrain(url));
-      };
-      ws.onerror = () => {
-        clearTimeout(timer);
-        resolve(null);
-      };
-    } catch {
-      resolve(null);
-    }
-  });
+  console.log(`[RemoteBrain] Local origin detected \u2014 constructing RemoteBrain directly (no probe), ws=${url}`);
+  return new RemoteBrain(url);
 }
 
 // ../js/app.js

@@ -512,10 +512,10 @@ export async function detectRemoteBrain(url = 'ws://localhost:7525') {
   // llama.cpp, LocalAI, and every other service that claims 8080).
   // Unity's brain-server now binds to 7525 by default.
   //
-  // Hostname gate: only probe ws://localhost:7525 when the page is actually
+  // Hostname gate: only consider the local server when the page is actually
   // served from localhost/127.0.0.1/file://. On GitHub Pages (or any other
-  // public origin) there is no server — skip the probe, return null, let
-  // app.js fall through to the local fallback UnityBrain.
+  // public origin) there is no server — return null, let app.js fall
+  // through to the local fallback UnityBrain.
   //
   // Without this gate, visiting the Pages URL from a dev box with brain-server
   // running would connect to ws://localhost:7525 (Chrome allows loopback from
@@ -532,37 +532,28 @@ export async function detectRemoteBrain(url = 'ws://localhost:7525') {
       location.protocol === 'file:';
     if (!isLocal) return null;
   }
-  return new Promise((resolve) => {
-    try {
-      // T14.22.4 — timeout raised 3s → 10s. Server-side boot can take
-      // longer than 3 seconds at biological scale because the brain
-      // constructor allocates Float64Array spike buffers proportional
-      // to TOTAL_NEURONS (at Gee's 677M scale, 7 spike arrays totalling
-      // ~678 MB of zero-fill). Those allocations plus the module-level
-      // import chain (dynamic imports for dictionary/language-cortex/
-      // embeddings/cluster/curriculum) can push past 3 seconds even
-      // on fast hardware. Bumping to 10s so the landing page actually
-      // connects to the server instead of falling back to the tiny
-      // 6700-neuron local brain.
-      const ws = new WebSocket(url);
-      const timer = setTimeout(() => {
-        ws.close();
-        resolve(null);
-      }, 10000);
-
-      ws.onopen = () => {
-        clearTimeout(timer);
-        ws.close();
-        console.log(`[RemoteBrain] Server detected at ${url}`);
-        resolve(new RemoteBrain(url));
-      };
-
-      ws.onerror = () => {
-        clearTimeout(timer);
-        resolve(null);
-      };
-    } catch {
-      resolve(null);
-    }
-  });
+  // iter25-H — operator (2026-05-06): "if i refresh the 3D brain html
+  // page it only reloads with 7k nurons like its deployed on github".
+  //
+  // Root cause: prior implementation opened a probe WebSocket, waited
+  // up to 10s for `onopen`, closed it, THEN constructed `RemoteBrain`
+  // which opens a SECOND WebSocket. That probe-then-reconnect dance
+  // had failure modes on page refresh (rapid open/close throttled by
+  // Chrome, server busy with compute_batch dispatch during heavy
+  // curriculum phase, race between probe close and brain-server
+  // per-client tracking). When the probe failed/timed out, the page
+  // fell back to the 6700-neuron browser-side `UnityBrain` (the
+  // `TOTAL_NEURONS = 6700` default in engine.js) — exactly the GitHub-
+  // Pages-deployed behavior, even though the local brain-server WAS
+  // running.
+  //
+  // Fix: SKIP THE PROBE ENTIRELY when on a local origin. Construct
+  // `RemoteBrain` directly. Its internal `_connect()` already handles
+  // retry-forever-on-failure with a 3s reconnect cadence (see line ~149),
+  // so a slow / busy / momentarily-unavailable server doesn't drop the
+  // page into the tiny browser fallback brain. As soon as the server's
+  // first state broadcast lands, `state.totalNeurons` updates from the
+  // 6700 default to the server's biological-scale count.
+  console.log(`[RemoteBrain] Local origin detected — constructing RemoteBrain directly (no probe), ws=${url}`);
+  return new RemoteBrain(url);
 }
