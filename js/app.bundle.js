@@ -40694,13 +40694,11 @@ var Curriculum = class _Curriculum {
   }
 };
 var _lastYieldAt = 0;
-var _YIELD_MIN_INTERVAL_MS = 100;
+var _YIELD_MIN_INTERVAL_MS = 5;
 function _microtask(opts) {
   const now = Date.now();
-  if (!(opts && opts.force) && now - _lastYieldAt < _YIELD_MIN_INTERVAL_MS) {
-    return Promise.resolve();
-  }
-  _lastYieldAt = now;
+  const recentYield = !(opts && opts.force) && now - _lastYieldAt < _YIELD_MIN_INTERVAL_MS;
+  if (!recentYield) _lastYieldAt = now;
   return new Promise((resolve) => {
     if (typeof setImmediate === "function") {
       setImmediate(resolve);

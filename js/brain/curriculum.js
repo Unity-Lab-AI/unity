@@ -23738,24 +23738,36 @@ export class Curriculum {
 // yield (setImmediate in Node, setTimeout in browsers) drops to the
 // back of the event loop, so pending I/O callbacks run between chunks
 // and the HTTP server stays responsive.
-// iter24.2 — gate yields so we don't burn an event-loop hop on every
-// 16-128 fact callsite. The CELL ALIVE heartbeat fires every 10 s and
-// the WS bufferedAmount drain pump gets attention every couple of
-// macrotasks, so yielding every ~100 ms is plenty to keep the brain
-// responsive without paying 100+ event-loop hops/sec inside tight
-// teach loops. When a caller passes `{force: true}` the yield always
-// fires (used by phase boundaries that have to drain regardless).
+// iter24.2 — yield rate limiter. Initial 100ms interval was wrong:
+// `Promise.resolve()` on the skip path resolves via MICROTASK
+// continuation, which bypasses the macrotask queue entirely.
+// hebbianBound's T18.8/T32 batch flush ACK handlers are MACROTASKS;
+// skipping macrotask hops starved the ACK queue and stalled awaited
+// flush promises → 1.8 w/s vs 11-19 w/s baseline (operator caught
+// it). Two coordinated fixes:
+//
+//   (1) Skip path now ALSO yields via setImmediate (macrotask hop)
+//       so WS ACK handlers always have room to drain. The "skip"
+//       just suppresses the Date.now() timestamp update — the
+//       event-loop hop still happens.
+//   (2) Tighter min-interval (5ms) for timestamp updates so the
+//       force-fire cadence is also tight when callers pass
+//       {force: true}.
+//
+// Net behavior: every `await _microtask()` still yields macrotask,
+// preserving WS / heartbeat / GC servicing. The wrapper keeps the
+// gate API for any callsite that wants finer-grained control later
+// without changing the math-identical macrotask discipline.
 let _lastYieldAt = 0;
-const _YIELD_MIN_INTERVAL_MS = 100;
+const _YIELD_MIN_INTERVAL_MS = 5;
 
 export function _microtask(opts) {
   const now = Date.now();
-  if (!(opts && opts.force) && (now - _lastYieldAt) < _YIELD_MIN_INTERVAL_MS) {
-    // Healthy event-loop, recent yield — skip. Returns a resolved
-    // Promise so `await` semantics stay identical for callers.
-    return Promise.resolve();
-  }
-  _lastYieldAt = now;
+  const recentYield = !(opts && opts.force)
+    && (now - _lastYieldAt) < _YIELD_MIN_INTERVAL_MS;
+  if (!recentYield) _lastYieldAt = now;
+  // ALWAYS yield via setImmediate (Node) / setTimeout 0 (browser).
+  // This is the contract WS ACK handlers + GC + heartbeat depend on.
   return new Promise(resolve => {
     if (typeof setImmediate === 'function') {
       setImmediate(resolve);
