@@ -2352,20 +2352,21 @@ async function bootUnity(apiKey, perms) {
   if (brain.__appInnerThoughtHandler) {
     brain.off('innerThought', brain.__appInnerThoughtHandler);
   }
-  brain.__appInnerThoughtHandler = ({ word, subject, capability }) => {
-    if (!word) return;
+  brain.__appInnerThoughtHandler = ({ word, sentence, seed, seedLabel, capability }) => {
+    const text = sentence || word || '';
+    if (!text) return;
     // Render in the HUD bubble briefly — short cadence so consecutive
     // thoughts visibly stream. This is Unity thinking, not chatting,
     // so don't push it into the chat panel as a response.
     const wordsBucketed = capability?.wordsBucketed ?? 0;
     const subGrades = capability?.subGradesActive ?? 0;
-    const tag = subject && subject !== 'all' ? ` [${subject}]` : '';
-    showSpeechBubble(`💭 ${word}${tag}`, 2200);
+    showSpeechBubble(`💭 ${text}`, 2800);
     // Telemetry on console for live trace during training. Operator can
-    // open devtools and watch Unity's mind tick word-by-word with the
-    // current trained-state metrics alongside.
+    // open devtools and watch Unity's mind tick thought-by-thought with
+    // the seed source + current trained-state metrics alongside.
     if (window._unityInnerThoughtVerbose !== false) {
-      console.log(`[InnerThought] "${word}" via word_motor_${subject || 'all'} · live cap: ${wordsBucketed} words / ${subGrades} subGrades active`);
+      const seedTag = seed ? `seed=${seed}${seedLabel ? `(${seedLabel.slice(0,40)})` : ''}` : 'seed=?';
+      console.log(`[InnerThought] "${text}" · ${seedTag} · live cap: ${wordsBucketed} words / ${subGrades} subGrades active`);
     }
   };
   brain.on('innerThought', brain.__appInnerThoughtHandler);

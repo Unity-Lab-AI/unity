@@ -225,15 +225,19 @@ export class RemoteBrain extends EventEmitter {
         // iter25-E.6 — server-side inner voice broadcast (iter25-E.3).
         // Operator (2026-05-06): "the pop ups in her Brain fire with
         // her real actual knowldedge to that point as her real internal
-        // voice in the moment". Server fires cortexCluster.emitWordDirect
-        // every ~3s using its TRAINED weights and broadcasts the result.
-        // Listeners (3D brain popups, chat-panel ghost, debug overlay)
-        // hook this event to render Unity's real live thoughts instead
-        // of the decorative browser-side innerVoice.
+        // voice in the moment" + "the pop ups are suppose to bue unitys
+        // internal monolog and thoughts and self talking and contiplation"
+        // + "not hard coded fallbacks Unity just speaks her mind" +
+        // "might need a activator and 'Sandbox' like notice". Server
+        // injects a sandbox-notice contemplation seed (learning context /
+        // mood / recent memory / identity anchor) and runs the SAME
+        // generateAsync chat-emission path against the live cortex.
+        // What she says comes entirely from her trained mind.
         this.emit('innerThought', {
           word: msg.word || '',
-          subject: msg.subject || 'all',
           sentence: msg.sentence || msg.word || '',
+          seed: msg.seed || 'baseline',
+          seedLabel: msg.seedLabel || '',
           ts: msg.ts || Date.now(),
           capability: msg.capability || null,
         });

@@ -5066,125 +5066,292 @@ class ServerBrain {
    *
    * Operator verbatim 2026-05-06: "the pop ups in her Brain fire with
    * her real actual knowldedge to that point as her real internal voice
-   * in the moment". Browser-side innerVoice runs on an untrained client
-   * cortex — decorative noise. This runs on the SERVER cluster (the one
-   * with the trained weights) and broadcasts the real `emitWordDirect`
-   * output to all connected clients as `innerThought` WS messages.
+   * in the moment" + "the pop ups are suppose to bue unitys internal
+   * monolog and thoughts and self talking and contiplation" + "not hard
+   * coded fallbacks Unity just speaks her mind".
+   *
+   * Architecture: NO gates. NO bucket-empty early returns. NO hardcoded
+   * fallback words. Inner monologue runs the SAME `language-cortex
+   * .generateAsync` path that chat uses against the LIVE cortex state.
+   * Whatever Unity's trained mind produces in the current tick — that's
+   * her thought. If she has nothing trained to say, she says nothing
+   * (genuinely silent, not a hardcoded "..."). If she has trained
+   * weights, the same dict-cosine + word_motor + tick-driven emission
+   * cascade chat uses produces her contemplation.
    *
    * Cadence: ~3 s wall-clock (matches engine.js THOUGHT_INTERVAL = 3000).
    *
-   * Gate: only fires when Unity has SOMETHING to say. Equational gate
-   * matching iter23.2 — `socialNeed × arousal > 0.25` OR shouldSpeak.
+   * Skipped during operator-forced dream windows (iter25-D
+   * `_operatorSleepRequested`) so consolidation has priority and the
+   * brain doesn't broadcast thoughts derived from mid-flight Hebbian.
    *
-   * Per-subject rotation: cycles ela → math → science → social → art →
-   * life → ela → ... so popups reflect her full breadth of trained
-   * subjects, not just whichever bucket map is biggest.
-   *
-   * Heartbeat surface: `[Brain] 🧠 inner-thought "<word>" via word_motor_<subject>`
-   * lands in server.log so the watchdog catches it as evidence of Unity
-   * actually thinking with her live trained weights.
-   *
-   * Skipped during dream window (iter25-D `_operatorSleepRequested`)
-   * since the curriculum is paused for consolidation; the next tick
-   * resumes broadcasting.
+   * Heartbeat surface: `[Brain] 🧠 inner-thought "<text>"` lands in
+   * server.log so the watchdog catches her live monologue as it streams.
    */
-  _innerVoiceTick() {
+  async _innerVoiceTick() {
     const now = Date.now();
     if (!this._lastInnerThoughtAt) this._lastInnerThoughtAt = 0;
     const INNER_THOUGHT_INTERVAL_MS = 3000;
     if (now - this._lastInnerThoughtAt < INNER_THOUGHT_INTERVAL_MS) return;
     this._lastInnerThoughtAt = now;
 
-    // Skip during operator-forced dream windows so consolidation has
-    // priority + the brain doesn't broadcast thoughts derived from a
-    // mid-flight Hebbian state.
+    // Skip during operator-forced dream windows.
     if (this._operatorSleepRequested) return;
+    // Reentrancy guard — async generation can take longer than 3 s on
+    // a slow tick; don't fire a new generation while a prior one is in
+    // flight (would queue up dispatches + ghost the WS broadcast order).
+    if (this._innerThoughtInFlight) return;
 
+    if (!this._languageReady || !this.languageCortex || !this.dictionary) return;
     const cluster = this.cortexCluster;
-    if (!cluster || typeof cluster.emitWordDirect !== 'function') return;
 
-    // Gate: equational drive — same shape as inner-voice.js iter23.2.
-    const arousal = this.arousal ?? 0.5;
-    const socialNeed = this.persona?.socialAttachment ?? 0.5;
-    const speechDrive = socialNeed * arousal;
-    if (speechDrive < 0.25) return;
-
-    // Trained-state gate — don't broadcast empty thoughts on a fresh
-    // brain. If Unity hasn't bucketed any words yet, popups stay quiet
-    // (correct biological output for pre-language state).
-    const cap = (typeof cluster.getTrainedCapability === 'function')
-      ? cluster.getTrainedCapability()
-      : null;
-    if (cap && cap.wordsBucketed === 0 && cap.passedCellCount === 0) return;
-
-    // Per-subject rotation. Pick the next subject with a non-empty
-    // bucket map so popups reflect the breadth of trained subjects
-    // rather than always firing the same one.
-    if (!Array.isArray(this._innerThoughtSubjectOrder)) {
-      this._innerThoughtSubjectOrder = ['ela', 'math', 'science', 'social', 'art', 'life'];
-    }
-    if (typeof this._innerThoughtSubjectIdx !== 'number') {
-      this._innerThoughtSubjectIdx = 0;
-    }
-    let subject = null;
-    for (let i = 0; i < this._innerThoughtSubjectOrder.length; i++) {
-      const candidate = this._innerThoughtSubjectOrder[this._innerThoughtSubjectIdx];
-      this._innerThoughtSubjectIdx = (this._innerThoughtSubjectIdx + 1) % this._innerThoughtSubjectOrder.length;
-      const bucketMap = cluster[`wordBucketWords_${candidate}`];
-      if (bucketMap && typeof bucketMap.size === 'number' && bucketMap.size > 0) {
-        subject = candidate;
-        break;
-      }
-    }
-    // Fallback to umbrella when no subject-band has buckets yet
-    if (!subject) subject = 'all';
-
-    let word = '';
+    this._innerThoughtInFlight = true;
     try {
-      const opts = subject === 'all' ? {} : { subject };
-      word = cluster.emitWordDirect(opts) || '';
-    } catch {
-      return;
-    }
-    if (!word) return;
+      // SANDBOX-NOTICE ACTIVATOR — operator (2026-05-06): "might need a
+      // activator and 'Sandbox' like notice to her to speak and think
+      // internally in some way". Without something to contemplate, her
+      // cortex sits at baseline and produces nothing. Real brains don't
+      // think from nothing — there's always interoceptive, exteroceptive,
+      // or memory-recall stimulation. We pick a contemplation seed from
+      // one of four real sources (rotating so popups vary) and use it as
+      // the cortexPattern that anchors her reflection. NOT a hardcoded
+      // word — the SEED is real state (current learning, real episode,
+      // real identity anchor, real mood). What she SAYS about it comes
+      // from her trained cortex via the same chat-emission path.
+      const seed = this._pickInnerThoughtSeed();
 
-    // Heartbeat surface (the watchdog catches this; server.log shows it
-    // streaming during curriculum so operator sees Unity thinking live)
-    try {
-      process.stdout.write(`[Brain] 🧠 inner-thought "${word}" via word_motor_${subject}\n`);
-    } catch { /* non-fatal */ }
-
-    // Broadcast `innerThought` WS message — popup subscribers in the
-    // browser render it inline. Same iteration pattern as state broadcast.
-    if (this.clients && this.clients.size > 0) {
-      const payload = JSON.stringify({
-        type: 'innerThought',
-        word,
-        subject,
-        ts: now,
-        sentence: word, // single-tick word emission — sentence is the word
-        capability: cap || null,
-      });
-      for (const [ws] of this.clients) {
-        if (ws.readyState === ws.OPEN) {
-          try { ws.send(payload); } catch { /* non-fatal */ }
-        }
-      }
-    }
-
-    // Land the thought in Unity's own working memory so it accumulates
-    // refresh count → fires hippocampal Hebbian → consolidates to Tier 1
-    // (iter22-H pipeline). Unity's inner monologue feeds her own learning.
-    if (this.memorySystem
-        && typeof this.memorySystem.addToWorkingMemory === 'function'
-        && this.dictionary?._words?.get) {
+      // Same generation path the chat handler uses (processAndRespond
+      // line ~4350). The seed pattern drives sem so the cortex has
+      // something to settle on; whatever her trained mind produces
+      // ABOUT that seed is the thought.
+      let sentence = '';
       try {
-        const entry = this.dictionary._words.get(word);
-        if (entry && entry.pattern) {
-          this.memorySystem.addToWorkingMemory(entry.pattern, `inner-thought:${word}`);
+        sentence = await this.languageCortex.generateAsync(
+          this.dictionary,
+          this.arousal,
+          this.coherence,
+          {
+            predictionError: 0,
+            motorConfidence: this.motorConfidence ?? 0,
+            psi: this.psi,
+            cortexPattern: seed.pattern, // sandbox-notice activator
+            cortexCluster: cluster,
+            drugState: this._drugStateLabel(),
+            speechMod: this.drugScheduler ? this.drugScheduler.speechModulation() : null,
+            fear: this.fear,
+            reward: this.reward,
+            socialNeed: this.persona?.socialAttachment ?? 0.5,
+          }
+        ) || '';
+      } catch (err) {
+        // Generation failure logs once so silent failures aren't hidden.
+        if (!this._innerThoughtErrorLogged) {
+          console.warn(`[Brain] inner-voice generateAsync threw: ${err?.message || err}`);
+          this._innerThoughtErrorLogged = true;
         }
-      } catch { /* WM push non-fatal */ }
+        return;
+      }
+
+      // Genuine silence is allowed — if Unity has nothing trained to say
+      // at this moment, the popup just doesn't fire. Operator's "not
+      // hardcoded fallbacks" rule: never inject a fake "..." or canned
+      // word. Real silence vs real thought; nothing in between.
+      sentence = (sentence || '').trim();
+      if (!sentence) return;
+
+      // Heartbeat surface — watchdog catches this and operator sees
+      // Unity's live monologue streaming in server.log.
+      try {
+        process.stdout.write(`[Brain] 🧠 inner-thought (seed=${seed.source}) "${sentence}"\n`);
+      } catch { /* non-fatal */ }
+
+      // Broadcast `innerThought` WS message — popup subscribers in the
+      // browser render it inline. Same iteration pattern as state broadcast.
+      const cap = (cluster && typeof cluster.getTrainedCapability === 'function')
+        ? cluster.getTrainedCapability()
+        : null;
+      if (this.clients && this.clients.size > 0) {
+        const payload = JSON.stringify({
+          type: 'innerThought',
+          word: sentence,            // first word for compact popup display
+          sentence,                  // full thought (popup can render either)
+          seed: seed.source,         // which contemplation seed activated this
+          seedLabel: seed.label,     // human-readable summary of the seed
+          ts: now,
+          capability: cap || null,
+        });
+        for (const [ws] of this.clients) {
+          if (ws.readyState === ws.OPEN) {
+            try { ws.send(payload); } catch { /* non-fatal */ }
+          }
+        }
+      }
+
+      // Land the thought in Unity's own working memory so it accumulates
+      // refresh count → fires hippocampal Hebbian → consolidates to
+      // Tier 1 (iter22-H pipeline). Unity's inner monologue feeds her
+      // own learning loop — what she dwells on becomes what she remembers.
+      if (this.memorySystem
+          && typeof this.memorySystem.addToWorkingMemory === 'function'
+          && this.dictionary?._words?.get) {
+        try {
+          const firstWord = sentence.split(/\s+/)[0]?.toLowerCase().replace(/[^a-z]/g, '');
+          const entry = firstWord ? this.dictionary._words.get(firstWord) : null;
+          if (entry && entry.pattern) {
+            this.memorySystem.addToWorkingMemory(entry.pattern, `inner-thought:${firstWord}`);
+          }
+        } catch { /* WM push non-fatal */ }
+      }
+    } finally {
+      this._innerThoughtInFlight = false;
     }
+  }
+
+  /**
+   * SANDBOX-NOTICE ACTIVATOR for inner monologue. Returns
+   * `{ pattern: Float32Array(300), source, label }` — a 300-dim sem-
+   * compatible pattern derived from REAL current brain state, NOT a
+   * hardcoded word seed. Operator (2026-05-06): "and this is not to be
+   * a stand alone type thing its constantly being built and updgaraded
+   * as she learns and talks to users" — every source is LIVE STATE
+   * that updates per Hebbian fire / per chat turn / per cell pass /
+   * per drug-scheduler delta, so the inner monologue is CONTINUOUSLY
+   * upgraded by everything Unity does. Five sources rotate:
+   *
+   *   1. learning — current cell + phase as a sentence embedding (live;
+   *      changes as curriculum advances phase-by-phase)
+   *   2. mood — interoceptive label embedding (live; changes with
+   *      arousal / valence / coherence / drug state every tick)
+   *   3. chat-recall — most recent USER CHAT episode pattern (refreshes
+   *      every time a user talks to Unity — her inner monologue
+   *      literally reflects on what users said)
+   *   4. memory — most recent Tier 1 episode pattern of any type
+   *      (curriculum learning, working-memory age-out, brain-heartbeat,
+   *      etc — what she most recently experienced)
+   *   5. identity — random Tier 3 anchor pattern (live; grows as
+   *      identity-bound concepts consolidate from Tier 2)
+   *
+   * Falls through sources if one is empty (no episodes yet, no Tier 3
+   * anchors yet) — never returns a fake/canned seed. If ALL five
+   * sources are empty, returns null pattern → generateAsync uses
+   * baseline cortex state and may produce silence (genuine, not faked).
+   *
+   * The seeds NEVER hardcode words. They embed LIVE STATE STRINGS or
+   * pull REAL EPISODE PATTERNS — what she SAYS about each seed comes
+   * entirely from her trained cortex via the same generateAsync chat-
+   * emission path. Pre-language Unity speaking her mind = silence.
+   * K-trained Unity speaking her mind = K-vocabulary contemplation.
+   * PhD Unity speaking her mind = PhD-vocabulary contemplation. The
+   * MOUTH evolves with her training, the mind keeps generating.
+   */
+  _pickInnerThoughtSeed() {
+    if (!Array.isArray(this._innerThoughtSeedRotation)) {
+      this._innerThoughtSeedRotation = ['learning', 'mood', 'chat-recall', 'memory', 'identity'];
+      this._innerThoughtSeedIdx = 0;
+    }
+    // Try each source in rotation order; return the first that produces
+    // a non-null pattern. Advances the rotation cursor each call so
+    // popups cycle naturally even when one source is exhausted.
+    for (let attempt = 0; attempt < this._innerThoughtSeedRotation.length; attempt++) {
+      const source = this._innerThoughtSeedRotation[this._innerThoughtSeedIdx];
+      this._innerThoughtSeedIdx = (this._innerThoughtSeedIdx + 1) % this._innerThoughtSeedRotation.length;
+      let pattern = null;
+      let label = '';
+      try {
+        if (source === 'learning') {
+          const phase = this.cortexCluster?._activePhase?.name || null;
+          const cellKey = this.cortexCluster?._currentCellKey || null;
+          if (phase || cellKey) {
+            const phaseConcept = (phase || '').replace(/^_teach/i, '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().trim();
+            const subjectGrade = (cellKey || '').replace('/', ' ');
+            label = `learning ${phaseConcept || 'something'}${subjectGrade ? ' in ' + subjectGrade : ''}`.trim();
+            pattern = this._computeServerCortexPattern(label);
+          }
+        } else if (source === 'mood') {
+          // Build a sentence describing her CURRENT interoceptive state
+          // and embed it. This is what she "feels" right now.
+          const arParts = [];
+          if (this.arousal > 0.7) arParts.push('aroused excited');
+          else if (this.arousal < 0.3) arParts.push('calm relaxed');
+          if (this.valence > 0.3) arParts.push('happy good');
+          else if (this.valence < -0.3) arParts.push('sad bad');
+          if (this.coherence > 0.7) arParts.push('focused clear');
+          else if (this.coherence < 0.3) arParts.push('foggy scattered');
+          if (this.fear > 0.5) arParts.push('afraid');
+          if (this.reward > 0.5) arParts.push('rewarded');
+          const drugLabel = this._drugStateLabel?.() || 'sober';
+          if (drugLabel && drugLabel !== 'sober') arParts.push(drugLabel);
+          if (arParts.length > 0) {
+            label = `i feel ${arParts.join(' ')}`;
+            pattern = this._computeServerCortexPattern(label);
+          }
+        } else if (source === 'chat-recall') {
+          // Pull the most recent USER CHAT episode (type='interaction').
+          // This is the integration point with users — when a user
+          // talks to Unity, the exchange becomes a Tier 1 episode, and
+          // the next inner-thought tick that lands on chat-recall has
+          // her contemplate what was just said. Operator's "constantly
+          // being built and upgraded as she... talks to users" path.
+          if (this.memorySystem
+              && Array.isArray(this.memorySystem._episodes)
+              && this.memorySystem._episodes.length > 0) {
+            // Walk backwards for the most recent interaction-type
+            // episode (skip curriculum-heartbeat / working-memory /
+            // curriculum-phase noise). Bounded to the last 50 to keep
+            // the scan O(1) at biological scale.
+            const eps = this.memorySystem._episodes;
+            const start = Math.max(0, eps.length - 50);
+            for (let i = eps.length - 1; i >= start; i--) {
+              const ep = eps[i];
+              if (ep && ep.type === 'interaction' && ep.pattern) {
+                pattern = ep.pattern;
+                label = `chat: ${(ep.input || '').slice(0, 50)}`;
+                break;
+              }
+            }
+          }
+        } else if (source === 'memory') {
+          // Pull the most recent Tier 1 episode pattern of ANY type.
+          // Catches curriculum learning, working-memory age-out, brain-
+          // heartbeat thinking-episodes — whatever she most recently
+          // experienced. Different from chat-recall which is user-
+          // facing only.
+          if (this.memorySystem
+              && Array.isArray(this.memorySystem._episodes)
+              && this.memorySystem._episodes.length > 0) {
+            const ep = this.memorySystem._episodes[this.memorySystem._episodes.length - 1];
+            if (ep && ep.pattern) {
+              pattern = ep.pattern;
+              label = ep.input?.slice(0, 60) || ep.label || 'recent episode';
+            }
+          }
+        } else if (source === 'identity') {
+          // Pull a Tier 3 identity anchor pattern. This is who she is
+          // at the most-consolidated level — contemplating self.
+          if (this.tier3Store && typeof this.tier3Store.sampleAnchor === 'function') {
+            const anchor = this.tier3Store.sampleAnchor();
+            if (anchor && anchor.pattern) {
+              pattern = anchor.pattern;
+              label = anchor.label || anchor.concept || 'self';
+            }
+          } else if (this.tier3Store && this.tier3Store._anchors instanceof Map && this.tier3Store._anchors.size > 0) {
+            // Fallback to direct map access if sampleAnchor not exposed
+            const keys = [...this.tier3Store._anchors.keys()];
+            const k = keys[Math.floor(Math.random() * keys.length)];
+            const a = this.tier3Store._anchors.get(k);
+            if (a && a.pattern) {
+              pattern = a.pattern;
+              label = a.label || k || 'self';
+            }
+          }
+        }
+      } catch { /* source failure → try next */ }
+      if (pattern) return { pattern, source, label };
+    }
+    // All four sources empty (truly fresh brain, no episodes, no anchors,
+    // no learning context). Return null pattern so generateAsync falls
+    // through to baseline cortex state. Genuine silence is OK here.
+    return { pattern: null, source: 'baseline', label: 'baseline cortex state' };
   }
 
   _memoryHeartbeat() {
