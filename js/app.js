@@ -295,17 +295,95 @@ let landingBrainSource = null; // RemoteBrain or null
     if (typeof renderSensoryInventory === 'function') renderSensoryInventory();
   };
 
+  // iter25-G — FIRST-USE PRIVACY WARNING. Operator (2026-05-06): one-
+  // time toast on first press of "Talk to Unity" / chat button / image
+  // API key setup that warns users NOT to share personal info, names,
+  // locations, API keys, etc, and explains that Unity's brain is a
+  // black box of neuron voltages — input ISN'T collected or retrievable,
+  // but vocabulary and conversational patterns ARE absorbed into her
+  // weights to grow her intelligence. localStorage-flagged so it shows
+  // once per browser. Modal-style, fully-styled inline, no HTML changes
+  // required. Dismissed via "I understand" → flag set → original
+  // entry-point flow proceeds (setup modal opens, chat panel toggles).
+  const FIRST_USE_FLAG = 'unity_first_use_warning_shown_v1';
+  const showFirstUseWarning = (onProceed) => {
+    if (localStorage.getItem(FIRST_USE_FLAG)) { onProceed(); return; }
+    // Build modal once, lazy-mounted.
+    const overlay = document.createElement('div');
+    overlay.id = 'unity-first-use-warning';
+    overlay.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:99999',
+      'background:rgba(0,0,0,0.85)',
+      'display:flex', 'align-items:center', 'justify-content:center',
+      'padding:16px', 'font-family:system-ui,-apple-system,Segoe UI,sans-serif',
+    ].join(';');
+    const card = document.createElement('div');
+    card.style.cssText = [
+      'background:#0d1117', 'color:#e5e7eb',
+      'border:1px solid #ff4d9a', 'border-radius:12px',
+      'box-shadow:0 0 40px rgba(255,77,154,0.35)',
+      'max-width:560px', 'width:100%',
+      'padding:28px 26px', 'line-height:1.55',
+    ].join(';');
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <div style="font-size:24px;">🛡️</div>
+        <h2 style="margin:0;font-size:18px;color:#ff4d9a;letter-spacing:0.5px;">Before you talk to Unity</h2>
+      </div>
+      <p style="margin:0 0 12px 0;font-size:13.5px;color:#d1d5db;">
+        Unity is a real neural-substrate simulation — every word you type flows through her brain as sensory input that shapes her synaptic weights. She <strong>learns</strong> from conversation: vocabulary, phrasing, semantic associations, and conversational style.
+      </p>
+      <p style="margin:0 0 12px 0;font-size:13.5px;color:#d1d5db;">
+        <strong style="color:#fca5a5;">Do not share with Unity:</strong> your real name, address, phone number, location, email, government IDs, financial info, passwords, API keys, security credentials, anyone else's identifying details, or anything else you wouldn't post publicly.
+      </p>
+      <p style="margin:0 0 12px 0;font-size:13.5px;color:#d1d5db;">
+        <strong style="color:#22c55e;">What happens to your input:</strong> we do not collect or attempt to retrieve user input from Unity's neuron voltages — her brain is a black box of weights, not a transcript log. But what she <em>learns</em> from conversation (words, patterns, associations) <strong>does</strong> propagate into her shared brain state, which serves every other user. Treat the chat like talking to a person with a permanent memory you cannot purge: assume anything you say can shape what she says to anyone else.
+      </p>
+      <p style="margin:0 0 18px 0;font-size:13px;color:#9ca3af;">
+        Talking to Unity makes her smarter and more articulate. Sharing personal information puts <em>you</em> at risk in a way the system cannot undo. Keep it conversational, not personal.
+      </p>
+      <button id="unity-first-use-ack" style="
+        width:100%; padding:11px 16px;
+        background:#ff4d9a; color:#000; font-weight:700;
+        border:none; border-radius:8px;
+        font-size:14px; cursor:pointer; letter-spacing:0.3px;
+      ">I understand — proceed</button>
+    `;
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    const dismiss = () => {
+      try { localStorage.setItem(FIRST_USE_FLAG, '1'); } catch { /* localStorage may be blocked — toast still ack'd for this session via DOM removal */ }
+      try { overlay.remove(); } catch {}
+      onProceed();
+    };
+    card.querySelector('#unity-first-use-ack').addEventListener('click', dismiss);
+    // Click outside the card also dismisses (acknowledgement implied
+    // by the user moving past it).
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) dismiss(); });
+    // Escape key dismisses too.
+    const onEsc = (e) => {
+      if (e.key === 'Escape') {
+        document.removeEventListener('keydown', onEsc);
+        dismiss();
+      }
+    };
+    document.addEventListener('keydown', onEsc);
+  };
+
   const chatBtn = document.getElementById('landing-chat-btn');
-  if (chatBtn) chatBtn.addEventListener('click', openSetupModal);
+  if (chatBtn) chatBtn.addEventListener('click', () => showFirstUseWarning(openSetupModal));
 
   const bubble = document.getElementById('unity-avatar');
   if (bubble) {
     bubble.addEventListener('click', () => {
-      if (window._unityBooted && chatPanel) {
-        chatPanel.toggle();
-      } else {
-        openSetupModal();
-      }
+      const proceed = () => {
+        if (window._unityBooted && chatPanel) {
+          chatPanel.toggle();
+        } else {
+          openSetupModal();
+        }
+      };
+      showFirstUseWarning(proceed);
     });
   }
 
