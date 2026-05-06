@@ -872,6 +872,99 @@ export class Curriculum {
   }
 
   /**
+   * iter25-D — DREAM WINDOW. Properly pauses the curriculum until the
+   * dream cycle is *confirmed complete* — not on a wall-clock timer,
+   * but signal-driven: open the dream gate, directly fire
+   * `consolidationEngine.runConsolidationPass({ forced: true })` and
+   * AWAIT its resolution, then a brief settle window for V8 GC +
+   * native-side worker-pool buffer drain, then close the gate. The
+   * outer curriculum loop is blocked at the await for the entire
+   * duration so this is a REAL pause, not just an event-loop yield.
+   *
+   * Operator verbatim 2026-05-06:
+   *   "and dont we need to have a dream cycle or something to propley
+   *   have the brain fucntion during ciriculum as the ciriculum is
+   *   beeing jammed down her throat she doesnt correclty get free
+   *   time to dream to complete the need processes that seem cructial
+   *   to Unity being Unity in her training"
+   *   + "and we need to propely pause the ciriculim if dream cycles
+   *   need to happen during traing"
+   *   + "not until time elapses once dream is confirmed complete"
+   *   + "yes ship today"
+   *
+   * Mechanism:
+   *   1. Flip `brain._curriculumInProgress = false` so the brain-server
+   *      dreaming gate (`!_curriculumInProgress` clause) opens.
+   *   2. Flip `brain._operatorSleepRequested = true` so dreaming fires
+   *      immediately without waiting for the 30s timeSinceInput gate.
+   *   3. Directly call `consolidationEngine.runConsolidationPass({ forced: true })`
+   *      and AWAIT it — this returns once the pass has actually
+   *      completed (Tier 1 → Tier 2 schema build, replay loop, Tier 3
+   *      promotion check, weights save). NOT on a timer.
+   *   4. settleMs (default 5s) post-consolidation drain — V8 young-gen
+   *      GC + native worker-pool buffer free between the pass ending
+   *      and the curriculum resuming. Without this the pass returns
+   *      with native still in flight from the replay Hebbian dispatches.
+   *   5. Restore both flags + resolve. Curriculum continues.
+   *
+   * Fallback when consolidationEngine isn't available (browser-only
+   * mode or boot-race): falls back to a `minMs` wall-clock wait so
+   * the curriculum still gets a settle window even if the brain ref
+   * isn't fully wired.
+   *
+   * Biological grounding: Squire 1992 / McClelland 1995 CLS theory —
+   * encode awake → consolidate during sleep → schema forms after
+   * multiple sleep cycles. Walker & Stickgold 2014, Diekelmann & Born
+   * 2010 on REM/SWS interleaving.
+   *
+   * Heartbeat surface: 💤 opened + ⚙ pass complete + ☀ closed banners
+   * so operator sees dream windows on the live log + dashboard.
+   */
+  async _dreamWindow(opts = {}) {
+    const minMs = opts.minMs ?? 60_000;
+    const settleMs = opts.settleMs ?? 5_000;
+    const cluster = this.cluster;
+    const brain = this.brain || (cluster && cluster._brain);
+    const wasCurrInProgress = brain ? brain._curriculumInProgress : null;
+    const wasSleepReq = brain ? brain._operatorSleepRequested : null;
+    if (brain) {
+      brain._curriculumInProgress = false;
+      brain._operatorSleepRequested = true;
+    }
+    const startedAt = Date.now();
+    this._hb(`[Curriculum] 💤 dream window opened — curriculum paused · ConsolidationEngine firing · Tier 1→2→3 promotion · V8 + native GC settling`);
+    try {
+      const engine = brain?.consolidationEngine;
+      if (engine && typeof engine.runConsolidationPass === 'function') {
+        // Signal-driven wait: AWAIT the pass to actually complete.
+        // No wall-clock timer. The promise resolves only when the
+        // ConsolidationEngine has finished its full sweep (candidate
+        // selection, cluster-by-cosine, schema build / reinforce,
+        // replay Hebbian, Tier 3 promotion check).
+        await engine.runConsolidationPass({ forced: true });
+        const passMs = Date.now() - startedAt;
+        const passCount = engine.passCount || 0;
+        this._hb(`[Curriculum] ⚙ dream pass complete in ${(passMs / 1000).toFixed(1)}s — ConsolidationEngine passCount=${passCount} · entering ${(settleMs / 1000).toFixed(0)}s settle window for V8 + native drain`);
+        // Settle window for V8 GC + native worker-pool buffer drain.
+        await new Promise((r) => setTimeout(r, settleMs));
+      } else {
+        // Fallback: no engine wired (browser-only mode, boot-race).
+        // Still hold the curriculum paused for minMs so V8 GC + native
+        // drain gets at least the same amount of breathing room.
+        this._hb(`[Curriculum] ⚠ dream window — consolidationEngine unavailable, falling back to ${(minMs / 1000).toFixed(0)}s wall-clock settle`);
+        await new Promise((r) => setTimeout(r, minMs));
+      }
+    } finally {
+      const totalMs = Date.now() - startedAt;
+      if (brain) {
+        brain._curriculumInProgress = wasCurrInProgress;
+        brain._operatorSleepRequested = wasSleepReq;
+      }
+      this._hb(`[Curriculum] ☀ dream window closed (${(totalMs / 1000).toFixed(1)}s total) — resuming curriculum`);
+    }
+  }
+
+  /**
    * Retention rate — how many of the last N runs for this cell passed.
    * Measures whether the binding SURVIVES subsequent curriculum runs
    * (i.e. isn't drifting away).
@@ -4868,6 +4961,13 @@ export class Curriculum {
       if (result && result.pass) {
         passed.push(grade);
         this._hb(`[Curriculum] ✓ ${subject}/${grade} — ${result.reason || 'pass'}`);
+        // iter25-D — dream window AFTER each successful cell so
+        // ConsolidationEngine fires + V8 + native GC drain before
+        // the next grade in this subject loads. Pause-curriculum
+        // semantics so the brain-server tick runs at full speed
+        // until the consolidation pass actually completes. Skipped
+        // on fail so failure → next-attempt happens immediately.
+        await this._dreamWindow({ minMs: 60_000, settleMs: 5_000 });
       } else {
         failed = grade;
         console.warn(`[Curriculum] ✗ ${subject}/${grade} — ${result?.reason || 'fail'}`);
@@ -5003,6 +5103,13 @@ export class Curriculum {
           if (result && result.pass) {
             if (!passed[subject].includes(grade)) passed[subject].push(grade);
             this._hb(`[Curriculum] ✓ ${subject}/${grade} — PASSED on attempt ${attempt} — ${result.reason || 'pass'}`);
+            // iter25-D — dream window AFTER each successful cell so
+            // ConsolidationEngine fires + V8 + native GC drain
+            // between cells. Pause-curriculum semantics so the
+            // brain-server tick runs at full speed until the
+            // consolidation pass actually completes. Skipped on
+            // fail so failure → next-attempt happens immediately.
+            await this._dreamWindow({ minMs: 60_000, settleMs: 5_000 });
           } else {
             failed[subject] = grade;
             allPassedThisGrade = false;

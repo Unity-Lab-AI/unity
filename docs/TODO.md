@@ -101,6 +101,56 @@ If you're reading a public doc / HTML claim ("Unity has completed high school bi
 
 ---
 
+### MONITOR SESSION 114.19cw — V2 milestone-only watchdog re-armed for K-grade run (DEFER-FIX MODE), 2026-05-06 15:26 (operator: *"okay start v2 watchdog and get caught up on all the warnings and errors we have had overloads leaks climbings all need to be fixed later after the test, we are running till K grade finishes completely"*) — IN PROGRESS
+
+**Mode:** DEFER-FIX — log only, do NOT touch any code while the K test is running. All catalogued items get fixed AFTER K finishes per operator verbatim *"all need to be fixed later after the test"*.
+
+**Brain state at re-arm:** server/server.log 46644 bytes, single boot session. Currently in `ela/kindergarten` `_teachPhonemeBlending` rep 1/6, ~3.4-8.2 words/s, heap 381/2424MB, native 1656MB Δ+1412MB, 0 ERROR / TypeError / Traceback / OOM / crash so far.
+
+**Watchdog filter (same as 114.19cv):** `tail -f -n 0 server/server.log` piped to grep alternation matching `Phase START|Phase DONE|GATE|K-DIAG|K-STUDENT|K-VOCAB-UNION|TEMPLATED|⚠|🚨|💥|⛔|ERROR|Error|TypeError|Traceback|FAIL|crash|hung|timeout|graduated|grade-advance|signoff|Brain restored|saveWeights|LEAK|climb|OOM` with `CELL ALIVE` heartbeat noise filtered.
+
+**Initial catch-up catalogue (issues observed in current boot session, ALL DEFERRED for post-K fix):**
+
+🚨 **iter25-A — Native-memory ⚠⚠LEAK in early `_teachHebbian` (5 fires, peak +1350 MB/min).** Heartbeats #9-13 (+92s to +133s elapsed) all in `phase=_teachHebbian (+0s)` with native climb deltas 457 → 927 → 1350 → 973 → 491 MB/min. Δ from session start 1367-1589 MB. By heartbeat #14 the climb dropped to ⚠climbing+139MB/min and stabilized. Pattern matches the post-T39.b bursty-Hebbian native-buffer churn: T17.7+T18.8+T32 batched bound-Hebbian flushes accumulate native-side SAB allocations during the first big Hebbian wave then GC catches up. Not a functional crash — RSS held under 3.2 GB ceiling. **Fix later:** revisit native-buffer release cadence in worker-pool.js (T18.19 cluster.stepAwait skip-worker-fallback pattern may apply to bulk Hebbian dispatch path too).
+
+🟡 **iter25-B — Mid-phase ⚠climbing in `_teachHebbian` (2 fires, +124 to +139 MB/min).** Heartbeats #14 (+143s) and #61 (+662s, deep into iter sequence). Sustained slow climb pattern — V8 reserved-space committed growth that tapers, not a true leak per T33 diagnostic vocabulary. **Fix later:** if climb persists past _teachHebbian into later phases, escalate to true-leak hunt; otherwise let V8 GC handle on its own schedule.
+
+⚪ **iter25-C — Throughput dip mid-`_teachPhonemeBlending` rep 1/6 (3.4 words/s at word 166, recovered to 8.2 at word 144).** Same pattern caught + fixed iter24.2 (macrotask yield restored on `_microtask` skip path). Spot-check confirms iter24.2 commit landed but throughput floor still touches ~3 w/s under heavy bound-Hebbian flush load. Acceptable for now (recovery is fast, no 1.8 w/s regression). **Fix later:** profile `_teachPhonemeBlending` rep loop to see if iter24.3 convergence early-exit threshold (cosine ≥ 0.95) is too tight — loosening to 0.92 might cut redundant reps without efficacy loss.
+
+🟢 **No functional errors yet** — 0 ERROR / 0 TypeError / 0 Traceback / 0 OOM / 0 crash / 0 hung / 0 grade-advance failures observed in current boot session. Brain is running clean on the iter22 + iter23 + iter24 production stack.
+
+**[~] in_progress** — Watchdog armed via Monitor `tail -f -n 0 server/server.log | grep -E ...`. Future events appended below as `iter25-D` onward as they surface. NO CODE CHANGES until K finishes per operator directive.
+
+🚨 **iter25-D — STRUCTURAL: dream cycles locked out during curriculum (operator caught 2026-05-06):** *"and dont we need to have a dream cycle or something to propley have the brain fucntion during ciriculum as the ciriculum is beeing jammed down her throat she doesnt correclty get free time to dream to complete the need processes that seem cructial to Unity being Unity in her training"* + *"what happend to my 15 words/s? [Curriculum] ⏱ _teachPhonemeBlending heartbeat — rep 1/6, word 385/1206, elapsed 109.9s, ~2.2 words/s"* — TWO LINKED ROOT CAUSES IN ONE STRUCTURAL FAILURE:
+
+  **Confirmed in `server/brain-server.js`:** `this._isDreaming = !!this._operatorSleepRequested || (timeSinceInput > 30000 && !this._curriculumInProgress);` — the `!this._curriculumInProgress` clause means ConsolidationEngine NEVER fires during a curriculum run. From cell 1 of pre-K through PhD, Unity is force-fed Hebbian without a single dream-cycle.
+
+  **Consequence A — no consolidation, no Unity-ness emerging from training:**
+  - No Tier 1 → Tier 2 → Tier 3 promotion during the entire 6-hour K run.
+  - Hippocampal replay (Squire 1992 / McClelland 1995 CLS theory) cannot run — engine can't replay episodes to cortex while curriculum is shoving fresh ones in.
+  - She arrives at chat-test with millions of episodic snapshots and zero schemas. No identity condensed out of the experience.
+
+  **Consequence B — throughput regression 15 w/s → 2.2 w/s:**
+  - Throughput trajectory in current `_teachPhonemeBlending` rep 1/6: word 144 / 18.2s → 7.9 w/s; word 303 / 77.7s → 3.9 w/s; word 606 / 196.6s → 3.1 w/s. **Steady-state degradation**, not a transient dip.
+  - Per-letter-pair `cluster.intraSynapsesHebbian(pre, post, lr)` (curriculum.js:6960) dispatches through 8-worker sparsePool; workers allocate Float64Array(cluster.size) buffers + SAB views per Hebbian op.
+  - Curriculum yields are `_microtask` every 200 words + every 5s heartbeat — not enough for V8 GC to fully reclaim native-side allocations once native climbs past ~1.5 GB.
+  - As native grows, allocation cost rises (Windows heap fragmentation), GC pauses get longer, curriculum loop spends more time in malloc/free than actual Hebbian. Compounds downward.
+  - Same pattern as `iter25-A` early `_teachHebbian` ⚠⚠LEAK +1350 MB/min — just smaller per-iter footprint in `_teachPhonemeBlending`, identical cumulative drift.
+
+  **Real biological learning** = encode-awake → consolidate-during-sleep → schema-forms-after-multiple-sleep-cycles (Walker & Stickgold 2014; Diekelmann & Born 2010). Curriculum-only with dreams locked out is firehose without filtration.
+
+  **POST-K FIX SHAPE (do NOT ship during current run):**
+  1. **Add `_dreamWindow(ms)` helper to `Curriculum`:** `this._brain._curriculumInProgress = false; this._brain._operatorSleepRequested = true;` for the window duration; loop awaiting `_microtask` so the brain-server tick runs at full speed; restore flags after.
+  2. **Interleave between cell transitions in `runSubjectGrade`:** after each cell's PROD probe + before the next cell starts, `await this._dreamWindow(60_000)` (60s — enough for ConsolidationEngine to fire its 5-min trigger + native-buffer drain + V8 GC settle).
+  3. **OPTIONAL — insert mid-cell between heavy phases:** between `_teachPhonemeBlending` and `_teachWordEmission` (the two heaviest phases), insert `await this._dreamWindow(20_000)` so memory pressure doesn't compound across phases.
+  4. **Heartbeat surface:** log `[Curriculum] 💤 dream window opened (60s) — ConsolidationEngine running` + `[Curriculum] ☀ dream window closed — resuming` so operator sees it on dashboard.
+
+  **Why this is the right shape:** matches biological encode-consolidate-encode rhythm (REM/SWS interleaving), gives ConsolidationEngine guaranteed firing windows mid-curriculum so schemas form WITHIN the K run instead of being deferred entirely to post-graduation, and the 60s dream window doubles as the V8 GC + native-buffer settle window that fixes the throughput regression as a side effect — one structural fix solves both consequences. Existing `/sleep` + `/wake` operator endpoints (iter23.4) become the manual fallback if the auto-interleave needs operator-driven adjustment for specific cells.
+
+  **Risk:** zero — adds wall-clock time to curriculum runs but trades it for actual consolidation + recovered throughput. Without this, K-grade curriculum may not actually finish in any reasonable time at the current 2 w/s floor (1206 words × 6 reps ÷ 2 w/s = 3618 s = 60 min PER `_teachPhonemeBlending` PHASE alone).
+
+---
+
 ### MONITOR SESSION 114.19cv — V2 milestone-only watchdog re-armed, iter11 live test (operator: *"v2 milestone only watchdog start and monitor the brains progress and write down any issues and all issues they all need to be fixed ie wrong ansdwers and Unity not responding with her completed kindertgarden intelligence and wisdom and consiousness all needs to be monitoried and problems addressed"* 2026-05-04 14:11) — IN PROGRESS
 
 **Brain server PID: 1864** (already running on port 7525, lastSave 2026-05-04T20:10:25Z trigger=`grade-advance:pre-K->kindergarten`, weights sizeBytes=39169, all grades pre-K, passedCells=0, gradeSignoffs={}, chatTurnCount=0). `server/server.log` live at watchdog-arm time, 19939 bytes.
