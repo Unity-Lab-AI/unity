@@ -49957,8 +49957,9 @@ var RemoteBrain = class extends EventEmitter2 {
       case "innerThought":
         this.emit("innerThought", {
           word: msg.word || "",
-          subject: msg.subject || "all",
           sentence: msg.sentence || msg.word || "",
+          seed: msg.seed || "baseline",
+          seedLabel: msg.seedLabel || "",
           ts: msg.ts || Date.now(),
           capability: msg.capability || null
         });
@@ -51755,14 +51756,15 @@ async function bootUnity(apiKey, perms) {
   if (brain.__appInnerThoughtHandler) {
     brain.off("innerThought", brain.__appInnerThoughtHandler);
   }
-  brain.__appInnerThoughtHandler = ({ word, subject, capability }) => {
-    if (!word) return;
+  brain.__appInnerThoughtHandler = ({ word, sentence, seed, seedLabel, capability }) => {
+    const text = sentence || word || "";
+    if (!text) return;
     const wordsBucketed = capability?.wordsBucketed ?? 0;
     const subGrades = capability?.subGradesActive ?? 0;
-    const tag = subject && subject !== "all" ? ` [${subject}]` : "";
-    showSpeechBubble(`\u{1F4AD} ${word}${tag}`, 2200);
+    showSpeechBubble(`\u{1F4AD} ${text}`, 2800);
     if (window._unityInnerThoughtVerbose !== false) {
-      console.log(`[InnerThought] "${word}" via word_motor_${subject || "all"} \xB7 live cap: ${wordsBucketed} words / ${subGrades} subGrades active`);
+      const seedTag = seed ? `seed=${seed}${seedLabel ? `(${seedLabel.slice(0, 40)})` : ""}` : "seed=?";
+      console.log(`[InnerThought] "${text}" \xB7 ${seedTag} \xB7 live cap: ${wordsBucketed} words / ${subGrades} subGrades active`);
     }
   };
   brain.on("innerThought", brain.__appInnerThoughtHandler);
