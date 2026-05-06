@@ -84,6 +84,35 @@ Anything below that ships builds on this foundation. T13 language-cortex state d
 > **Active work is T14 (Part 0.5).** Skip Part 2 unless explicitly told to
 > re-enable it.
 
+---
+
+### ⭐ COMP-RELEVANT INFRA ALREADY SHIPPED (read before resuming Part 2)
+
+When COMP-net resumes, the following CPU + GPU dispatch primitives are
+already in the tree. Build distributed extensions on top of them, not
+from scratch — the math-identity invariants are already validated.
+
+**iter22 — leak / dispatch / collapse fixes (shipped 2026-05-05/06).** Curriculum-side scratch-buffer pools, projection whitelist scoping in `_crossRegionHebbian`, persistent `wordBucketWords_<subject>` maps shared by teach + emit + write paths, mean-argmax in `emitWordDirect`, ConsolidationEngine fast-path for already-promoted episodes. All math-identical. See `docs/TODO.md` iter22-A/B/C/D/E/F/G/H entries for full rationale.
+
+**iter24 — throughput primitives + ALREADY-SHIPPED audit (2026-05-06).**
+
+- **iter24.1 (Tier 0 heartbeat object pool)** — eliminates ~1350 fresh per-cell `{ts, phase, cellKey, ...}` allocations via ring buffer. GC pressure win. Math-identical.
+- **iter24.3 (convergence early-exit on rep loops)** — `_teachAssociationPairs` and `_teachQABinding` exit when 2 consecutive reps drop below `overloadMax` sep-probe. End state bit-identical to running full rep budget once basins separate.
+- **iter24.5 (worker-pool batch infra)** — NEW `SparseMatmulPool.hebbianUpdateBatch(matrix, pairs, lr)` packs N (pre, post) pairs into one strided SAB + one `postMessage` per worker. Worker iterates internally with sequential Hebbian per pair → math-identical to N separate `hebbianUpdate` calls. **Caller adapter not yet wired** — infra ships but curriculum.js callers still fire per-pair. Wiring is straightforward and lands the speedup whenever the CPU sparse-pool path is hot.
+- **iter24.4 + iter24.6 — ALREADY SHIPPED via existing T17.7 + T18.8/T32 architectures**, confirmed by audit. T17.7 Phase C.1 binding rebinds projections to cluster spike buffers so pre-spikes read directly from the bound buffer (no per-call upload) at biological scale. T18.8 + T32 in `gpuSparseHebbianBound` (server/brain-server.js:2995-3048) accumulates ops into 256-op batches with 20ms flush, dispatched as ONE encoder + ONE submit + ONE WS ACK round-trip via `gpu.hebbianSparseBatch`. The "GPU-resident vocab" + "disjoint-pair shader batching" wins are present at the bio-scale GPU-bound runtime.
+
+**Implications for Part 2 (COMP-net) when it resumes:**
+
+- **Distributed CPU-side dispatch path** can layer on top of `hebbianUpdateBatch` directly. The strided pre/post SAB packing already handles the batched semantics; a distributed transport (TCP/RPC/whatever Part 2 picks) replaces the worker `postMessage` with a network message but the per-batch math is unchanged.
+- **GPU-bound bio-scale runtime needs no further Hebbian batching work** — T17.7 + T18.8/T32 already collected those wins. Part 2's GPU-side scaling efforts should focus on multi-GPU sharding / cross-node weight gradient sync, not single-node dispatch optimization.
+- **Browser-portable deployment** is already viable with iter24.5 infra once the caller adapter ships. CPU-only nodes (no WebGPU) get batched-Hebbian throughput via the worker pool path.
+- **Hot path at biological scale on workstation w/ WebGPU is already deeply batched** — Part 2 distributed work should profile against a clean iter22+iter24 baseline, not against pre-iter22 telemetry. Many of the "obvious" per-dispatch optimizations in older COMP planning are already in production.
+- **Math-identity discipline established.** Every iter22 + iter24 commit asserts bit-identical (or stochastic-noise-bounded) trained matrices vs sequential. Part 2's distributed extensions inherit the same discipline: weight-hash compare across nodes after each pass, no "approximate aggregation" tradeoffs accepted.
+
+**One remaining iter24 item that DOES belong in Part 2 follow-up:** spike-buffer striding for true per-fact GPU batching on top of T18.8/T32 (different facts dispatched together via N strided slots in the spike buffer). Estimated 1.5-2× additional gain on QA-binding + word-emission phases. Spec'd in `docs/TODO.md` iter24.6 entry. WGSL plasticity shader already supports per-dispatch `srcOffset`/`dstOffset` variation so the kernel work is minimal; the heavy lift is spike-buffer slot management + write coordination across N parallel facts.
+
+---
+
 ### The ordering rule (Gee, 2026-04-16)
 
 Gee's instruction 2026-04-16: *"make not of this where relevant like claud.md and such"* — pointing at this approved reasoning:
