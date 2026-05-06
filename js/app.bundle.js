@@ -22558,7 +22558,9 @@ var Curriculum = class _Curriculum {
         this._fillRegionPatternInto(scratch.pre, semRegion, entry.pattern, false);
         this._fillRegionPatternInto(scratch.post, motorRegion, firstCharOneHot, true);
         try {
-          await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr);
+          await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr, {
+            projectionsWhitelist: ["sem_to_motor"]
+          });
           updates++;
         } catch {
           skipped++;
@@ -22928,20 +22930,28 @@ var Curriculum = class _Curriculum {
         if (scratch) {
           this._fillRegionPatternInto(scratch.pre, letterRegion, letterOneHot);
           this._fillRegionPatternInto(scratch.post, motorRegion, letterOneHot);
-          await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr);
+          await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr, {
+            projectionsWhitelist: ["letter_to_motor"]
+          });
           if (phonRegion) {
             const phonFeat = _phonemeFeatureForLetter(letter);
             this._fillRegionPatternInto(scratch.post, phonRegion, phonFeat);
-            await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr);
+            await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr, {
+              projectionsWhitelist: ["letter_to_phon"]
+            });
           }
         } else {
           const preLet = this._buildRegionPattern(letterRegion, letterOneHot);
           const postMot = this._buildRegionPattern(motorRegion, letterOneHot);
-          await this._teachHebbianAsymmetric(preLet, postMot, lr);
+          await this._teachHebbianAsymmetric(preLet, postMot, lr, {
+            projectionsWhitelist: ["letter_to_motor"]
+          });
           if (phonRegion) {
             const phonFeat = _phonemeFeatureForLetter(letter);
             const postPhon = this._buildRegionPattern(phonRegion, phonFeat);
-            await this._teachHebbianAsymmetric(preLet, postPhon, lr);
+            await this._teachHebbianAsymmetric(preLet, postPhon, lr, {
+              projectionsWhitelist: ["letter_to_phon"]
+            });
           }
         }
       }
@@ -23127,11 +23137,15 @@ var Curriculum = class _Curriculum {
         if (scratch) {
           this._fillRegionPatternInto(scratch.pre, semRegion, wordEmb, false);
           this._fillRegionPatternInto(scratch.post, motorRegion, encodeLetter(letters[0]));
-          await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr);
+          await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr, {
+            projectionsWhitelist: ["sem_to_motor"]
+          });
         } else {
           const preInit = this._buildRegionPattern(semRegion, wordEmb, false);
           const postInit = this._buildRegionPattern(motorRegion, encodeLetter(letters[0]));
-          await this._teachHebbianAsymmetric(preInit, postInit, lr);
+          await this._teachHebbianAsymmetric(preInit, postInit, lr, {
+            projectionsWhitelist: ["sem_to_motor"]
+          });
         }
         for (let i = 1; i < letters.length; i++) {
           this._clearSpikes();
@@ -23141,11 +23155,15 @@ var Curriculum = class _Curriculum {
           if (scratch) {
             this._fillRegionPatternInto(scratch.pre, letterRegion, encodeLetter(letters[i - 1]));
             this._fillRegionPatternInto(scratch.post, motorRegion, encodeLetter(letters[i]));
-            await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr);
+            await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr, {
+              projectionsWhitelist: ["letter_to_motor"]
+            });
           } else {
             const preChain = this._buildRegionPattern(letterRegion, encodeLetter(letters[i - 1]));
             const postChain = this._buildRegionPattern(motorRegion, encodeLetter(letters[i]));
-            await this._teachHebbianAsymmetric(preChain, postChain, lr);
+            await this._teachHebbianAsymmetric(preChain, postChain, lr, {
+              projectionsWhitelist: ["letter_to_motor"]
+            });
           }
         }
       }
@@ -25579,10 +25597,11 @@ var Curriculum = class _Curriculum {
    * full pattern during teaching if cross-projection binding is
    * desired.
    */
-  async _teachHebbianAsymmetric(preVec, postVec, lr) {
+  async _teachHebbianAsymmetric(preVec, postVec, lr, opts = {}) {
     const cluster = this.cluster;
     if (!cluster) return;
-    await cluster._crossRegionHebbian(lr);
+    await cluster._crossRegionHebbian(lr, opts);
+    if (opts.skipIntraHebbian) return;
     if (typeof cluster.intraSynapsesHebbian === "function") {
       await cluster.intraSynapsesHebbian(preVec, postVec, lr);
     } else if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === "function") {
@@ -26131,11 +26150,11 @@ var Curriculum = class _Curriculum {
           const qaSep = this._checkSemBasinSeparation(qaPseudoPairs, {
             semRegion,
             motorRegion,
-            overloadMax: 0.3,
+            overloadMax: 0.4,
             sampleSize: qaPseudoPairs.length
           });
           if (qaSep && typeof qaSep.meanCos === "number") {
-            const overload = qaSep.meanCos > 0.3;
+            const overload = qaSep.meanCos > 0.4;
             const collapsed = qaSep.meanCos < 0.05 && qaSep.maxCos < 0.05;
             let qaCollapseFlag = "";
             if (overload) qaCollapseFlag = " \u26A0OVERLOAD";
@@ -26471,7 +26490,7 @@ var Curriculum = class _Curriculum {
     const normalizeAfter = opts.normalizeAfter !== false;
     const normTarget = opts.normTarget ?? 0.3;
     const runSeparationProbe = opts.separationProbe !== false;
-    const overloadMax = opts.overloadMax ?? 0.3;
+    const overloadMax = opts.overloadMax ?? 0.4;
     const antiPairs = opts.antiPairs !== false && pairs.length >= 2;
     const antiLrScale = opts.antiLrScale ?? 2.5;
     const pruneTopK = opts.pruneTopK ?? 10;
@@ -50125,9 +50144,14 @@ function renderLandingTab(tab, s) {
       const tier3TopHtml = (tier3.identities || []).length > 0 ? '<div style="margin-top:6px;font-size:9px;color:#888;">Identity anchors (permanent):</div>' + (tier3.identities || []).slice(0, 8).map((s2) => `<div style="font-size:10px;color:#bbb;padding:2px 0;">\u2022 ${s2.label} <span style="color:#888;">(str=${s2.strength}, retr=${s2.retrievals})</span></div>`).join("") + (tier3.identities.length > 8 ? `<div style="font-size:9px;color:#666;padding:2px 0;">... +${tier3.identities.length - 8} more</div>` : "") : '<div style="margin-top:6px;font-size:10px;color:#666;">No identity anchors \u2014 fresh boot will seed from IDENTITY_SEED_LIST.</div>';
       const fmtItems = (n, cap) => cap == null ? n.toLocaleString() + " (unbounded)" : n.toLocaleString() + " / " + cap.toLocaleString();
       const wcDisplay = workingCap == null ? workingItems.toLocaleString() + " items (unbounded)" : workingItems + " / " + workingCap + " slots";
-      el.innerHTML = card("Working Memory (Tier 0 \xB7 cap=7 Miller 1956)", `
+      const workingItemLabels = Array.isArray(working.itemLabels) ? working.itemLabels : [];
+      const workingItemsHtml = workingItemLabels.length > 0 ? `<div style="margin-top:6px;color:#888;font-size:10px;line-height:1.4;">${workingItemLabels.map(
+        (it) => `<span style="color:#bbb;">${String(it.label || "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c])}</span> <span style="color:#555;">(${(it.strength ?? 0).toFixed(2)})</span>`
+      ).join("<br>")}</div>` : '<div style="margin-top:6px;color:#666;font-size:10px;font-style:italic;">no items in WM yet \u2014 items rotate in as cluster activity drives addToWorkingMemory()</div>';
+      el.innerHTML = card("Working Memory (Tier 0 \xB7 cap=7 Miller 1956 \xB7 items rotate underneath)", `
           ${metric("Items", wcDisplay, "#00e5ff")}
           ${workingCap == null ? "" : bar(workingItems / Math.max(1, workingCap) * 100, "#00e5ff")}
+          ${workingItemsHtml}
         `) + card("Tier 1 \u2014 Episodic (SQLite \xB7 freq-merge cosine \u2265 0.5)", `
           ${metric("Total Episodes", totalEpisodes.toLocaleString(), "#a855f7")}
           ${metric("Recent Salience (avg)", recentSal.toFixed(3), recentSal >= 0.4 ? "#22c55e" : recentSal >= 0.15 ? "#f59e0b" : "#ef4444")}

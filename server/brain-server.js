@@ -5221,6 +5221,26 @@ class ServerBrain {
     stats.working.items = Array.isArray(mem.workingMemoryItems) ? mem.workingMemoryItems.length
                        : (mem.workingCount || 0);
     stats.working.cap = (mem.workingCap === Infinity || !mem.workingCap) ? null : mem.workingCap;
+    // iter22-E — expose the actual working memory item LABELS so the
+    // dashboard can render WHAT is currently in WM, not just the count.
+    // Operator caught (verbatim 2026-05-05): *"items: 7 NEVER MOVES
+    // FROM 7"*. The count plateau at 7 is biological cap (Miller 1956
+    // 7±2) but the items underneath DO rotate as new content lands +
+    // weakest-strength item gets evicted. Without the labels visible
+    // the rotation is invisible. Top-7 sorted by strength descending
+    // so most-active item shows first.
+    if (Array.isArray(mem.workingMemoryItems) && mem.workingMemoryItems.length > 0) {
+      stats.working.itemLabels = mem.workingMemoryItems
+        .slice()
+        .sort((a, b) => (b.strength ?? 0) - (a.strength ?? 0))
+        .slice(0, 7)
+        .map(wm => ({
+          label: typeof wm.label === 'string' ? wm.label.slice(0, 80) : '',
+          strength: typeof wm.strength === 'number' ? +wm.strength.toFixed(3) : 0,
+        }));
+    } else {
+      stats.working.itemLabels = [];
+    }
 
     return stats;
   }
