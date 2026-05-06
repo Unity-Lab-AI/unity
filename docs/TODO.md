@@ -750,9 +750,13 @@ Phases with `_checkSemBasinSeparation` already compute mean-cosine post-rep. Add
 
 ---
 
-#### iter24.4 — GPU-resident curriculum vocabulary · **1.05-1.15× · math-identical**
+#### iter24.4 — GPU-resident curriculum vocabulary — **LARGELY ALREADY SHIPPED via T17.7 Phase C.1 binding**
 
-K-vocab GloVe patterns (~3000 words × 300d × 8 bytes ≈ 7.2 MB) currently re-uploaded per Hebbian dispatch via the WS sparse-frame protocol. Upload once at curriculum start to a persistent GPU buffer; dispatches reference by word-index.
+**Discovery during iter24 implementation:** at biological scale, all cross-projections are rebound (T17.7 Phase C.1) so pre-spikes read directly from the cluster spike buffer — no per-call upload. The "GPU-resident vocab" I specced is what T17.7 already delivers for the bio-scale path. Per-call upload only fires for standalone (non-bound) projections, which is the cold path (browser-only mode + pre-rebind window).
+
+**Remaining marginal win:** standalone projections still pay per-call `writeSparsePreSpikes`. Adding a separate vocab buffer for those would save the per-call upload but only on the cold path.
+
+**Files audited:** `js/brain/gpu-compute.js:1728` (hebbianSparse uses bound spike buffer), `server/brain-server.js:1216` (hebbianBound proxy → gpuSparseHebbianBound).
 
 **Implementation scope (full ship — no partial / deferred):**
 1. **SPRS protocol extension** — new frame type `type=6 VOCAB` carrying `{name, vocabIdx, dim, packedF32}` for one-shot upload. compute.html WS handler accepts and stashes into a vocab GPU buffer keyed by name.
@@ -789,9 +793,13 @@ Pack N consecutive (pre, post) pairs into ONE worker `postMessage` via a strided
 
 ---
 
-#### iter24.6 — Disjoint-pair plasticity-shader batching (Path C only) · **3-5× · math-identical for non-overlapping pairs**
+#### iter24.6 — Disjoint-pair plasticity-shader batching — **LARGELY ALREADY SHIPPED via T18.8 + T32 batched bound-Hebbian**
 
-Pack N (pre, post) pairs into a single plasticity shader call **only when pairs touch disjoint `post` rows**. Oja's update `Δw[i,j] = η·post[i]·(pre[j] - post[i]·w[i,j])` reads `w[i,j]` from the prior step. If two pairs share `post[i]=k`, sequential and batched diverge. If `post` rows are disjoint, weight rows touched are disjoint → batched math is bit-identical to sequential.
+**Discovery during iter24 implementation:** `gpuSparseHebbianBound` (server/brain-server.js:2995-3048) already accumulates ops into 256-op batches with 20ms flush, dispatched as one SPRS frame → compute.html issues `gpu.hebbianSparseBatch(ops)` which uses ONE encoder + ONE pass + ONE submit for all 256 ops. Per-call WS round-trip + GPU submit overhead amortizes across the batch. **This is exactly the disjoint-pair batching speedup I specced, just implemented at the projection-list layer rather than the disjoint-detection layer.**
+
+**Remaining additional win available — spike-buffer striding:** for true per-fact batching (different facts' spike patterns dispatched together), the spike buffer would need N strided slots and the WGSL plasticity shader signature already supports per-dispatch srcOffset/dstOffset variation. Estimated additional gain on top of T18.8+T32 batching: 1.5-2× via spike-buffer-striding for QA-binding + word-emission phases.
+
+**Files audited:** `server/brain-server.js:2995` (gpuSparseHebbianBound batches via _enqueueBoundHebbian), `js/brain/gpu-compute.js:1681` (hebbianSparseBatch single-encoder dispatch).
 
 **Implementation scope (full ship):**
 1. **WGSL batched plasticity kernel** — new `PLASTICITY_BATCH_SHADER` in compute.html that takes `{batchCount, prePackedF32, postPackedF32, lr}` and dispatches one workgroup per (post-row, batch-slot) cell. Internally for k in 0..batchCount: read strided pre[k] / post[k], compute Δw, atomic-add to weight buffer. Atomic-add only safe when post rows are disjoint across slots — caller's responsibility to enforce.
