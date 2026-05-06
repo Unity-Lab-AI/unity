@@ -2402,6 +2402,15 @@ export const K_MIXIN = {
         _phaseDone('_teachPhonemeBlending');
       }
       this._memorySnapshotAndGc('after _teachPhonemeBlending');
+      // iter25-D — mid-cell dream window between the two heaviest
+      // ELA-K phases. PhonemeBlending generates millions of native-side
+      // worker-pool buffer allocations from intraSynapsesHebbian
+      // dispatches; without a settle window before WordEmission piles
+      // on more, native memory compounds and throughput collapses
+      // (operator caught: 15 w/s baseline → 2.2 w/s mid-phase). Signal-
+      // driven wait — actually awaits ConsolidationEngine's pass to
+      // complete + 5s settle, not a wall-clock timer.
+      await this._dreamWindow({ minMs: 30_000, settleMs: 5_000 });
       if (_phaseTick('_teachWordEmission')) {
         // iter12 rep-count tune: 12 → 6 reps (50% wall-clock saved
         // on the second-biggest sink — was 12 min per cell). Same
