@@ -726,10 +726,21 @@ function renderLandingTab(tab, s) {
       const fmtItems = (n, cap) => cap == null ? n.toLocaleString() + ' (unbounded)' : n.toLocaleString() + ' / ' + cap.toLocaleString();
       const wcDisplay = workingCap == null ? workingItems.toLocaleString() + ' items (unbounded)' : workingItems + ' / ' + workingCap + ' slots';
 
+      // iter22-E — surface the actual working memory item labels so
+      // operator can see the rotation underneath Miller's 7-item cap.
+      const workingItemLabels = Array.isArray(working.itemLabels) ? working.itemLabels : [];
+      const workingItemsHtml = workingItemLabels.length > 0
+        ? `<div style="margin-top:6px;color:#888;font-size:10px;line-height:1.4;">${
+            workingItemLabels.map(it =>
+              `<span style="color:#bbb;">${String(it.label || '').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</span> <span style="color:#555;">(${(it.strength ?? 0).toFixed(2)})</span>`
+            ).join('<br>')
+          }</div>`
+        : '<div style="margin-top:6px;color:#666;font-size:10px;font-style:italic;">no items in WM yet — items rotate in as cluster activity drives addToWorkingMemory()</div>';
       el.innerHTML =
-        card('Working Memory (Tier 0 · cap=7 Miller 1956)', `
+        card('Working Memory (Tier 0 · cap=7 Miller 1956 · items rotate underneath)', `
           ${metric('Items', wcDisplay, '#00e5ff')}
           ${workingCap == null ? '' : bar((workingItems / Math.max(1, workingCap)) * 100, '#00e5ff')}
+          ${workingItemsHtml}
         `) +
         card('Tier 1 — Episodic (SQLite · freq-merge cosine ≥ 0.5)', `
           ${metric('Total Episodes', totalEpisodes.toLocaleString(), '#a855f7')}

@@ -5533,7 +5533,12 @@ export class Curriculum {
         // so the discriminative target is an orthogonal motor bucket).
         this._fillRegionPatternInto(scratch.post, motorRegion, firstCharOneHot, true);
         try {
-          await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr);
+          // iter22-E — sem→motor only. Letter region is silent during
+          // this concept→firstChar write so legacy fan-out decayed
+          // letter_to_motor / letter_to_phon weights every call.
+          await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr, {
+            projectionsWhitelist: ['sem_to_motor'],
+          });
           updates++;
         } catch { skipped++; }
         // Yield every 50 words — at 1000+ K vocab × 12 reps this method
@@ -5951,23 +5956,32 @@ export class Curriculum {
         if (scratch) {
           this._fillRegionPatternInto(scratch.pre, letterRegion, letterOneHot);
           this._fillRegionPatternInto(scratch.post, motorRegion, letterOneHot);
-          await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr);
+          // iter22-E — letter→motor only. Other regions silent.
+          await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr, {
+            projectionsWhitelist: ['letter_to_motor'],
+          });
           // letter → phon same-letter reinforcement. Cheap insurance for
           // READ probe — already hits 26/26 via spelling cascade but an
           // explicit same-letter pair keeps the feature crisp.
           if (phonRegion) {
             const phonFeat = _phonemeFeatureForLetter(letter);
             this._fillRegionPatternInto(scratch.post, phonRegion, phonFeat);
-            await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr);
+            await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr, {
+              projectionsWhitelist: ['letter_to_phon'],
+            });
           }
         } else {
           const preLet = this._buildRegionPattern(letterRegion, letterOneHot);
           const postMot = this._buildRegionPattern(motorRegion, letterOneHot);
-          await this._teachHebbianAsymmetric(preLet, postMot, lr);
+          await this._teachHebbianAsymmetric(preLet, postMot, lr, {
+            projectionsWhitelist: ['letter_to_motor'],
+          });
           if (phonRegion) {
             const phonFeat = _phonemeFeatureForLetter(letter);
             const postPhon = this._buildRegionPattern(phonRegion, phonFeat);
-            await this._teachHebbianAsymmetric(preLet, postPhon, lr);
+            await this._teachHebbianAsymmetric(preLet, postPhon, lr, {
+              projectionsWhitelist: ['letter_to_phon'],
+            });
           }
         }
       }
@@ -6211,11 +6225,16 @@ export class Curriculum {
         if (scratch) {
           this._fillRegionPatternInto(scratch.pre, semRegion, wordEmb, false);
           this._fillRegionPatternInto(scratch.post, motorRegion, encodeLetter(letters[0]));
-          await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr);
+          // iter22-E — sem→motor only (initiation: word→firstLetter).
+          await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr, {
+            projectionsWhitelist: ['sem_to_motor'],
+          });
         } else {
           const preInit = this._buildRegionPattern(semRegion, wordEmb, false);
           const postInit = this._buildRegionPattern(motorRegion, encodeLetter(letters[0]));
-          await this._teachHebbianAsymmetric(preInit, postInit, lr);
+          await this._teachHebbianAsymmetric(preInit, postInit, lr, {
+            projectionsWhitelist: ['sem_to_motor'],
+          });
         }
 
         // (b) Continuation chain: pre=letter(N), post=motor(N+1).
@@ -6232,11 +6251,16 @@ export class Curriculum {
           if (scratch) {
             this._fillRegionPatternInto(scratch.pre, letterRegion, encodeLetter(letters[i - 1]));
             this._fillRegionPatternInto(scratch.post, motorRegion, encodeLetter(letters[i]));
-            await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr);
+            // iter22-E — letter→motor only (chain: letter[N-1]→motor[N]).
+            await this._teachHebbianAsymmetric(scratch.pre, scratch.post, lr, {
+              projectionsWhitelist: ['letter_to_motor'],
+            });
           } else {
             const preChain = this._buildRegionPattern(letterRegion, encodeLetter(letters[i - 1]));
             const postChain = this._buildRegionPattern(motorRegion, encodeLetter(letters[i]));
-            await this._teachHebbianAsymmetric(preChain, postChain, lr);
+            await this._teachHebbianAsymmetric(preChain, postChain, lr, {
+              projectionsWhitelist: ['letter_to_motor'],
+            });
           }
         }
       }
@@ -8668,12 +8692,25 @@ export class Curriculum {
    * full pattern during teaching if cross-projection binding is
    * desired.
    */
-  async _teachHebbianAsymmetric(preVec, postVec, lr) {
+  async _teachHebbianAsymmetric(preVec, postVec, lr, opts = {}) {
     const cluster = this.cluster;
     if (!cluster) return;
-    // OOM fix — same awaiting pattern as
-    // _teachHebbian above.
-    await cluster._crossRegionHebbian(lr);
+    // iter22-E — opts.projectionsWhitelist scopes _crossRegionHebbian
+    // to specific projections so callers training a particular pair
+    // (e.g. _teachWordSpellingDirect writing sem→motor) don't fire
+    // Hebbian on the other 14 cross-projections where pre/post are
+    // silent — preventing Oja's `Δw = -η·post²·w` decay on the silent
+    // sides. Operator caught the cross-cell collapse: TALK 26/26 →
+    // 0/10 in Math-K + 0/10 in Sci-K because legacy fan-out crushed
+    // letter_to_motor every QA write × 1000+ pairs × 12 reps. iter22-D
+    // patched _teachQABinding + _teachAssociationPairs but missed the
+    // _teachWordSpellingDirect / _teachLetterNaming / _teachWordEmission
+    // / _teachPhonemeBlending callers that ALSO route through this
+    // primitive. iter22-E plumbs whitelist through so each caller's
+    // call site can declare the projections it actually trains.
+    // OOM fix — same awaiting pattern as _teachHebbian above.
+    await cluster._crossRegionHebbian(lr, opts);
+    if (opts.skipIntraHebbian) return;
     if (typeof cluster.intraSynapsesHebbian === 'function') {
       await cluster.intraSynapsesHebbian(preVec, postVec, lr);
     } else if (cluster.synapses && typeof cluster.synapses.hebbianUpdate === 'function') {
@@ -9359,10 +9396,10 @@ export class Curriculum {
         }
         if (qaPseudoPairs.length >= 2) {
           const qaSep = this._checkSemBasinSeparation(qaPseudoPairs, {
-            semRegion, motorRegion, overloadMax: 0.30, sampleSize: qaPseudoPairs.length,
+            semRegion, motorRegion, overloadMax: 0.40, sampleSize: qaPseudoPairs.length,
           });
           if (qaSep && typeof qaSep.meanCos === 'number') {
-            const overload = qaSep.meanCos > 0.30;
+            const overload = qaSep.meanCos > 0.40;
             const collapsed = qaSep.meanCos < 0.05 && qaSep.maxCos < 0.05;
             let qaCollapseFlag = '';
             if (overload) qaCollapseFlag = ' ⚠OVERLOAD';
@@ -9763,7 +9800,16 @@ export class Curriculum {
     // pairwise cosine between motor readouts. Mean cosine > `overloadMax`
     // flags the phase as potentially overloaded. Set false to skip.
     const runSeparationProbe = opts.separationProbe !== false; // default TRUE
-    const overloadMax = opts.overloadMax ?? 0.30;
+    // iter22-E — overloadMax 0.30 → 0.40. Operator: *"wtf are there
+    // stilll overloads!?!?!"*. The 0.30 threshold was too aggressive —
+    // sep-probe at 0.32-0.42 was triggering rescale + warnings on
+    // basins that were ACTUALLY discriminating, just not at perfect
+    // orthogonality. Bumping to 0.40 means rescale only fires on real
+    // basin overlap (mean cosine > 0.40 between trained pairs is
+    // genuine collapse-risk territory). Borderline cases stay quiet.
+    // The whole pipeline (rescale, top-K-prune, row-norm) is still
+    // wired — it just kicks in at the right threshold now.
+    const overloadMax = opts.overloadMax ?? 0.40;
     // Contrastive push-pull — after each positive-pair Oja update, fire a
     // negative-pair anti-Hebbian pass using a sampled wrong output. This
     // actively depresses sem + wrong-motor co-activation on the recurrent
